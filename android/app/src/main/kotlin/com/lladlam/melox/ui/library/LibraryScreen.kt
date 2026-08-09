@@ -155,6 +155,7 @@ fun LibraryScreen(
             },
             label = "library-playlist-detail-transition",
         ) { targetPlaylist ->
+            val playlistTransitionVisibilityScope = this
             if (targetPlaylist != null) {
                 MeloXPlaylistDetailScreen(
                     initialPlaylist = targetPlaylist,
@@ -242,7 +243,7 @@ fun LibraryScreen(
                                 onPlaylistClick = { selectedPlaylist = it },
                                 listState = playlistListState,
                                 sharedTransitionScope = sharedScope,
-                                animatedVisibilityScope = this,
+                                animatedVisibilityScope = playlistTransitionVisibilityScope,
                             )
 
                             MeloXLibraryPage.History -> MeloXLibrarySongsPage(
