@@ -69,6 +69,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.library.NeteaseLibraryClient
 import com.lladlam.melox.core.library.NeteaseLibrarySnapshot
@@ -76,6 +79,7 @@ import com.lladlam.melox.core.library.NeteasePlaylistDetail
 import com.lladlam.melox.core.library.NeteasePlaylistSummary
 import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.playback.PlaybackCommands
+import com.lladlam.melox.ui.glass.meloXLiquidGlass
 import com.lladlam.melox.ui.player.MeloXFlowingLightBackdrop
 import kotlinx.coroutines.launch
 
@@ -625,18 +629,27 @@ private fun MeloXPlaylistDetailScreen(
         }
     }
 
+    // Glass controls in playlist detail cannot sample the app-root backdrop,
+    // because they live inside that recording layer. Capture only this page's
+    // artwork-driven background once and let every detail control share it.
+    val detailGlassBackdrop = rememberLayerBackdrop()
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black),
     ) {
-        // Use the exact same artwork-driven background renderer as the full
-        // now-playing artwork page: 160px artwork -> 3x3 palette -> flowing fields.
-        MeloXFlowingLightBackdrop(
-            artworkUrl = displayed.coverUrl,
-            isPlaying = false,
-            modifier = Modifier.fillMaxSize(),
-        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .layerBackdrop(detailGlassBackdrop),
+        ) {
+            MeloXFlowingLightBackdrop(
+                artworkUrl = displayed.coverUrl,
+                isPlaying = false,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
 
         Column(
             modifier = Modifier
@@ -645,12 +658,14 @@ private fun MeloXPlaylistDetailScreen(
         ) {
             MeloXPlaylistToolbar(
                 foreground = foreground,
+                backdrop = detailGlassBackdrop,
                 onBack = onBack,
             )
             MeloXPlaylistSearchField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
                 foreground = foreground,
+                backdrop = detailGlassBackdrop,
                 modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
             )
 
@@ -664,6 +679,7 @@ private fun MeloXPlaylistDetailScreen(
                         tracks = songs,
                         foreground = foreground,
                         secondary = secondary,
+                        backdrop = detailGlassBackdrop,
                         onPlay = {
                             songs.firstOrNull()?.let { first ->
                                 PlaybackCommands.playQueue(
@@ -778,6 +794,7 @@ private fun MeloXPlaylistDetailScreen(
 @Composable
 private fun MeloXPlaylistToolbar(
     foreground: Color,
+    backdrop: LayerBackdrop,
     onBack: () -> Unit,
 ) {
     Row(
@@ -790,6 +807,7 @@ private fun MeloXPlaylistToolbar(
     ) {
         MeloXGlassCircleButton(
             foreground = foreground,
+            backdrop = backdrop,
             size = 44.dp,
             onClick = onBack,
         ) {
@@ -799,8 +817,18 @@ private fun MeloXPlaylistToolbar(
         Row(
             modifier = Modifier
                 .height(44.dp)
+                .meloXLiquidGlass(
+                    backdrop = backdrop,
+                    shape = RoundedCornerShape(22.dp),
+                    tint = glassTint(foreground),
+                    fallbackTint = glassColor(foreground),
+                    blurRadius = 6.dp,
+                    refractionHeight = 9.dp,
+                    refractionAmount = 11.dp,
+                    highlightAlpha = 0.14f,
+                    shadowAlpha = 0.08f,
+                )
                 .clip(RoundedCornerShape(22.dp))
-                .background(glassColor(foreground))
                 .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -841,14 +869,25 @@ private fun MeloXPlaylistSearchField(
     value: String,
     onValueChange: (String) -> Unit,
     foreground: Color,
+    backdrop: LayerBackdrop,
     modifier: Modifier = Modifier,
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(44.dp)
-            .clip(RoundedCornerShape(22.dp))
-            .background(glassColor(foreground)),
+            .meloXLiquidGlass(
+                backdrop = backdrop,
+                shape = RoundedCornerShape(22.dp),
+                tint = glassTint(foreground),
+                fallbackTint = glassColor(foreground),
+                blurRadius = 7.dp,
+                refractionHeight = 8.dp,
+                refractionAmount = 10.dp,
+                highlightAlpha = 0.12f,
+                shadowAlpha = 0.06f,
+            )
+            .clip(RoundedCornerShape(22.dp)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         MeloXSearchGlyph(
@@ -891,6 +930,7 @@ private fun MeloXStandardPlaylistHero(
     tracks: List<SearchSong>,
     foreground: Color,
     secondary: Color,
+    backdrop: LayerBackdrop,
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
     sharedTransitionScope: SharedTransitionScope,
@@ -968,6 +1008,7 @@ private fun MeloXStandardPlaylistHero(
             ) {
                 MeloXGlassCircleButton(
                     foreground = foreground,
+                    backdrop = backdrop,
                     size = 54.dp,
                     enabled = tracks.isNotEmpty(),
                     onClick = onShuffle,
@@ -979,8 +1020,18 @@ private fun MeloXStandardPlaylistHero(
                     modifier = Modifier
                         .width(140.dp)
                         .height(50.dp)
+                        .meloXLiquidGlass(
+                            backdrop = backdrop,
+                            shape = RoundedCornerShape(25.dp),
+                            tint = primaryGlassTint(foreground),
+                            fallbackTint = if (foreground == Color.White) Color.White else Color.Black,
+                            blurRadius = 6.dp,
+                            refractionHeight = 10.dp,
+                            refractionAmount = 12.dp,
+                            highlightAlpha = 0.18f,
+                            shadowAlpha = 0.10f,
+                        )
                         .clip(RoundedCornerShape(25.dp))
-                        .background(if (foreground == Color.White) Color.White else Color.Black)
                         .clickable(enabled = tracks.isNotEmpty(), onClick = onPlay),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -1003,6 +1054,7 @@ private fun MeloXStandardPlaylistHero(
 
                 MeloXGlassCircleButton(
                     foreground = foreground,
+                    backdrop = backdrop,
                     size = 54.dp,
                     onClick = {},
                 ) {
@@ -1081,6 +1133,7 @@ private fun MeloXPlaylistTrackRow(
 @Composable
 private fun MeloXGlassCircleButton(
     foreground: Color,
+    backdrop: LayerBackdrop,
     size: androidx.compose.ui.unit.Dp,
     enabled: Boolean = true,
     onClick: () -> Unit,
@@ -1089,8 +1142,18 @@ private fun MeloXGlassCircleButton(
     Box(
         modifier = Modifier
             .size(size)
+            .meloXLiquidGlass(
+                backdrop = backdrop,
+                shape = CircleShape,
+                tint = glassTint(foreground),
+                fallbackTint = glassColor(foreground),
+                blurRadius = 6.dp,
+                refractionHeight = 9.dp,
+                refractionAmount = 11.dp,
+                highlightAlpha = 0.16f,
+                shadowAlpha = 0.08f,
+            )
             .clip(CircleShape)
-            .background(glassColor(foreground))
             .clickable(
                 enabled = enabled,
                 interactionSource = remember { MutableInteractionSource() },
@@ -1104,8 +1167,16 @@ private fun MeloXGlassCircleButton(
 }
 
 private fun glassColor(foreground: Color): Color =
-    if (foreground == Color.White) Color.Black.copy(alpha = 0.22f)
-    else Color.White.copy(alpha = 0.64f)
+    if (foreground == Color.White) Color.Black.copy(alpha = 0.46f)
+    else Color.White.copy(alpha = 0.58f)
+
+private fun glassTint(foreground: Color): Color =
+    if (foreground == Color.White) Color.Black.copy(alpha = 0.08f)
+    else Color.White.copy(alpha = 0.10f)
+
+private fun primaryGlassTint(foreground: Color): Color =
+    if (foreground == Color.White) Color.White.copy(alpha = 0.78f)
+    else Color.Black.copy(alpha = 0.78f)
 
 @Composable
 private fun MeloXPlayGlyph(modifier: Modifier, color: Color) {
