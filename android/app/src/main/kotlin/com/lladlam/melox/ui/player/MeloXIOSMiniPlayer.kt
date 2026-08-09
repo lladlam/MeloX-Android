@@ -41,8 +41,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.lladlam.melox.ui.glass.meloXLiquidGlass
-import top.yukonga.miuix.kmp.blur.LayerBackdrop
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -75,15 +75,10 @@ fun MeloXIOSMiniPlayer(
         0f
     }
 
-    // Keep #286 geometry untouched. Fade source chrome over most of the morph.
-    // These values are actual draw alpha below, not a parent graphics layer, so
-    // they remain effective after the chrome is lifted into SharedTransitionScope's overlay.
+    // Keep the #286 shared-player geometry intact. Only the glass renderer changes here.
     val miniChromeAlpha = 1f - smoothStep(expansionProgress, 0.05f, 0.72f)
     val miniSurfaceAlpha = 1f - smoothStep(expansionProgress, 0.04f, 0.42f)
 
-    // The shared bounds itself is rendered in SharedTransitionScope's overlay.
-    // Lift source chrome into the same overlay so it is not abruptly covered by
-    // the growing container. Its visual fade is applied to the child draw content.
     val chromeOverlayModifier =
         if (sharedTransitionScope != null) {
             with(sharedTransitionScope) {
@@ -134,14 +129,14 @@ fun MeloXIOSMiniPlayer(
         val miniShape = RoundedCornerShape(22.dp)
         val dark = isSystemInDarkTheme()
         val glassTint = if (dark) {
-            Color.Black.copy(alpha = 0.12f)
+            Color.Black.copy(alpha = 0.08f)
         } else {
-            Color.White.copy(alpha = 0.16f)
+            Color.White.copy(alpha = 0.10f)
         }
         val fallbackTint = if (dark) {
-            MaterialTheme.colorScheme.surface.copy(alpha = 0.64f)
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)
         } else {
-            Color.White.copy(alpha = 0.66f)
+            Color.White.copy(alpha = 0.64f)
         }
 
         Surface(
@@ -154,22 +149,20 @@ fun MeloXIOSMiniPlayer(
                     tint = glassTint,
                     fallbackTint = fallbackTint,
                     alpha = miniSurfaceAlpha,
-                    // The mini player sits directly over list rows. A 6dp blur left
-                    // 1px dividers recognizable as white horizontal bars. A larger
-                    // sampling blur plus reduced contrast/saturation dissolves those
-                    // high-frequency list edges while still preserving backdrop color.
-                    blurRadius = 14.dp,
-                    refractionHeight = 0.dp,
-                    refractionAmount = 0.dp,
-                    chromaticAberration = 0f,
-                    vibrancySaturation = 1.12f,
-                    vibrancyContrast = 0.90f,
+                    // MiniPlayer needs a little more blur than small buttons because it sits
+                    // directly over list dividers. This still samples the single root backdrop.
+                    blurRadius = 12.dp,
+                    refractionHeight = 10.dp,
+                    refractionAmount = 12.dp,
+                    enableLens = true,
+                    highlightAlpha = 0.12f,
+                    shadowAlpha = 0.08f,
                 ),
             shape = miniShape,
             color = Color.Transparent,
             border = null,
             tonalElevation = 0.dp,
-            shadowElevation = (2f * miniSurfaceAlpha).dp,
+            shadowElevation = 0.dp,
         ) {}
 
         Row(
