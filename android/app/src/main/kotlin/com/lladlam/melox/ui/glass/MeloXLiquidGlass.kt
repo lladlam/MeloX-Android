@@ -1,86 +1,74 @@
 // Copyright 2026 MeloX contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Liquid-glass lens code is adapted from compose-miuix-ui/miuix v0.9.1
-// example/component/liquid/Lens.kt, which is itself adapted from
-// Kyant0/AndroidLiquidGlass. Both upstream sources are Apache-2.0.
+// Glass rendering is provided by Kyant0/AndroidLiquidGlass (Backdrop), Apache-2.0.
 
 package com.lladlam.melox.ui.glass
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.CornerBasedShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.util.fastCoerceAtMost
-import top.yukonga.miuix.kmp.blur.BackdropEffectScope
-import top.yukonga.miuix.kmp.blur.LayerBackdrop
-import top.yukonga.miuix.kmp.blur.blur
-import top.yukonga.miuix.kmp.blur.colorControls
-import top.yukonga.miuix.kmp.blur.drawBackdrop
-import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
-import top.yukonga.miuix.kmp.blur.runtimeShaderEffect
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.shadow.Shadow
 
 /**
- * MeloX bottom-chrome glass, following Miuix's official LiquidGlassNavigationBar recipe:
- * captured backdrop -> vibrancy -> gaussian blur -> rounded-rect refraction lens.
+ * Thin MeloX styling layer over Kyant0/AndroidLiquidGlass.
  *
- * Android RuntimeShader is available from API 33. Older Android versions keep the same
- * geometry and interaction but fall back to a translucent surface instead of crashing.
- *
- * Small circular controls deliberately use the fallback surface even when RuntimeShader is
- * available. Miuix drawBackdrop currently produces a visible polygon/mask artifact on the
- * compact search button on affected devices; avoiding that experimental mask path removes
- * the artifact without changing the larger pill-shaped backdrop surfaces.
+ * The app owns a single LayerBackdrop at the root. Every bottom-chrome surface samples that
+ * same recording layer; this function never allocates another backdrop, combined backdrop,
+ * or hidden capture layer. Geometry can therefore animate without multiplying capture cost.
  */
 internal fun Modifier.meloXLiquidGlass(
-    backdrop: LayerBackdrop?,
+    backdrop: Backdrop?,
     shape: Shape,
     tint: Color,
     fallbackTint: Color,
     alpha: Float = 1f,
-    blurRadius: Dp = 4.dp,
-    refractionHeight: Dp = 24.dp,
-    refractionAmount: Dp = 24.dp,
-    chromaticAberration: Float = 0.12f,
-    vibrancySaturation: Float = 1.5f,
-    vibrancyContrast: Float = 1f,
+    blurRadius: Dp = 8.dp,
+    refractionHeight: Dp = 12.dp,
+    refractionAmount: Dp = 16.dp,
+    enableLens: Boolean = true,
+    highlightAlpha: Float = 0.16f,
+    shadowAlpha: Float = 0.10f,
 ): Modifier {
     val effectAlpha = alpha.coerceIn(0f, 1f)
 
-    // CircleShape is used by the compact search control. On affected Android/HyperOS
-    // devices, drawBackdrop's small circular mask composites as a polygon/hexagon.
-    // Do not send circles through that experimental shader path until the upstream
-    // implementation is stable for this geometry.
-    val useStableFallback = shape == CircleShape
-    if (backdrop == null || !isRuntimeShaderSupported() || useStableFallback) {
-        return this.background(
+    if (backdrop == null) {
+        return background(
             color = fallbackTint.copy(alpha = fallbackTint.alpha * effectAlpha),
             shape = shape,
         )
     }
 
-    return this.drawBackdrop(
+    return drawBackdrop(
         backdrop = backdrop,
         shape = { shape },
         effects = {
-            // Matches the padding used by Miuix's LiquidGlassNavigationBar so the
-            // refracted rim never samples outside the captured layer.
-            padding = maxOf(padding, 40.dp.toPx())
-            meloXVibrancy(
-                saturation = vibrancySaturation,
-                contrast = vibrancyContrast,
-            )
-            blur(blurRadius.toPx(), blurRadius.toPx())
-            meloXLens(
-                refractionHeight = refractionHeight.toPx(),
-                refractionAmount = refractionAmount.toPx(),
-                chromaticAberration = chromaticAberration,
-            )
+            vibrancy()
+            if (blurRadius > 0.dp) {
+                blur(blurRadius.toPx())
+            }
+            if (enableLens && refractionHeight > 0.dp && refractionAmount > 0.dp) {
+                lens(
+                    refractionHeight.toPx(),
+                    refractionAmount.toPx(),
+                    chromaticAberration = false,
+                )
+            }
+        },
+        highlight = {
+            Highlight.Default.copy(alpha = highlightAlpha.coerceIn(0f, 1f) * effectAlpha)
+        },
+        shadow = {
+            Shadow(alpha = shadowAlpha.coerceIn(0f, 1f) * effectAlpha)
         },
         layerBlock = {
             this.alpha = effectAlpha
@@ -90,234 +78,3 @@ internal fun Modifier.meloXLiquidGlass(
         },
     )
 }
-
-/** Lightweight counterpart of the Miuix example's vibrancy(). */
-private fun BackdropEffectScope.meloXVibrancy(
-    saturation: Float,
-    contrast: Float,
-) {
-    colorControls(
-        brightness = 0f,
-        contrast = contrast,
-        saturation = saturation,
-    )
-}
-
-/**
- * Rounded-rect refraction lens with subtle chromatic dispersion.
- * Ported from Miuix v0.9.1's liquid-glass example.
- */
-private fun BackdropEffectScope.meloXLens(
-    refractionHeight: Float,
-    refractionAmount: Float,
-    depthEffect: Boolean = false,
-    chromaticAberration: Float = 0f,
-) {
-    if (!isRuntimeShaderSupported()) return
-    if (refractionHeight <= 0f || refractionAmount <= 0f) return
-
-    if (padding < refractionAmount) {
-        padding = refractionAmount
-    }
-
-    val radii = roundedRectCornerRadii() ?: return
-    val dispersionEnabled = chromaticAberration > 0f
-    val shaderString = if (dispersionEnabled) {
-        ROUNDED_RECT_REFRACTION_WITH_DISPERSION_SHADER
-    } else {
-        ROUNDED_RECT_REFRACTION_SHADER
-    }
-    val key = if (dispersionEnabled) "MeloXLiquidGlassLensDispersion" else "MeloXLiquidGlassLens"
-
-    val sf = downscaleFactor.coerceAtLeast(1).toFloat()
-    val scaledSizeW = size.width / sf
-    val scaledSizeH = size.height / sf
-    val scaledPadding = padding / sf
-    val scaledRefractionHeight = refractionHeight / sf
-    val scaledRefractionAmount = refractionAmount / sf
-    val scaledRadii = FloatArray(radii.size) { radii[it] / sf }
-
-    runtimeShaderEffect(
-        key = key,
-        shaderString = shaderString,
-        uniformShaderName = "content",
-    ) {
-        setFloatUniform("size", scaledSizeW, scaledSizeH)
-        setFloatUniform("offset", -scaledPadding, -scaledPadding)
-        setFloatUniform("cornerRadii", scaledRadii)
-        setFloatUniform("refractionHeight", scaledRefractionHeight)
-        setFloatUniform("refractionAmount", -scaledRefractionAmount)
-        setFloatUniform("depthEffect", if (depthEffect) 1f else 0f)
-        if (dispersionEnabled) {
-            setFloatUniform("chromaticAberration", chromaticAberration)
-        }
-    }
-}
-
-private fun BackdropEffectScope.roundedRectCornerRadii(): FloatArray? {
-    val cornerShape = shape as? CornerBasedShape ?: return null
-    val sizePx = size
-    val maxRadius = sizePx.minDimension / 2f
-    val isLtr = layoutDirection == LayoutDirection.Ltr
-    val topLeft = if (isLtr) {
-        cornerShape.topStart.toPx(sizePx, this)
-    } else {
-        cornerShape.topEnd.toPx(sizePx, this)
-    }
-    val topRight = if (isLtr) {
-        cornerShape.topEnd.toPx(sizePx, this)
-    } else {
-        cornerShape.topStart.toPx(sizePx, this)
-    }
-    val bottomRight = if (isLtr) {
-        cornerShape.bottomEnd.toPx(sizePx, this)
-    } else {
-        cornerShape.bottomStart.toPx(sizePx, this)
-    }
-    val bottomLeft = if (isLtr) {
-        cornerShape.bottomStart.toPx(sizePx, this)
-    } else {
-        cornerShape.bottomEnd.toPx(sizePx, this)
-    }
-    return floatArrayOf(
-        topLeft.fastCoerceAtMost(maxRadius),
-        topRight.fastCoerceAtMost(maxRadius),
-        bottomRight.fastCoerceAtMost(maxRadius),
-        bottomLeft.fastCoerceAtMost(maxRadius),
-    )
-}
-
-private const val ROUNDED_RECT_SDF = """
-float radiusAt(float2 coord, float4 radii) {
-    if (coord.x >= 0.0) {
-        if (coord.y <= 0.0) return radii.y;
-        else return radii.z;
-    } else {
-        if (coord.y <= 0.0) return radii.x;
-        else return radii.w;
-    }
-}
-
-float sdRoundedRect(float2 coord, float2 halfSize, float radius) {
-    float2 cornerCoord = abs(coord) - (halfSize - float2(radius));
-    float outside = length(max(cornerCoord, 0.0)) - radius;
-    float inside = min(max(cornerCoord.x, cornerCoord.y), 0.0);
-    return outside + inside;
-}
-
-float2 gradSdRoundedRect(float2 coord, float2 halfSize, float radius) {
-    float2 cornerCoord = abs(coord) - (halfSize - float2(radius));
-    if (cornerCoord.x >= 0.0 || cornerCoord.y >= 0.0) {
-        return sign(coord) * normalize(max(cornerCoord, 0.0));
-    } else {
-        float gradX = step(cornerCoord.y, cornerCoord.x);
-        return sign(coord) * float2(gradX, 1.0 - gradX);
-    }
-}
-"""
-
-private const val ROUNDED_RECT_REFRACTION_SHADER = """
-uniform shader content;
-uniform float2 size;
-uniform float2 offset;
-uniform float4 cornerRadii;
-uniform float refractionHeight;
-uniform float refractionAmount;
-uniform float depthEffect;
-
-$ROUNDED_RECT_SDF
-
-float circleMap(float x) {
-    return 1.0 - sqrt(1.0 - x * x);
-}
-
-half4 main(float2 coord) {
-    float2 halfSize = size * 0.5;
-    float2 centeredCoord = (coord + offset) - halfSize;
-    float radius = radiusAt(centeredCoord, cornerRadii);
-    float sd = sdRoundedRect(centeredCoord, halfSize, radius);
-    if (-sd >= refractionHeight) return content.eval(coord);
-    sd = min(sd, 0.0);
-
-    float d = circleMap(1.0 - -sd / refractionHeight) * refractionAmount;
-    float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
-    float2 grad = normalize(
-        gradSdRoundedRect(centeredCoord, halfSize, gradRadius) +
-        depthEffect * normalize(centeredCoord)
-    );
-    return content.eval(coord + d * grad);
-}
-"""
-
-private const val ROUNDED_RECT_REFRACTION_WITH_DISPERSION_SHADER = """
-uniform shader content;
-uniform float2 size;
-uniform float2 offset;
-uniform float4 cornerRadii;
-uniform float refractionHeight;
-uniform float refractionAmount;
-uniform float depthEffect;
-uniform float chromaticAberration;
-
-$ROUNDED_RECT_SDF
-
-float circleMap(float x) {
-    return 1.0 - sqrt(1.0 - x * x);
-}
-
-half4 main(float2 coord) {
-    float2 halfSize = size * 0.5;
-    float2 centeredCoord = (coord + offset) - halfSize;
-    float radius = radiusAt(centeredCoord, cornerRadii);
-    float sd = sdRoundedRect(centeredCoord, halfSize, radius);
-    if (-sd >= refractionHeight) return content.eval(coord);
-    sd = min(sd, 0.0);
-
-    float d = circleMap(1.0 - -sd / refractionHeight) * refractionAmount;
-    float gradRadius = min(radius * 1.5, min(halfSize.x, halfSize.y));
-    float2 grad = normalize(
-        gradSdRoundedRect(centeredCoord, halfSize, gradRadius) +
-        depthEffect * normalize(centeredCoord)
-    );
-
-    float2 refractedCoord = coord + d * grad;
-    float dispersionIntensity = chromaticAberration *
-        ((centeredCoord.x * centeredCoord.y) / (halfSize.x * halfSize.y));
-    float2 dispersedCoord = d * grad * dispersionIntensity;
-
-    half4 color = half4(0.0);
-    half4 red = content.eval(refractedCoord + dispersedCoord);
-    color.r += red.r / 3.5;
-    color.a += red.a / 7.0;
-
-    half4 orange = content.eval(refractedCoord + dispersedCoord * (2.0 / 3.0));
-    color.r += orange.r / 3.5;
-    color.g += orange.g / 7.0;
-    color.a += orange.a / 7.0;
-
-    half4 yellow = content.eval(refractedCoord + dispersedCoord * (1.0 / 3.0));
-    color.r += yellow.r / 3.5;
-    color.g += yellow.g / 3.5;
-    color.a += yellow.a / 7.0;
-
-    half4 green = content.eval(refractedCoord);
-    color.g += green.g / 3.5;
-    color.a += green.a / 7.0;
-
-    half4 cyan = content.eval(refractedCoord - dispersedCoord * (1.0 / 3.0));
-    color.g += cyan.g / 3.5;
-    color.b += cyan.b / 3.0;
-    color.a += cyan.a / 7.0;
-
-    half4 blue = content.eval(refractedCoord - dispersedCoord * (2.0 / 3.0));
-    color.b += blue.b / 3.0;
-    color.a += blue.a / 7.0;
-
-    half4 purple = content.eval(refractedCoord - dispersedCoord);
-    color.r += purple.r / 7.0;
-    color.b += purple.b / 3.0;
-    color.a += purple.a / 7.0;
-
-    return color;
-}
-"""
