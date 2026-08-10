@@ -1,0 +1,30 @@
+name: One-shot preflight fix
+
+on:
+  push:
+    branches:
+      - feat/upstream-completion-20260811
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[preflight-fixed]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/upstream-completion-20260811
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python tools/one_shot_preflight_fix.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: final preflight issues [preflight-fixed]"
+          git push origin HEAD:feat/upstream-completion-20260811
