@@ -372,7 +372,6 @@ private fun MeloXArtworkPageV3(
                 Box(
                     modifier = Modifier
                         .size(40.dp)
-                        .clip(CircleShape)
                         .meloXLiquidButton(
                             shape = CircleShape,
                             surfaceColor = Color.White.copy(alpha = 0.08f),
@@ -380,6 +379,7 @@ private fun MeloXArtworkPageV3(
                             lensRadius = 7.dp,
                             refractionHeight = 10.dp,
                         )
+                        .clip(CircleShape)
                         .clickable(onClick = onMore),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -572,13 +572,13 @@ private fun MeloXQualityChipV3(
                     scaleY = scale
                 }
                 .height(24.dp)
-                .clip(RoundedCornerShape(7.dp))
                 .meloXLiquidButton(
                     shape = RoundedCornerShape(7.dp),
                     surfaceColor = Color.White.copy(alpha = 0.10f),
                     lensRadius = 6.dp,
                     refractionHeight = 9.dp,
                 )
+                .clip(RoundedCornerShape(7.dp))
                 .clickable(
                     interactionSource = interaction,
                     indication = null,

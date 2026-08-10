@@ -47,7 +47,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.lladlam.melox.ui.glass.LocalMeloXBackdrop
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -61,7 +66,10 @@ fun MeloXIOSNowPlayingSharedHost(
 ) {
     var page by remember(state.mediaId) { mutableStateOf(MeloXNowPlayingPage.Artwork) }
     var dragPixels by remember(state.mediaId) { mutableFloatStateOf(0f) }
+    var isDragging by remember(state.mediaId) { mutableStateOf(false) }
+    var seekJob by remember(state.mediaId) { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
+    val playerBackdrop = rememberLayerBackdrop()
 
     val expansionProgress by animatedVisibilityScope.transition.animateFloat(
         transitionSpec = {
@@ -85,6 +93,7 @@ fun MeloXIOSNowPlayingSharedHost(
     LaunchedEffect(expansionProgress) {
         if (expansionProgress <= 0.01f) {
             dragPixels = 0f
+            isDragging = false
         }
     }
 
@@ -117,9 +126,11 @@ fun MeloXIOSNowPlayingSharedHost(
       val dragState = rememberDraggableState { delta ->
           dragPixels = (dragPixels + delta).coerceIn(0f, dragRange)
           val fraction = (dragPixels / dragRange).coerceIn(0f, 0.999f)
-          scope.launch(start = CoroutineStart.UNDISPATCHED) {
-              // Seek the same transition used by Back and by expansion. There
-              // is no second translation/scale animation layered on top.
+          // SeekableTransitionState.seekTo is suspend and serializes mutation.
+          // Keep exactly one seek alive instead of starting competing jobs for
+          // every pointer sample.
+          seekJob?.cancel()
+          seekJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
               transitionState.seekTo(fraction, targetState = false)
           }
       }
@@ -131,14 +142,26 @@ fun MeloXIOSNowPlayingSharedHost(
             .draggable(
                 state = dragState,
                 orientation = Orientation.Vertical,
-                enabled = page == MeloXNowPlayingPage.Artwork && expansionProgress >= 0.995f,
-                onDragStarted = { dragPixels = 0f },
+                enabled = page == MeloXNowPlayingPage.Artwork &&
+                    (isDragging || transitionState.currentState),
+                onDragStarted = {
+                    isDragging = true
+                    dragPixels = 0f
+                    seekJob?.cancelAndJoin()
+                    // Prime the same true -> false transition used by Back.
+                    // Subsequent deltas only move its fraction.
+                    transitionState.seekTo(0f, targetState = false)
+                },
                 onDragStopped = { velocity ->
                     val commit = (dragPixels / dragRange) >= 0.28f || velocity >= 1350f
-                    scope.launch {
-                        transitionState.animateTo(commit.not(), motionSpec)
-                        dragPixels = 0f
-                    }
+                    val finalFraction = (dragPixels / dragRange).coerceIn(0f, 0.999f)
+                    seekJob?.cancelAndJoin()
+                    transitionState.seekTo(finalFraction, targetState = false)
+                    // Both release paths now use the exact same transition:
+                    // commit continues to collapsed, cancel reverses to open.
+                    transitionState.animateTo(commit.not(), motionSpec)
+                    dragPixels = 0f
+                    isDragging = false
                 },
             ),
       ) {
@@ -147,7 +170,8 @@ fun MeloXIOSNowPlayingSharedHost(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer { alpha = backdropAlpha },
+                .graphicsLayer { alpha = backdropAlpha }
+                .layerBackdrop(playerBackdrop),
         ) {
             MeloXFlowingLightBackdrop(
                 artworkUrl = state.artworkUrl,
@@ -162,19 +186,21 @@ fun MeloXIOSNowPlayingSharedHost(
             )
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer { alpha = fullPlayerAlpha },
-        ) {
-            MeloXIOSNowPlayingV2(
-                state = state,
-                onDismiss = requestDismiss,
-                page = page,
-                onPageChanged = { page = it },
-                drawBackdrop = false,
-                drawArtwork = false,
-            )
+        CompositionLocalProvider(LocalMeloXBackdrop provides playerBackdrop) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = fullPlayerAlpha },
+            ) {
+                MeloXIOSNowPlayingV2(
+                    state = state,
+                    onDismiss = requestDismiss,
+                    page = page,
+                    onPageChanged = { page = it },
+                    drawBackdrop = false,
+                    drawArtwork = false,
+                )
+            }
         }
       }
     }

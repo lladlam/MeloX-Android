@@ -62,13 +62,12 @@ fun Modifier.meloXLiquidButton(
             effects = {
                 vibrancy()
                 blur(blurRadius.toPx())
-                // Keep the refraction deliberately shallow. Backdrop 2.0.0's
-                // large coordinate-dependent lens can become polygonal on
-                // recent MediaTek renderers, while blur/vibrancy/highlight are
-                // stable and still come from AndroidLiquidGlass.
+                // Keep refraction below the aggressive demo values, but strong
+                // enough to remain visible over a real LayerBackdrop. The old
+                // 0.16/0.12 factors made the controls look like flat white fill.
                 lens(
-                    (lensRadius * 0.16f).toPx(),
-                    (refractionHeight * 0.12f).toPx(),
+                    (lensRadius * 0.42f).toPx(),
+                    (refractionHeight * 0.32f).toPx(),
                     chromaticAberration = false,
                 )
             },

@@ -13,6 +13,7 @@ import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -62,12 +63,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.lladlam.melox.core.account.rememberNeteaseSessionStore
 import com.lladlam.melox.ui.account.NeteaseLoginScreen
 import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
@@ -77,13 +80,13 @@ import com.lladlam.melox.ui.discovery.MeloXHomeScreen
 import com.lladlam.melox.ui.glass.LocalMeloXBackdrop
 import com.lladlam.melox.ui.glass.meloXLiquidBottomBar
 import com.lladlam.melox.ui.glass.meloXLiquidButton
-import com.lladlam.melox.ui.glass.meloXLiquidTabSelection
 import com.lladlam.melox.ui.player.MeloXIOSMiniPlayer
 import com.lladlam.melox.ui.player.MeloXIOSNowPlayingSharedHost
 import com.lladlam.melox.ui.player.rememberMeloXPlaybackUiState
 import com.lladlam.melox.ui.search.SearchScreen
 import com.lladlam.melox.ui.settings.SettingsScreen
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 enum class AppTab(val title: String) {
     Home("首页"),
@@ -108,11 +111,11 @@ fun MeloXApp(
     val playbackState = rememberMeloXPlaybackUiState()
     val neteaseSession = rememberNeteaseSessionStore()
     val darkGlass = isSystemInDarkTheme()
-    // LayerBackdrop 2.0.0 currently has an upstream circular-rendering problem
-    // when several far-apart controls sample the same recorded layer (#100).
-    // A coordinate-independent CanvasBackdrop keeps every AndroidLiquidGlass
-    // control on the same stable GPU path on MediaTek devices.
-    val glassBackdrop = rememberCanvasBackdrop {
+    // Page-local controls keep a non-recursive backdrop. The bottom chrome gets
+    // its own live LayerBackdrop below, recorded from the page before the chrome
+    // is drawn. Keeping those two scenes separate avoids Backdrop #100 while the
+    // Dock still refracts the real pixels under it.
+    val screenControlBackdrop = rememberCanvasBackdrop {
         drawRect(
             brush = Brush.linearGradient(
                 colors = if (darkGlass) {
@@ -125,6 +128,7 @@ fun MeloXApp(
             ),
         )
     }
+    val bottomChromeBackdrop = rememberLayerBackdrop()
     val playerTransitionState = remember { SeekableTransitionState(false) }
     val playerTransition = rememberTransition(
         transitionState = playerTransitionState,
@@ -188,7 +192,7 @@ fun MeloXApp(
         scrollAccumulator = 0f
     }
 
-    CompositionLocalProvider(LocalMeloXBackdrop provides glassBackdrop) {
+    CompositionLocalProvider(LocalMeloXBackdrop provides screenControlBackdrop) {
       Box(modifier = Modifier.fillMaxSize()) {
         SharedTransitionLayout(modifier = Modifier.fillMaxSize()) {
             val sharedScope = this
@@ -197,7 +201,8 @@ fun MeloXApp(
             Scaffold(
                 modifier = Modifier
                     .fillMaxSize()
-                    .nestedScroll(tabBarMinimizeConnection),
+                    .nestedScroll(tabBarMinimizeConnection)
+                    .layerBackdrop(bottomChromeBackdrop),
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 containerColor = MaterialTheme.colorScheme.background,
             ) { innerPadding ->
@@ -229,48 +234,35 @@ fun MeloXApp(
                 }
             }
 
-            MeloXBottomChrome(
-                selectedTab = selectedTab,
-                onSelect = { tab ->
-                    tabBarMinimized = false
-                    selectedTab = tab
-                },
-                hasMedia = playbackState.hasMedia,
-                minimized = tabBarMinimized,
-                modifier = Modifier.align(Alignment.BottomCenter),
-                miniPlayer = { compactProgress ->
-                    playerTransition.AnimatedVisibility(
-                        visible = { !it },
-                        enter = EnterTransition.None,
-                        exit = ExitTransition.None,
-                    ) {
-                        MeloXIOSMiniPlayer(
-                            state = playbackState,
-                            onExpand = {
-                                playerMotionScope.launch {
-                                    playerTransitionState.animateTo(true, playerMotionSpec)
-                                }
-                            },
-                            compactProgress = compactProgress,
-                            sharedTransitionScope = sharedScope,
-                            animatedVisibilityScope = this,
-                        )
-                    }
-                },
-            )
-
-            if (fullPlayerVisible) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .pointerInput(Unit) {
-                            awaitPointerEventScope {
-                                while (true) {
-                                    val event = awaitPointerEvent(PointerEventPass.Initial)
-                                    event.changes.forEach { change -> change.consume() }
-                                }
-                            }
-                        },
+            CompositionLocalProvider(LocalMeloXBackdrop provides bottomChromeBackdrop) {
+                MeloXBottomChrome(
+                    selectedTab = selectedTab,
+                    onSelect = { tab ->
+                        tabBarMinimized = false
+                        selectedTab = tab
+                    },
+                    hasMedia = playbackState.hasMedia,
+                    minimized = tabBarMinimized,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    miniPlayer = { compactProgress ->
+                        playerTransition.AnimatedVisibility(
+                            visible = { !it },
+                            enter = EnterTransition.None,
+                            exit = ExitTransition.None,
+                        ) {
+                            MeloXIOSMiniPlayer(
+                                state = playbackState,
+                                onExpand = {
+                                    playerMotionScope.launch {
+                                        playerTransitionState.animateTo(true, playerMotionSpec)
+                                    }
+                                },
+                                compactProgress = compactProgress,
+                                sharedTransitionScope = sharedScope,
+                                animatedVisibilityScope = this,
+                            )
+                        }
+                    },
                 )
             }
 
@@ -457,8 +449,10 @@ private fun MeloXBottomChrome(
                     val lensPosition by animateFloatAsState(
                         targetValue = selectedIndex.coerceAtLeast(0).toFloat(),
                         animationSpec = spring(
-                            dampingRatio = 0.78f,
-                            stiffness = 360f,
+                            // A critically damped spring keeps the selection
+                            // capsule rigid instead of overshooting/leaning.
+                            dampingRatio = 1f,
+                            stiffness = 460f,
                             visibilityThreshold = 0.001f,
                         ),
                         label = "melox-tab-selection-position",
@@ -472,19 +466,30 @@ private fun MeloXBottomChrome(
                         modifier = Modifier
                             .fillMaxWidth(0.25f)
                             .fillMaxHeight()
+                            .offset {
+                                IntOffset(
+                                    x = (
+                                        lensPosition * constraints.maxWidth / 4f
+                                        ).roundToInt(),
+                                    y = 0,
+                                )
+                            }
                             .padding(4.dp)
                             .graphicsLayer {
                                 alpha = lensAlpha * expandedLayerAlpha
-                                translationX = lensPosition * constraints.maxWidth / 4f
                             }
-                            .meloXLiquidTabSelection(
-                                shape = RoundedCornerShape(24.dp),
-                                selected = lensAlpha > 0.001f,
-                                tint = if (dark) {
+                            .background(
+                                color = if (dark) {
                                     Color.White.copy(alpha = 0.18f)
                                 } else {
-                                    Color.White.copy(alpha = 0.32f)
+                                    Color.White.copy(alpha = 0.50f)
                                 },
+                                shape = RoundedCornerShape(24.dp),
+                            )
+                            .border(
+                                width = 0.75.dp,
+                                color = Color.White.copy(alpha = if (dark) 0.34f else 0.76f),
+                                shape = RoundedCornerShape(24.dp),
                             ),
                     )
                     Row(
