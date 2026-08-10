@@ -26,13 +26,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.lladlam.melox.ui.glass.meloXLiquidButton
 import androidx.media3.common.Player
+import com.lladlam.melox.ui.glass.meloXLiquidButton
 
 @Composable
 fun MeloXQueuePanel(
     state: MeloXPlaybackUiState,
     modifier: Modifier = Modifier,
+    showSongHeader: Boolean = true,
 ) {
     val currentEntry = state.queue.getOrNull(state.currentIndex)
     val upcoming = if (state.currentIndex >= 0 && state.queue.isNotEmpty()) {
@@ -49,39 +50,50 @@ fun MeloXQueuePanel(
     Column(
         modifier = modifier.padding(top = 8.dp),
     ) {
-        currentEntry?.let { entry ->
-            Row(
+        if (showSongHeader) {
+            currentEntry?.let { entry ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(72.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Artwork(
+                        url = entry.artworkUrl,
+                        modifier = Modifier
+                            .size(68.dp)
+                            .clip(RoundedCornerShape(10.dp)),
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = entry.title,
+                            color = Color.White,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = entry.artist,
+                            color = Color.White.copy(alpha = 0.64f),
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                }
+            }
+        } else {
+            // The shared/persistent Now Playing artwork and song header are drawn
+            // above this resident queue page. Keep the reference-height slot so
+            // queue controls and rows retain the same upstream layout geometry.
+            Spacer(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(72.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Artwork(
-                    url = entry.artworkUrl,
-                    modifier = Modifier
-                        .size(68.dp)
-                        .clip(RoundedCornerShape(10.dp)),
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = entry.title,
-                        color = Color.White,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = entry.artist,
-                        color = Color.White.copy(alpha = 0.64f),
-                        fontSize = 14.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
-                }
-            }
+            )
         }
 
         Spacer(Modifier.height(14.dp))
