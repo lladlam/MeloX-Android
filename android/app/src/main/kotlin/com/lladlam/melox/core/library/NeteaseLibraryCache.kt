@@ -144,6 +144,7 @@ private fun encodePlaylist(value: NeteasePlaylistSummary) = JSONObject()
     .put("coverUrl", value.coverUrl)
     .put("trackCount", value.trackCount)
     .put("creatorName", value.creatorName)
+    .put("creatorUserId", value.creatorUserId)
     .put("playCount", value.playCount)
     .put("description", value.description)
 
@@ -153,6 +154,7 @@ private fun decodePlaylist(value: JSONObject) = NeteasePlaylistSummary(
     coverUrl = value.optNullableString("coverUrl"),
     trackCount = value.optInt("trackCount"),
     creatorName = value.optString("creatorName"),
+    creatorUserId = value.optLong("creatorUserId", -1L).takeIf { it > 0L },
     playCount = value.optLong("playCount"),
     description = value.optNullableString("description"),
 )

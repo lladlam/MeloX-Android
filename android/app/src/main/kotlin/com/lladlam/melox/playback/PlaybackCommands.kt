@@ -72,6 +72,28 @@ object PlaybackCommands {
         )
     }
 
+
+    fun addToQueue(context: Context, song: SearchSong) {
+        val quality = MusicQualityPreferences.read(context.applicationContext)
+        val controller = activeController
+        if (controller == null) {
+            playQueue(context, listOf(song), song.id)
+            return
+        }
+        controller.addMediaItem(song.toMediaItem(quality))
+    }
+
+    fun playNext(context: Context, song: SearchSong) {
+        val quality = MusicQualityPreferences.read(context.applicationContext)
+        val controller = activeController
+        if (controller == null) {
+            playQueue(context, listOf(song), song.id)
+            return
+        }
+        val insertion = (controller.currentMediaItemIndex + 1).coerceIn(0, controller.mediaItemCount)
+        controller.addMediaItem(insertion, song.toMediaItem(quality))
+    }
+
     /**
      * Persist a MeloX quality choice and rebuild the currently installed queue
      * with quality-bearing melox:// URIs. This forces ExoPlayer to reopen the

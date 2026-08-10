@@ -64,6 +64,14 @@ import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+data class MeloXSearchLaunch(val query: String, val kind: MeloXSearchKind, val nonce: Long = System.nanoTime())
+object MeloXSearchLaunchBus {
+    var request by mutableStateOf<MeloXSearchLaunch?>(null)
+        private set
+    fun post(query: String, kind: MeloXSearchKind) { request = MeloXSearchLaunch(query, kind) }
+    fun consume(request: MeloXSearchLaunch) { if (this.request == request) this.request = null }
+}
+
 private val SearchAccent = Color(0xFFFF3147)
 private val SearchCategories = listOf("排行榜", "播客", "华语", "欧美", "日语", "韩语", "粤语", "流行", "摇滚", "民谣", "电子", "说唱", "R&B/Soul", "古典", "ACG", "影视原声", "学习", "工作", "放松", "夜晚")
 
@@ -86,6 +94,15 @@ fun SearchScreen() {
     var selectedMedia by remember { mutableStateOf<MeloXSearchMediaItem?>(null) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    val launchRequest = MeloXSearchLaunchBus.request
+
+    LaunchedEffect(launchRequest) {
+        launchRequest?.let { request ->
+            query = request.query
+            kind = request.kind
+            MeloXSearchLaunchBus.consume(request)
+        }
+    }
 
     LaunchedEffect(Unit) {
         runCatching { library.explorePlaylists("推荐歌单", 10) }.onSuccess { recommendations = it }

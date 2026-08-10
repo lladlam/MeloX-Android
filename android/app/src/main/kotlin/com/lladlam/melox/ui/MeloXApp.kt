@@ -87,7 +87,9 @@ import com.lladlam.melox.ui.player.MeloXIOSMiniPlayer
 import com.lladlam.melox.ui.player.MeloXIOSNowPlayingSharedHost
 import com.lladlam.melox.ui.player.rememberMeloXPlaybackUiState
 import com.lladlam.melox.ui.search.SearchScreen
+import com.lladlam.melox.ui.search.MeloXSearchLaunchBus
 import com.lladlam.melox.ui.settings.SettingsScreen
+import com.lladlam.melox.core.network.MeloXSearchKind
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -307,6 +309,11 @@ fun MeloXApp(
                 MeloXIOSNowPlayingSharedHost(
                     state = playbackState,
                     onDismiss = closePlayer,
+                    onNavigateSearch = { query, kind ->
+                        MeloXSearchLaunchBus.post(query, kind)
+                        selectedTab = AppTab.Search
+                        closePlayer()
+                    },
                     onSeekCollapse = { fraction ->
                         playerTransitionState.seekTo(
                             fraction = fraction.coerceIn(0f, 0.999f),

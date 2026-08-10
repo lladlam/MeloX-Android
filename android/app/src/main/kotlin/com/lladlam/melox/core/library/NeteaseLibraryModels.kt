@@ -8,6 +8,7 @@ data class NeteasePlaylistSummary(
     val coverUrl: String?,
     val trackCount: Int,
     val creatorName: String,
+    val creatorUserId: Long? = null,
     val playCount: Long = 0L,
     val description: String? = null,
 )

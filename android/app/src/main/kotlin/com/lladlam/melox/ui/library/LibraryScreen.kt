@@ -90,6 +90,7 @@ import com.lladlam.melox.ui.glass.meloXLiquidBottomBar
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import com.lladlam.melox.ui.glass.meloXLiquidTabSelection
 import com.lladlam.melox.ui.player.MeloXFlowingLightBackdrop
+import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.launch
@@ -701,6 +702,8 @@ private fun MeloXPlaylistDetailScreen(
     var loading by remember(initialPlaylist.id) { mutableStateOf(true) }
     var errorMessage by remember(initialPlaylist.id) { mutableStateOf<String?>(null) }
     var searchQuery by remember(initialPlaylist.id) { mutableStateOf("") }
+    var showPlaylistActions by remember(initialPlaylist.id) { mutableStateOf(false) }
+    var selectedTrackAction by remember(initialPlaylist.id) { mutableStateOf<SearchSong?>(null) }
     var palette by remember(initialPlaylist.coverUrl) { mutableStateOf(MeloXDetailPalette.LightFallback) }
 
     suspend fun refreshPlaylist() {
@@ -764,6 +767,8 @@ private fun MeloXPlaylistDetailScreen(
             MeloXPlaylistToolbar(
                 foreground = foreground,
                 onBack = onBack,
+                onShare = { sharePlaylistFromDetail(context, displayed) },
+                onMore = { showPlaylistActions = true },
             )
             MeloXPlaylistSearchField(
                 value = searchQuery,
@@ -803,6 +808,7 @@ private fun MeloXPlaylistDetailScreen(
                                 )
                             }
                         },
+                        onMore = { showPlaylistActions = true },
                         sharedTransitionScope = sharedTransitionScope,
                         animatedVisibilityScope = animatedVisibilityScope,
                     )
@@ -873,6 +879,7 @@ private fun MeloXPlaylistDetailScreen(
                                     onFailure = { errorMessage = it.message ?: "播放失败" },
                                 )
                             },
+                            onMore = { selectedTrackAction = song },
                         )
                         if (song.id != filteredSongs.lastOrNull()?.id) {
                             HorizontalDivider(
@@ -885,6 +892,22 @@ private fun MeloXPlaylistDetailScreen(
                 }
             }
         }
+
+        MeloXPlaylistActionsOverlay(
+            playlist = displayed,
+            visible = showPlaylistActions,
+            onDismiss = { showPlaylistActions = false },
+            onRefresh = { scope.launch { refreshPlaylist() } },
+        )
+        val actionSong = selectedTrackAction
+        if (actionSong != null) {
+            MeloXSongActionsOverlay(
+                song = actionSong,
+                queue = songs,
+                visible = true,
+                onDismiss = { selectedTrackAction = null },
+            )
+        }
     }
 }
 
@@ -892,6 +915,8 @@ private fun MeloXPlaylistDetailScreen(
 private fun MeloXPlaylistToolbar(
     foreground: Color,
     onBack: () -> Unit,
+    onShare: () -> Unit,
+    onMore: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -927,7 +952,8 @@ private fun MeloXPlaylistToolbar(
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                    ) {},
+                        onClick = onShare,
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 MeloXShareGlyph(Modifier.size(22.dp), Color(0xFFFF3147))
@@ -938,7 +964,8 @@ private fun MeloXPlaylistToolbar(
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                    ) {},
+                        onClick = onMore,
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -1010,6 +1037,7 @@ private fun MeloXStandardPlaylistHero(
     secondary: Color,
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
+    onMore: () -> Unit,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
@@ -1132,7 +1160,7 @@ private fun MeloXStandardPlaylistHero(
                 MeloXGlassCircleButton(
                     foreground = foreground,
                     size = 54.dp,
-                    onClick = {},
+                    onClick = onMore,
                 ) {
                     Text(
                         "+",
@@ -1153,6 +1181,7 @@ private fun MeloXPlaylistTrackRow(
     index: Int,
     foreground: Color,
     onClick: () -> Unit,
+    onMore: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -1192,7 +1221,8 @@ private fun MeloXPlaylistTrackRow(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                ) {},
+                    onClick = onMore,
+                ),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -1370,4 +1400,17 @@ private fun optimized160Artwork(url: String?): String? {
     if (!source.contains(".music.126.net")) return source
     val separator = if (source.contains('?')) '&' else '?'
     return if (source.contains("param=")) source else "$source${separator}param=160y160"
+}
+
+private fun sharePlaylistFromDetail(context: android.content.Context, playlist: NeteasePlaylistSummary) {
+    runCatching {
+        context.startActivity(
+            android.content.Intent.createChooser(
+                android.content.Intent(android.content.Intent.ACTION_SEND)
+                    .setType("text/plain")
+                    .putExtra(android.content.Intent.EXTRA_TEXT, "${playlist.name}\nhttps://music.163.com/playlist?id=${playlist.id}"),
+                "分享歌单",
+            ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
 }

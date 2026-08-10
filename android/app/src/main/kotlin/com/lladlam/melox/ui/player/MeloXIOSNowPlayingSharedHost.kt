@@ -58,6 +58,7 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.lladlam.melox.ui.glass.LocalMeloXBackdrop
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
+import com.lladlam.melox.core.network.MeloXSearchKind
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -68,6 +69,7 @@ import kotlinx.coroutines.launch
 fun MeloXIOSNowPlayingSharedHost(
     state: MeloXPlaybackUiState,
     onDismiss: () -> Unit,
+    onNavigateSearch: (String, MeloXSearchKind) -> Unit = { _, _ -> },
     onSeekCollapse: suspend (Float) -> Unit,
     onSettleCollapse: suspend (Boolean) -> Unit,
     sharedTransitionScope: SharedTransitionScope,
@@ -309,6 +311,7 @@ fun MeloXIOSNowPlayingSharedHost(
                 state = state,
                 visible = showActions,
                 onDismiss = { showActions = false },
+                onNavigateSearch = onNavigateSearch,
             )
             MeloXQualitySelectionOverlay(
                 state = state,
