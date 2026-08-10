@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - fix/lyrics-queue-backdrop-20260811
+  pull_request:
+    branches:
+      - main
 jobs:
   inspect:
     runs-on: ubuntu-latest
