@@ -44,6 +44,7 @@ import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.lyrics.LyricLine
 import com.lladlam.melox.core.lyrics.LyricsDocument
 import com.lladlam.melox.core.network.NeteaseSearchClient
+import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 
@@ -247,39 +248,35 @@ private fun MeloXAnimatedLyricLine(
             focusProgress = focusColorProgress,
         )
 
-        line.translation
-            ?.takeIf(String::isNotBlank)
-            ?.let { translation ->
-                Text(
-                    text = translation,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 5.dp),
-                    textAlign = TextAlign.Start,
-                    fontSize = 14.sp,
-                    lineHeight = 19.sp,
-                    color = Color.White.copy(
-                        alpha = lerp(0.28f, 0.68f, focusColorProgress),
-                    ),
-                )
-            }
+        if (MeloXSettingsRuntime.showLyricTranslation) {
+            line.translation
+                ?.takeIf(String::isNotBlank)
+                ?.let { translation ->
+                    Text(
+                        text = translation,
+                        modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
+                        textAlign = TextAlign.Start,
+                        fontSize = 14.sp,
+                        lineHeight = 19.sp,
+                        color = Color.White.copy(alpha = lerp(0.28f, 0.68f, focusColorProgress)),
+                    )
+                }
+        }
 
-        line.romanization
-            ?.takeIf(String::isNotBlank)
-            ?.let { romanization ->
-                Text(
-                    text = romanization,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 3.dp),
-                    textAlign = TextAlign.Start,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp,
-                    color = Color.White.copy(
-                        alpha = lerp(0.22f, 0.50f, focusColorProgress),
-                    ),
-                )
-            }
+        if (MeloXSettingsRuntime.showLyricRomanization) {
+            line.romanization
+                ?.takeIf(String::isNotBlank)
+                ?.let { romanization ->
+                    Text(
+                        text = romanization,
+                        modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
+                        textAlign = TextAlign.Start,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                        color = Color.White.copy(alpha = lerp(0.22f, 0.50f, focusColorProgress)),
+                    )
+                }
+        }
     }
 }
 

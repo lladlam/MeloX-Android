@@ -8,6 +8,8 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
+import com.lladlam.melox.ui.settings.MeloXThemeMode
 
 private val LightColors = lightColorScheme(
     primary = Color(0xFFE5484D),
@@ -53,7 +55,11 @@ private val MeloXTypography = Typography().let { base ->
 
 @Composable
 fun MeloXTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean = when (MeloXSettingsRuntime.themeMode) {
+        MeloXThemeMode.System -> isSystemInDarkTheme()
+        MeloXThemeMode.Light -> false
+        MeloXThemeMode.Dark -> true
+    },
     content: @Composable () -> Unit,
 ) {
     MaterialTheme(

@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import com.lladlam.melox.ui.MeloXApp
 import com.lladlam.melox.ui.theme.MeloXTheme
+import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
 
 class MainActivity : ComponentActivity() {
     private var openNowPlayingRequest by mutableIntStateOf(0)
@@ -18,6 +19,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         consumePlaybackIntent(intent)
+        MeloXSettingsPreferences.initialize(this)
 
         setContent {
             MeloXTheme {
