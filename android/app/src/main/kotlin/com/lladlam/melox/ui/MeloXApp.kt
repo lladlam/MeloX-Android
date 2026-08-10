@@ -64,6 +64,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -500,6 +501,12 @@ private fun MeloXBottomChrome(
                     },
             ) {
                 val tabBarMaxWidthPx = constraints.maxWidth
+                val density = LocalDensity.current
+                val selectionEdgeInset = 5.dp
+                val selectionEdgeInsetPx = with(density) { selectionEdgeInset.toPx() }
+                val selectionTravelWidthPx = (tabBarMaxWidthPx - selectionEdgeInsetPx * 2f).coerceAtLeast(1f)
+                val selectionSegmentPx = selectionTravelWidthPx / 4f
+                val selectionWidth = (maxWidth - selectionEdgeInset * 2f) / 4f
                 Box(Modifier.fillMaxSize()) {
                     Row(
                         modifier = Modifier
@@ -542,13 +549,11 @@ private fun MeloXBottomChrome(
                     val lensVisibility = lensAlpha * expandedLayerAlpha
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(0.25f)
+                            .width(selectionWidth)
                             .fillMaxHeight()
                             .offset {
                                 IntOffset(
-                                    x = (
-                                        lensPosition * tabBarMaxWidthPx / 4f
-                                        ).roundToInt(),
+                                    x = (selectionEdgeInsetPx + lensPosition * selectionSegmentPx).roundToInt(),
                                     y = 0,
                                 )
                             }

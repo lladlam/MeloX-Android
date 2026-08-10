@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -64,6 +66,12 @@ fun MeloXHomeScreen() {
     var content by remember { mutableStateOf<NeteaseHomeContent?>(null) }
     var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var selectedPlaylist by remember { mutableStateOf<NeteasePlaylistSummary?>(null) }
+
+    selectedPlaylist?.let { playlist ->
+        DiscoveryPlaylistDetail(playlist = playlist, onBack = { selectedPlaylist = null })
+        return
+    }
 
     fun refresh() {
         if (refreshing) return
@@ -92,7 +100,7 @@ fun MeloXHomeScreen() {
             ) {
                 item { LargeTitle("首页") }
                 item { SectionTitle("每日推荐", "下拉可刷新") }
-                item { PlaylistRow(value.playlists, context) }
+                item { PlaylistRow(value.playlists) { selectedPlaylist = it } }
                 item { SectionTitle("为你推荐", "新歌") }
                 items(value.newSongs, key = { it.id }) { song -> SongRow(song) { PlaybackCommands.playQueue(context, value.newSongs, song.id) } }
                 error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) } }
@@ -111,6 +119,12 @@ fun MeloXExploreScreen() {
     var playlists by remember { mutableStateOf<List<NeteasePlaylistSummary>>(emptyList()) }
     var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var selectedPlaylist by remember { mutableStateOf<NeteasePlaylistSummary?>(null) }
+
+    selectedPlaylist?.let { playlist ->
+        DiscoveryPlaylistDetail(playlist = playlist, onBack = { selectedPlaylist = null })
+        return
+    }
 
     fun refresh() {
         if (refreshing) return
@@ -149,7 +163,7 @@ fun MeloXExploreScreen() {
             }
         }
         PullToRefreshBox(isRefreshing = refreshing, onRefresh = ::refresh, modifier = Modifier.weight(1f)) {
-            if (playlists.isEmpty()) EmptyOrLoading(refreshing, error) else PlaylistGrid(playlists, context)
+            if (playlists.isEmpty()) EmptyOrLoading(refreshing, error) else PlaylistGrid(playlists) { selectedPlaylist = it }
         }
     }
 }
@@ -158,20 +172,20 @@ fun MeloXExploreScreen() {
 @Composable private fun SectionTitle(title: String, trailing: String) = Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(title, fontSize = 25.sp, fontWeight = FontWeight.Bold); Text(trailing, color = MaterialTheme.colorScheme.onBackground.copy(alpha = .42f), fontSize = 13.sp) }
 
 @Composable
-private fun PlaylistRow(values: List<NeteasePlaylistSummary>, context: android.content.Context) {
+private fun PlaylistRow(values: List<NeteasePlaylistSummary>, onSelect: (NeteasePlaylistSummary) -> Unit) {
     LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        items(values, key = { it.id }) { playlist -> PlaylistCard(playlist, Modifier.width(174.dp)) { playPlaylist(context, playlist) } }
+        items(values, key = { it.id }) { playlist -> PlaylistCard(playlist, Modifier.width(174.dp)) { onSelect(playlist) } }
     }
 }
 
 @Composable
-private fun PlaylistGrid(values: List<NeteasePlaylistSummary>, context: android.content.Context) {
+private fun PlaylistGrid(values: List<NeteasePlaylistSummary>, onSelect: (NeteasePlaylistSummary) -> Unit) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 146.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) { items(values, key = { it.id }) { playlist -> PlaylistCard(playlist, Modifier.fillMaxWidth()) { playPlaylist(context, playlist) } } }
+    ) { items(values, key = { it.id }) { playlist -> PlaylistCard(playlist, Modifier.fillMaxWidth()) { onSelect(playlist) } } }
 }
 
 @Composable
@@ -190,6 +204,64 @@ private fun SongRow(song: SearchSong, onClick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(song.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
             Text(song.artists, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onBackground.copy(alpha = .48f), fontSize = 13.sp)
+        }
+    }
+}
+
+@Composable
+private fun DiscoveryPlaylistDetail(
+    playlist: NeteasePlaylistSummary,
+    onBack: () -> Unit,
+) {
+    val context = LocalContext.current.applicationContext
+    val client = remember(context) { NeteaseLibraryClient { NeteaseSessionStore.readCookie(context) } }
+    var detail by remember(playlist.id) { mutableStateOf<com.lladlam.melox.core.library.NeteasePlaylistDetail?>(null) }
+    var error by remember(playlist.id) { mutableStateOf<String?>(null) }
+    BackHandler(onBack = onBack)
+    LaunchedEffect(playlist.id) {
+        runCatching { client.playlistDetail(playlist.id) }
+            .onSuccess { detail = it }
+            .onFailure { error = it.message ?: "歌单加载失败" }
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().statusBarsPadding(),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 146.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("‹", fontSize = 44.sp, modifier = Modifier.clickable(onClick = onBack).padding(end = 10.dp))
+                Text(playlist.name, fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                AsyncImage(playlist.coverUrl, null, contentScale = ContentScale.Crop, modifier = Modifier.size(156.dp).clip(RoundedCornerShape(22.dp)))
+                Column(Modifier.weight(1f)) {
+                    Text(playlist.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    if (playlist.creatorName.isNotBlank()) Text(playlist.creatorName, modifier = Modifier.padding(top = 7.dp), color = MaterialTheme.colorScheme.onBackground.copy(alpha = .52f), fontSize = 13.sp)
+                    val songs = detail?.songs.orEmpty()
+                    if (songs.isNotEmpty()) {
+                        Text(
+                            "▶  播放全部",
+                            modifier = Modifier.padding(top = 15.dp).clip(RoundedCornerShape(22.dp)).background(Accent).clickable { PlaybackCommands.playQueue(context, songs, songs.first().id) }.padding(horizontal = 16.dp, vertical = 10.dp),
+                            color = Color.White, fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
+        }
+        playlist.description?.takeIf(String::isNotBlank)?.let { description ->
+            item { Text(description, color = MaterialTheme.colorScheme.onBackground.copy(alpha = .55f), fontSize = 13.sp, lineHeight = 19.sp) }
+        }
+        val value = detail
+        when {
+            value != null -> items(value.songs, key = { it.id }) { song ->
+                SongRow(song) { PlaybackCommands.playQueue(context, value.songs, song.id) }
+            }
+            error != null -> item { Text(error.orEmpty(), color = MaterialTheme.colorScheme.error) }
+            else -> item { Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Accent) } }
         }
     }
 }

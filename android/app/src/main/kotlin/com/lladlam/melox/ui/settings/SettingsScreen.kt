@@ -484,18 +484,41 @@ private fun GeneralSettings(context: android.content.Context) {
 
 @Composable
 private fun AboutSettings(context: android.content.Context) {
-    SettingsInfoCard("MeloX Android", "iOS MeloX 的 Android 原生迁移版")
+    SettingsInfoCard(
+        "MeloX Android",
+        "MeloX 的 Android 原生迁移版。\n\nAndroid 原生迁移与维护：lladlam\n上游 iOS 原生项目：youshen2/MeloX（SwiftUI）",
+    )
     Spacer(Modifier.height(14.dp))
-    SettingsActionButton("打开 GitHub 项目") {
-        runCatching {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lladlam/MeloX-Android")))
+    SettingsGlassGroup {
+        Column(Modifier.padding(16.dp)) {
+            Text("项目与许可", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                "MeloX 主体：GNU GPLv3\n" +
+                    "qier222/YesPlayMusic：网易云接口与播放器实现参考（MIT）\n" +
+                    "jayfunc/BetterLyrics：逐字歌词渲染、光效与动效参考\n" +
+                    "WXRIW/Lyricify-Lyrics-Helper：网易云 YRC 解析参考\n" +
+                    "neteasecloudmusicapienhanced/api-enhanced：听歌识曲与音频指纹运行时\n" +
+                    "DanteAlighieri13210914/pv-tool：文字 PV 原始实现（Non-Commercial License）\n" +
+                    "mjhydri/BeatNet：自动混音节拍/重拍/速度分析（CC BY 4.0）\n" +
+                    "Kyant0 AndroidLiquidGlass / Backdrop：Android 液态玻璃渲染基础",
+                modifier = Modifier.padding(top = 10.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f),
+                fontSize = 13.sp,
+                lineHeight = 20.sp,
+            )
         }
     }
+    Spacer(Modifier.height(14.dp))
+    SettingsActionButton("打开 MeloX Android GitHub") {
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lladlam/MeloX-Android"))) }
+    }
     Spacer(Modifier.height(10.dp))
-    SettingsActionButton("查看上游 MeloX") {
-        runCatching {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/youshen2/MeloX")))
-        }
+    SettingsActionButton("查看上游 iOS MeloX") {
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/youshen2/MeloX"))) }
+    }
+    Spacer(Modifier.height(10.dp))
+    SettingsActionButton("查看上游项目与许可") {
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/youshen2/MeloX/blob/main/MeloX/Features/Legal/ProjectLicensesView.swift"))) }
     }
 }
 
