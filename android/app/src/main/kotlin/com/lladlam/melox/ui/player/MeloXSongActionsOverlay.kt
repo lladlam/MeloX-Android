@@ -76,8 +76,8 @@ fun MeloXSongActionsOverlay(
     val context = LocalContext.current
     val app = context.applicationContext
     val scope = rememberCoroutineScope()
-    val library = remember(app) { NeteaseLibraryClient { NeteaseSessionStore.readCookie(app) } }
-    val ops = remember(app) { NeteaseMusicOperationsClient { NeteaseSessionStore.readCookie(app) } }
+    val library = remember(app) { NeteaseLibraryClient(cookieProvider = { NeteaseSessionStore.readCookie(app) }) }
+    val ops = remember(app) { NeteaseMusicOperationsClient(cookieProvider = { NeteaseSessionStore.readCookie(app) }) }
     val account = remember(app) { NeteaseSearchClient(cookieProvider = { NeteaseSessionStore.readCookie(app) }) }
     var page by remember(song.id, visible) { mutableStateOf(SongActionPage.Main) }
     var busy by remember(song.id, visible) { mutableStateOf(false) }

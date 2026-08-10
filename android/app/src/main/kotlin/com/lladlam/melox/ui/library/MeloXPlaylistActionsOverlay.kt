@@ -56,8 +56,8 @@ internal fun MeloXPlaylistActionsOverlay(
     onRefresh: () -> Unit,
 ) {
     val context=LocalContext.current; val app=context.applicationContext; val scope=rememberCoroutineScope()
-    val client=remember(app){NeteaseLibraryClient{NeteaseSessionStore.readCookie(app)}}
-    val ops=remember(app){NeteaseMusicOperationsClient{NeteaseSessionStore.readCookie(app)}}
+    val client=remember(app){NeteaseLibraryClient(cookieProvider = { NeteaseSessionStore.readCookie(app) })}
+    val ops=remember(app){NeteaseMusicOperationsClient(cookieProvider = { NeteaseSessionStore.readCookie(app) })}
     val account=remember(app){NeteaseSearchClient(cookieProvider={NeteaseSessionStore.readCookie(app)})}
     var subscribed by remember(playlist.id,visible){mutableStateOf<Boolean?>(null)}
     var busy by remember(playlist.id,visible){mutableStateOf(false)}
