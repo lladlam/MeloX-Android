@@ -46,8 +46,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource.Companion.UserInput
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -78,8 +78,8 @@ fun MeloXIOSNowPlayingSharedHost(
     val scope = rememberCoroutineScope()
 
     // Two distinct scenes avoid recursive glass sampling:
-    // 1) controls sample only the flowing-light base scene;
-    // 2) the actions sheet samples the fully composed Now Playing scene.
+    // controls sample the flowing-light player scene; the actions overlay samples
+    // the fully composed Now Playing scene from outside that recording layer.
     val playerControlBackdrop = rememberLayerBackdrop()
     val actionsBackdrop = rememberLayerBackdrop()
 
@@ -95,8 +95,6 @@ fun MeloXIOSNowPlayingSharedHost(
     val collapseProgress = (1f - expansionProgress).coerceIn(0f, 1f)
     val latestCollapseProgress = rememberUpdatedState(collapseProgress)
     val latestPage = rememberUpdatedState(page)
-
-    // Keep a soft full-screen radius and increase it toward MiniPlayer.
     val cornerRadius = (24f + 8f * smoothStep(collapseProgress, 0f, 1f)).dp
 
     val sharedContainerModifier = with(sharedTransitionScope) {
@@ -128,6 +126,13 @@ fun MeloXIOSNowPlayingSharedHost(
             }
         }
 
+        suspend fun beginCollapseDrag() {
+            settleJob?.cancelAndJoin()
+            settleJob = null
+            gestureCollapseProgress = latestCollapseProgress.value.coerceIn(0f, 0.999f)
+            onSeekCollapse(gestureCollapseProgress)
+        }
+
         fun settleFromCurrent(velocity: Float) {
             val releaseProgress = gestureCollapseProgress
             val shouldCollapse = releaseProgress >= 0.42f || velocity >= 1200f
@@ -141,14 +146,12 @@ fun MeloXIOSNowPlayingSharedHost(
             }
         }
 
-        val dragState = rememberDraggableState { delta ->
-            seekCollapseBy(delta)
-        }
+        val dragState = rememberDraggableState { delta -> seekCollapseBy(delta) }
 
-        // Lyrics/Queue own scrollable content. Let the child consume normal
-        // scrolling first; only leftover downward drag at its top edge starts
-        // player collapse. Once collapse has started, this connection owns both
-        // directions so the finger can reverse the interactive transition.
+        // Lyrics/Queue own scrollable content. Child scrolling wins normally;
+        // leftover downward motion at the top edge begins player collapse. Once
+        // collapse has started, this connection owns both directions so the user
+        // can reverse the transition without lifting the finger.
         val alternatePageCollapseConnection = remember(dragRangePx) {
             object : NestedScrollConnection {
                 override fun onPreScroll(
@@ -174,7 +177,6 @@ fun MeloXIOSNowPlayingSharedHost(
                     if (available.y <= 0f && gestureCollapseProgress <= 0f) {
                         return Offset.Zero
                     }
-
                     if (gestureCollapseProgress <= 0f && available.y > 0f) {
                         settleJob?.cancel()
                         settleJob = null
@@ -196,9 +198,19 @@ fun MeloXIOSNowPlayingSharedHost(
             }
         }
 
-        // actionsBackdrop records the complete player scene. The actions sheet is
-        // rendered outside this layer below, so it can blur the actual current
-        // Lyrics/Queue/Artwork page without feeding back into its own source.
+        // Alternate pages can always be dismissed by dragging the grabber even
+        // when their list is currently scrolled away from the top.
+        val alternateGrabberDragModifier = if (page != MeloXNowPlayingPage.Artwork) {
+            Modifier.draggable(
+                state = dragState,
+                orientation = Orientation.Vertical,
+                onDragStarted = { beginCollapseDrag() },
+                onDragStopped = { velocity -> settleFromCurrent(velocity) },
+            )
+        } else {
+            Modifier
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -213,16 +225,8 @@ fun MeloXIOSNowPlayingSharedHost(
                         state = dragState,
                         orientation = Orientation.Vertical,
                         enabled = page == MeloXNowPlayingPage.Artwork,
-                        onDragStarted = {
-                            settleJob?.cancelAndJoin()
-                            settleJob = null
-                            gestureCollapseProgress = latestCollapseProgress.value
-                                .coerceIn(0f, 0.999f)
-                            onSeekCollapse(gestureCollapseProgress)
-                        },
-                        onDragStopped = { velocity ->
-                            settleFromCurrent(velocity)
-                        },
+                        onDragStarted = { beginCollapseDrag() },
+                        onDragStopped = { velocity -> settleFromCurrent(velocity) },
                     ),
             ) {
                 Box(
@@ -255,14 +259,12 @@ fun MeloXIOSNowPlayingSharedHost(
                                 }
                             },
                             onShowActions = { showActions = true },
+                            grabberDragModifier = alternateGrabberDragModifier,
                         )
                     }
                 }
             }
 
-            // One persistent artwork layer is shared by all internal pages. It
-            // animates between the large artwork frame and upstream's 72dp song
-            // header frame, then remains the MiniPlayer identity element on close.
             SharedArtworkDestination(
                 state = state,
                 page = page,
@@ -272,7 +274,6 @@ fun MeloXIOSNowPlayingSharedHost(
             )
         }
 
-        // Same-window overlay: this is deliberately outside actionsBackdrop.
         CompositionLocalProvider(LocalMeloXBackdrop provides actionsBackdrop) {
             MeloXNowPlayingActionsSheet(
                 state = state,
@@ -332,6 +333,17 @@ private fun SharedArtworkDestination(
     val fullScreenScaleBlend = smoothStep(expansionProgress, 0.30f, 0.88f)
     val effectiveScale = 1f +
         (playbackScale - 1f) * fullScreenScaleBlend * (1f - headerProgress)
+    val collapseProgress = (1f - expansionProgress).coerceIn(0f, 1f)
+
+    // Lyrics dismissal intentionally does not send the 72dp header artwork down
+    // the shared-element path. It fades immediately as MiniPlayer's own artwork
+    // appears at the final MiniPlayer location and waits for the sheet to catch up.
+    // Queue keeps the shared path so its top-left artwork visibly travels home.
+    val persistentArtworkAlpha = if (page == MeloXNowPlayingPage.Lyrics) {
+        1f - smoothStep(collapseProgress, 0f, 0.10f)
+    } else {
+        1f
+    }
 
     Column(
         modifier = Modifier
@@ -358,17 +370,22 @@ private fun SharedArtworkDestination(
             val targetSize = lerpDp(fullArtworkSize, 72.dp, headerProgress)
             val targetX = lerpDp(fullX, 0.dp, headerProgress)
             val targetY = lerpDp(fullY, 0.dp, headerProgress)
-            val targetRadius = lerpDp(12.dp, 12.dp, headerProgress)
+            val targetRadius = 12.dp
 
-            val sharedModifier = with(sharedTransitionScope) {
-                Modifier.sharedElement(
-                    sharedContentState = rememberSharedContentState(
-                        key = sharedArtworkKey(state.mediaId),
-                    ),
-                    animatedVisibilityScope = animatedVisibilityScope,
-                    boundsTransform = MeloXPlayerLinearBoundsTransform,
-                    zIndexInOverlay = 3f,
-                )
+            val artworkSharedState = with(sharedTransitionScope) {
+                rememberSharedContentState(key = sharedArtworkKey(state.mediaId))
+            }
+            val sharedModifier = if (page == MeloXNowPlayingPage.Lyrics) {
+                Modifier
+            } else {
+                with(sharedTransitionScope) {
+                    Modifier.sharedElement(
+                        sharedContentState = artworkSharedState,
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        boundsTransform = MeloXPlayerLinearBoundsTransform,
+                        zIndexInOverlay = 3f,
+                    )
+                }
             }
 
             Box(
@@ -381,6 +398,7 @@ private fun SharedArtworkDestination(
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
+                            alpha = persistentArtworkAlpha
                             scaleX = effectiveScale
                             scaleY = effectiveScale
                         }
@@ -388,8 +406,8 @@ private fun SharedArtworkDestination(
                             elevation = shadowElevation * (1f - headerProgress * 0.55f),
                             shape = RoundedCornerShape(targetRadius),
                             clip = false,
-                            ambientColor = Color.Black.copy(alpha = 0.28f),
-                            spotColor = Color.Black.copy(alpha = 0.28f),
+                            ambientColor = Color.Black.copy(alpha = 0.28f * persistentArtworkAlpha),
+                            spotColor = Color.Black.copy(alpha = 0.28f * persistentArtworkAlpha),
                         )
                         .clip(RoundedCornerShape(targetRadius)),
                 )
