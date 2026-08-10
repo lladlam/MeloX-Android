@@ -1,6 +1,5 @@
 package com.lladlam.melox.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.EnterTransition
@@ -70,6 +69,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.lladlam.melox.core.account.rememberNeteaseSessionStore
 import com.lladlam.melox.ui.account.NeteaseLoginScreen
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -282,7 +282,10 @@ fun MeloXApp(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .pointerInput(Unit) {
+                        // Explicit z-order is important here: this transparent hit-test
+                        // shield must sit above Scaffold/BottomChrome but below NowPlaying.
+                        .zIndex(10f)
+                        .pointerInput(fullPlayerVisible) {
                             awaitPointerEventScope {
                                 while (true) {
                                     val event = awaitPointerEvent(PointerEventPass.Initial)
@@ -297,7 +300,9 @@ fun MeloXApp(
                 visible = { value -> value },
                 enter = EnterTransition.None,
                 exit = ExitTransition.None,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(20f),
             ) {
                 MeloXIOSNowPlayingSharedHost(
                     state = playbackState,
@@ -319,9 +324,6 @@ fun MeloXApp(
                 )
             }
 
-            BackHandler(enabled = fullPlayerVisible && !showNeteaseLogin) {
-                closePlayer()
-            }
         }
 
         if (showNeteaseLogin) {

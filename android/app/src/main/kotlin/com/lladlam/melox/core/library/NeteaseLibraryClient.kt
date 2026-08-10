@@ -213,8 +213,12 @@ class NeteaseLibraryClient(
         return NeteasePlaylistSummary(
             id = id,
             name = value.optString("name").ifBlank { "未命名歌单" },
-            coverUrl = value.optString("coverImgUrl")
-                .takeIf(String::isNotBlank)
+            coverUrl = sequenceOf(
+                value.optString("coverImgUrl"),
+                value.optString("picUrl"),
+                value.optString("coverUrl"),
+            )
+                .firstOrNull(String::isNotBlank)
                 ?.let(::secureUrl),
             trackCount = value.optInt("trackCount").coerceAtLeast(0),
             creatorName = value.optJSONObject("creator")

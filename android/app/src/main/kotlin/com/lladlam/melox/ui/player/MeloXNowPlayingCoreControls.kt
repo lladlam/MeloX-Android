@@ -31,8 +31,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -63,8 +61,6 @@ import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.audio.MusicQuality
 import com.lladlam.melox.core.audio.MusicQualityPreferences
 import com.lladlam.melox.core.audio.MusicQualityRuntime
-import com.lladlam.melox.core.audio.NeteaseQualityClient
-import com.lladlam.melox.core.audio.SongAudioAvailability
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import kotlinx.coroutines.delay
@@ -77,13 +73,14 @@ internal fun MeloXNowPlayingCoreControls(
     state: MeloXPlaybackUiState,
     page: MeloXNowPlayingPage,
     onPageSelected: (MeloXNowPlayingPage) -> Unit,
+    onShowQuality: () -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .height(MeloXNowPlayingControlsHeight.dp),
     ) {
-        SceneProgressControl(state)
+        SceneProgressControl(state, onShowQuality)
         Spacer(Modifier.height(19.dp))
         SceneTransportControls(state)
         Spacer(Modifier.height(31.dp))
@@ -98,7 +95,10 @@ internal fun MeloXNowPlayingCoreControls(
 }
 
 @Composable
-private fun SceneProgressControl(state: MeloXPlaybackUiState) {
+private fun SceneProgressControl(
+    state: MeloXPlaybackUiState,
+    onShowQuality: () -> Unit,
+) {
     val sourceProgress = if (state.durationMs > 0L) {
         (state.positionMs.toFloat() / state.durationMs.toFloat()).coerceIn(0f, 1f)
     } else {
@@ -176,6 +176,7 @@ private fun SceneProgressControl(state: MeloXPlaybackUiState) {
 
             SceneQualityChip(
                 state = state,
+                onShowQuality = onShowQuality,
                 modifier = Modifier.align(Alignment.Center),
             )
 
@@ -193,15 +194,10 @@ private fun SceneProgressControl(state: MeloXPlaybackUiState) {
 @Composable
 private fun SceneQualityChip(
     state: MeloXPlaybackUiState,
+    onShowQuality: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current.applicationContext
-    val qualityClient = remember(context) {
-        NeteaseQualityClient(
-            cookieProvider = { NeteaseSessionStore.readCookie(context) },
-        )
-    }
-    var expanded by remember { mutableStateOf(false) }
     var selected by remember(context) {
         mutableStateOf(
             MusicQualityPreferences.read(context).also { MusicQualityRuntime.selected = it },
@@ -210,15 +206,7 @@ private fun SceneQualityChip(
     var actual by remember(state.mediaId) {
         mutableStateOf(MusicQualityRuntime.actualFor(state.mediaId?.toLongOrNull()))
     }
-    var availability by remember(state.mediaId) {
-        mutableStateOf(SongAudioAvailability.Unknown)
-    }
 
-    LaunchedEffect(state.mediaId) {
-        val songId = state.mediaId?.toLongOrNull() ?: return@LaunchedEffect
-        availability = runCatching { qualityClient.audioAvailability(songId) }
-            .getOrDefault(SongAudioAvailability.Unknown)
-    }
     LaunchedEffect(state.mediaId, selected) {
         val songId = state.mediaId?.toLongOrNull() ?: return@LaunchedEffect
         while (true) {
@@ -257,7 +245,7 @@ private fun SceneQualityChip(
                 .clickable(
                     interactionSource = interaction,
                     indication = null,
-                ) { expanded = true }
+                ) { onShowQuality() }
                 .padding(horizontal = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -279,27 +267,6 @@ private fun SceneQualityChip(
                 lineHeight = 13.sp,
                 fontWeight = FontWeight.Medium,
             )
-        }
-
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            MusicQuality.entries.forEach { quality ->
-                val supported = availability.supports(quality.apiLevel) != false
-                DropdownMenuItem(
-                    enabled = supported,
-                    text = {
-                        Text(if (quality == selected) "✓ ${quality.title}" else quality.title)
-                    },
-                    onClick = {
-                        selected = quality
-                        actual = null
-                        expanded = false
-                        PlaybackCommands.changeQuality(context, quality)
-                    },
-                )
-            }
         }
     }
 }

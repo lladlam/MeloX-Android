@@ -3,6 +3,7 @@ package com.lladlam.melox.ui.player
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.spring
@@ -63,6 +64,14 @@ fun MeloXNowPlayingActionsSheet(
 ) {
     val context = LocalContext.current
     var page by remember(state.mediaId) { mutableStateOf(ActionPage.Main) }
+
+    BackHandler(enabled = visible) {
+        if (page != ActionPage.Main) {
+            page = ActionPage.Main
+        } else {
+            onDismiss()
+        }
+    }
 
     AnimatedVisibility(
         visible = visible,

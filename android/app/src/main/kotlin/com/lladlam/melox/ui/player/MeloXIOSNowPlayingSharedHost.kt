@@ -1,5 +1,6 @@
 package com.lladlam.melox.ui.player
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.EnterTransition
@@ -73,6 +74,7 @@ fun MeloXIOSNowPlayingSharedHost(
         mutableStateOf(MeloXNowPlayingPage.Artwork)
     }
     var showActions by remember(state.mediaId) { mutableStateOf(false) }
+    var showQuality by remember(state.mediaId) { mutableStateOf(false) }
     var gestureCollapseProgress by remember(state.mediaId) { mutableFloatStateOf(0f) }
     var settleJob by remember(state.mediaId) { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
@@ -108,6 +110,13 @@ fun MeloXIOSNowPlayingSharedHost(
             boundsTransform = MeloXPlayerLinearBoundsTransform,
             resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
         )
+    }
+
+    // NowPlaying owns the player-level Back handler. Child modal overlays are
+    // composed later and temporarily disable this handler, so Back always unwinds
+    // the topmost visual layer before the player itself is dismissed.
+    BackHandler(enabled = !showActions && !showQuality) {
+        onDismiss()
     }
 
     BoxWithConstraints(
@@ -258,7 +267,14 @@ fun MeloXIOSNowPlayingSharedHost(
                                     page = destination
                                 }
                             },
-                            onShowActions = { showActions = true },
+                            onShowActions = {
+                                showQuality = false
+                                showActions = true
+                            },
+                            onShowQuality = {
+                                showActions = false
+                                showQuality = true
+                            },
                             grabberDragModifier = alternateGrabberDragModifier,
                         )
                     }
@@ -279,6 +295,11 @@ fun MeloXIOSNowPlayingSharedHost(
                 state = state,
                 visible = showActions,
                 onDismiss = { showActions = false },
+            )
+            MeloXQualitySelectionOverlay(
+                state = state,
+                visible = showQuality,
+                onDismiss = { showQuality = false },
             )
         }
     }

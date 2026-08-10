@@ -56,6 +56,7 @@ internal fun MeloXIOSNowPlayingScene(
     onDismiss: () -> Unit,
     onPageChanged: (MeloXNowPlayingPage) -> Unit,
     onShowActions: () -> Unit,
+    onShowQuality: () -> Unit,
     grabberDragModifier: Modifier = Modifier,
 ) {
     val directLyricsQueue = isDirectLyricsQueueTransition(transitionSourcePage, page)
@@ -281,6 +282,7 @@ internal fun MeloXIOSNowPlayingScene(
         MeloXNowPlayingCoreControls(
             state = state,
             page = page,
+            onShowQuality = onShowQuality,
             onPageSelected = { destination ->
                 onPageChanged(
                     if (page == destination) {
@@ -344,7 +346,7 @@ private fun ArtworkDetailsWithoutArtwork(
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val artworkSize = maxOf(
             170.dp,
-            minOf(maxWidth + 16.dp, maxHeight - 92.dp),
+            minOf(maxWidth, maxHeight - 92.dp),
         )
 
         Column(
