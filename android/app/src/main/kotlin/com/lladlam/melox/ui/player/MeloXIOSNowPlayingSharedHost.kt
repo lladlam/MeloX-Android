@@ -60,13 +60,7 @@ fun MeloXIOSNowPlayingSharedHost(
     val scope = rememberCoroutineScope()
 
     val expansionProgress by animatedVisibilityScope.transition.animateFloat(
-        transitionSpec = {
-            spring(
-                dampingRatio = 0.90f,
-                stiffness = 320f,
-                visibilityThreshold = 0.001f,
-            )
-        },
+        transitionSpec = { meloXPlayerLinearFloatSpec() },
         label = "full-player-expansion-progress",
     ) { visibility ->
         if (visibility == EnterExitState.Visible) 1f else 0f
@@ -84,6 +78,7 @@ fun MeloXIOSNowPlayingSharedHost(
             animatedVisibilityScope = animatedVisibilityScope,
             enter = EnterTransition.None,
             exit = ExitTransition.None,
+            boundsTransform = MeloXPlayerLinearBoundsTransform,
             resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
         )
     }
@@ -92,7 +87,7 @@ fun MeloXIOSNowPlayingSharedHost(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter,
     ) {
-        val dragRangePx = (constraints.maxHeight * 0.72f).coerceAtLeast(1f)
+        val dragRangePx = (constraints.maxHeight * 0.86f).coerceAtLeast(1f)
         val dragState = rememberDraggableState { delta ->
             gestureCollapseProgress = (
                 gestureCollapseProgress + delta / dragRangePx
@@ -153,14 +148,18 @@ fun MeloXIOSNowPlayingSharedHost(
                 )
             }
 
-            SharedArtworkDestination(
-                state = state,
-                page = page,
-                expansionProgress = expansionProgress,
-                sharedTransitionScope = sharedTransitionScope,
-                animatedVisibilityScope = animatedVisibilityScope,
-            )
         }
+
+        // Keep the artwork destination in the stable SharedTransition root
+        // coordinate space. Nesting it inside the remeasured sharedBounds made
+        // its target move while the artwork itself was also transforming.
+        SharedArtworkDestination(
+            state = state,
+            page = page,
+            expansionProgress = expansionProgress,
+            sharedTransitionScope = sharedTransitionScope,
+            animatedVisibilityScope = animatedVisibilityScope,
+        )
     }
 }
 
@@ -235,6 +234,8 @@ private fun SharedArtworkDestination(
                             key = sharedArtworkKey(state.mediaId),
                         ),
                         animatedVisibilityScope = animatedVisibilityScope,
+                        boundsTransform = MeloXPlayerLinearBoundsTransform,
+                        zIndexInOverlay = 3f,
                     )
                 }
 

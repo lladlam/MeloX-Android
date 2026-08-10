@@ -62,13 +62,7 @@ fun MeloXIOSMiniPlayer(
 
     val expansionProgress = if (animatedVisibilityScope != null) {
         val value by animatedVisibilityScope.transition.animateFloat(
-            transitionSpec = {
-                spring(
-                    dampingRatio = 0.90f,
-                    stiffness = 320f,
-                    visibilityThreshold = 0.001f,
-                )
-            },
+            transitionSpec = { meloXPlayerLinearFloatSpec() },
             label = "mini-player-expansion-progress",
         ) { visibility ->
             if (visibility == EnterExitState.Visible) 0f else 1f
@@ -118,6 +112,7 @@ fun MeloXIOSMiniPlayer(
                     animatedVisibilityScope = animatedVisibilityScope,
                     enter = EnterTransition.None,
                     exit = ExitTransition.None,
+                    boundsTransform = MeloXPlayerLinearBoundsTransform,
                     resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
                 )
             }
@@ -194,6 +189,8 @@ fun MeloXIOSMiniPlayer(
                                     key = sharedArtworkKey(state.mediaId),
                                 ),
                                 animatedVisibilityScope = animatedVisibilityScope,
+                                boundsTransform = MeloXPlayerLinearBoundsTransform,
+                                zIndexInOverlay = 3f,
                             )
                         }
                     } else {
