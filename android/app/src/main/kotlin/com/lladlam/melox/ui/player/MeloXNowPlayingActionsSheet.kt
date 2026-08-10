@@ -4,13 +4,16 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,7 +25,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -39,47 +41,66 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import java.net.URLEncoder
 
 private enum class ActionPage { Main, Sleep }
 
+/**
+ * Same-window Now Playing overlay.
+ *
+ * This intentionally does not use Dialog: a platform Dialog owns a separate
+ * window and therefore cannot sample the Compose Backdrop recorded from the
+ * player underneath it. SharedHost places this composable outside the recorded
+ * Now Playing layer and provides that layer as LocalMeloXBackdrop, so the glass
+ * sheet blurs the actual artwork/lyrics/queue page instead of the app behind it.
+ */
 @Composable
 fun MeloXNowPlayingActionsSheet(
     state: MeloXPlaybackUiState,
     visible: Boolean,
     onDismiss: () -> Unit,
 ) {
-    if (!visible) return
     val context = LocalContext.current
     var page by remember(state.mediaId) { mutableStateOf(ActionPage.Main) }
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(spring(stiffness = 520f)),
+        exit = fadeOut(spring(stiffness = 620f)),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .clickable(indication = null, interactionSource = null, onClick = onDismiss)
+                .background(Color.Black.copy(alpha = 0.22f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismiss,
+                )
                 .padding(horizontal = 18.dp)
                 .navigationBarsPadding(),
             contentAlignment = Alignment.BottomCenter,
         ) {
+            val sheetInteraction = remember { MutableInteractionSource() }
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 18.dp)
                     .meloXLiquidButton(
                         shape = RoundedCornerShape(30.dp),
-                        tint = Color.White.copy(alpha = 0.10f),
-                        surfaceColor = Color.Black.copy(alpha = 0.28f),
-                        blurRadius = 12.dp,
-                        lensRadius = 26.dp,
-                        refractionHeight = 26.dp,
+                        tint = Color.White.copy(alpha = 0.08f),
+                        surfaceColor = Color.Black.copy(alpha = 0.12f),
+                        blurRadius = 14.dp,
+                        lensRadius = 20.dp,
+                        refractionHeight = 22.dp,
                     )
-                    .clickable(enabled = false) {},
+                    // Consume sheet taps so they never reach the dismiss scrim.
+                    .clickable(
+                        interactionSource = sheetInteraction,
+                        indication = null,
+                        onClick = {},
+                    ),
                 color = Color.Transparent,
                 shape = RoundedCornerShape(30.dp),
             ) {
@@ -93,8 +114,12 @@ fun MeloXNowPlayingActionsSheet(
                 ) { selected ->
                     Column(Modifier.padding(horizontal = 18.dp, vertical = 20.dp)) {
                         when (selected) {
-                            ActionPage.Main -> MainActions(state, context, onDismiss) { page = ActionPage.Sleep }
-                            ActionPage.Sleep -> SleepActions(state, onDismiss) { page = ActionPage.Main }
+                            ActionPage.Main -> MainActions(state, context, onDismiss) {
+                                page = ActionPage.Sleep
+                            }
+                            ActionPage.Sleep -> SleepActions(state, onDismiss) {
+                                page = ActionPage.Main
+                            }
                         }
                     }
                 }
@@ -124,20 +149,35 @@ private fun MainActions(
 }
 
 @Composable
-private fun SleepActions(state: MeloXPlaybackUiState, onDismiss: () -> Unit, onBack: () -> Unit) {
+private fun SleepActions(
+    state: MeloXPlaybackUiState,
+    onDismiss: () -> Unit,
+    onBack: () -> Unit,
+) {
     ActionHeader(state, "定时关闭")
     listOf(15, 30, 45, 60).forEach { minutes ->
-        ActionItem("$minutes 分钟后", "◷") { state.setSleepTimer(minutes); onDismiss() }
+        ActionItem("$minutes 分钟后", "◷") {
+            state.setSleepTimer(minutes)
+            onDismiss()
+        }
     }
     if (state.sleepTimerEndRealtimeMs > 0L) {
-        ActionItem("取消定时", "×") { state.cancelSleepTimer(); onDismiss() }
+        ActionItem("取消定时", "×") {
+            state.cancelSleepTimer()
+            onDismiss()
+        }
     }
     ActionItem("返回", "‹", onBack)
 }
 
 @Composable
 private fun ActionHeader(state: MeloXPlaybackUiState, title: String) {
-    Text(title, color = Color.White.copy(alpha = 0.58f), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+    Text(
+        text = title,
+        color = Color.White.copy(alpha = 0.58f),
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold,
+    )
     Text(
         text = state.title.ifBlank { "正在播放" },
         color = Color.White,
@@ -161,9 +201,19 @@ private fun ActionItem(title: String, symbol: String, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
-            Text(symbol, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                text = symbol,
+                color = Color.White,
+                fontSize = 19.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
-        Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+        Text(
+            text = title,
+            color = Color.White,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium,
+        )
         Spacer(Modifier.weight(1f))
     }
 }
@@ -191,6 +241,9 @@ private fun openSearch(context: Context, query: String, type: Int) {
 
 private fun openUrl(context: Context, url: String) {
     runCatching {
-        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
     }
 }
