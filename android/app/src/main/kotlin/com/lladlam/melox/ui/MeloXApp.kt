@@ -7,10 +7,12 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.SeekableTransitionState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -121,7 +123,7 @@ fun MeloXApp(
             playerScope.launch {
                 playerTransitionState.animateTo(
                     targetState = true,
-                    animationSpec = playerFractionSpec(),
+                    animationSpec = playerAutomaticFractionSpec(),
                 )
             }
         }
@@ -130,7 +132,7 @@ fun MeloXApp(
         playerScope.launch {
             playerTransitionState.animateTo(
                 targetState = false,
-                animationSpec = playerFractionSpec(),
+                animationSpec = playerAutomaticFractionSpec(),
             )
         }
     }
@@ -182,9 +184,9 @@ fun MeloXApp(
     LaunchedEffect(openNowPlayingRequest, playbackState.hasMedia) {
         if (openNowPlayingRequest > 0 && playbackState.hasMedia) {
             playerTransitionState.animateTo(
-                    targetState = true,
-                    animationSpec = playerFractionSpec(),
-                )
+                targetState = true,
+                animationSpec = playerAutomaticFractionSpec(),
+            )
         }
     }
 
@@ -309,7 +311,7 @@ fun MeloXApp(
                     onSettleCollapse = { collapse ->
                         playerTransitionState.animateTo(
                             targetState = !collapse,
-                            animationSpec = playerFractionSpec(),
+                            animationSpec = playerGestureSettleSpec(),
                         )
                     },
                     sharedTransitionScope = sharedScope,
@@ -775,10 +777,14 @@ private fun RootGlyphIcon(
     }
 }
 
+private fun playerAutomaticFractionSpec() = tween<Float>(
+    durationMillis = 460,
+    easing = FastOutSlowInEasing,
+)
 
-private fun playerFractionSpec() = spring<Float>(
+private fun playerGestureSettleSpec() = spring<Float>(
     dampingRatio = 1.0f,
-    stiffness = 380f,
+    stiffness = 420f,
     visibilityThreshold = 0.001f,
 )
 
