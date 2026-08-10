@@ -67,3 +67,5 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
+
+// CI verification trigger for the upstream-completion integration branch.
