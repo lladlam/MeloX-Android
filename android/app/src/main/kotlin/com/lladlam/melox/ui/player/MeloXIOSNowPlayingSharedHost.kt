@@ -43,6 +43,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -57,6 +59,7 @@ fun MeloXIOSNowPlayingSharedHost(
 ) {
     var page by remember(state.mediaId) { mutableStateOf(MeloXNowPlayingPage.Artwork) }
     var gestureCollapseProgress by remember(state.mediaId) { mutableFloatStateOf(0f) }
+    var settleJob by remember(state.mediaId) { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
 
     val expansionProgress by animatedVisibilityScope.transition.animateFloat(
@@ -68,7 +71,10 @@ fun MeloXIOSNowPlayingSharedHost(
 
     val backdropAlpha = smoothStep(expansionProgress, 0.08f, 0.58f)
     val fullPlayerAlpha = smoothStep(expansionProgress, 0.46f, 0.90f)
-    val cornerRadius = (22f * (1f - smoothStep(expansionProgress, 0.00f, 0.94f))).dp
+    val collapseProgress = (1f - expansionProgress).coerceIn(0f, 1f)
+    // Keep the fully expanded player softly rounded instead of snapping to
+    // square screen corners. As it approaches MiniPlayer, round it a bit more.
+    val cornerRadius = (24f + 8f * smoothStep(collapseProgress, 0f, 1f)).dp
 
     val sharedContainerModifier = with(sharedTransitionScope) {
         Modifier.sharedBounds(
@@ -106,19 +112,34 @@ fun MeloXIOSNowPlayingSharedHost(
                     orientation = Orientation.Vertical,
                     enabled = page == MeloXNowPlayingPage.Artwork,
                     onDragStarted = {
-                        // Establish Full -> Mini as the seek direction before the first
-                        // drag delta. Subsequent seekTo calls keep the same target and
-                        // therefore snap directly to the finger-controlled fraction.
-                        gestureCollapseProgress = 0f
-                        onSeekCollapse(0f)
+                        // A new gesture always takes ownership immediately. If a
+                        // previous short drag is still springing back, cancel that
+                        // settle instead of blocking the next pointer gesture until
+                        // the old animation completes.
+                        settleJob?.cancelAndJoin()
+                        settleJob = null
+
+                        // Resume from the exact visual position where the interrupted
+                        // settle currently is, rather than resetting to Full and
+                        // producing a jump on repeated short drags.
+                        gestureCollapseProgress = collapseProgress.coerceIn(0f, 0.999f)
+                        onSeekCollapse(gestureCollapseProgress)
                     },
                     onDragStopped = { velocity ->
                         val releaseProgress = gestureCollapseProgress
                         val shouldCollapse = releaseProgress >= 0.42f || velocity >= 1200f
-                        // draggable already gives us a suspend callback. Settle inline
-                        // from the exact fraction where the finger was released.
-                        onSettleCollapse(shouldCollapse)
-                        if (!shouldCollapse) gestureCollapseProgress = 0f
+
+                        // Do not suspend draggable until the settle animation ends.
+                        // Keep it in a cancellable job so the next touch can interrupt
+                        // the spring and continue from the current frame immediately.
+                        settleJob?.cancel()
+                        settleJob = scope.launch {
+                            onSettleCollapse(shouldCollapse)
+                            if (!shouldCollapse) {
+                                gestureCollapseProgress = 0f
+                            }
+                            settleJob = null
+                        }
                     },
                 ),
         ) {
