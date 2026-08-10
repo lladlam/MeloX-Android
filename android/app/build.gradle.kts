@@ -67,3 +67,28 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
+
+// Temporary build-branch-only compatibility patch. The current main source
+// references BoxWithConstraints.constraints from a nested DSL receiver, which
+// Kotlin 2.3.21 rejects. This rewrites only that receiver access in the CI
+// workspace before compilation; it does not alter Liquid Glass behavior.
+val patchMeloXAppForCi by tasks.registering {
+    doLast {
+        val source = file("src/main/kotlin/com/lladlam/melox/ui/MeloXApp.kt")
+        val original = source.readText()
+        val withCapturedWidth = original.replace(
+            "            ) {\n                Box(Modifier.fillMaxSize()) {\n                    // Mirror the official LiquidBottomTabs scene graph:",
+            "            ) {\n                val tabBarMaxWidthPx = constraints.maxWidth\n                Box(Modifier.fillMaxSize()) {\n                    // Mirror the official LiquidBottomTabs scene graph:",
+        )
+        val patched = withCapturedWidth.replace(
+            "lensPosition * constraints.maxWidth / 4f",
+            "lensPosition * tabBarMaxWidthPx / 4f",
+        )
+        check(patched != original) { "CI compatibility patch did not match MeloXApp.kt" }
+        source.writeText(patched)
+    }
+}
+
+tasks.matching { it.name == "compileDebugKotlin" }.configureEach {
+    dependsOn(patchMeloXAppForCi)
+}
