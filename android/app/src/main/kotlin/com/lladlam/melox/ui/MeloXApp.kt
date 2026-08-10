@@ -7,7 +7,9 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.core.SeekableTransitionState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -44,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,6 +54,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -66,8 +70,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lladlam.melox.core.account.rememberNeteaseSessionStore
 import com.lladlam.melox.ui.account.NeteaseLoginScreen
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
 import com.lladlam.melox.ui.library.LibraryScreen
 import com.lladlam.melox.ui.discovery.MeloXExploreScreen
 import com.lladlam.melox.ui.discovery.MeloXHomeScreen
@@ -80,6 +83,7 @@ import com.lladlam.melox.ui.player.MeloXIOSNowPlayingSharedHost
 import com.lladlam.melox.ui.player.rememberMeloXPlaybackUiState
 import com.lladlam.melox.ui.search.SearchScreen
 import com.lladlam.melox.ui.settings.SettingsScreen
+import kotlinx.coroutines.launch
 
 enum class AppTab(val title: String) {
     Home("首页"),
@@ -97,18 +101,43 @@ fun MeloXApp(
     openNowPlayingRequest: Int = 0,
 ) {
     var selectedTab by remember { mutableStateOf(AppTab.Home) }
-    var showNowPlaying by remember { mutableStateOf(false) }
     var showNeteaseLogin by remember { mutableStateOf(false) }
     var loginReturnTab by remember { mutableStateOf(AppTab.Settings) }
     var tabBarMinimized by remember { mutableStateOf(false) }
     var scrollAccumulator by remember { mutableFloatStateOf(0f) }
     val playbackState = rememberMeloXPlaybackUiState()
     val neteaseSession = rememberNeteaseSessionStore()
-    val glassBackdrop = rememberLayerBackdrop()
-    // Controls inside a recorded scene must not sample that same scene on some
-    // MediaTek renderers. A dedicated stable background prevents recursive
-    // Backdrop recording while the root backdrop remains rich enough for Dock.
-    val screenControlBackdrop = rememberLayerBackdrop()
+    val darkGlass = isSystemInDarkTheme()
+    // LayerBackdrop 2.0.0 currently has an upstream circular-rendering problem
+    // when several far-apart controls sample the same recorded layer (#100).
+    // A coordinate-independent CanvasBackdrop keeps every AndroidLiquidGlass
+    // control on the same stable GPU path on MediaTek devices.
+    val glassBackdrop = rememberCanvasBackdrop {
+        drawRect(
+            brush = Brush.linearGradient(
+                colors = if (darkGlass) {
+                    listOf(Color(0xFF31323A), Color(0xFF111219))
+                } else {
+                    listOf(Color(0xFFFDFDFE), Color(0xFFD9DCE2))
+                },
+                start = Offset.Zero,
+                end = Offset(size.width, size.height),
+            ),
+        )
+    }
+    val playerTransitionState = remember { SeekableTransitionState(false) }
+    val playerTransition = rememberTransition(
+        transitionState = playerTransitionState,
+        label = "melox-player-visibility",
+    )
+    val playerMotionScope = rememberCoroutineScope()
+    val playerMotionSpec = remember {
+        spring<Float>(
+            dampingRatio = 0.90f,
+            stiffness = 320f,
+            visibilityThreshold = 0.001f,
+        )
+    }
 
     val tabBarMinimizeConnection = remember {
         object : NestedScrollConnection {
@@ -140,8 +169,12 @@ fun MeloXApp(
 
     LaunchedEffect(openNowPlayingRequest, playbackState.hasMedia) {
         if (openNowPlayingRequest > 0 && playbackState.hasMedia) {
-            showNowPlaying = true
+            playerTransitionState.animateTo(true, playerMotionSpec)
         }
+    }
+
+    LaunchedEffect(playbackState.hasMedia) {
+        if (!playbackState.hasMedia) playerTransitionState.snapTo(false)
     }
 
     LaunchedEffect(neteaseSession.cookie) {
@@ -159,12 +192,12 @@ fun MeloXApp(
       Box(modifier = Modifier.fillMaxSize()) {
         SharedTransitionLayout(modifier = Modifier.fillMaxSize()) {
             val sharedScope = this
-            val fullPlayerVisible = showNowPlaying && playbackState.hasMedia
+            val fullPlayerVisible = playbackState.hasMedia &&
+                (playerTransitionState.currentState || playerTransitionState.targetState)
             Scaffold(
                 modifier = Modifier
                     .fillMaxSize()
-                    .nestedScroll(tabBarMinimizeConnection)
-                    .layerBackdrop(glassBackdrop),
+                    .nestedScroll(tabBarMinimizeConnection),
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 containerColor = MaterialTheme.colorScheme.background,
             ) { innerPadding ->
@@ -173,33 +206,25 @@ fun MeloXApp(
                         .fillMaxSize()
                         .padding(innerPadding),
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.background)
-                            .layerBackdrop(screenControlBackdrop),
-                    )
-                    CompositionLocalProvider(LocalMeloXBackdrop provides screenControlBackdrop) {
-                        when (selectedTab) {
-                            AppTab.Search -> SearchScreen()
-                            AppTab.Home -> MeloXHomeScreen()
-                            AppTab.Explore -> MeloXExploreScreen()
-                            AppTab.Library -> LibraryScreen(
-                                session = neteaseSession,
-                                playlistBackEnabled = !fullPlayerVisible,
-                                onLogin = {
-                                    loginReturnTab = AppTab.Library
-                                    showNeteaseLogin = true
-                                },
-                            )
-                            AppTab.Settings -> SettingsScreen(
-                                session = neteaseSession,
-                                onLogin = {
-                                    loginReturnTab = AppTab.Settings
-                                    showNeteaseLogin = true
-                                },
-                            )
-                        }
+                    when (selectedTab) {
+                        AppTab.Search -> SearchScreen()
+                        AppTab.Home -> MeloXHomeScreen()
+                        AppTab.Explore -> MeloXExploreScreen()
+                        AppTab.Library -> LibraryScreen(
+                            session = neteaseSession,
+                            playlistBackEnabled = !fullPlayerVisible,
+                            onLogin = {
+                                loginReturnTab = AppTab.Library
+                                showNeteaseLogin = true
+                            },
+                        )
+                        AppTab.Settings -> SettingsScreen(
+                            session = neteaseSession,
+                            onLogin = {
+                                loginReturnTab = AppTab.Settings
+                                showNeteaseLogin = true
+                            },
+                        )
                     }
                 }
             }
@@ -214,14 +239,18 @@ fun MeloXApp(
                 minimized = tabBarMinimized,
                 modifier = Modifier.align(Alignment.BottomCenter),
                 miniPlayer = { compactProgress ->
-                    AnimatedVisibility(
-                        visible = !fullPlayerVisible,
+                    playerTransition.AnimatedVisibility(
+                        visible = { !it },
                         enter = EnterTransition.None,
                         exit = ExitTransition.None,
                     ) {
                         MeloXIOSMiniPlayer(
                             state = playbackState,
-                            onExpand = { showNowPlaying = true },
+                            onExpand = {
+                                playerMotionScope.launch {
+                                    playerTransitionState.animateTo(true, playerMotionSpec)
+                                }
+                            },
                             compactProgress = compactProgress,
                             sharedTransitionScope = sharedScope,
                             animatedVisibilityScope = this,
@@ -245,15 +274,16 @@ fun MeloXApp(
                 )
             }
 
-            AnimatedVisibility(
-                visible = fullPlayerVisible,
+            playerTransition.AnimatedVisibility(
+                visible = { it },
                 enter = EnterTransition.None,
                 exit = ExitTransition.None,
                 modifier = Modifier.fillMaxSize(),
             ) {
                 MeloXIOSNowPlayingSharedHost(
                     state = playbackState,
-                    onDismiss = { showNowPlaying = false },
+                    transitionState = playerTransitionState,
+                    motionSpec = playerMotionSpec,
                     sharedTransitionScope = sharedScope,
                     animatedVisibilityScope = this,
                 )
@@ -263,7 +293,9 @@ fun MeloXApp(
             // the full player handler after LibraryScreen so a player opened from
             // playlist detail is dismissed before the playlist itself is popped.
             BackHandler(enabled = fullPlayerVisible && !showNeteaseLogin) {
-                showNowPlaying = false
+                playerMotionScope.launch {
+                    playerTransitionState.animateTo(false, playerMotionSpec)
+                }
             }
         }
 
@@ -316,7 +348,6 @@ private fun MeloXBottomChrome(
     modifier: Modifier = Modifier,
     miniPlayer: @Composable (compactProgress: Float) -> Unit,
 ) {
-    val tabsBackdrop = rememberLayerBackdrop()
     val rawProgress by animateFloatAsState(
         targetValue = if (minimized) 1f else 0f,
         animationSpec = spring(
@@ -402,7 +433,7 @@ private fun MeloXBottomChrome(
                     .meloXLiquidBottomBar(
                         shape = navShape,
                         tint = bottomLiquidGlassTint(),
-                        surfaceColor = bottomGlassFallbackColor().copy(alpha = 0.42f),
+                        surfaceColor = bottomGlassFallbackColor().copy(alpha = 0.18f),
                     )
                     .pointerInput(progress, selectedTab) {
                         detectTapGestures { tap ->
@@ -422,21 +453,6 @@ private fun MeloXBottomChrome(
                 tonalElevation = 0.dp,
             ) {
                 BoxWithConstraints(Modifier.fillMaxSize()) {
-                    // Official LiquidBottomTabs records an invisible copy of the
-                    // outer glass, then the moving selection samples the combined
-                    // scene + panel backdrop. This prevents content punching
-                    // through or skewing the selected capsule.
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer { alpha = 0f }
-                            .layerBackdrop(tabsBackdrop)
-                            .meloXLiquidBottomBar(
-                                shape = navShape,
-                                tint = bottomLiquidGlassTint(),
-                                surfaceColor = bottomGlassFallbackColor().copy(alpha = 0.42f),
-                            ),
-                    )
                     val selectedIndex = primaryTabs.indexOfFirst { it.first == selectedTab }
                     val lensPosition by animateFloatAsState(
                         targetValue = selectedIndex.coerceAtLeast(0).toFloat(),
@@ -464,7 +480,6 @@ private fun MeloXBottomChrome(
                             .meloXLiquidTabSelection(
                                 shape = RoundedCornerShape(24.dp),
                                 selected = lensAlpha > 0.001f,
-                                panelBackdrop = tabsBackdrop,
                                 tint = if (dark) {
                                     Color.White.copy(alpha = 0.18f)
                                 } else {
@@ -522,7 +537,7 @@ private fun MeloXBottomChrome(
                         blurRadius = 6.dp,
                         lensRadius = 12.dp,
                         refractionHeight = 18.dp,
-                        surfaceColor = bottomGlassFallbackColor().copy(alpha = 0.32f),
+                        surfaceColor = bottomGlassFallbackColor().copy(alpha = 0.16f),
                     )
                     .clickable { onSelect(AppTab.Search) },
                 shape = CircleShape,

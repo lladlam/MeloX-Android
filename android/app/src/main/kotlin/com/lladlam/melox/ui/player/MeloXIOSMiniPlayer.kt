@@ -156,7 +156,7 @@ fun MeloXIOSMiniPlayer(
                 .meloXLiquidBottomBar(
                     shape = miniShape,
                     tint = glassTint,
-                    surfaceColor = fallbackTint.copy(alpha = fallbackTint.alpha * 0.40f),
+                    surfaceColor = fallbackTint.copy(alpha = fallbackTint.alpha * 0.24f),
                 ),
             shape = miniShape,
             color = Color.Transparent,

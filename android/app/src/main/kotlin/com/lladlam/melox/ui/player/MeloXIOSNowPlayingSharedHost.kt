@@ -7,7 +7,8 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.SeekableTransitionState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -32,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -41,15 +43,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import com.lladlam.melox.ui.glass.LocalMeloXBackdrop
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 
@@ -57,16 +54,14 @@ import kotlinx.coroutines.launch
 @Composable
 fun MeloXIOSNowPlayingSharedHost(
     state: MeloXPlaybackUiState,
-    onDismiss: () -> Unit,
+    transitionState: SeekableTransitionState<Boolean>,
+    motionSpec: FiniteAnimationSpec<Float>,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
     var page by remember(state.mediaId) { mutableStateOf(MeloXNowPlayingPage.Artwork) }
-    val dragOffset = remember(state.mediaId) { Animatable(0f) }
+    var dragPixels by remember(state.mediaId) { mutableFloatStateOf(0f) }
     val scope = rememberCoroutineScope()
-    val density = LocalDensity.current
-    var committingDismiss by remember(state.mediaId) { mutableStateOf(false) }
-    val playerBackdrop = rememberLayerBackdrop()
 
     val expansionProgress by animatedVisibilityScope.transition.animateFloat(
         transitionSpec = {
@@ -89,17 +84,13 @@ fun MeloXIOSNowPlayingSharedHost(
 
     LaunchedEffect(expansionProgress) {
         if (expansionProgress <= 0.01f) {
-            dragOffset.snapTo(0f)
-            committingDismiss = false
+            dragPixels = 0f
         }
     }
 
-    val dragState = rememberDraggableState { delta ->
-        if (!committingDismiss) {
-            scope.launch(start = CoroutineStart.UNDISPATCHED) {
-                dragOffset.snapTo((dragOffset.value + delta).coerceAtLeast(0f))
-            }
-        }
+    val requestDismiss = {
+        scope.launch { transitionState.animateTo(false, motionSpec) }
+        Unit
     }
 
     val sharedContainerModifier = with(sharedTransitionScope) {
@@ -122,47 +113,31 @@ fun MeloXIOSNowPlayingSharedHost(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter,
     ) {
-      val dismissThreshold = with(density) { 132.dp.toPx() }
-      val maxDrag = constraints.maxHeight.toFloat().coerceAtLeast(1f)
-      val dragProgress = (dragOffset.value / maxDrag).coerceIn(0f, 1f)
-      val dragScale = 1f - dragProgress * 0.035f
+      val dragRange = (constraints.maxHeight * 0.58f).coerceAtLeast(1f)
+      val dragState = rememberDraggableState { delta ->
+          dragPixels = (dragPixels + delta).coerceIn(0f, dragRange)
+          val fraction = (dragPixels / dragRange).coerceIn(0f, 0.999f)
+          scope.launch(start = CoroutineStart.UNDISPATCHED) {
+              // Seek the same transition used by Back and by expansion. There
+              // is no second translation/scale animation layered on top.
+              transitionState.seekTo(fraction, targetState = false)
+          }
+      }
 
       Box(
         modifier = sharedContainerModifier
             .fillMaxSize()
-            .graphicsLayer {
-                translationY = dragOffset.value * fullPlayerAlpha
-                scaleX = dragScale
-                scaleY = dragScale
-                transformOrigin = TransformOrigin(0.5f, 0f)
-            }
-            .clip(
-                RoundedCornerShape(
-                    cornerRadius + (30.dp - cornerRadius) * dragProgress,
-                ),
-            )
+            .clip(RoundedCornerShape(cornerRadius))
             .draggable(
                 state = dragState,
                 orientation = Orientation.Vertical,
                 enabled = page == MeloXNowPlayingPage.Artwork && expansionProgress >= 0.995f,
+                onDragStarted = { dragPixels = 0f },
                 onDragStopped = { velocity ->
-                    if (dragOffset.value >= dismissThreshold || velocity >= 1350f) {
-                        committingDismiss = true
-                        // Start the exact same AnimatedVisibility/shared-bounds
-                        // collapse used by Back. The current drag displacement is
-                        // blended out by fullPlayerAlpha during that one animation.
-                        onDismiss()
-                    } else {
-                        scope.launch {
-                            dragOffset.animateTo(
-                                targetValue = 0f,
-                                initialVelocity = velocity,
-                                animationSpec = spring(
-                                    dampingRatio = 0.90f,
-                                    stiffness = 320f,
-                                ),
-                            )
-                        }
+                    val commit = (dragPixels / dragRange) >= 0.28f || velocity >= 1350f
+                    scope.launch {
+                        transitionState.animateTo(commit.not(), motionSpec)
+                        dragPixels = 0f
                     }
                 },
             ),
@@ -172,8 +147,7 @@ fun MeloXIOSNowPlayingSharedHost(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer { alpha = backdropAlpha }
-                .layerBackdrop(playerBackdrop),
+                .graphicsLayer { alpha = backdropAlpha },
         ) {
             MeloXFlowingLightBackdrop(
                 artworkUrl = state.artworkUrl,
@@ -188,21 +162,19 @@ fun MeloXIOSNowPlayingSharedHost(
             )
         }
 
-        CompositionLocalProvider(LocalMeloXBackdrop provides playerBackdrop) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { alpha = fullPlayerAlpha },
-            ) {
-                MeloXIOSNowPlayingV2(
-                    state = state,
-                    onDismiss = onDismiss,
-                    page = page,
-                    onPageChanged = { page = it },
-                    drawBackdrop = false,
-                    drawArtwork = false,
-                )
-            }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = fullPlayerAlpha },
+        ) {
+            MeloXIOSNowPlayingV2(
+                state = state,
+                onDismiss = requestDismiss,
+                page = page,
+                onPageChanged = { page = it },
+                drawBackdrop = false,
+                drawArtwork = false,
+            )
         }
       }
     }

@@ -201,8 +201,8 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .meloXLiquidButton(
                         shape = RoundedCornerShape(26.dp),
-                        tint = MaterialTheme.colorScheme.error,
-                        surfaceColor = MaterialTheme.colorScheme.error.copy(alpha = 0.10f),
+                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.14f),
+                        surfaceColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.16f),
                         lensRadius = 9.dp,
                         refractionHeight = 16.dp,
                     )

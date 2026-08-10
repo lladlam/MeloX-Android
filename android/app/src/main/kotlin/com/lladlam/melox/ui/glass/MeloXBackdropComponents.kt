@@ -20,13 +20,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
@@ -64,7 +62,15 @@ fun Modifier.meloXLiquidButton(
             effects = {
                 vibrancy()
                 blur(blurRadius.toPx())
-                lens(lensRadius.toPx(), refractionHeight.toPx())
+                // Keep the refraction deliberately shallow. Backdrop 2.0.0's
+                // large coordinate-dependent lens can become polygonal on
+                // recent MediaTek renderers, while blur/vibrancy/highlight are
+                // stable and still come from AndroidLiquidGlass.
+                lens(
+                    (lensRadius * 0.16f).toPx(),
+                    (refractionHeight * 0.12f).toPx(),
+                    chromaticAberration = false,
+                )
             },
             highlight = {
                 Highlight.Default.copy(alpha = 0.45f + press.value * 0.55f)
@@ -78,13 +84,9 @@ fun Modifier.meloXLiquidButton(
                     alpha = press.value,
                 )
             },
-            layerBlock = {
-                // Match the official LiquidButton example: a small glass-layer
-                // expansion, without a second inverse graphicsLayer scale.
-                val scale = lerp(1f, 1.04f, press.value)
-                scaleX = scale
-                scaleY = scale
-            },
+            // Do not transform the sampled layer. The press feedback is carried
+            // by highlight and inner shadow, which avoids content/shape drift.
+            layerBlock = null,
             onDrawSurface = {
                 if (tint != Color.Unspecified) {
                     drawRect(tint, blendMode = BlendMode.Hue)
@@ -118,9 +120,9 @@ fun Modifier.meloXLiquidBottomBar(
         effects = {
             vibrancy()
             blur(8.dp.toPx())
-            lens(24.dp.toPx(), 24.dp.toPx())
+            lens(3.dp.toPx(), 4.dp.toPx(), chromaticAberration = false)
         },
-        highlight = { Highlight.Ambient },
+        highlight = { Highlight.Default.copy(alpha = 0.72f) },
         shadow = { Shadow(radius = 6.dp, alpha = 0.20f) },
         onDrawSurface = {
             drawRect(tint, blendMode = BlendMode.Hue)
@@ -135,24 +137,18 @@ fun Modifier.meloXLiquidTabSelection(
     shape: Shape,
     selected: Boolean,
     tint: Color,
-    panelBackdrop: Backdrop? = null,
 ): Modifier {
     if (!selected) return this
-    val sceneBackdrop = LocalMeloXBackdrop.current ?: return this
-    val backdrop = if (panelBackdrop != null) {
-        rememberCombinedBackdrop(sceneBackdrop, panelBackdrop)
-    } else {
-        sceneBackdrop
-    }
+    val backdrop = LocalMeloXBackdrop.current ?: return this
     return drawBackdrop(
         backdrop = backdrop,
         shape = { shape },
         effects = {
             // The official selected lens has virtually no refraction at rest;
             // strong chromatic refraction is only introduced while dragging.
-            lens(0.5.dp.toPx(), 1.dp.toPx(), chromaticAberration = false)
+            lens(0.25.dp.toPx(), 0.5.dp.toPx(), chromaticAberration = false)
         },
-        highlight = { Highlight.Ambient },
+        highlight = { Highlight.Default.copy(alpha = 0.62f) },
         shadow = { Shadow(radius = 3.dp, alpha = 0.12f) },
         innerShadow = { InnerShadow(radius = 3.dp, alpha = 0.20f) },
         onDrawSurface = { drawRect(tint) },
