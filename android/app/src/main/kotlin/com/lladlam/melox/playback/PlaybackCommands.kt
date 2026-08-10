@@ -3,6 +3,7 @@ package com.lladlam.melox.playback
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -19,6 +20,9 @@ import java.util.concurrent.Executor
 
 object PlaybackCommands {
     private const val TAG = "MeloXPlayback"
+    const val QUEUE_ORIGIN_KEY = "melox.queue.origin"
+    const val QUEUE_ORIGIN_BASE = "base"
+    const val QUEUE_ORIGIN_MANUAL = "manual"
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val mainExecutor = Executor { command -> mainHandler.post(command) }
@@ -47,7 +51,7 @@ object PlaybackCommands {
                     val controller = controllerFuture.get()
                     val queue = songs
                         .ifEmpty { return@addListener }
-                        .map { song -> song.toMediaItem(quality) }
+                        .map { song -> song.toMediaItem(quality, QUEUE_ORIGIN_BASE) }
                     val startIndex = songs.indexOfFirst { it.id == selectedSongId }
                         .takeIf { it >= 0 }
                         ?: 0
@@ -80,7 +84,7 @@ object PlaybackCommands {
             playQueue(context, listOf(song), song.id)
             return
         }
-        controller.addMediaItem(song.toMediaItem(quality))
+        controller.addMediaItem(song.toMediaItem(quality, QUEUE_ORIGIN_MANUAL))
     }
 
     fun playNext(context: Context, song: SearchSong) {
@@ -91,7 +95,7 @@ object PlaybackCommands {
             return
         }
         val insertion = (controller.currentMediaItemIndex + 1).coerceIn(0, controller.mediaItemCount)
-        controller.addMediaItem(insertion, song.toMediaItem(quality))
+        controller.addMediaItem(insertion, song.toMediaItem(quality, QUEUE_ORIGIN_MANUAL))
     }
 
     /**
@@ -137,12 +141,13 @@ object PlaybackCommands {
         if (shouldResume) controller.play()
     }
 
-    private fun SearchSong.toMediaItem(quality: MusicQuality): MediaItem {
+    private fun SearchSong.toMediaItem(quality: MusicQuality, queueOrigin: String): MediaItem {
         val metadata = MediaMetadata.Builder()
             .setTitle(name)
             .setArtist(artists)
             .setAlbumTitle(album)
             .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+            .setExtras(Bundle().apply { putString(QUEUE_ORIGIN_KEY, queueOrigin) })
             .apply {
                 artworkUrl
                     ?.takeIf(String::isNotBlank)

@@ -26,8 +26,8 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
@@ -35,7 +35,11 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -54,7 +58,6 @@ import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.exp
@@ -119,6 +122,9 @@ private object UpstreamLyrics {
 fun MeloXIOSLyricsPanel(
     state: MeloXPlaybackUiState,
     modifier: Modifier = Modifier,
+    isInterfaceHidden: Boolean = false,
+    onInterfaceInteraction: () -> Unit = {},
+    onInterfaceVisibilityChange: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current.applicationContext
     val client = remember(context) {
@@ -192,6 +198,12 @@ fun MeloXIOSLyricsPanel(
     var isBrowsingLyrics by remember(document) { mutableStateOf(false) }
     var automaticScroll by remember(document) { mutableStateOf(false) }
     var playbackFocusGeneration by remember(document) { mutableIntStateOf(0) }
+    var browseGeneration by remember(document) { mutableIntStateOf(0) }
+    var scrollHideDistancePx by remember(document) { mutableStateOf(0f) }
+    val latestInterfaceHidden = rememberUpdatedState(isInterfaceHidden)
+    val latestAutomaticScroll = rememberUpdatedState(automaticScroll)
+    val latestVisibilityCallback = rememberUpdatedState(onInterfaceVisibilityChange)
+    val latestInteractionCallback = rememberUpdatedState(onInterfaceInteraction)
 
     val lineSpacingPx = with(density) { UpstreamLyrics.LINE_SPACING_DP.dp.toPx() }
     val primaryHeightPx = with(density) { UpstreamLyrics.LINE_HEIGHT_SP.sp.toPx() }
@@ -270,18 +282,41 @@ fun MeloXIOSLyricsPanel(
         }
     }
 
-    // Manual browsing suspends playback following and resumes after the same
-    // 3-second default delay as AppSettings.lyricsFollowDelay upstream.
-    LaunchedEffect(scrollState, document) {
-        snapshotFlow { scrollState.isScrollInProgress }.collectLatest { scrolling ->
-            if (scrolling && !automaticScroll) {
+    // Only real pointer/nested-scroll input enters browsing mode. Programmatic
+    // scrollTo/animateScrollTo must never disable its own lyric following.
+    val scrollHideThresholdPx = with(density) { 200.dp.toPx() }
+    val lyricInteractionConnection = remember(document, scrollHideThresholdPx) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.UserInput || latestAutomaticScroll.value) return Offset.Zero
+                val offsetDelta = -available.y // match SwiftUI contentOffset delta
+                if (kotlin.math.abs(offsetDelta) < 0.01f) return Offset.Zero
+
                 isBrowsingLyrics = true
-            } else if (!scrolling && isBrowsingLyrics && !automaticScroll) {
-                delay(UpstreamLyrics.FOLLOW_DELAY_MS)
-                isBrowsingLyrics = false
-                playbackFocusGeneration += 1
+                browseGeneration += 1
+                latestInteractionCallback.value.invoke()
+
+                if (offsetDelta < 0f) {
+                    // Scrolling back toward previous lyrics immediately restores UI.
+                    scrollHideDistancePx = 0f
+                    if (latestInterfaceHidden.value) latestVisibilityCallback.value.invoke(true)
+                } else if (!latestInterfaceHidden.value) {
+                    scrollHideDistancePx += offsetDelta
+                    if (scrollHideDistancePx >= scrollHideThresholdPx) {
+                        scrollHideDistancePx = 0f
+                        latestVisibilityCallback.value.invoke(false)
+                    }
+                }
+                return Offset.Zero
             }
         }
+    }
+
+    LaunchedEffect(browseGeneration, document) {
+        if (browseGeneration <= 0) return@LaunchedEffect
+        delay(UpstreamLyrics.FOLLOW_DELAY_MS)
+        isBrowsingLyrics = false
+        playbackFocusGeneration += 1
     }
 
     BoxWithConstraints(
@@ -485,6 +520,7 @@ fun MeloXIOSLyricsPanel(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
+                        .nestedScroll(lyricInteractionConnection)
                         .verticalScroll(scrollState),
                 ) {
                     Spacer(Modifier.height(with(density) { topPaddingPx.toDp() }))
@@ -540,13 +576,15 @@ fun MeloXIOSLyricsPanel(
                                 index == visualFocusIndex,
                             showRomanization = MeloXSettingsRuntime.showLyricRomanization &&
                                 !line.romanization.isNullOrBlank(),
+                            reserveTranslation = MeloXSettingsRuntime.showLyricTranslation && !line.translation.isNullOrBlank(),
+                            reserveRomanization = MeloXSettingsRuntime.showLyricRomanization && !line.romanization.isNullOrBlank(),
                             onMeasured = { measured ->
                                 if (measured > 0 && rowHeightsPx[index] != measured) {
                                     rowHeightsPx[index] = measured
                                     layoutRevision += 1
                                 }
                             },
-                            onClick = { state.seekTo(line.timeMs) },
+                            onClick = { onInterfaceInteraction(); state.seekTo(line.timeMs) },
                         )
 
                         if (index != lines.lastIndex) {
@@ -573,6 +611,8 @@ private fun MeloXUpstreamLyricLine(
     focusBlurDp: Float,
     showTranslation: Boolean,
     showRomanization: Boolean,
+    reserveTranslation: Boolean,
+    reserveRomanization: Boolean,
     onMeasured: (Int) -> Unit,
     onClick: () -> Unit,
 ) {
@@ -619,26 +659,19 @@ private fun MeloXUpstreamLyricLine(
         // Romanization defaults to all-lines upstream; translation defaults to
         // focused-line. Hidden translation is accounted for in promoted layout
         // estimation so focus changes do not reflow the scroll geometry.
+        val romanSize = max(UpstreamLyrics.FONT_SIZE_SP * UpstreamLyrics.ROMANIZATION_FONT_SCALE, 13f)
         if (showRomanization) {
             Text(
                 text = line.romanization.orEmpty(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = UpstreamLyrics.ANNOTATION_SPACING_DP.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = UpstreamLyrics.ANNOTATION_SPACING_DP.dp),
                 color = Color.White.copy(alpha = UpstreamLyrics.ANNOTATION_OPACITY),
-                textAlign = TextAlign.Start,
-                fontSize = max(
-                    UpstreamLyrics.FONT_SIZE_SP * UpstreamLyrics.ROMANIZATION_FONT_SCALE,
-                    13f,
-                ).sp,
-                lineHeight = max(
-                    UpstreamLyrics.FONT_SIZE_SP * UpstreamLyrics.ROMANIZATION_FONT_SCALE,
-                    13f,
-                ).sp * 1.2f,
-                fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Start, fontSize = romanSize.sp, lineHeight = (romanSize * 1.2f).sp, fontWeight = FontWeight.Black,
             )
+        } else if (reserveRomanization) {
+            Spacer(Modifier.height((romanSize * 1.2f).dp + UpstreamLyrics.ANNOTATION_SPACING_DP.dp))
         }
 
+        val translationSize = max(UpstreamLyrics.FONT_SIZE_SP * UpstreamLyrics.TRANSLATION_FONT_SCALE, 13f)
         if (showTranslation) {
             Text(
                 text = line.translation.orEmpty(),
@@ -657,6 +690,8 @@ private fun MeloXUpstreamLyricLine(
                 ).sp * 1.2f,
                 fontWeight = FontWeight.Black,
             )
+        } else if (reserveTranslation) {
+            Spacer(Modifier.height((translationSize * 1.2f).dp + UpstreamLyrics.ANNOTATION_SPACING_DP.dp))
         }
     }
 }

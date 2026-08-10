@@ -129,15 +129,31 @@ fun MeloXSongActionsOverlay(
                 .padding(horizontal=18.dp).navigationBarsPadding(),
             contentAlignment=Alignment.BottomCenter,
         ) {
-            AnimatedContent(
-                targetState=page,
-                transitionSpec={ (fadeIn(spring(stiffness=520f))+scaleIn(initialScale=.96f)) togetherWith (fadeOut(spring(stiffness=620f))+scaleOut(targetScale=.96f)) },
-                modifier=Modifier.fillMaxWidth().padding(bottom=18.dp).meloXLiquidButton(
-                    shape=RoundedCornerShape(30.dp),tint=Color.White.copy(alpha=.08f),surfaceColor=Color.Black.copy(alpha=.12f),blurRadius=14.dp,lensRadius=20.dp,refractionHeight=22.dp,
-                ).clickable(interactionSource=remember{MutableInteractionSource()},indication=null,onClick={}),
-                label="song-action-page",
-            ) { target ->
-                Column(Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=18.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 18.dp)
+                    // Keep one stable Backdrop consumer alive while sub-pages swap.
+                    // Putting Liquid Glass directly on AnimatedContent caused its
+                    // transient old/new children to enter the capture lifecycle and
+                    // could leave a recursively blurred frame after navigating back.
+                    .meloXLiquidButton(
+                        shape = RoundedCornerShape(30.dp),
+                        tint = Color.White.copy(alpha = .08f),
+                        surfaceColor = Color.Black.copy(alpha = .12f),
+                        blurRadius = 14.dp,
+                        lensRadius = 20.dp,
+                        refractionHeight = 22.dp,
+                    )
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {}),
+            ) {
+                AnimatedContent(
+                    targetState = page,
+                    transitionSpec = { (fadeIn(spring(stiffness=520f)) + scaleIn(initialScale=.96f)) togetherWith (fadeOut(spring(stiffness=620f)) + scaleOut(targetScale=.96f)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = "song-action-page",
+                ) { target ->
+                    Column(Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=18.dp)) {
                     ActionHeader(song, when(target){SongActionPage.Main->"歌曲操作";SongActionPage.Sleep->"定时关闭";SongActionPage.AddToPlaylist->"添加到歌单";SongActionPage.Comments->"评论";SongActionPage.Wiki->"歌曲百科";SongActionPage.ListenTogether->"一起听"})
                     message?.let { Text(it,color=Color(0xFFFF8A90),fontSize=12.sp,modifier=Modifier.padding(bottom=6.dp)) }
                     when(target) {
@@ -198,6 +214,7 @@ fun MeloXSongActionsOverlay(
                             ActionItem("分享当前歌曲邀请", "↗") { shareSong(context,song); onDismiss() }
                             ActionItem("返回","‹"){page=SongActionPage.Main}
                         }
+                    }
                     }
                 }
             }

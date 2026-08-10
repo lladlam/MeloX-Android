@@ -1,5 +1,10 @@
 package com.lladlam.melox.ui.player
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -24,6 +29,12 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import kotlinx.coroutines.delay
 
 /**
  * The portrait Now Playing scene mirrors the upstream iOS page architecture:
@@ -64,6 +76,23 @@ internal fun MeloXIOSNowPlayingScene(
     val artworkVisible = page == MeloXNowPlayingPage.Artwork
     val lyricsVisible = page == MeloXNowPlayingPage.Lyrics
     val queueVisible = page == MeloXNowPlayingPage.Queue
+    var showsLyricsControls by remember(state.mediaId) { mutableStateOf(true) }
+    var lyricsControlsActivityGeneration by remember(state.mediaId) { mutableIntStateOf(0) }
+
+    fun setLyricsControlsVisible(visible: Boolean) {
+        showsLyricsControls = visible
+        if (visible) lyricsControlsActivityGeneration += 1
+    }
+
+    LaunchedEffect(page) {
+        showsLyricsControls = true
+        if (page == MeloXNowPlayingPage.Lyrics) lyricsControlsActivityGeneration += 1
+    }
+    LaunchedEffect(page, showsLyricsControls, lyricsControlsActivityGeneration) {
+        if (page != MeloXNowPlayingPage.Lyrics || !showsLyricsControls) return@LaunchedEffect
+        delay(5_000L) // upstream defaultAppleMusicLyricsInterfaceAutoHideDelay
+        showsLyricsControls = false
+    }
 
     val artworkAlpha by animateFloatAsState(
         targetValue = if (artworkVisible) 1f else 0f,
@@ -163,12 +192,13 @@ internal fun MeloXIOSNowPlayingScene(
         label = "scene-song-header-offset",
     )
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .padding(horizontal = 32.dp),
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(horizontal = 32.dp),
+        ) {
         SceneGrabber(
             onDismiss = onDismiss,
             dragModifier = grabberDragModifier,
@@ -209,6 +239,9 @@ internal fun MeloXIOSNowPlayingScene(
                 MeloXIOSLyricsPanel(
                     state = state,
                     modifier = Modifier.fillMaxSize(),
+                    isInterfaceHidden = !showsLyricsControls,
+                    onInterfaceInteraction = { setLyricsControlsVisible(true) },
+                    onInterfaceVisibilityChange = { setLyricsControlsVisible(it) },
                 )
             }
 
@@ -279,20 +312,30 @@ internal fun MeloXIOSNowPlayingScene(
             }
         }
 
-        MeloXNowPlayingCoreControls(
-            state = state,
-            page = page,
-            onShowQuality = onShowQuality,
-            onPageSelected = { destination ->
-                onPageChanged(
-                    if (page == destination) {
-                        MeloXNowPlayingPage.Artwork
-                    } else {
-                        destination
-                    },
-                )
-            },
-        )
+        }
+
+        AnimatedVisibility(
+            visible = page != MeloXNowPlayingPage.Lyrics || showsLyricsControls,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 32.dp),
+            enter = fadeIn(tween(220, easing = FastOutSlowInEasing)) +
+                slideInVertically(tween(260, easing = FastOutSlowInEasing)) { it / 8 },
+            exit = fadeOut(tween(180, easing = FastOutSlowInEasing)) +
+                slideOutVertically(tween(220, easing = FastOutSlowInEasing)) { it / 8 },
+        ) {
+            MeloXNowPlayingCoreControls(
+                state = state,
+                page = page,
+                onShowQuality = onShowQuality,
+                onPageSelected = { destination ->
+                    setLyricsControlsVisible(true)
+                    onPageChanged(
+                        if (page == destination) MeloXNowPlayingPage.Artwork else destination,
+                    )
+                },
+            )
+        }
     }
 }
 
