@@ -44,8 +44,9 @@ import androidx.compose.ui.zIndex
  *
  * The actual artwork is intentionally not drawn here. SharedHost owns one
  * persistent artwork layer so the same image can move between the full artwork
- * frame, the 72dp song-header frame, and MiniPlayer without flashing duplicate
- * covers.
+ * frame and the 72dp alternate-page header. Outer dismissal is page-aware: the
+ * Artwork/Queue image can continue into MiniPlayer, while Lyrics lets MiniPlayer
+ * own the waiting artwork at its final location.
  */
 @Composable
 internal fun MeloXIOSNowPlayingScene(
@@ -55,6 +56,7 @@ internal fun MeloXIOSNowPlayingScene(
     onDismiss: () -> Unit,
     onPageChanged: (MeloXNowPlayingPage) -> Unit,
     onShowActions: () -> Unit,
+    grabberDragModifier: Modifier = Modifier,
 ) {
     val directLyricsQueue = isDirectLyricsQueueTransition(transitionSourcePage, page)
 
@@ -166,15 +168,16 @@ internal fun MeloXIOSNowPlayingScene(
             .statusBarsPadding()
             .padding(horizontal = 32.dp),
     ) {
-        SceneGrabber(onDismiss)
+        SceneGrabber(
+            onDismiss = onDismiss,
+            dragModifier = grabberDragModifier,
+        )
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
         ) {
-            // Artwork-page details keep the same layout slot as the persistent
-            // artwork layer, but never draw a second image.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -190,9 +193,6 @@ internal fun MeloXIOSNowPlayingScene(
                 )
             }
 
-            // Resident lyrics start 400dp below the page, wait 110ms, then use
-            // the upstream 340ms smooth entrance. When moving directly to Queue
-            // they stay resident and scale to 0.92 while fading.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -211,9 +211,6 @@ internal fun MeloXIOSNowPlayingScene(
                 )
             }
 
-            // Queue uses the same resident-page timing as upstream. Its own song
-            // header is suppressed; the shared header/persistent artwork above it
-            // occupy the reference 72dp slot instead.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -232,9 +229,6 @@ internal fun MeloXIOSNowPlayingScene(
                 )
             }
 
-            // The 72dp artwork itself is owned by SharedHost. This row only draws
-            // its title/artist/actions counterpart so both Lyrics and Queue share
-            // exactly one header geometry, matching upstream NowPlayingView.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -301,7 +295,10 @@ internal fun MeloXIOSNowPlayingScene(
 }
 
 @Composable
-private fun SceneGrabber(onDismiss: () -> Unit) {
+private fun SceneGrabber(
+    onDismiss: () -> Unit,
+    dragModifier: Modifier,
+) {
     val interaction = androidx.compose.runtime.remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -317,6 +314,7 @@ private fun SceneGrabber(onDismiss: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .height(30.dp)
+            .then(dragModifier)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
