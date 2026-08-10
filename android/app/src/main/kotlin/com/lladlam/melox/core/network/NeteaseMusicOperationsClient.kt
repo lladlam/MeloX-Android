@@ -62,6 +62,7 @@ class NeteaseMusicOperationsClient(
         ensureLoggedIn()
         val path = if (subscribed) "/api/playlist/subscribe" else "/api/playlist/unsubscribe"
         val data = JSONObject().put("id", playlistId)
+        if (subscribed) data.put("checkToken", NETEASE_CHECK_TOKEN)
         eapi(path, data, true)
         Unit
     }

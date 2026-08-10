@@ -84,6 +84,8 @@ import com.lladlam.melox.core.library.NeteaseLibrarySnapshot
 import com.lladlam.melox.core.library.NeteasePlaylistDetail
 import com.lladlam.melox.core.library.NeteasePlaylistSummary
 import com.lladlam.melox.core.model.SearchSong
+import com.lladlam.melox.core.network.NeteaseMusicOperationsClient
+import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.ui.MeloXBottomContentClearance
 import com.lladlam.melox.ui.glass.meloXLiquidBottomBar
@@ -698,13 +700,35 @@ private fun MeloXPlaylistDetailScreen(
     val appContext = context.applicationContext
     val scope = rememberCoroutineScope()
     val cache = remember(appContext) { NeteaseLibraryCache(appContext) }
+    val accountClient = remember(appContext) {
+        NeteaseSearchClient(cookieProvider = { NeteaseSessionStore.readCookie(appContext) })
+    }
+    val operationsClient = remember(appContext) {
+        NeteaseMusicOperationsClient(cookieProvider = { NeteaseSessionStore.readCookie(appContext) })
+    }
     var detail by remember(initialPlaylist.id) { mutableStateOf<NeteasePlaylistDetail?>(null) }
     var loading by remember(initialPlaylist.id) { mutableStateOf(true) }
     var errorMessage by remember(initialPlaylist.id) { mutableStateOf<String?>(null) }
     var searchQuery by remember(initialPlaylist.id) { mutableStateOf("") }
     var showPlaylistActions by remember(initialPlaylist.id) { mutableStateOf(false) }
     var selectedTrackAction by remember(initialPlaylist.id) { mutableStateOf<SearchSong?>(null) }
+    var isSaved by remember(initialPlaylist.id) { mutableStateOf<Boolean?>(null) }
+    var savingPlaylist by remember(initialPlaylist.id) { mutableStateOf(false) }
     var palette by remember(initialPlaylist.coverUrl) { mutableStateOf(MeloXDetailPalette.LightFallback) }
+
+    suspend fun refreshSavedState() {
+        val cookie = NeteaseSessionStore.readCookie(appContext)
+        if (!NeteaseSessionStore.containsMusicU(cookie)) {
+            isSaved = null
+            return
+        }
+        runCatching {
+            val profile = accountClient.accountProfile(cookie)
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                client.userPlaylistsBlocking(profile.userId)
+            }.any { it.id == initialPlaylist.id }
+        }.onSuccess { isSaved = it }
+    }
 
     suspend fun refreshPlaylist() {
         loading = true
@@ -724,6 +748,10 @@ private fun MeloXPlaylistDetailScreen(
         if (NeteaseLibraryCache.beginPlaylistColdStartRefresh(initialPlaylist.id)) {
             refreshPlaylist()
         }
+    }
+
+    LaunchedEffect(initialPlaylist.id) {
+        refreshSavedState()
     }
 
     val displayed = detail?.summary ?: initialPlaylist
@@ -808,7 +836,23 @@ private fun MeloXPlaylistDetailScreen(
                                 )
                             }
                         },
-                        onMore = { showPlaylistActions = true },
+                        isSaved = isSaved == true,
+                        onToggleSaved = {
+                            if (!savingPlaylist) {
+                                val desired = isSaved != true
+                                savingPlaylist = true
+                                scope.launch {
+                                    runCatching {
+                                        operationsClient.setPlaylistSubscribed(displayed.id, desired)
+                                    }.onSuccess {
+                                        isSaved = desired
+                                    }.onFailure {
+                                        errorMessage = it.message ?: "歌单收藏操作失败"
+                                    }
+                                    savingPlaylist = false
+                                }
+                            }
+                        },
                         sharedTransitionScope = sharedTransitionScope,
                         animatedVisibilityScope = animatedVisibilityScope,
                     )
@@ -1037,12 +1081,14 @@ private fun MeloXStandardPlaylistHero(
     secondary: Color,
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
-    onMore: () -> Unit,
+    isSaved: Boolean,
+    onToggleSaved: () -> Unit,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val artworkSize = minOf(maxWidth * 0.68f, 300.dp)
+        var descriptionExpanded by remember(playlist.id) { mutableStateOf(false) }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1160,17 +1206,34 @@ private fun MeloXStandardPlaylistHero(
                 MeloXGlassCircleButton(
                     foreground = foreground,
                     size = 54.dp,
-                    onClick = onMore,
+                    onClick = onToggleSaved,
                 ) {
                     Text(
-                        "+",
+                        if (isSaved) "✓" else "+",
                         color = foreground,
-                        fontSize = 34.sp,
+                        fontSize = if (isSaved) 24.sp else 34.sp,
                         lineHeight = 34.sp,
-                        fontWeight = FontWeight.Light,
+                        fontWeight = if (isSaved) FontWeight.SemiBold else FontWeight.Light,
                     )
                 }
             }
+
+            playlist.description
+                ?.takeIf(String::isNotBlank)
+                ?.let { description ->
+                    Text(
+                        text = description,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 20.dp, end = 20.dp, top = 24.dp)
+                            .clickable { descriptionExpanded = !descriptionExpanded },
+                        color = secondary,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                        maxLines = if (descriptionExpanded) 12 else 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
         }
     }
 }
