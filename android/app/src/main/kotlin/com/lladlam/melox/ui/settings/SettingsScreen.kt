@@ -112,6 +112,9 @@ fun SettingsScreen(
     val context = LocalContext.current
     var route by remember { mutableStateOf<SettingsRoute?>(null) }
     var search by remember { mutableStateOf("") }
+    // Keep the root ScrollState alive while a detail route is displayed.
+    // Creating it inside the root-only branch reset Settings to y=0 on Back.
+    val rootScrollState = rememberScrollState()
 
     LaunchedEffect(Unit) { MeloXSettingsPreferences.initialize(context) }
     LaunchedEffect(session.cookie) {
@@ -138,7 +141,7 @@ fun SettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(rootScrollState)
             .padding(horizontal = 20.dp)
             .padding(top = 34.dp, bottom = MeloXBottomContentClearance),
     ) {

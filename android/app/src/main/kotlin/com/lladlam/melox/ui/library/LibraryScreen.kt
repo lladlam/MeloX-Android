@@ -49,6 +49,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -110,6 +111,7 @@ fun LibraryScreen(
     session: NeteaseSessionStore,
     onLogin: () -> Unit,
     playlistBackEnabled: Boolean = true,
+    onModalVisibilityChanged: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val appContext = context.applicationContext
@@ -203,6 +205,7 @@ fun LibraryScreen(
                     onBack = { selectedPlaylist = null },
                     sharedTransitionScope = sharedScope,
                     animatedVisibilityScope = playlistTransitionVisibilityScope,
+                    onModalVisibilityChanged = onModalVisibilityChanged,
                 )
             } else {
                 Column(
@@ -695,6 +698,7 @@ private fun MeloXPlaylistDetailScreen(
     onBack: () -> Unit,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
+    onModalVisibilityChanged: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     val appContext = context.applicationContext
@@ -715,6 +719,14 @@ private fun MeloXPlaylistDetailScreen(
     var isSaved by remember(initialPlaylist.id) { mutableStateOf<Boolean?>(null) }
     var savingPlaylist by remember(initialPlaylist.id) { mutableStateOf(false) }
     var palette by remember(initialPlaylist.coverUrl) { mutableStateOf(MeloXDetailPalette.LightFallback) }
+
+    DisposableEffect(showPlaylistActions, selectedTrackAction) {
+        val visible = showPlaylistActions || selectedTrackAction != null
+        onModalVisibilityChanged(visible)
+        onDispose {
+            if (visible) onModalVisibilityChanged(false)
+        }
+    }
 
     suspend fun refreshSavedState() {
         val cookie = NeteaseSessionStore.readCookie(appContext)

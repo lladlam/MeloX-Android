@@ -113,6 +113,7 @@ fun MeloXApp(
     var loginReturnTab by remember { mutableStateOf(AppTab.Settings) }
     var tabBarMinimized by remember { mutableStateOf(false) }
     var scrollAccumulator by remember { mutableFloatStateOf(0f) }
+    var libraryModalVisible by remember { mutableStateOf(false) }
     val playbackState = rememberMeloXPlaybackUiState()
     val playerTransitionState = remember { SeekableTransitionState(false) }
     val playerTransition = rememberTransition(
@@ -207,6 +208,7 @@ fun MeloXApp(
     LaunchedEffect(selectedTab) {
         tabBarMinimized = false
         scrollAccumulator = 0f
+        if (selectedTab != AppTab.Library) libraryModalVisible = false
     }
 
     CompositionLocalProvider(LocalMeloXBackdrop provides screenControlBackdrop) {
@@ -219,7 +221,12 @@ fun MeloXApp(
                 modifier = Modifier
                     .fillMaxSize()
                     .nestedScroll(tabBarMinimizeConnection)
-                    .layerBackdrop(bottomChromeBackdrop),
+                    .layerBackdrop(bottomChromeBackdrop)
+                    // Library action sheets deliberately stay in the same Compose
+                    // window so Liquid Glass can sample the collection behind them.
+                    // Raise the whole screen while one is open; BottomChrome must
+                    // never paint over the modal scrim/sheet.
+                    .zIndex(if (libraryModalVisible && selectedTab == AppTab.Library && !fullPlayerVisible) 15f else 0f),
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 containerColor = MaterialTheme.colorScheme.background,
             ) { innerPadding ->
@@ -234,7 +241,8 @@ fun MeloXApp(
                         AppTab.Explore -> MeloXExploreScreen()
                         AppTab.Library -> LibraryScreen(
                             session = neteaseSession,
-                            playlistBackEnabled = !fullPlayerVisible,
+                            playlistBackEnabled = !fullPlayerVisible && !libraryModalVisible,
+                            onModalVisibilityChanged = { libraryModalVisible = it },
                             onLogin = {
                                 loginReturnTab = AppTab.Library
                                 showNeteaseLogin = true
