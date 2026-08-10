@@ -724,7 +724,7 @@ private fun MeloXPlaylistDetailScreen(
         }
         runCatching {
             val profile = accountClient.accountProfile(cookie)
-            withContext(kotlinx.coroutines.Dispatchers.IO) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 client.userPlaylistsBlocking(profile.userId)
             }.any { it.id == initialPlaylist.id }
         }.onSuccess { isSaved = it }
