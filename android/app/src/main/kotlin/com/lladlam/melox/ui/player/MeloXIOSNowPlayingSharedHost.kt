@@ -333,17 +333,6 @@ private fun SharedArtworkDestination(
     val fullScreenScaleBlend = smoothStep(expansionProgress, 0.30f, 0.88f)
     val effectiveScale = 1f +
         (playbackScale - 1f) * fullScreenScaleBlend * (1f - headerProgress)
-    val collapseProgress = (1f - expansionProgress).coerceIn(0f, 1f)
-
-    // Lyrics dismissal intentionally does not send the 72dp header artwork down
-    // the shared-element path. It fades immediately as MiniPlayer's own artwork
-    // appears at the final MiniPlayer location and waits for the sheet to catch up.
-    // Queue keeps the shared path so its top-left artwork visibly travels home.
-    val persistentArtworkAlpha = if (page == MeloXNowPlayingPage.Lyrics) {
-        1f - smoothStep(collapseProgress, 0f, 0.10f)
-    } else {
-        1f
-    }
 
     Column(
         modifier = Modifier
@@ -358,12 +347,16 @@ private fun SharedArtworkDestination(
                 .fillMaxWidth()
                 .weight(1f),
         ) {
+            // Keep the destination strictly square and fully inside the stable
+            // SharedTransition coordinate space. The old maxWidth + 16dp target
+            // was wider than its parent and could be clipped/scaled differently
+            // on the two axes while the overlay was active.
             val fullArtworkSize = maxOf(
                 170.dp,
-                minOf(maxWidth + 16.dp, maxHeight - 92.dp),
+                minOf(maxWidth, maxHeight - 92.dp),
             )
             val artworkFooterHeight = 78.dp
-            val fullX = ((maxWidth - fullArtworkSize) / 2f).coerceAtLeast((-8).dp)
+            val fullX = ((maxWidth - fullArtworkSize) / 2f).coerceAtLeast(0.dp)
             val fullY = (maxHeight - fullArtworkSize - artworkFooterHeight)
                 .coerceAtLeast(0.dp)
 
@@ -375,30 +368,31 @@ private fun SharedArtworkDestination(
             val artworkSharedState = with(sharedTransitionScope) {
                 rememberSharedContentState(key = sharedArtworkKey(state.mediaId))
             }
-            val sharedModifier = if (page == MeloXNowPlayingPage.Lyrics) {
-                Modifier
-            } else {
-                with(sharedTransitionScope) {
-                    Modifier.sharedElement(
-                        sharedContentState = artworkSharedState,
-                        animatedVisibilityScope = animatedVisibilityScope,
-                        boundsTransform = MeloXPlayerLinearBoundsTransform,
-                        zIndexInOverlay = 3f,
-                    )
-                }
+            val sharedModifier = with(sharedTransitionScope) {
+                Modifier.sharedElement(
+                    sharedContentState = artworkSharedState,
+                    animatedVisibilityScope = animatedVisibilityScope,
+                    boundsTransform = MeloXPlayerLinearBoundsTransform,
+                    zIndexInOverlay = 3f,
+                )
             }
 
+            // Position and size the element *before* attaching sharedElement.
+            // That makes the shared overlay capture the actual square bounds at
+            // the final on-screen coordinate instead of a zero-origin box whose
+            // child is offset internally. It also removes the one-frame flash
+            // seen when expanding from compact MiniPlayer mode.
             Box(
-                modifier = sharedModifier
+                modifier = Modifier
                     .offset(x = targetX, y = targetY)
-                    .size(targetSize),
+                    .size(targetSize)
+                    .then(sharedModifier),
             ) {
                 Artwork(
                     url = state.artworkUrl,
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            alpha = persistentArtworkAlpha
                             scaleX = effectiveScale
                             scaleY = effectiveScale
                         }
@@ -406,8 +400,8 @@ private fun SharedArtworkDestination(
                             elevation = shadowElevation * (1f - headerProgress * 0.55f),
                             shape = RoundedCornerShape(targetRadius),
                             clip = false,
-                            ambientColor = Color.Black.copy(alpha = 0.28f * persistentArtworkAlpha),
-                            spotColor = Color.Black.copy(alpha = 0.28f * persistentArtworkAlpha),
+                            ambientColor = Color.Black.copy(alpha = 0.28f),
+                            spotColor = Color.Black.copy(alpha = 0.28f),
                         )
                         .clip(RoundedCornerShape(targetRadius)),
                 )
