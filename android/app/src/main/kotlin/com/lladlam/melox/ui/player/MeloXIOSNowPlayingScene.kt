@@ -1,0 +1,410 @@
+package com.lladlam.melox.ui.player
+
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+
+/**
+ * The portrait Now Playing scene mirrors the upstream iOS page architecture:
+ * artwork details are transient, Lyrics and Queue live as resident layers, the
+ * song header is shared by alternate pages, and the bottom controls never leave
+ * the composition while pages change.
+ *
+ * The actual artwork is intentionally not drawn here. SharedHost owns one
+ * persistent artwork layer so the same image can move between the full artwork
+ * frame, the 72dp song-header frame, and MiniPlayer without flashing duplicate
+ * covers.
+ */
+@Composable
+internal fun MeloXIOSNowPlayingScene(
+    state: MeloXPlaybackUiState,
+    page: MeloXNowPlayingPage,
+    transitionSourcePage: MeloXNowPlayingPage,
+    onDismiss: () -> Unit,
+    onPageChanged: (MeloXNowPlayingPage) -> Unit,
+    onShowActions: () -> Unit,
+) {
+    val directLyricsQueue = isDirectLyricsQueueTransition(transitionSourcePage, page)
+
+    val artworkVisible = page == MeloXNowPlayingPage.Artwork
+    val lyricsVisible = page == MeloXNowPlayingPage.Lyrics
+    val queueVisible = page == MeloXNowPlayingPage.Queue
+
+    val artworkAlpha by animateFloatAsState(
+        targetValue = if (artworkVisible) 1f else 0f,
+        animationSpec = if (artworkVisible) {
+            tween(durationMillis = 220, delayMillis = 70, easing = FastOutSlowInEasing)
+        } else {
+            tween(durationMillis = 240, easing = FastOutSlowInEasing)
+        },
+        label = "scene-artwork-details-alpha",
+    )
+    val artworkOffset by animateDpAsState(
+        targetValue = if (artworkVisible) 0.dp else (-300).dp,
+        animationSpec = if (artworkVisible) {
+            tween(durationMillis = 220, delayMillis = 70, easing = FastOutSlowInEasing)
+        } else {
+            tween(durationMillis = 240, easing = FastOutSlowInEasing)
+        },
+        label = "scene-artwork-details-offset",
+    )
+
+    val lyricsAlpha by animateFloatAsState(
+        targetValue = if (lyricsVisible) 1f else 0f,
+        animationSpec = when {
+            directLyricsQueue -> tween(440, easing = FastOutSlowInEasing)
+            lyricsVisible -> tween(340, delayMillis = 110, easing = FastOutSlowInEasing)
+            transitionSourcePage == MeloXNowPlayingPage.Lyrics -> tween(240, easing = FastOutSlowInEasing)
+            else -> tween(120)
+        },
+        label = "scene-lyrics-alpha",
+    )
+    val lyricsOffset by animateDpAsState(
+        targetValue = if (page == MeloXNowPlayingPage.Artwork) 400.dp else 0.dp,
+        animationSpec = when {
+            directLyricsQueue -> tween(440, easing = FastOutSlowInEasing)
+            lyricsVisible -> tween(340, delayMillis = 110, easing = FastOutSlowInEasing)
+            transitionSourcePage == MeloXNowPlayingPage.Lyrics -> tween(240, easing = FastOutSlowInEasing)
+            else -> tween(120)
+        },
+        label = "scene-lyrics-offset",
+    )
+    val lyricsScale by animateFloatAsState(
+        targetValue = if (page == MeloXNowPlayingPage.Queue) 0.92f else 1f,
+        animationSpec = if (directLyricsQueue) {
+            tween(440, easing = FastOutSlowInEasing)
+        } else {
+            tween(240, easing = FastOutSlowInEasing)
+        },
+        label = "scene-lyrics-scale",
+    )
+
+    val queueAlpha by animateFloatAsState(
+        targetValue = if (queueVisible) 1f else 0f,
+        animationSpec = when {
+            directLyricsQueue -> tween(440, easing = FastOutSlowInEasing)
+            queueVisible -> tween(340, delayMillis = 110, easing = FastOutSlowInEasing)
+            transitionSourcePage == MeloXNowPlayingPage.Queue -> tween(240, easing = FastOutSlowInEasing)
+            else -> tween(120)
+        },
+        label = "scene-queue-alpha",
+    )
+    val queueOffset by animateDpAsState(
+        targetValue = if (page == MeloXNowPlayingPage.Artwork) 400.dp else 0.dp,
+        animationSpec = when {
+            directLyricsQueue -> tween(440, easing = FastOutSlowInEasing)
+            queueVisible -> tween(340, delayMillis = 110, easing = FastOutSlowInEasing)
+            transitionSourcePage == MeloXNowPlayingPage.Queue -> tween(240, easing = FastOutSlowInEasing)
+            else -> tween(120)
+        },
+        label = "scene-queue-offset",
+    )
+    val queueScale by animateFloatAsState(
+        targetValue = if (page == MeloXNowPlayingPage.Lyrics) 0.92f else 1f,
+        animationSpec = if (directLyricsQueue) {
+            tween(440, easing = FastOutSlowInEasing)
+        } else {
+            tween(240, easing = FastOutSlowInEasing)
+        },
+        label = "scene-queue-scale",
+    )
+
+    val headerAlpha by animateFloatAsState(
+        targetValue = if (artworkVisible) 0f else 1f,
+        animationSpec = if (artworkVisible) {
+            tween(240, easing = FastOutSlowInEasing)
+        } else {
+            tween(400, delayMillis = 80, easing = FastOutSlowInEasing)
+        },
+        label = "scene-song-header-alpha",
+    )
+    val headerOffset by animateDpAsState(
+        targetValue = if (artworkVisible) 40.dp else 0.dp,
+        animationSpec = if (artworkVisible) {
+            tween(240, easing = FastOutSlowInEasing)
+        } else {
+            tween(400, delayMillis = 80, easing = FastOutSlowInEasing)
+        },
+        label = "scene-song-header-offset",
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .padding(horizontal = 32.dp),
+    ) {
+        SceneGrabber(onDismiss)
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        ) {
+            // Artwork-page details keep the same layout slot as the persistent
+            // artwork layer, but never draw a second image.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(if (artworkVisible) 2f else 0f)
+                    .graphicsLayer {
+                        alpha = artworkAlpha
+                        translationY = artworkOffset.toPx()
+                    },
+            ) {
+                ArtworkDetailsWithoutArtwork(
+                    state = state,
+                    onShowActions = onShowActions,
+                )
+            }
+
+            // Resident lyrics start 400dp below the page, wait 110ms, then use
+            // the upstream 340ms smooth entrance. When moving directly to Queue
+            // they stay resident and scale to 0.92 while fading.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(if (lyricsVisible) 2f else 0f)
+                    .graphicsLayer {
+                        alpha = lyricsAlpha
+                        translationY = lyricsOffset.toPx()
+                        scaleX = lyricsScale
+                        scaleY = lyricsScale
+                    }
+                    .padding(top = 88.dp),
+            ) {
+                MeloXIOSLyricsPanel(
+                    state = state,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+
+            // Queue uses the same resident-page timing as upstream. Its own song
+            // header is suppressed; the shared header/persistent artwork above it
+            // occupy the reference 72dp slot instead.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(if (queueVisible) 2f else 0f)
+                    .graphicsLayer {
+                        alpha = queueAlpha
+                        translationY = queueOffset.toPx()
+                        scaleX = queueScale
+                        scaleY = queueScale
+                    },
+            ) {
+                MeloXQueuePanel(
+                    state = state,
+                    modifier = Modifier.fillMaxSize(),
+                    showSongHeader = false,
+                )
+            }
+
+            // The 72dp artwork itself is owned by SharedHost. This row only draws
+            // its title/artist/actions counterpart so both Lyrics and Queue share
+            // exactly one header geometry, matching upstream NowPlayingView.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(72.dp)
+                    .zIndex(3f)
+                    .graphicsLayer {
+                        alpha = headerAlpha
+                        translationY = headerOffset.toPx()
+                    }
+                    .padding(start = 84.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = state.title.ifBlank { "正在播放" },
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        lineHeight = 24.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = state.artist,
+                        color = Color.White.copy(alpha = 0.64f),
+                        fontSize = 18.sp,
+                        lineHeight = 22.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onShowActions),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "•••",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
+
+        MeloXNowPlayingCoreControls(
+            state = state,
+            page = page,
+            onPageSelected = { destination ->
+                onPageChanged(
+                    if (page == destination) {
+                        MeloXNowPlayingPage.Artwork
+                    } else {
+                        destination
+                    },
+                )
+            },
+        )
+    }
+}
+
+@Composable
+private fun SceneGrabber(onDismiss: () -> Unit) {
+    val interaction = androidx.compose.runtime.remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.88f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium,
+        ),
+        label = "scene-grabber-scale",
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(30.dp)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClick = onDismiss,
+            ),
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(top = 8.dp)
+                .size(width = 60.dp, height = 5.dp)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.52f)),
+        )
+    }
+}
+
+@Composable
+private fun ArtworkDetailsWithoutArtwork(
+    state: MeloXPlaybackUiState,
+    onShowActions: () -> Unit,
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val artworkSize = maxOf(
+            170.dp,
+            minOf(maxWidth + 16.dp, maxHeight - 92.dp),
+        )
+
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.size(artworkSize))
+            Spacer(Modifier.height(20.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = state.title.ifBlank { "正在播放" },
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        lineHeight = 24.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = state.artist,
+                        color = Color.White.copy(alpha = 0.64f),
+                        fontSize = 20.sp,
+                        lineHeight = 24.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onShowActions),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "•••",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+private fun isDirectLyricsQueueTransition(
+    source: MeloXNowPlayingPage,
+    target: MeloXNowPlayingPage,
+): Boolean =
+    (source == MeloXNowPlayingPage.Lyrics && target == MeloXNowPlayingPage.Queue) ||
+        (source == MeloXNowPlayingPage.Queue && target == MeloXNowPlayingPage.Lyrics)
