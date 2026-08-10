@@ -214,7 +214,9 @@ private fun DiscoveryPlaylistDetail(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current.applicationContext
-    val client = remember(context) { NeteaseLibraryClient { NeteaseSessionStore.readCookie(context) } }
+    val client = remember(context) {
+        NeteaseLibraryClient(cookieProvider = { NeteaseSessionStore.readCookie(context) })
+    }
     var detail by remember(playlist.id) { mutableStateOf<com.lladlam.melox.core.library.NeteasePlaylistDetail?>(null) }
     var error by remember(playlist.id) { mutableStateOf<String?>(null) }
     BackHandler(onBack = onBack)
