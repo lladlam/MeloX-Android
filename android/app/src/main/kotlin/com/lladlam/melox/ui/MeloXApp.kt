@@ -105,6 +105,10 @@ fun MeloXApp(
     val playbackState = rememberMeloXPlaybackUiState()
     val neteaseSession = rememberNeteaseSessionStore()
     val glassBackdrop = rememberLayerBackdrop()
+    // Controls inside a recorded scene must not sample that same scene on some
+    // MediaTek renderers. A dedicated stable background prevents recursive
+    // Backdrop recording while the root backdrop remains rich enough for Dock.
+    val screenControlBackdrop = rememberLayerBackdrop()
 
     val tabBarMinimizeConnection = remember {
         object : NestedScrollConnection {
@@ -169,28 +173,33 @@ fun MeloXApp(
                         .fillMaxSize()
                         .padding(innerPadding),
                 ) {
-                    when (selectedTab) {
-                        AppTab.Search -> SearchScreen()
-                        AppTab.Home -> MeloXHomeScreen()
-                        AppTab.Explore -> MeloXExploreScreen()
-                        AppTab.Library -> LibraryScreen(
-                            session = neteaseSession,
-                            // Back ownership is state-based instead of relying on
-                            // composition order. The full player exclusively owns
-                            // back while it is visible.
-                            playlistBackEnabled = !fullPlayerVisible,
-                            onLogin = {
-                                loginReturnTab = AppTab.Library
-                                showNeteaseLogin = true
-                            },
-                        )
-                        AppTab.Settings -> SettingsScreen(
-                            session = neteaseSession,
-                            onLogin = {
-                                loginReturnTab = AppTab.Settings
-                                showNeteaseLogin = true
-                            },
-                        )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
+                            .layerBackdrop(screenControlBackdrop),
+                    )
+                    CompositionLocalProvider(LocalMeloXBackdrop provides screenControlBackdrop) {
+                        when (selectedTab) {
+                            AppTab.Search -> SearchScreen()
+                            AppTab.Home -> MeloXHomeScreen()
+                            AppTab.Explore -> MeloXExploreScreen()
+                            AppTab.Library -> LibraryScreen(
+                                session = neteaseSession,
+                                playlistBackEnabled = !fullPlayerVisible,
+                                onLogin = {
+                                    loginReturnTab = AppTab.Library
+                                    showNeteaseLogin = true
+                                },
+                            )
+                            AppTab.Settings -> SettingsScreen(
+                                session = neteaseSession,
+                                onLogin = {
+                                    loginReturnTab = AppTab.Settings
+                                    showNeteaseLogin = true
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -307,6 +316,7 @@ private fun MeloXBottomChrome(
     modifier: Modifier = Modifier,
     miniPlayer: @Composable (compactProgress: Float) -> Unit,
 ) {
+    val tabsBackdrop = rememberLayerBackdrop()
     val rawProgress by animateFloatAsState(
         targetValue = if (minimized) 1f else 0f,
         animationSpec = spring(
@@ -412,6 +422,21 @@ private fun MeloXBottomChrome(
                 tonalElevation = 0.dp,
             ) {
                 BoxWithConstraints(Modifier.fillMaxSize()) {
+                    // Official LiquidBottomTabs records an invisible copy of the
+                    // outer glass, then the moving selection samples the combined
+                    // scene + panel backdrop. This prevents content punching
+                    // through or skewing the selected capsule.
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = 0f }
+                            .layerBackdrop(tabsBackdrop)
+                            .meloXLiquidBottomBar(
+                                shape = navShape,
+                                tint = bottomLiquidGlassTint(),
+                                surfaceColor = bottomGlassFallbackColor().copy(alpha = 0.42f),
+                            ),
+                    )
                     val selectedIndex = primaryTabs.indexOfFirst { it.first == selectedTab }
                     val lensPosition by animateFloatAsState(
                         targetValue = selectedIndex.coerceAtLeast(0).toFloat(),
@@ -439,6 +464,7 @@ private fun MeloXBottomChrome(
                             .meloXLiquidTabSelection(
                                 shape = RoundedCornerShape(24.dp),
                                 selected = lensAlpha > 0.001f,
+                                panelBackdrop = tabsBackdrop,
                                 tint = if (dark) {
                                     Color.White.copy(alpha = 0.18f)
                                 } else {

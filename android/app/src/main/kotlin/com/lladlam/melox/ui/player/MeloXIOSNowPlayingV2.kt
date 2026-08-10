@@ -373,6 +373,13 @@ private fun MeloXArtworkPageV3(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
+                        .meloXLiquidButton(
+                            shape = CircleShape,
+                            surfaceColor = Color.White.copy(alpha = 0.08f),
+                            blurRadius = 3.dp,
+                            lensRadius = 7.dp,
+                            refractionHeight = 10.dp,
+                        )
                         .clickable(onClick = onMore),
                     contentAlignment = Alignment.Center,
                 ) {

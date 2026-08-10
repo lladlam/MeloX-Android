@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +47,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.lladlam.melox.ui.glass.LocalMeloXBackdrop
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 
@@ -62,6 +66,7 @@ fun MeloXIOSNowPlayingSharedHost(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     var committingDismiss by remember(state.mediaId) { mutableStateOf(false) }
+    val playerBackdrop = rememberLayerBackdrop()
 
     val expansionProgress by animatedVisibilityScope.transition.animateFloat(
         transitionSpec = {
@@ -143,21 +148,18 @@ fun MeloXIOSNowPlayingSharedHost(
                 onDragStopped = { velocity ->
                     if (dragOffset.value >= dismissThreshold || velocity >= 1350f) {
                         committingDismiss = true
-                        scope.launch {
-                            dragOffset.animateTo(
-                                targetValue = maxOf(dragOffset.value, maxDrag * 0.24f),
-                                animationSpec = tween(150),
-                            )
-                            onDismiss()
-                        }
+                        // Start the exact same AnimatedVisibility/shared-bounds
+                        // collapse used by Back. The current drag displacement is
+                        // blended out by fullPlayerAlpha during that one animation.
+                        onDismiss()
                     } else {
                         scope.launch {
                             dragOffset.animateTo(
                                 targetValue = 0f,
                                 initialVelocity = velocity,
                                 animationSpec = spring(
-                                    dampingRatio = 0.82f,
-                                    stiffness = 430f,
+                                    dampingRatio = 0.90f,
+                                    stiffness = 320f,
                                 ),
                             )
                         }
@@ -165,42 +167,43 @@ fun MeloXIOSNowPlayingSharedHost(
                 },
             ),
       ) {
+        // Record only the visual scene. Player controls are drawn later as a
+        // sibling, so their glass never recursively samples itself.
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer { alpha = backdropAlpha },
+                .graphicsLayer { alpha = backdropAlpha }
+                .layerBackdrop(playerBackdrop),
         ) {
             MeloXFlowingLightBackdrop(
                 artworkUrl = state.artworkUrl,
                 isPlaying = state.isPlaying,
             )
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer { alpha = fullPlayerAlpha },
-        ) {
-            MeloXIOSNowPlayingV2(
+            SharedArtworkDestination(
                 state = state,
-                onDismiss = onDismiss,
                 page = page,
-                onPageChanged = { page = it },
-                drawBackdrop = false,
-                drawArtwork = false,
+                expansionProgress = expansionProgress,
+                sharedTransitionScope = sharedTransitionScope,
+                animatedVisibilityScope = animatedVisibilityScope,
             )
         }
 
-        // This is the only full-player artwork. The mini-player endpoint uses the
-        // same sharedElement key, so the visual identity is continuous across the
-        // mini player, artwork page, interruptions, and the collapse transition.
-        SharedArtworkDestination(
-            state = state,
-            page = page,
-            expansionProgress = expansionProgress,
-            sharedTransitionScope = sharedTransitionScope,
-            animatedVisibilityScope = animatedVisibilityScope,
-        )
+        CompositionLocalProvider(LocalMeloXBackdrop provides playerBackdrop) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = fullPlayerAlpha },
+            ) {
+                MeloXIOSNowPlayingV2(
+                    state = state,
+                    onDismiss = onDismiss,
+                    page = page,
+                    onPageChanged = { page = it },
+                    drawBackdrop = false,
+                    drawArtwork = false,
+                )
+            }
+        }
       }
     }
 }

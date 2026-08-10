@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -11,6 +12,8 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,8 +42,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import java.net.URLEncoder
 
@@ -52,17 +53,24 @@ fun MeloXNowPlayingActionsSheet(
     visible: Boolean,
     onDismiss: () -> Unit,
 ) {
-    if (!visible) return
     val context = LocalContext.current
     var page by remember(state.mediaId) { mutableStateOf(ActionPage.Main) }
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    val dismissInteraction = remember { MutableInteractionSource() }
+    val panelInteraction = remember { MutableInteractionSource() }
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(spring(stiffness = 420f)) + scaleIn(initialScale = 0.96f),
+        exit = fadeOut(spring(stiffness = 520f)) + scaleOut(targetScale = 0.96f),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .clickable(indication = null, interactionSource = null, onClick = onDismiss)
+                .background(Color.Black.copy(alpha = 0.16f))
+                .clickable(
+                    indication = null,
+                    interactionSource = dismissInteraction,
+                    onClick = onDismiss,
+                )
                 .padding(horizontal = 18.dp)
                 .navigationBarsPadding(),
             contentAlignment = Alignment.BottomCenter,
@@ -79,7 +87,11 @@ fun MeloXNowPlayingActionsSheet(
                         lensRadius = 26.dp,
                         refractionHeight = 26.dp,
                     )
-                    .clickable(enabled = false) {},
+                    .clickable(
+                        indication = null,
+                        interactionSource = panelInteraction,
+                        onClick = {},
+                    ),
                 color = Color.Transparent,
                 shape = RoundedCornerShape(30.dp),
             ) {

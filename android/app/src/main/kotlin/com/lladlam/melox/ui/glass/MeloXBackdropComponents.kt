@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
@@ -78,7 +79,9 @@ fun Modifier.meloXLiquidButton(
                 )
             },
             layerBlock = {
-                val scale = lerp(1f, 1.08f, press.value)
+                // Match the official LiquidButton example: a small glass-layer
+                // expansion, without a second inverse graphicsLayer scale.
+                val scale = lerp(1f, 1.04f, press.value)
                 scaleX = scale
                 scaleY = scale
             },
@@ -90,11 +93,6 @@ fun Modifier.meloXLiquidButton(
                 if (surfaceColor != Color.Unspecified) drawRect(surfaceColor)
             },
         )
-        .graphicsLayer {
-            val scale = lerp(1f, 0.96f, press.value)
-            scaleX = scale
-            scaleY = scale
-        }
         .pointerInput(enabled) {
             if (!enabled) return@pointerInput
             awaitEachGesture {
@@ -137,18 +135,26 @@ fun Modifier.meloXLiquidTabSelection(
     shape: Shape,
     selected: Boolean,
     tint: Color,
+    panelBackdrop: Backdrop? = null,
 ): Modifier {
     if (!selected) return this
-    val backdrop = LocalMeloXBackdrop.current ?: return this
+    val sceneBackdrop = LocalMeloXBackdrop.current ?: return this
+    val backdrop = if (panelBackdrop != null) {
+        rememberCombinedBackdrop(sceneBackdrop, panelBackdrop)
+    } else {
+        sceneBackdrop
+    }
     return drawBackdrop(
         backdrop = backdrop,
         shape = { shape },
         effects = {
-            lens(10.dp.toPx(), 14.dp.toPx(), chromaticAberration = true)
+            // The official selected lens has virtually no refraction at rest;
+            // strong chromatic refraction is only introduced while dragging.
+            lens(0.5.dp.toPx(), 1.dp.toPx(), chromaticAberration = false)
         },
-        highlight = { Highlight.Default },
-        shadow = { Shadow(radius = 3.dp, alpha = 0.16f) },
-        innerShadow = { InnerShadow(radius = 4.dp, alpha = 0.34f) },
+        highlight = { Highlight.Ambient },
+        shadow = { Shadow(radius = 3.dp, alpha = 0.12f) },
+        innerShadow = { InnerShadow(radius = 3.dp, alpha = 0.20f) },
         onDrawSurface = { drawRect(tint) },
     )
 }
