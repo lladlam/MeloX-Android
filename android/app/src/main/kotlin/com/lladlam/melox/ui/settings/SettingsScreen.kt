@@ -506,19 +506,60 @@ private fun PlayerAppearanceSettings(context: android.content.Context) {
 private fun LyricsSettings(context: android.content.Context) {
     SettingsToggleRow(context, "显示翻译", "lyrics_translation", true)
     SettingsToggleRow(context, "显示罗马音", "lyrics_romanization", true)
+    LyricsStringChoiceSetting(
+        context,
+        "罗马音显示范围",
+        "lyrics_romanization_display_mode",
+        MeloXLyricAnnotationDisplayMode.FocusedLine.name,
+        MeloXLyricAnnotationDisplayMode.entries.map { it.name },
+    ) { if (it == MeloXLyricAnnotationDisplayMode.FocusedLine.name) "仅当前播放行" else "全部歌词行" }
+    LyricsStringChoiceSetting(
+        context,
+        "翻译显示范围",
+        "lyrics_translation_display_mode",
+        MeloXLyricAnnotationDisplayMode.FocusedLine.name,
+        MeloXLyricAnnotationDisplayMode.entries.map { it.name },
+    ) { if (it == MeloXLyricAnnotationDisplayMode.FocusedLine.name) "仅当前播放行" else "全部歌词行" }
     SettingsToggleRow(context, "逐字歌词（YRC）", "lyrics_word_by_word", true)
     SettingsToggleRow(context, "普通 LRC 生成逐字时间", "lyrics_pseudo_timing", true, "按 Unicode 字素分配行时长，不覆盖真实 YRC。")
     SettingsToggleRow(context, "点击歌词跳转进度", "lyrics_tap_seek", true)
+    SettingsToggleRow(context, "长按歌词分享", "lyrics_long_press_share", true)
+    SettingsToggleRow(context, "间奏倒计时", "lyrics_interlude_countdown", true, "歌词间隔至少 4 秒时显示三点倒计时。")
     SettingsToggleRow(context, "自动跟随当前歌词", "lyrics_auto_follow", true)
     SettingsToggleRow(context, "减弱歌词动画", "lyrics_reduce_motion", false, "保留逐字高亮，关闭弹性、抬升与光晕。")
 
-    LyricsChoiceSetting(context, "歌词时间偏移", "lyrics_advance_ms", 0, listOf(-400, -200, 0, 200, 400)) { value ->
+    LyricsChoiceSetting(context, "歌词提前量", "lyrics_advance_ms", 0, listOf(-1_000, -500, -200, 0, 200, 500, 1_000, 2_000, 5_000)) { value ->
         if (value == 0) "同步" else if (value > 0) "提前 ${value}ms" else "延后 ${-value}ms"
     }
+    SettingsToggleRow(context, "提前量同时应用于逐字高亮", "lyrics_advance_word_by_word", false)
+    LyricsChoiceSetting(context, "歌词刷新率", "lyrics_refresh_rate", 60, listOf(30, 60, 90, 120)) { "$it FPS" }
     LyricsChoiceSetting(context, "手动滚动后恢复跟随", "lyrics_follow_delay_ms", 3_000, listOf(1_500, 3_000, 5_000, 8_000)) { "${it / 1_000f} 秒" }
     LyricsFloatChoiceSetting(context, "歌词字号", "lyrics_font_scale", 1f, listOf(.85f, 1f, 1.12f, 1.25f)) { "${(it * 100).toInt()}%" }
     LyricsFloatChoiceSetting(context, "行间距", "lyrics_spacing_scale", 1f, listOf(.8f, 1f, 1.2f, 1.4f)) { "${(it * 100).toInt()}%" }
     LyricsFloatChoiceSetting(context, "远近模糊", "lyrics_blur_strength", 1f, listOf(0f, .6f, 1f, 1.4f)) { if (it == 0f) "关闭" else "${(it * 100).toInt()}%" }
+}
+
+@Composable
+private fun LyricsStringChoiceSetting(
+    context: android.content.Context,
+    title: String,
+    key: String,
+    default: String,
+    values: List<String>,
+    label: (String) -> String,
+) {
+    var selected by remember(key) { mutableStateOf(MeloXSettingsPreferences.string(context, key, default)) }
+    Text(title, modifier = Modifier.padding(top = 8.dp), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f))
+    Spacer(Modifier.height(8.dp))
+    SettingsGlassGroup {
+        values.forEach { value ->
+            SettingsChoiceRow(label(value), selected == value) {
+                selected = value
+                MeloXSettingsPreferences.setString(context, key, value)
+            }
+        }
+    }
+    Spacer(Modifier.height(10.dp))
 }
 
 @Composable

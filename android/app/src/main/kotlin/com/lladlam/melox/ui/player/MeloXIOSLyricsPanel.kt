@@ -1,14 +1,19 @@
 package com.lladlam.melox.ui.player
 
+import android.content.Context
+import android.content.Intent
 import android.os.SystemClock
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -48,6 +53,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -57,16 +63,19 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.lyrics.LyricLine
+import com.lladlam.melox.core.lyrics.LyricRomanizationAligner
 import com.lladlam.melox.core.lyrics.LyricsDocument
 import com.lladlam.melox.core.lyrics.withPseudoTiming
 import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
+import com.lladlam.melox.ui.settings.MeloXLyricAnnotationDisplayMode
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -137,10 +146,12 @@ fun MeloXIOSLyricsPanel(
     onInterfaceInteraction: () -> Unit = {},
     onInterfaceVisibilityChange: (Boolean) -> Unit = {},
 ) {
-    val context = LocalContext.current.applicationContext
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    val haptics = LocalHapticFeedback.current
     val client = remember(context) {
         NeteaseSearchClient(
-            cookieProvider = { NeteaseSessionStore.readCookie(context) },
+            cookieProvider = { NeteaseSessionStore.readCookie(appContext) },
         )
     }
     val listState = rememberLazyListState()
@@ -165,7 +176,7 @@ fun MeloXIOSLyricsPanel(
         val songId = mediaId?.toLongOrNull() ?: return@LaunchedEffect
         isLoading = true
         errorMessage = null
-        val downloaded = MeloXDownloadStore.get(context).localLyrics(songId)
+        val downloaded = MeloXDownloadStore.get(appContext).localLyrics(songId)
         if (downloaded != null) {
             lyrics = downloaded
         } else runCatching { client.lyrics(songId) }
@@ -182,33 +193,48 @@ fun MeloXIOSLyricsPanel(
     val lines = renderedDocument?.lines.orEmpty()
     val hasSyllableSync = remember(renderedDocument) { lines.any { it.syllables.isNotEmpty() } }
     val lyricAdvanceMs = MeloXSettingsRuntime.lyricAdvanceMs.toLong()
+    val usesWordByWordPresentation = hasSyllableSync && MeloXSettingsRuntime.lyricWordByWordEnabled
+    val timedAdvanceMs = if (MeloXSettingsRuntime.lyricAdvanceAppliesToWordByWord) lyricAdvanceMs else 0L
+    val lineAdvanceMs = if (usesWordByWordPresentation) timedAdvanceMs else lyricAdvanceMs
     var highlightedIndex by remember(document) {
         mutableIntStateOf(
             sourceHighlightedIndex(
                 lines,
-                state.positionMs + lyricAdvanceMs,
+                state.positionMs + lineAdvanceMs,
             ),
         )
     }
-    val playbackTimeProvider = remember(mediaId, lyricAdvanceMs) {
-        { renderedPositionState.longValue + lyricAdvanceMs }
+    val playbackTimeProvider = remember(mediaId, timedAdvanceMs) {
+        { renderedPositionState.longValue + timedAdvanceMs }
     }
 
     // Update the line index only when it actually changes. The per-frame time is
     // read later from Canvas, so the 60 Hz clock invalidates drawing rather than
     // recomposing and relaying out the complete lyric list.
-    LaunchedEffect(state.isPlaying, mediaId, document, hasSyllableSync) {
+    val refreshRate = MeloXSettingsRuntime.lyricRefreshRate
+    val interludes = remember(lines) { sourceLyricInterludes(lines) }
+    var activeInterludeIndex by remember(document) { mutableIntStateOf(-1) }
+    LaunchedEffect(state.isPlaying, mediaId, document, hasSyllableSync, lineAdvanceMs, refreshRate) {
+        var lastFrameNanos = 0L
+        val minimumFrameNanos = 1_000_000_000L / refreshRate.coerceIn(30, 120)
         while (true) {
+            if (state.isPlaying) {
+                val frameNanos = withFrameNanos { it }
+                if (lastFrameNanos != 0L && frameNanos - lastFrameNanos < minimumFrameNanos) continue
+                lastFrameNanos = frameNanos
+            }
             val position = if (state.isPlaying) {
                 anchorPositionMs + (SystemClock.elapsedRealtime() - anchorRealtimeMs)
             } else {
                 anchorPositionMs
             }
             renderedPositionState.longValue = position
-            val effectivePosition = position + lyricAdvanceMs
+            val effectivePosition = position + lineAdvanceMs
             val nextIndex = sourceHighlightedIndex(lines, effectivePosition)
             if (nextIndex != highlightedIndex) highlightedIndex = nextIndex
-            if (state.isPlaying) withFrameNanos { } else delay(200L)
+            val nextInterlude = interludes.indexOfFirst { position >= it.startTimeMs && position < it.followingLyricTimeMs }
+            if (nextInterlude != activeInterludeIndex) activeInterludeIndex = nextInterlude
+            if (!state.isPlaying) delay(200L)
         }
     }
 
@@ -700,9 +726,13 @@ fun MeloXIOSLyricsPanel(
                             distanceBlurDp = distanceBlur,
                             focusBlurDp = focusBlur,
                             showTranslation = MeloXSettingsRuntime.showLyricTranslation &&
-                                !line.translation.isNullOrBlank(),
+                                !line.translation.isNullOrBlank() &&
+                                (MeloXSettingsRuntime.lyricTranslationDisplayMode == MeloXLyricAnnotationDisplayMode.AllLines ||
+                                    index == visualFocusIndex),
                             showRomanization = MeloXSettingsRuntime.showLyricRomanization &&
-                                !line.romanization.isNullOrBlank(),
+                                !line.romanization.isNullOrBlank() &&
+                                (MeloXSettingsRuntime.lyricRomanizationDisplayMode == MeloXLyricAnnotationDisplayMode.AllLines ||
+                                    index == visualFocusIndex),
                             reserveTranslation = MeloXSettingsRuntime.showLyricTranslation && !line.translation.isNullOrBlank(),
                             reserveRomanization = MeloXSettingsRuntime.showLyricRomanization && !line.romanization.isNullOrBlank(),
                             onMeasured = { measured ->
@@ -712,6 +742,12 @@ fun MeloXIOSLyricsPanel(
                             },
                             tapSeekEnabled = MeloXSettingsRuntime.lyricTapSeekEnabled,
                             onClick = { onInterfaceInteraction(); state.seekTo(line.timeMs) },
+                            longPressShareEnabled = MeloXSettingsRuntime.lyricLongPressShareEnabled,
+                            onLongClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onInterfaceInteraction()
+                                shareLyric(context, state, line)
+                            },
                         )
 
                         if (index != lines.lastIndex) {
@@ -721,6 +757,20 @@ fun MeloXIOSLyricsPanel(
                     item(key = "lyrics-bottom-padding") {
                         Spacer(Modifier.height(with(density) { bottomPaddingPx.toDp() }))
                     }
+                }
+
+                if (MeloXSettingsRuntime.lyricInterludeCountdownEnabled && activeInterludeIndex in interludes.indices) {
+                    MeloXLyricInterludeCountdown(
+                        interlude = interludes[activeInterludeIndex],
+                        playbackTimeProvider = { renderedPositionState.longValue },
+                        reduceMotion = MeloXSettingsRuntime.lyricReduceMotion,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(
+                                start = 8.dp,
+                                top = with(density) { (topPaddingPx - 24.dp.toPx()).coerceAtLeast(0f).toDp() },
+                            ),
+                    )
                 }
             }
         }
@@ -745,8 +795,10 @@ private fun MeloXUpstreamLyricLine(
     reserveTranslation: Boolean,
     reserveRomanization: Boolean,
     tapSeekEnabled: Boolean,
+    longPressShareEnabled: Boolean,
     onMeasured: (Int) -> Unit,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
     // One blur layer is materially cheaper than stacking distance and focus
     // blurs on every visible row, and removes a common source of scroll jank.
@@ -767,32 +819,39 @@ private fun MeloXUpstreamLyricLine(
                 transformOrigin = TransformOrigin(0f, 0f)
             }
             .then(blurModifier)
-            .clickable(enabled = tapSeekEnabled, onClick = onClick)
+            .combinedClickable(
+                enabled = tapSeekEnabled || longPressShareEnabled,
+                onClick = { if (tapSeekEnabled) onClick() },
+                onLongClick = { if (longPressShareEnabled) onLongClick() },
+            )
             .padding(horizontal = 8.dp),
         horizontalAlignment = Alignment.Start,
     ) {
-        MeloXGlyphLyricText(
-            line = line,
-            playbackTimeProvider = playbackTimeProvider,
-            supportsTimedLyrics = supportsTimedLyrics,
-            fontScale = fontScale,
-            reduceMotion = reduceMotion,
-            timingEffectsStrength = focusProgress,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        if (showRomanization) {
+            MeloXRubyLyricText(
+                line = line,
+                playbackTimeProvider = playbackTimeProvider,
+                supportsTimedLyrics = supportsTimedLyrics,
+                fontScale = fontScale,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            MeloXGlyphLyricText(
+                line = line,
+                playbackTimeProvider = playbackTimeProvider,
+                supportsTimedLyrics = supportsTimedLyrics,
+                fontScale = fontScale,
+                reduceMotion = reduceMotion,
+                timingEffectsStrength = focusProgress,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
 
         // When the user enables translation, every source line that has a
         // translation keeps it directly underneath. Keeping annotations resident
         // also prevents focus changes from reflowing the scroll geometry.
         val romanSize = max(UpstreamLyrics.FONT_SIZE_SP * fontScale * UpstreamLyrics.ROMANIZATION_FONT_SCALE, 13f)
-        if (showRomanization) {
-            Text(
-                text = line.romanization.orEmpty(),
-                modifier = Modifier.fillMaxWidth().padding(top = UpstreamLyrics.ANNOTATION_SPACING_DP.dp),
-                color = Color.White.copy(alpha = UpstreamLyrics.ANNOTATION_OPACITY),
-                textAlign = TextAlign.Start, fontSize = romanSize.sp, lineHeight = (romanSize * 1.2f).sp, fontWeight = FontWeight.Black,
-            )
-        } else if (reserveRomanization) {
+        if (!showRomanization && reserveRomanization) {
             Spacer(Modifier.height((romanSize * 1.2f).dp + UpstreamLyrics.ANNOTATION_SPACING_DP.dp))
         }
 
@@ -821,12 +880,152 @@ private fun MeloXUpstreamLyricLine(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun MeloXRubyLyricText(
+    line: LyricLine,
+    playbackTimeProvider: () -> Long,
+    supportsTimedLyrics: Boolean,
+    fontScale: Float,
+    modifier: Modifier = Modifier,
+) {
+    val units = remember(line) { LyricRomanizationAligner.units(line) }
+    if (units.isEmpty()) {
+        MeloXGlyphLyricText(
+            line = line,
+            playbackTimeProvider = playbackTimeProvider,
+            supportsTimedLyrics = supportsTimedLyrics,
+            fontScale = fontScale,
+            reduceMotion = false,
+            timingEffectsStrength = 1f,
+            modifier = modifier,
+        )
+        return
+    }
+
+    val playbackTimeMs = playbackTimeProvider()
+    val primarySize = UpstreamLyrics.FONT_SIZE_SP * fontScale
+    val rubySize = max(primarySize * UpstreamLyrics.ROMANIZATION_FONT_SCALE, 13f)
+    FlowRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        units.forEach { unit ->
+            val reveal = if (!supportsTimedLyrics || unit.originalSyllables.isEmpty()) {
+                1f
+            } else {
+                val start = unit.originalSyllables.minOf { it.startTimeMs }
+                val end = unit.originalSyllables.maxOf { it.endTimeMs }.coerceAtLeast(start + 1L)
+                ((playbackTimeMs - start).toFloat() / (end - start).toFloat()).coerceIn(0f, 1f)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = unit.originalText,
+                    color = Color.White.copy(alpha = if (supportsTimedLyrics) 0.3f + reveal * 0.7f else 1f),
+                    fontSize = primarySize.sp,
+                    lineHeight = (UpstreamLyrics.LINE_HEIGHT_SP * fontScale).sp,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1,
+                )
+                if (!unit.romanizationText.isNullOrBlank()) {
+                    Text(
+                        text = unit.romanizationText,
+                        color = Color.White.copy(alpha = UpstreamLyrics.ANNOTATION_OPACITY),
+                        fontSize = rubySize.sp,
+                        lineHeight = (rubySize * 1.2f).sp,
+                        fontWeight = FontWeight.Black,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
 private data class MeloXGlyphVisual(
     val reveal: Float,
     val liftPx: Float,
     val scale: Float,
     val glow: Float,
 )
+
+private data class MeloXLyricInterlude(
+    val startTimeMs: Long,
+    val countdownEndTimeMs: Long,
+    val followingLyricTimeMs: Long,
+)
+
+private fun sourceLyricInterludes(lines: List<LyricLine>): List<MeloXLyricInterlude> = buildList {
+    lines.forEachIndexed { index, line ->
+        val start = if (index == 0) {
+            0L
+        } else {
+            val previous = lines[index - 1]
+            max(
+                previous.timeMs + (previous.durationMs ?: 0L),
+                previous.syllables.maxOfOrNull { it.endTimeMs } ?: previous.timeMs,
+            )
+        }
+        val countdownEnd = (line.timeMs - 250L).coerceAtLeast(start)
+        if (countdownEnd - start >= 4_000L) {
+            add(MeloXLyricInterlude(start, countdownEnd, line.timeMs))
+        }
+    }
+}
+
+@Composable
+private fun MeloXLyricInterludeCountdown(
+    interlude: MeloXLyricInterlude,
+    playbackTimeProvider: () -> Long,
+    reduceMotion: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier.fillMaxWidth(0.28f).height(48.dp)) {
+        val now = playbackTimeProvider()
+        val duration = (interlude.countdownEndTimeMs - interlude.startTimeMs).coerceAtLeast(1L)
+        val elapsed = (now - interlude.startTimeMs).coerceIn(0L, duration)
+        val remaining = interlude.countdownEndTimeMs - now
+        if (remaining <= 0L) return@Canvas
+        val durationFloat = duration.toFloat()
+        val elapsedFloat = elapsed.toFloat()
+        val baseRadius = 5.dp.toPx()
+        val gap = 18.dp.toPx()
+        val centerY = size.height / 2f
+        repeat(3) { index ->
+            val segmentStart = durationFloat * index / 3f
+            val progress = ((elapsedFloat - segmentStart) / (durationFloat / 3f)).coerceIn(0.25f, 1f)
+            val fadeOut = (remaining / 375f).coerceIn(0f, 1f)
+            val breathe = if (reduceMotion) 1f else 1f +
+                sin(elapsed.toDouble() / 1_500.0 * 2.0 * Math.PI).toFloat() * 0.05f
+            drawCircle(
+                color = Color.White.copy(alpha = progress * fadeOut),
+                radius = baseRadius * breathe * if (index == 2) (1f + progress * 0.18f) else 1f,
+                center = Offset(baseRadius + index * gap, centerY),
+            )
+        }
+    }
+}
+
+private fun shareLyric(context: Context, state: MeloXPlaybackUiState, line: LyricLine) {
+    val songUrl = state.mediaId?.let { "https://music.163.com/song?id=$it" }.orEmpty()
+    val text = buildString {
+        append(line.text)
+        if (state.title.isNotBlank()) {
+            append("\n——《").append(state.title).append("》")
+            if (state.artist.isNotBlank()) append(" · ").append(state.artist)
+        }
+        if (songUrl.isNotBlank()) append('\n').append(songUrl)
+    }
+    val intent = Intent.createChooser(
+        Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        },
+        "分享歌词",
+    )
+    context.startActivity(intent)
+}
 
 /**
  * Compose counterpart of upstream LyricGlowTextRenderer.

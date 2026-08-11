@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
 enum class MeloXThemeMode { System, Light, Dark }
+enum class MeloXLyricAnnotationDisplayMode { FocusedLine, AllLines }
 
 /** Process-visible settings used by UI paths that need immediate recomposition. */
 object MeloXSettingsRuntime {
@@ -31,11 +32,23 @@ object MeloXSettingsRuntime {
         internal set
     var lyricTapSeekEnabled by mutableStateOf(true)
         internal set
+    var lyricLongPressShareEnabled by mutableStateOf(true)
+        internal set
+    var lyricInterludeCountdownEnabled by mutableStateOf(true)
+        internal set
     var lyricAutoFollowEnabled by mutableStateOf(true)
         internal set
     var lyricReduceMotion by mutableStateOf(false)
         internal set
     var lyricAdvanceMs by mutableStateOf(0)
+        internal set
+    var lyricAdvanceAppliesToWordByWord by mutableStateOf(false)
+        internal set
+    var lyricRefreshRate by mutableStateOf(60)
+        internal set
+    var lyricRomanizationDisplayMode by mutableStateOf(MeloXLyricAnnotationDisplayMode.FocusedLine)
+        internal set
+    var lyricTranslationDisplayMode by mutableStateOf(MeloXLyricAnnotationDisplayMode.FocusedLine)
         internal set
     var lyricFollowDelayMs by mutableStateOf(3_000)
         internal set
@@ -77,9 +90,16 @@ object MeloXSettingsRuntime {
         lyricWordByWordEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_word_by_word", true)
         lyricPseudoTimingEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_pseudo_timing", true)
         lyricTapSeekEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_tap_seek", true)
+        lyricLongPressShareEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_long_press_share", true)
+        lyricInterludeCountdownEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_interlude_countdown", true)
         lyricAutoFollowEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_auto_follow", true)
         lyricReduceMotion = MeloXSettingsPreferences.boolean(app, "lyrics_reduce_motion", false)
-        lyricAdvanceMs = MeloXSettingsPreferences.int(app, "lyrics_advance_ms", 0).coerceIn(-1_000, 1_000)
+        lyricAdvanceMs = MeloXSettingsPreferences.int(app, "lyrics_advance_ms", 0).coerceIn(-5_000, 5_000)
+        lyricAdvanceAppliesToWordByWord = MeloXSettingsPreferences.boolean(app, "lyrics_advance_word_by_word", false)
+        lyricRefreshRate = MeloXSettingsPreferences.int(app, "lyrics_refresh_rate", 60)
+            .takeIf { it in setOf(30, 60, 90, 120) } ?: 60
+        lyricRomanizationDisplayMode = annotationMode(app, "lyrics_romanization_display_mode")
+        lyricTranslationDisplayMode = annotationMode(app, "lyrics_translation_display_mode")
         lyricFollowDelayMs = MeloXSettingsPreferences.int(app, "lyrics_follow_delay_ms", 3_000).coerceIn(1_000, 8_000)
         lyricFontScale = MeloXSettingsPreferences.float(app, "lyrics_font_scale", 1f).coerceIn(.8f, 1.25f)
         lyricSpacingScale = MeloXSettingsPreferences.float(app, "lyrics_spacing_scale", 1f).coerceIn(.7f, 1.5f)
@@ -91,6 +111,12 @@ object MeloXSettingsRuntime {
         downloadLyricsEnabled = MeloXSettingsPreferences.boolean(app, "download_lyrics", true)
         musicArea = MeloXSettingsPreferences.string(app, "music_area", "全部")
     }
+
+    private fun annotationMode(context: Context, key: String): MeloXLyricAnnotationDisplayMode = runCatching {
+        MeloXLyricAnnotationDisplayMode.valueOf(
+            MeloXSettingsPreferences.string(context, key, MeloXLyricAnnotationDisplayMode.FocusedLine.name),
+        )
+    }.getOrDefault(MeloXLyricAnnotationDisplayMode.FocusedLine)
 }
 
 object MeloXSettingsPreferences {
@@ -126,8 +152,11 @@ object MeloXSettingsPreferences {
             "lyrics_word_by_word" -> MeloXSettingsRuntime.lyricWordByWordEnabled = value
             "lyrics_pseudo_timing" -> MeloXSettingsRuntime.lyricPseudoTimingEnabled = value
             "lyrics_tap_seek" -> MeloXSettingsRuntime.lyricTapSeekEnabled = value
+            "lyrics_long_press_share" -> MeloXSettingsRuntime.lyricLongPressShareEnabled = value
+            "lyrics_interlude_countdown" -> MeloXSettingsRuntime.lyricInterludeCountdownEnabled = value
             "lyrics_auto_follow" -> MeloXSettingsRuntime.lyricAutoFollowEnabled = value
             "lyrics_reduce_motion" -> MeloXSettingsRuntime.lyricReduceMotion = value
+            "lyrics_advance_word_by_word" -> MeloXSettingsRuntime.lyricAdvanceAppliesToWordByWord = value
             "tab_home" -> MeloXSettingsRuntime.homeTabEnabled = value
             "tab_explore" -> MeloXSettingsRuntime.exploreTabEnabled = value
             "tab_library" -> MeloXSettingsRuntime.libraryTabEnabled = value
@@ -139,8 +168,10 @@ object MeloXSettingsPreferences {
     fun setInt(context: Context, key: String, value: Int) {
         prefs(context).edit().putInt(key, value).apply()
         when (key) {
-            "lyrics_advance_ms" -> MeloXSettingsRuntime.lyricAdvanceMs = value.coerceIn(-1_000, 1_000)
+            "lyrics_advance_ms" -> MeloXSettingsRuntime.lyricAdvanceMs = value.coerceIn(-5_000, 5_000)
             "lyrics_follow_delay_ms" -> MeloXSettingsRuntime.lyricFollowDelayMs = value.coerceIn(1_000, 8_000)
+            "lyrics_refresh_rate" -> MeloXSettingsRuntime.lyricRefreshRate =
+                value.takeIf { it in setOf(30, 60, 90, 120) } ?: 60
         }
     }
 
@@ -160,6 +191,12 @@ object MeloXSettingsPreferences {
                 MeloXThemeMode.valueOf(value)
             }.getOrDefault(MeloXThemeMode.System)
             "music_area" -> MeloXSettingsRuntime.musicArea = value
+            "lyrics_romanization_display_mode" -> MeloXSettingsRuntime.lyricRomanizationDisplayMode = runCatching {
+                MeloXLyricAnnotationDisplayMode.valueOf(value)
+            }.getOrDefault(MeloXLyricAnnotationDisplayMode.FocusedLine)
+            "lyrics_translation_display_mode" -> MeloXSettingsRuntime.lyricTranslationDisplayMode = runCatching {
+                MeloXLyricAnnotationDisplayMode.valueOf(value)
+            }.getOrDefault(MeloXLyricAnnotationDisplayMode.FocusedLine)
         }
     }
 

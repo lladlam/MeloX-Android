@@ -16,6 +16,7 @@ data class LyricLine(
     val syllables: List<LyricSyllable> = emptyList(),
     val translation: String? = null,
     val romanization: String? = null,
+    val romanizationSyllables: List<LyricSyllable> = emptyList(),
 )
 
 data class LyricsDocument(
@@ -99,9 +100,12 @@ object NeteaseLyricParser {
 
         return LyricsDocument(
             primary.map { line ->
+                val translationLine = nearestSecondary(line, translated)
+                val romanizationLine = nearestSecondary(line, romanized)
                 line.copy(
-                    translation = nearestSecondary(line, translated),
-                    romanization = nearestSecondary(line, romanized),
+                    translation = annotationText(line, translationLine),
+                    romanization = annotationText(line, romanizationLine),
+                    romanizationSyllables = romanizationLine?.syllables.orEmpty(),
                 )
             },
         )
@@ -193,14 +197,18 @@ object NeteaseLyricParser {
     private fun nearestSecondary(
         target: LyricLine,
         candidates: List<LyricLine>,
-    ): String? {
+    ): LyricLine? {
         if (candidates.isEmpty()) return null
         val candidate = candidates.minByOrNull { kotlin.math.abs(it.timeMs - target.timeMs) }
             ?: return null
         if (kotlin.math.abs(candidate.timeMs - target.timeMs) > ANNOTATION_TOLERANCE_MS) {
             return null
         }
-        val text = candidate.text.trim()
+        return candidate
+    }
+
+    private fun annotationText(target: LyricLine, candidate: LyricLine?): String? {
+        val text = candidate?.text?.trim().orEmpty()
         return text.takeIf { it.isNotBlank() && it != target.text.trim() }
     }
 

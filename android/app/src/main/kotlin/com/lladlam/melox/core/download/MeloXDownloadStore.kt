@@ -426,6 +426,19 @@ class MeloXDownloadStore private constructor(private val context: Context) {
                                     )
                                 }
                             },
+                        )
+                        .put(
+                            "romanizationSyllables",
+                            JSONArray().apply {
+                                line.romanizationSyllables.forEach { syllable ->
+                                    put(
+                                        JSONObject()
+                                            .put("text", syllable.text)
+                                            .put("startTimeMs", syllable.startTimeMs)
+                                            .put("endTimeMs", syllable.endTimeMs),
+                                    )
+                                }
+                            },
                         ),
                 )
             }
@@ -450,6 +463,19 @@ class MeloXDownloadStore private constructor(private val context: Context) {
                         )
                     }
                 }
+                val romanizationSyllablesArray = line.optJSONArray("romanizationSyllables") ?: JSONArray()
+                val romanizationSyllables = buildList {
+                    for (s in 0 until romanizationSyllablesArray.length()) {
+                        val item = romanizationSyllablesArray.optJSONObject(s) ?: continue
+                        add(
+                            LyricSyllable(
+                                text = item.optString("text"),
+                                startTimeMs = item.optLong("startTimeMs"),
+                                endTimeMs = item.optLong("endTimeMs"),
+                            ),
+                        )
+                    }
+                }
                 add(
                     LyricLine(
                         timeMs = line.optLong("timeMs"),
@@ -458,6 +484,7 @@ class MeloXDownloadStore private constructor(private val context: Context) {
                         syllables = syllables,
                         translation = line.optString("translation").takeIf(String::isNotBlank),
                         romanization = line.optString("romanization").takeIf(String::isNotBlank),
+                        romanizationSyllables = romanizationSyllables,
                     ),
                 )
             }
