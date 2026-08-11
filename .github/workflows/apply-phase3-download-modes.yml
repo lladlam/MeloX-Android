@@ -1,0 +1,26 @@
+name: Apply phase3 downloads and modes
+on:
+  push:
+    branches:
+      - fix/lyrics-queue-backdrop-20260811
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/lyrics-queue-backdrop-20260811
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python scripts/phase3_download_modes.py
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add android/app/src/main/kotlin
+          git commit -m 'feat: add downloads, infinity autoplay and AutoMix transition'
+          git push origin HEAD:fix/lyrics-queue-backdrop-20260811
