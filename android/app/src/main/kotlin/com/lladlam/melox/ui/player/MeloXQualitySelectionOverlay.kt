@@ -45,12 +45,16 @@ import com.lladlam.melox.core.audio.MusicQualityPreferences
 import com.lladlam.melox.core.audio.NeteaseQualityClient
 import com.lladlam.melox.core.audio.SongAudioAvailability
 import com.lladlam.melox.core.download.MeloXDownloadStore
+import com.lladlam.melox.core.network.MeloXNetworkAvailability
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import kotlinx.coroutines.launch
 
-/** Quality chooser. A downloaded track is physically one encoded file, so its
- * local quality is locked to the quality recorded at download time. */
+/**
+ * Quality chooser. A local download only constrains quality while NetEase Music
+ * itself is unreachable. As soon as music.163.com is reachable, online qualities
+ * are queried and unlocked normally even if the current song is also downloaded.
+ */
 @Composable
 internal fun MeloXQualitySelectionOverlay(
     state: MeloXPlaybackUiState,
@@ -67,8 +71,9 @@ internal fun MeloXQualitySelectionOverlay(
     }
     val songId = state.mediaId?.toLongOrNull()
     val downloadedQuality = songId?.let(downloads::downloadedQuality)
+    var neteaseReachable by remember(visible, songId) { mutableStateOf<Boolean?>(null) }
     var selected by remember(context, visible, songId) {
-        mutableStateOf(downloadedQuality ?: MusicQualityPreferences.read(context))
+        mutableStateOf(MusicQualityPreferences.read(context))
     }
     var availability by remember(state.mediaId, visible) {
         mutableStateOf(SongAudioAvailability.Unknown)
@@ -77,16 +82,19 @@ internal fun MeloXQualitySelectionOverlay(
 
     LaunchedEffect(visible, songId, downloadedQuality) {
         if (!visible || songId == null) return@LaunchedEffect
-        if (downloadedQuality != null) {
-            selected = downloadedQuality
-            loading = false
-            availability = SongAudioAvailability.Unknown
-            return@LaunchedEffect
-        }
-        selected = MusicQualityPreferences.read(context)
         loading = true
-        availability = runCatching { client.audioAvailability(songId) }
-            .getOrDefault(SongAudioAvailability.Unknown)
+        neteaseReachable = null
+        val reachable = MeloXNetworkAvailability.canReachNetease(context)
+        neteaseReachable = reachable
+
+        if (reachable) {
+            selected = MusicQualityPreferences.read(context)
+            availability = runCatching { client.audioAvailability(songId) }
+                .getOrDefault(SongAudioAvailability.Unknown)
+        } else {
+            selected = downloadedQuality ?: MusicQualityPreferences.read(context)
+            availability = SongAudioAvailability.Unknown
+        }
         loading = false
     }
 
@@ -143,10 +151,14 @@ internal fun MeloXQualitySelectionOverlay(
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            if (downloadedQuality != null) {
-                                "已下载 · ${downloadedQuality.title}"
-                            } else {
-                                state.title.ifBlank { "正在播放" }
+                            when (neteaseReachable) {
+                                null -> "正在检测网易云连接"
+                                true -> state.title.ifBlank { "在线播放" }
+                                false -> if (downloadedQuality != null) {
+                                    "离线 · 已下载 ${downloadedQuality.title}"
+                                } else {
+                                    "离线 · 当前歌曲没有本地音频"
+                                }
                             },
                             color = Color.White.copy(alpha = 0.55f),
                             fontSize = 13.sp,
@@ -163,10 +175,10 @@ internal fun MeloXQualitySelectionOverlay(
                 }
 
                 MusicQuality.entries.forEach { quality ->
-                    val supported = if (downloadedQuality != null) {
-                        quality == downloadedQuality
-                    } else {
-                        availability.supports(quality.apiLevel) != false
+                    val supported = when (neteaseReachable) {
+                        true -> availability.supports(quality.apiLevel) != false
+                        false -> downloadedQuality == quality
+                        null -> false
                     }
                     val isSelected = quality == selected
                     Row(
@@ -191,8 +203,8 @@ internal fun MeloXQualitySelectionOverlay(
                                 refractionHeight = 14.dp,
                             )
                             .clickable(enabled = supported) {
-                                if (downloadedQuality == null) {
-                                    selected = quality
+                                selected = quality
+                                if (neteaseReachable == true) {
                                     scope.launch { PlaybackCommands.changeQuality(context, quality) }
                                 }
                                 onDismiss()
@@ -207,11 +219,11 @@ internal fun MeloXQualitySelectionOverlay(
                             fontSize = 17.sp,
                             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                         )
-                        if (isSelected) {
+                        if (isSelected && supported) {
                             Text("✓", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                        } else if (!supported) {
+                        } else if (!supported && neteaseReachable == false) {
                             Text(
-                                if (downloadedQuality != null) "未下载" else "不可用",
+                                if (downloadedQuality != null) "未下载" else "离线",
                                 color = Color.White.copy(alpha = 0.30f),
                                 fontSize = 12.sp,
                             )
