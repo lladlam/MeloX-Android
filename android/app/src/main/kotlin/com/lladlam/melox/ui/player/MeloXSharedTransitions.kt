@@ -1,8 +1,5 @@
 package com.lladlam.melox.ui.player
 
-internal data class MeloXSharedArtworkKey(
-    val mediaId: String,
-)
+internal data object MeloXSharedArtworkKey
 
-internal fun sharedArtworkKey(mediaId: String?): MeloXSharedArtworkKey =
-    MeloXSharedArtworkKey(mediaId.orEmpty())
+internal fun sharedArtworkKey(): MeloXSharedArtworkKey = MeloXSharedArtworkKey

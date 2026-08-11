@@ -108,7 +108,7 @@ fun MeloXIOSMiniPlayer(
             with(sharedTransitionScope) {
                 Modifier.sharedBounds(
                     sharedContentState = rememberSharedContentState(
-                        key = sharedPlayerContainerKey(state.mediaId),
+                        key = sharedPlayerContainerKey(),
                     ),
                     animatedVisibilityScope = animatedVisibilityScope,
                     enter = EnterTransition.None,
@@ -150,6 +150,9 @@ fun MeloXIOSMiniPlayer(
                     surfaceColor = fallbackTint.copy(
                         alpha = fallbackTint.alpha * 0.40f,
                     ),
+                    // MiniPlayer keeps the liquid refraction/highlight, but its
+                    // background must remain sharp instead of blurring the list.
+                    blurRadius = 0.dp,
                 ),
         )
 
@@ -187,7 +190,7 @@ fun MeloXIOSMiniPlayer(
                         with(sharedTransitionScope) {
                             Modifier.sharedElement(
                                 sharedContentState = rememberSharedContentState(
-                                    key = sharedArtworkKey(state.mediaId),
+                                    key = sharedArtworkKey(),
                                 ),
                                 animatedVisibilityScope = animatedVisibilityScope,
                                 boundsTransform = MeloXPlayerLinearBoundsTransform,

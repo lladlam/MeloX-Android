@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RectangleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -257,7 +258,12 @@ internal fun MeloXIOSNowPlayingScene(
                         scaleX = queueScale
                         scaleY = queueScale
                     }
-                    .padding(top = 80.dp),
+                    // Queue rows end above the persistent playback controls;
+                    // none of the list is hidden beneath the blurred control zone.
+                    .padding(
+                        top = 80.dp,
+                        bottom = MeloXNowPlayingControlsHeight.dp,
+                    ),
             ) {
                 MeloXQueuePanel(
                     state = state,
@@ -333,26 +339,26 @@ internal fun MeloXIOSNowPlayingScene(
         AnimatedVisibility(
             visible = page != MeloXNowPlayingPage.Lyrics || showsLyricsControls,
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(horizontal = 32.dp),
+                .align(Alignment.BottomCenter),
             enter = fadeIn(tween(220, easing = FastOutSlowInEasing)) +
                 slideInVertically(tween(260, easing = FastOutSlowInEasing)) { it / 8 },
             exit = fadeOut(tween(180, easing = FastOutSlowInEasing)) +
                 slideOutVertically(tween(220, easing = FastOutSlowInEasing)) { it / 8 },
         ) {
-            val controlsShape = RoundedCornerShape(28.dp)
             val controlsSurface = if (page != MeloXNowPlayingPage.Artwork) {
                 Modifier
                     .fillMaxWidth()
                     .height(MeloXNowPlayingControlsHeight.dp)
-                    .clip(controlsShape)
                     .meloXBackdropBlur(
-                        shape = controlsShape,
+                        shape = RectangleShape,
                         blurRadius = 24.dp,
                         surfaceColor = Color.Black.copy(alpha = .08f),
                     )
+                    .padding(horizontal = 32.dp)
             } else {
-                Modifier.fillMaxWidth()
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp)
             }
             Box(modifier = controlsSurface) {
                 MeloXNowPlayingCoreControls(

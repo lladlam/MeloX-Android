@@ -1,8 +1,5 @@
 package com.lladlam.melox.ui.player
 
-internal data class MeloXPlayerContainerKey(
-    val mediaId: String,
-)
+internal data object MeloXPlayerContainerKey
 
-internal fun sharedPlayerContainerKey(mediaId: String?): MeloXPlayerContainerKey =
-    MeloXPlayerContainerKey(mediaId.orEmpty())
+internal fun sharedPlayerContainerKey(): MeloXPlayerContainerKey = MeloXPlayerContainerKey

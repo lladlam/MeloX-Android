@@ -95,6 +95,7 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
     private val downloadStore = MeloXDownloadStore.get(appContext)
     private val sleepTimerHandler = Handler(Looper.getMainLooper())
     private var sleepTimerRunnable: Runnable? = null
+    private var pendingMediaClearRunnable: Runnable? = null
 
     var mediaId by mutableStateOf<String?>(null)
         private set
@@ -157,6 +158,7 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
     }
 
     internal fun unbind() {
+        cancelPendingMediaClear()
         controller?.removeListener(listener)
         controller?.release()
         controller = null
@@ -166,6 +168,14 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
     internal fun refresh() {
         val player = controller ?: return
         val item = player.currentMediaItem
+        if (item == null) {
+            // MediaSession.setPlayer() briefly exposes an empty controller while
+            // AutoMix promotes the already-playing incoming deck. Clearing the UI
+            // in that gap collapses Now Playing and strands its back gesture.
+            if (mediaId != null) scheduleDeferredMediaClear(player) else clearMediaState(player)
+            return
+        }
+        cancelPendingMediaClear()
         val metadata = player.mediaMetadata.takeUnless { it == MediaMetadata.EMPTY }
             ?: item?.mediaMetadata
             ?: MediaMetadata.EMPTY
@@ -190,6 +200,42 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
         val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
         volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVolume.toFloat()
+        queue = buildQueue(player)
+    }
+
+    private fun scheduleDeferredMediaClear(player: Player) {
+        if (pendingMediaClearRunnable != null) return
+        val runnable = Runnable {
+            pendingMediaClearRunnable = null
+            val active = controller
+            if (active === player && active.currentMediaItem == null) {
+                clearMediaState(active)
+            } else {
+                refresh()
+            }
+        }
+        pendingMediaClearRunnable = runnable
+        sleepTimerHandler.postDelayed(runnable, MEDIA_CLEAR_GRACE_MS)
+    }
+
+    private fun cancelPendingMediaClear() {
+        pendingMediaClearRunnable?.let(sleepTimerHandler::removeCallbacks)
+        pendingMediaClearRunnable = null
+    }
+
+    private fun clearMediaState(player: Player) {
+        cancelPendingMediaClear()
+        mediaId = null
+        title = ""
+        artist = ""
+        album = ""
+        artworkUrl = null
+        isPlaying = false
+        positionMs = 0L
+        durationMs = 0L
+        hasPrevious = false
+        hasNext = false
+        currentIndex = player.currentMediaItemIndex
         queue = buildQueue(player)
     }
 
@@ -316,6 +362,10 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
         sleepTimerRunnable?.let(sleepTimerHandler::removeCallbacks)
         sleepTimerRunnable = null
         sleepTimerEndRealtimeMs = 0L
+    }
+
+    private companion object {
+        const val MEDIA_CLEAR_GRACE_MS = 500L
     }
 }
 

@@ -75,14 +75,17 @@ fun MeloXIOSNowPlayingSharedHost(
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
-    var page by remember(state.mediaId) { mutableStateOf(MeloXNowPlayingPage.Artwork) }
-    var transitionSourcePage by remember(state.mediaId) {
+    // A track transition updates the content inside the existing player. It must
+    // not recreate the page/gesture state or send the shared element back to its
+    // MiniPlayer bounds while the full-screen player is still open.
+    var page by remember { mutableStateOf(MeloXNowPlayingPage.Artwork) }
+    var transitionSourcePage by remember {
         mutableStateOf(MeloXNowPlayingPage.Artwork)
     }
-    var showActions by remember(state.mediaId) { mutableStateOf(false) }
-    var showQuality by remember(state.mediaId) { mutableStateOf(false) }
-    var gestureCollapseProgress by remember(state.mediaId) { mutableFloatStateOf(0f) }
-    var settleJob by remember(state.mediaId) { mutableStateOf<Job?>(null) }
+    var showActions by remember { mutableStateOf(false) }
+    var showQuality by remember { mutableStateOf(false) }
+    var gestureCollapseProgress by remember { mutableFloatStateOf(0f) }
+    var settleJob by remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
     val hostView = LocalView.current
     DisposableEffect(MeloXSettingsRuntime.keepScreenOn) {
@@ -114,7 +117,7 @@ fun MeloXIOSNowPlayingSharedHost(
     val sharedContainerModifier = with(sharedTransitionScope) {
         Modifier.sharedBounds(
             sharedContentState = rememberSharedContentState(
-                key = sharedPlayerContainerKey(state.mediaId),
+                key = sharedPlayerContainerKey(),
             ),
             animatedVisibilityScope = animatedVisibilityScope,
             enter = EnterTransition.None,
@@ -407,7 +410,7 @@ private fun SharedArtworkDestination(
             val targetRadius = 12.dp
 
             val artworkSharedState = with(sharedTransitionScope) {
-                rememberSharedContentState(key = sharedArtworkKey(state.mediaId))
+                rememberSharedContentState(key = sharedArtworkKey())
             }
             val sharedModifier = with(sharedTransitionScope) {
                 Modifier.sharedElement(
