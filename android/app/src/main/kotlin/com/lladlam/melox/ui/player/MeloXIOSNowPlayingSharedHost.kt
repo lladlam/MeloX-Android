@@ -75,8 +75,8 @@ fun MeloXIOSNowPlayingSharedHost(
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
-    var page by remember(state.mediaId) { mutableStateOf(MeloXNowPlayingPage.Artwork) }
-    var transitionSourcePage by remember(state.mediaId) {
+    var page by remember { mutableStateOf(MeloXNowPlayingPage.Artwork) }
+    var transitionSourcePage by remember {
         mutableStateOf(MeloXNowPlayingPage.Artwork)
     }
     var showActions by remember(state.mediaId) { mutableStateOf(false) }

@@ -218,7 +218,7 @@ private fun SceneQualityChip(
         }
     }
 
-    val displayQuality = downloadedQuality ?: actual ?: selected
+    val displayQuality = actual ?: downloadedQuality ?: selected
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(

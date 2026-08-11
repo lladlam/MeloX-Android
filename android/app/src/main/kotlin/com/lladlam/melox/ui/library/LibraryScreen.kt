@@ -323,6 +323,7 @@ fun LibraryScreen(
 }
 
 private enum class MeloXDownloadsPage { Root, Active, Playlists, PlaylistDetail }
+private val MeloXDownloadsBottomSafeArea = 196.dp
 
 @Composable
 private fun MeloXLibraryDownloadsPage(downloads: MeloXDownloadStore) {
@@ -344,7 +345,7 @@ private fun MeloXLibraryDownloadsPage(downloads: MeloXDownloadStore) {
     when (page) {
         MeloXDownloadsPage.Root -> LazyColumn(
   modifier = Modifier.fillMaxSize(),
-  contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 146.dp),
+  contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = MeloXDownloadsBottomSafeArea),
   verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
   if (active.isNotEmpty()) {
@@ -504,7 +505,7 @@ private fun MeloXLibraryDownloadsPage(downloads: MeloXDownloadStore) {
 
         MeloXDownloadsPage.Active -> LazyColumn(
   modifier = Modifier.fillMaxSize(),
-  contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 146.dp),
+  contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = MeloXDownloadsBottomSafeArea),
   verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
   item { DownloadsSubpageHeader("正在下载") { page = MeloXDownloadsPage.Root } }
@@ -543,7 +544,7 @@ private fun MeloXLibraryDownloadsPage(downloads: MeloXDownloadStore) {
 
         MeloXDownloadsPage.Playlists -> LazyColumn(
   modifier = Modifier.fillMaxSize(),
-  contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 146.dp),
+  contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = MeloXDownloadsBottomSafeArea),
   verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
   item { DownloadsSubpageHeader("已下载歌单") { page = MeloXDownloadsPage.Root } }
@@ -584,7 +585,7 @@ private fun MeloXLibraryDownloadsPage(downloads: MeloXDownloadStore) {
   val songs = group?.songs?.map { it.song }.orEmpty()
   LazyColumn(
       modifier = Modifier.fillMaxSize(),
-      contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 146.dp),
+      contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = MeloXDownloadsBottomSafeArea),
       verticalArrangement = Arrangement.spacedBy(4.dp),
   ) {
       item { DownloadsSubpageHeader(group?.playlist?.name ?: "已下载歌单") { page = MeloXDownloadsPage.Playlists } }
