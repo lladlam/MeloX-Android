@@ -366,6 +366,17 @@ private fun MeloXLibraryDownloadsPage(downloads: MeloXDownloadStore) {
               Text("已下载", fontSize = 20.sp, fontWeight = FontWeight.Bold)
               Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                   if (selecting) {
+                      val canDeleteSelection = selectedIds.isNotEmpty()
+                      Text(
+                          if (canDeleteSelection) "删除(${selectedIds.size})" else "删除",
+                          color = MaterialTheme.colorScheme.error.copy(alpha = if (canDeleteSelection) 1f else .35f),
+                          fontWeight = FontWeight.SemiBold,
+                          modifier = Modifier.clickable(enabled = canDeleteSelection) {
+                              downloads.removeMany(selectedIds)
+                              selectedIds = emptySet()
+                              selecting = false
+                          },
+                      )
                       Text(
                           if (selectedIds.size == completed.size) "取消全选" else "全选",
                           color = MaterialTheme.colorScheme.primary,
@@ -405,14 +416,12 @@ private fun MeloXLibraryDownloadsPage(downloads: MeloXDownloadStore) {
               }
           }
       }
-  if (groups.isNotEmpty()) {
-      item {
-          DownloadNavigationCard(
-              title = "已下载歌单",
-              subtitle = "${groups.size} 个歌单",
-              onClick = { page = MeloXDownloadsPage.Playlists },
-          )
-      }
+  item {
+      DownloadNavigationCard(
+          title = "已下载歌单",
+          subtitle = if (groups.isEmpty()) "暂无已下载歌单" else "${groups.size} 个歌单",
+          onClick = { page = MeloXDownloadsPage.Playlists },
+      )
   }
       items(completed, key = { "download-${it.song.id}" }) { item ->
           val checked = item.song.id in selectedIds
@@ -538,6 +547,15 @@ private fun MeloXLibraryDownloadsPage(downloads: MeloXDownloadStore) {
   verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
   item { DownloadsSubpageHeader("已下载歌单") { page = MeloXDownloadsPage.Root } }
+  if (groups.isEmpty()) {
+      item {
+          Text(
+              "暂无已下载歌单",
+              color = MaterialTheme.colorScheme.onBackground.copy(alpha = .5f),
+              modifier = Modifier.padding(top = 24.dp),
+          )
+      }
+  }
   items(groups, key = { "download-playlist-${it.playlist.id}" }) { group ->
       Row(
           Modifier.fillMaxWidth().height(68.dp).clickable {

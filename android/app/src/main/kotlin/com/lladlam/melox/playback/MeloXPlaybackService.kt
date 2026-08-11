@@ -2,6 +2,8 @@ package com.lladlam.melox.playback
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -42,6 +44,31 @@ class MeloXPlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private lateinit var mediaSourceFactory: DefaultMediaSourceFactory
     private lateinit var downloadStore: MeloXDownloadStore
+    private lateinit var audioManager: AudioManager
+    private lateinit var audioFocusRequest: AudioFocusRequest
+    private var resumeAfterFocusGain = false
+
+    private val audioFocusListener = AudioManager.OnAudioFocusChangeListener { change ->
+        when (change) {
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                resumeAfterFocusGain = false
+                player?.pause()
+                incomingPlayer?.pause()
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                resumeAfterFocusGain = player?.playWhenReady == true || incomingPlayer?.playWhenReady == true
+                player?.pause()
+                incomingPlayer?.pause()
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                if (resumeAfterFocusGain) {
+                    player?.play()
+                    if (mixStartedAt > 0L) incomingPlayer?.play()
+                    resumeAfterFocusGain = false
+                }
+            }
+        }
+    }
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val handler = Handler(Looper.getMainLooper())
     private var recommendationJob: Job? = null
@@ -70,6 +97,14 @@ class MeloXPlaybackService : MediaSessionService() {
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             Log.d(TAG, "isPlaying=$isPlaying, ongoing=${isPlaybackOngoing()}")
+        }
+
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (playWhenReady) {
+                requestPlaybackAudioFocus()
+            } else if (incomingPlayer?.playWhenReady != true) {
+                abandonPlaybackAudioFocus()
+            }
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -110,17 +145,31 @@ class MeloXPlaybackService : MediaSessionService() {
         override fun run() {
             val active = player
             if (active != null) {
-                applyLocalArtworkMetadata(active)
-                PlaybackCommands.prioritizeManualQueue(active)
-                maybePrepareAutoplay(active)
+                // Metadata/queue work does not belong in the 60 Hz crossfade loop.
+                if (mixStartedAt == 0L) {
+                    applyLocalArtworkMetadata(active)
+                    PlaybackCommands.prioritizeManualQueue(active)
+                    maybePrepareAutoplay(active)
+                }
                 maybeRunAutoMix(active)
             }
-            handler.postDelayed(this, 100L)
+            handler.postDelayed(this, if (mixStartedAt > 0L) AUTOMIX_FRAME_MS else MODE_MONITOR_MS)
         }
     }
 
     override fun onCreate() {
         super.onCreate()
+        audioManager = getSystemService(AudioManager::class.java)
+        val platformAudioAttributes = android.media.AudioAttributes.Builder()
+            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+            .build()
+        audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(platformAudioAttributes)
+            .setWillPauseWhenDucked(true)
+            .setOnAudioFocusChangeListener(audioFocusListener)
+            .build()
+
         val httpFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
             .setDefaultRequestProperties(
@@ -168,8 +217,11 @@ class MeloXPlaybackService : MediaSessionService() {
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
             .apply {
-                setAudioAttributes(audioAttributes, managesAudioFocus)
-                setHandleAudioBecomingNoisy(managesAudioFocus)
+                // All decks use identical attributes before playback starts. Audio
+                // focus is owned by the service, so promoting the incoming deck does
+                // not need setAudioAttributes() while it is already audible.
+                setAudioAttributes(audioAttributes, false)
+                setHandleAudioBecomingNoisy(observesSession)
                 if (observesSession) addListener(playerListener)
             }
 
@@ -233,7 +285,7 @@ class MeloXPlaybackService : MediaSessionService() {
             return
         }
         if (!active.isPlaying || active.repeatMode == Player.REPEAT_MODE_ONE || !active.hasNextMediaItem()) return
-        PlaybackCommands.prioritizeManualQueue(active)
+        if (mixStartedAt == 0L) PlaybackCommands.prioritizeManualQueue(active)
         val duration = active.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: return
         val remaining = duration - active.currentPosition
         val sourceId = active.currentMediaItem?.mediaId ?: return
@@ -295,7 +347,8 @@ class MeloXPlaybackService : MediaSessionService() {
     private fun completeAutoMix(old: ExoPlayer, incoming: ExoPlayer) {
         old.volume = 0f
         incoming.volume = mixBaseVolume
-        incoming.setAudioAttributes(audioAttributes, true)
+        // Do NOT change AudioAttributes here. Media3 may recreate AudioTrack when
+        // attributes change during playback, which is an audible handoff gap.
         incoming.setHandleAudioBecomingNoisy(true)
         incoming.addListener(playerListener)
         mediaSession?.setPlayer(incoming)
@@ -346,6 +399,17 @@ class MeloXPlaybackService : MediaSessionService() {
         return true
     }
 
+    private fun requestPlaybackAudioFocus(): Boolean {
+        if (!::audioManager.isInitialized || !::audioFocusRequest.isInitialized) return true
+        return audioManager.requestAudioFocus(audioFocusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+    }
+
+    private fun abandonPlaybackAudioFocus() {
+        if (::audioManager.isInitialized && ::audioFocusRequest.isInitialized) {
+            audioManager.abandonAudioFocusRequest(audioFocusRequest)
+        }
+    }
+
     private fun cancelPreparedMix() {
         val active = player
         if (mixStartedAt > 0L && active != null) active.volume = mixBaseVolume
@@ -375,6 +439,7 @@ class MeloXPlaybackService : MediaSessionService() {
         player?.removeListener(playerListener)
         player?.release()
         player = null
+        abandonPlaybackAudioFocus()
         super.onDestroy()
     }
 
@@ -385,5 +450,7 @@ class MeloXPlaybackService : MediaSessionService() {
         const val AUTOMIX_DURATION_MS = 6_000L
         const val MIN_AUTOMIX_DURATION_MS = 1_500L
         const val AUTOMIX_HANDOFF_GUARD_MS = 700L
+        const val AUTOMIX_FRAME_MS = 16L
+        const val MODE_MONITOR_MS = 100L
     }
 }

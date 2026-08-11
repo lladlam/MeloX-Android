@@ -81,6 +81,7 @@ import com.lladlam.melox.ui.library.LibraryScreen
 import com.lladlam.melox.ui.discovery.MeloXExploreScreen
 import com.lladlam.melox.ui.discovery.MeloXHomeScreen
 import com.lladlam.melox.ui.glass.LocalMeloXBackdrop
+import com.lladlam.melox.ui.glass.meloXBackdropBlur
 import com.lladlam.melox.ui.glass.meloXLiquidBottomBar
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import com.lladlam.melox.ui.glass.meloXLiquidTabSelection
@@ -422,10 +423,22 @@ private fun MeloXBottomChrome(
             .navigationBarsPadding()
             .padding(bottom = 5.dp),
     ) {
+        val chromeShape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp)
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(chromeHeight),
+                .height(chromeHeight)
+                .clip(chromeShape)
+                .meloXBackdropBlur(
+                    shape = chromeShape,
+                    blurRadius = 28.dp,
+                    surfaceColor = bottomGlassFallbackColor().copy(alpha = 0.10f),
+                )
+                .clickable(
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    indication = null,
+                    onClick = {},
+                ),
         ) {
             val horizontalMargin = 16.dp
             val compactSize = 52.dp

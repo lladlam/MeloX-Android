@@ -354,7 +354,13 @@ internal fun MeloXIOSNowPlayingScene(
             } else {
                 Modifier.fillMaxWidth()
             }
-            Box(modifier = controlsSurface) {
+            Box(
+                modifier = controlsSurface.clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {},
+                ),
+            ) {
                 MeloXNowPlayingCoreControls(
                     state = state,
                     page = page,
