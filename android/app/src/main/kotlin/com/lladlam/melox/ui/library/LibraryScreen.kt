@@ -79,6 +79,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.lladlam.melox.core.account.NeteaseSessionStore
+import com.lladlam.melox.core.audio.MusicQualityPreferences
 import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.core.library.NeteaseLibraryClient
 import com.lladlam.melox.core.library.NeteaseLibraryCache
@@ -764,6 +765,7 @@ private fun MeloXPlaylistDetailScreen(
     val appContext = context.applicationContext
     val scope = rememberCoroutineScope()
     val cache = remember(appContext) { NeteaseLibraryCache(appContext) }
+    val downloadStore = remember(appContext) { MeloXDownloadStore.get(appContext) }
     val accountClient = remember(appContext) {
         NeteaseSearchClient(cookieProvider = { NeteaseSessionStore.readCookie(appContext) })
     }
@@ -909,6 +911,14 @@ private fun MeloXPlaylistDetailScreen(
                             }
                         },
                         isSaved = isSaved == true,
+                        onDownloadAll = {
+                            val quality = MusicQualityPreferences.read(appContext)
+                            songs.forEach { song ->
+                                if (!downloadStore.contains(song.id) && !downloadStore.isDownloading(song.id)) {
+                                    downloadStore.start(song, quality)
+                                }
+                            }
+                        },
                         onToggleSaved = {
                             if (!savingPlaylist) {
                                 val desired = isSaved != true
@@ -1051,38 +1061,20 @@ private fun MeloXPlaylistToolbar(
         }
 
         Row(
-            modifier = Modifier
-                .height(44.dp)
-                .clip(RoundedCornerShape(22.dp))
-                .meloXLiquidBottomBar(
-                    shape = RoundedCornerShape(22.dp),
-                    tint = glassColor(foreground).copy(alpha = 0.18f),
-                    surfaceColor = glassColor(foreground).copy(alpha = 0.42f),
-                )
-                .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onShare,
-                    ),
-                contentAlignment = Alignment.Center,
+            MeloXGlassCircleButton(
+                foreground = foreground,
+                size = 44.dp,
+                onClick = onShare,
             ) {
                 MeloXShareGlyph(Modifier.size(22.dp), Color(0xFFFF3147))
             }
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onMore,
-                    ),
-                contentAlignment = Alignment.Center,
+            MeloXGlassCircleButton(
+                foreground = foreground,
+                size = 44.dp,
+                onClick = onMore,
             ) {
                 Text(
                     "•••",
@@ -1154,6 +1146,7 @@ private fun MeloXStandardPlaylistHero(
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
     isSaved: Boolean,
+    onDownloadAll: () -> Unit,
     onToggleSaved: () -> Unit,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
@@ -1288,6 +1281,31 @@ private fun MeloXStandardPlaylistHero(
                         fontWeight = if (isSaved) FontWeight.SemiBold else FontWeight.Light,
                     )
                 }
+            }
+
+            Box(
+                modifier = Modifier
+                    .padding(top = 14.dp)
+                    .width(148.dp)
+                    .height(42.dp)
+                    .clip(RoundedCornerShape(21.dp))
+                    .meloXLiquidButton(
+                        shape = RoundedCornerShape(21.dp),
+                        enabled = tracks.isNotEmpty(),
+                        tint = glassColor(foreground).copy(alpha = .10f),
+                        surfaceColor = glassColor(foreground).copy(alpha = .46f),
+                        lensRadius = 10.dp,
+                        refractionHeight = 16.dp,
+                    )
+                    .clickable(enabled = tracks.isNotEmpty(), onClick = onDownloadAll),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "↓ 一键下载",
+                    color = foreground,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
 
             playlist.description

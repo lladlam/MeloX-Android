@@ -444,9 +444,15 @@ fun MeloXIOSLyricsPanel(
             // its destination without animation and carry every row by the inverse
             // movement distance, then release rows through the cascade.
             val carried = movementOffsets.map { it.value }
-            scrollState.scrollTo(targetScroll)
+            scrollState.animateScrollTo(
+                targetScroll,
+                tween(
+                    durationMillis = max(cascadeDurationMs, 1f).roundToInt(),
+                    easing = SourceSmoothStepEasing,
+                ),
+            )
             movementOffsets.forEachIndexed { index, anim ->
-                anim.snapTo(movementDistance + carried[index])
+                anim.snapTo(carried[index])
             }
             visualFocusIndex = nextIndex
 
@@ -540,7 +546,7 @@ fun MeloXIOSLyricsPanel(
                     Spacer(Modifier.height(with(density) { topPaddingPx.toDp() }))
                     lines.forEachIndexed { index, line ->
                         val height = estimatedHeight(index)
-                        val visualOffset = movementOffsets[index].value
+                        val visualOffset = 0f
                         val frameMinY = rowContentTop(index, topPaddingPx) - scrollValue
                         val visualMidY = frameMinY + visualOffset + height * 0.5f
                         val distance = abs(visualMidY - focusAnchorY)

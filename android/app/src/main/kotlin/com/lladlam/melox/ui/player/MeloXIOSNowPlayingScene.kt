@@ -265,6 +265,7 @@ internal fun MeloXIOSNowPlayingScene(
                 )
             }
 
+            val songHeaderShape = RoundedCornerShape(20.dp)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -274,7 +275,21 @@ internal fun MeloXIOSNowPlayingScene(
                         alpha = headerAlpha
                         translationY = headerOffset.toPx()
                     }
-                    .padding(start = 84.dp),
+                    .then(
+                        if (queueVisible) {
+                            Modifier
+                                .clip(songHeaderShape)
+                                .meloXLiquidButton(
+                                    shape = songHeaderShape,
+                                    tint = Color.White.copy(alpha = .035f),
+                                    surfaceColor = Color.Black.copy(alpha = .10f),
+                                    blurRadius = 20.dp,
+                                    lensRadius = 14.dp,
+                                    refractionHeight = 18.dp,
+                                )
+                        } else Modifier
+                    )
+                    .padding(start = 84.dp, end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
