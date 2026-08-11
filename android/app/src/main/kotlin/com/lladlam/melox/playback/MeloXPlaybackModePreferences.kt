@@ -8,30 +8,53 @@ object MeloXPlaybackModePreferences {
     private const val KEY_AUTOPLAY = "autoplay"
     private const val KEY_AUTOMIX = "auto_mix"
 
-    fun shuffle(context: Context): Boolean =
+    internal fun preferences(context: Context) =
         context.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+
+    fun shuffle(context: Context): Boolean =
+        preferences(context)
             .getBoolean(KEY_SHUFFLE, false)
 
     fun autoplay(context: Context): Boolean =
-        context.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+        preferences(context)
             .getBoolean(KEY_AUTOPLAY, false)
 
     fun autoMix(context: Context): Boolean =
-        context.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+        preferences(context)
             .getBoolean(KEY_AUTOMIX, false)
 
     fun setShuffle(context: Context, enabled: Boolean) {
-        context.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+        preferences(context)
             .edit().putBoolean(KEY_SHUFFLE, enabled).apply()
     }
 
     fun setAutoplay(context: Context, enabled: Boolean) {
-        context.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+        preferences(context)
             .edit().putBoolean(KEY_AUTOPLAY, enabled).apply()
     }
 
     fun setAutoMix(context: Context, enabled: Boolean) {
-        context.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+        preferences(context)
             .edit().putBoolean(KEY_AUTOMIX, enabled).apply()
+    }
+
+    fun setAutoMixString(context: Context, key: String, value: String) {
+        preferences(context).edit().putString(key, value).apply()
+    }
+
+    fun setAutoMixInt(context: Context, key: String, value: Int) {
+        preferences(context).edit().putInt(key, value).apply()
+    }
+
+    fun setAutoMixLong(context: Context, key: String, value: Long) {
+        preferences(context).edit().putLong(key, value).apply()
+    }
+
+    fun setAutoMixBoolean(context: Context, key: String, value: Boolean) {
+        preferences(context).edit().putBoolean(key, value).apply()
+    }
+
+    fun reset(context: Context) {
+        preferences(context).edit().clear().apply()
     }
 }

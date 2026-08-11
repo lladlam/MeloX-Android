@@ -1,5 +1,8 @@
 package com.lladlam.melox.core.lyrics
 
+import java.text.BreakIterator
+import java.util.Locale
+
 data class LyricSyllable(
     val text: String,
     val startTimeMs: Long,
@@ -33,6 +36,45 @@ data class LyricsDocument(
         return (low - 1).takeIf { it >= 0 }
     }
 }
+
+/**
+ * Gives ordinary LRC lines a stable grapheme timeline so the same renderer can
+ * animate both YRC and line-timed lyrics. Real YRC syllables are never replaced.
+ */
+fun LyricsDocument.withPseudoTiming(): LyricsDocument = copy(
+    lines = lines.mapIndexed { index, line ->
+        if (line.syllables.isNotEmpty() || line.text.isBlank()) return@mapIndexed line
+        val iterator = BreakIterator.getCharacterInstance(Locale.ROOT).apply { setText(line.text) }
+        val graphemes = buildList {
+            var start = iterator.first()
+            var end = iterator.next()
+            while (end != BreakIterator.DONE) {
+                add(line.text.substring(start, end))
+                start = end
+                end = iterator.next()
+            }
+        }
+        if (graphemes.isEmpty()) return@mapIndexed line
+        val nextStart = lines.getOrNull(index + 1)?.timeMs
+        val duration = (line.durationMs ?: nextStart?.minus(line.timeMs) ?: 3_000L)
+            .coerceIn(400L, 12_000L)
+        val weights = graphemes.map { if (it.isBlank()) 0.35 else 1.0 }
+        val totalWeight = weights.sum().coerceAtLeast(1.0)
+        var consumed = 0.0
+        line.copy(
+            syllables = graphemes.mapIndexed { graphemeIndex, text ->
+                val startMs = line.timeMs + (duration * consumed / totalWeight).toLong()
+                consumed += weights[graphemeIndex]
+                val endMs = if (graphemeIndex == graphemes.lastIndex) {
+                    line.timeMs + duration
+                } else {
+                    line.timeMs + (duration * consumed / totalWeight).toLong()
+                }
+                LyricSyllable(text, startMs, endMs.coerceAtLeast(startMs + 1L))
+            },
+        )
+    },
+)
 
 object NeteaseLyricParser {
     private const val ANNOTATION_TOLERANCE_MS = 750L

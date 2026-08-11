@@ -52,12 +52,14 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource.Companion.UserInput
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.lladlam.melox.ui.glass.LocalMeloXBackdrop
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
+import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
 import com.lladlam.melox.core.network.MeloXSearchKind
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -78,7 +80,17 @@ fun MeloXIOSNowPlayingSharedHost(
     // A track transition updates the content inside the existing player. It must
     // not recreate the page/gesture state or send the shared element back to its
     // MiniPlayer bounds while the full-screen player is still open.
-    var page by remember { mutableStateOf(MeloXNowPlayingPage.Artwork) }
+    val context = LocalContext.current.applicationContext
+    val rememberPlayerPage = MeloXSettingsPreferences.boolean(context, "playback_remember_page", true)
+    var page by remember(rememberPlayerPage) {
+        mutableStateOf(
+            if (rememberPlayerPage) runCatching {
+                MeloXNowPlayingPage.valueOf(
+                    MeloXSettingsPreferences.string(context, "playback_last_page", MeloXNowPlayingPage.Artwork.name),
+                )
+            }.getOrDefault(MeloXNowPlayingPage.Artwork) else MeloXNowPlayingPage.Artwork,
+        )
+    }
     var transitionSourcePage by remember {
         mutableStateOf(MeloXNowPlayingPage.Artwork)
     }
@@ -284,6 +296,9 @@ fun MeloXIOSNowPlayingSharedHost(
                                 if (destination != page) {
                                     transitionSourcePage = page
                                     page = destination
+                                    if (rememberPlayerPage) {
+                                        MeloXSettingsPreferences.setString(context, "playback_last_page", destination.name)
+                                    }
                                 }
                             },
                             onShowActions = {

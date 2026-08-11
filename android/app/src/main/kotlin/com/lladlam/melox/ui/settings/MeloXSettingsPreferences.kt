@@ -25,11 +25,37 @@ object MeloXSettingsRuntime {
         internal set
     var showLyricRomanization by mutableStateOf(true)
         internal set
+    var lyricWordByWordEnabled by mutableStateOf(true)
+        internal set
+    var lyricPseudoTimingEnabled by mutableStateOf(true)
+        internal set
+    var lyricTapSeekEnabled by mutableStateOf(true)
+        internal set
+    var lyricAutoFollowEnabled by mutableStateOf(true)
+        internal set
+    var lyricReduceMotion by mutableStateOf(false)
+        internal set
+    var lyricAdvanceMs by mutableStateOf(0)
+        internal set
+    var lyricFollowDelayMs by mutableStateOf(3_000)
+        internal set
+    var lyricFontScale by mutableStateOf(1f)
+        internal set
+    var lyricSpacingScale by mutableStateOf(1f)
+        internal set
+    var lyricBlurStrength by mutableStateOf(1f)
+        internal set
+    var homeTabEnabled by mutableStateOf(true)
+        internal set
+    var exploreTabEnabled by mutableStateOf(true)
+        internal set
+    var libraryTabEnabled by mutableStateOf(true)
+        internal set
+    var rememberLastTab by mutableStateOf(true)
+        internal set
     var downloadLyricsEnabled by mutableStateOf(true)
         internal set
     var musicArea by mutableStateOf("全部")
-        internal set
-    var beatNetDebugEnabled by mutableStateOf(false)
         internal set
 
     private var initialized = false
@@ -48,9 +74,22 @@ object MeloXSettingsRuntime {
         keepScreenOn = MeloXSettingsPreferences.boolean(app, "player_keep_screen_on", false)
         showLyricTranslation = MeloXSettingsPreferences.boolean(app, "lyrics_translation", true)
         showLyricRomanization = MeloXSettingsPreferences.boolean(app, "lyrics_romanization", true)
+        lyricWordByWordEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_word_by_word", true)
+        lyricPseudoTimingEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_pseudo_timing", true)
+        lyricTapSeekEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_tap_seek", true)
+        lyricAutoFollowEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_auto_follow", true)
+        lyricReduceMotion = MeloXSettingsPreferences.boolean(app, "lyrics_reduce_motion", false)
+        lyricAdvanceMs = MeloXSettingsPreferences.int(app, "lyrics_advance_ms", 0).coerceIn(-1_000, 1_000)
+        lyricFollowDelayMs = MeloXSettingsPreferences.int(app, "lyrics_follow_delay_ms", 3_000).coerceIn(1_000, 8_000)
+        lyricFontScale = MeloXSettingsPreferences.float(app, "lyrics_font_scale", 1f).coerceIn(.8f, 1.25f)
+        lyricSpacingScale = MeloXSettingsPreferences.float(app, "lyrics_spacing_scale", 1f).coerceIn(.7f, 1.5f)
+        lyricBlurStrength = MeloXSettingsPreferences.float(app, "lyrics_blur_strength", 1f).coerceIn(0f, 1.5f)
+        homeTabEnabled = MeloXSettingsPreferences.boolean(app, "tab_home", true)
+        exploreTabEnabled = MeloXSettingsPreferences.boolean(app, "tab_explore", true)
+        libraryTabEnabled = MeloXSettingsPreferences.boolean(app, "tab_library", true)
+        rememberLastTab = MeloXSettingsPreferences.boolean(app, "general_remember_tab", true)
         downloadLyricsEnabled = MeloXSettingsPreferences.boolean(app, "download_lyrics", true)
         musicArea = MeloXSettingsPreferences.string(app, "music_area", "全部")
-        beatNetDebugEnabled = MeloXSettingsPreferences.boolean(app, "developer_beatnet", false)
     }
 }
 
@@ -68,6 +107,12 @@ object MeloXSettingsPreferences {
     fun string(context: Context, key: String, default: String = ""): String =
         prefs(context).getString(key, default) ?: default
 
+    fun int(context: Context, key: String, default: Int = 0): Int =
+        prefs(context).getInt(key, default)
+
+    fun float(context: Context, key: String, default: Float = 0f): Float =
+        prefs(context).getFloat(key, default)
+
     fun setBoolean(context: Context, key: String, value: Boolean) {
         prefs(context).edit().putBoolean(key, value).apply()
         when (key) {
@@ -78,8 +123,33 @@ object MeloXSettingsPreferences {
             "player_keep_screen_on" -> MeloXSettingsRuntime.keepScreenOn = value
             "lyrics_translation" -> MeloXSettingsRuntime.showLyricTranslation = value
             "lyrics_romanization" -> MeloXSettingsRuntime.showLyricRomanization = value
+            "lyrics_word_by_word" -> MeloXSettingsRuntime.lyricWordByWordEnabled = value
+            "lyrics_pseudo_timing" -> MeloXSettingsRuntime.lyricPseudoTimingEnabled = value
+            "lyrics_tap_seek" -> MeloXSettingsRuntime.lyricTapSeekEnabled = value
+            "lyrics_auto_follow" -> MeloXSettingsRuntime.lyricAutoFollowEnabled = value
+            "lyrics_reduce_motion" -> MeloXSettingsRuntime.lyricReduceMotion = value
+            "tab_home" -> MeloXSettingsRuntime.homeTabEnabled = value
+            "tab_explore" -> MeloXSettingsRuntime.exploreTabEnabled = value
+            "tab_library" -> MeloXSettingsRuntime.libraryTabEnabled = value
+            "general_remember_tab" -> MeloXSettingsRuntime.rememberLastTab = value
             "download_lyrics" -> MeloXSettingsRuntime.downloadLyricsEnabled = value
-            "developer_beatnet" -> MeloXSettingsRuntime.beatNetDebugEnabled = value
+        }
+    }
+
+    fun setInt(context: Context, key: String, value: Int) {
+        prefs(context).edit().putInt(key, value).apply()
+        when (key) {
+            "lyrics_advance_ms" -> MeloXSettingsRuntime.lyricAdvanceMs = value.coerceIn(-1_000, 1_000)
+            "lyrics_follow_delay_ms" -> MeloXSettingsRuntime.lyricFollowDelayMs = value.coerceIn(1_000, 8_000)
+        }
+    }
+
+    fun setFloat(context: Context, key: String, value: Float) {
+        prefs(context).edit().putFloat(key, value).apply()
+        when (key) {
+            "lyrics_font_scale" -> MeloXSettingsRuntime.lyricFontScale = value.coerceIn(.8f, 1.25f)
+            "lyrics_spacing_scale" -> MeloXSettingsRuntime.lyricSpacingScale = value.coerceIn(.7f, 1.5f)
+            "lyrics_blur_strength" -> MeloXSettingsRuntime.lyricBlurStrength = value.coerceIn(0f, 1.5f)
         }
     }
 

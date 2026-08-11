@@ -65,6 +65,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -90,6 +91,8 @@ import com.lladlam.melox.ui.player.rememberMeloXPlaybackUiState
 import com.lladlam.melox.ui.search.SearchScreen
 import com.lladlam.melox.ui.search.MeloXSearchLaunchBus
 import com.lladlam.melox.ui.settings.SettingsScreen
+import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
+import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.core.network.MeloXSearchKind
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -109,7 +112,11 @@ private val MeloXAccent = Color(0xFFFF3147)
 fun MeloXApp(
     openNowPlayingRequest: Int = 0,
 ) {
-    var selectedTab by remember { mutableStateOf(AppTab.Home) }
+    val context = LocalContext.current.applicationContext
+    val initialTab = if (MeloXSettingsRuntime.rememberLastTab) runCatching {
+        AppTab.valueOf(MeloXSettingsPreferences.string(context, "general_last_tab", AppTab.Home.name))
+    }.getOrDefault(AppTab.Home) else AppTab.Home
+    var selectedTab by remember { mutableStateOf(initialTab) }
     var showNeteaseLogin by remember { mutableStateOf(false) }
     var loginReturnTab by remember { mutableStateOf(AppTab.Settings) }
     var tabBarMinimized by remember { mutableStateOf(false) }
@@ -210,6 +217,21 @@ fun MeloXApp(
         tabBarMinimized = false
         scrollAccumulator = 0f
         if (selectedTab != AppTab.Library) libraryModalVisible = false
+        if (MeloXSettingsRuntime.rememberLastTab) {
+            MeloXSettingsPreferences.setString(context, "general_last_tab", selectedTab.name)
+        }
+    }
+
+    val visibleRootTabs = buildList {
+        if (MeloXSettingsRuntime.homeTabEnabled) add(AppTab.Home)
+        if (MeloXSettingsRuntime.exploreTabEnabled) add(AppTab.Explore)
+        if (MeloXSettingsRuntime.libraryTabEnabled) add(AppTab.Library)
+        add(AppTab.Settings)
+    }
+    LaunchedEffect(visibleRootTabs, selectedTab) {
+        if (selectedTab !in visibleRootTabs && selectedTab != AppTab.Search) {
+            selectedTab = visibleRootTabs.first()
+        }
     }
 
     CompositionLocalProvider(LocalMeloXBackdrop provides screenControlBackdrop) {
@@ -269,6 +291,7 @@ fun MeloXApp(
                     },
                     hasMedia = playbackState.hasMedia,
                     minimized = tabBarMinimized,
+                    visibleRootTabs = visibleRootTabs,
                     modifier = Modifier.align(Alignment.BottomCenter),
                     miniPlayer = { compactProgress ->
                         playerTransition.AnimatedVisibility(
@@ -388,6 +411,7 @@ private fun MeloXBottomChrome(
     onSelect: (AppTab) -> Unit,
     hasMedia: Boolean,
     minimized: Boolean,
+    visibleRootTabs: List<AppTab>,
     modifier: Modifier = Modifier,
     miniPlayer: @Composable (compactProgress: Float) -> Unit,
 ) {
@@ -439,7 +463,7 @@ private fun MeloXBottomChrome(
                 AppTab.Explore to RootGlyph.Explore,
                 AppTab.Library to RootGlyph.Library,
                 AppTab.Settings to RootGlyph.Settings,
-            )
+            ).filter { it.first in visibleRootTabs }
 
             val desiredCompactMiniVisibleWidth =
                 (maxWidth - horizontalMargin * 2 - compactSize * 2 - compactGap * 2)
@@ -491,8 +515,9 @@ private fun MeloXBottomChrome(
                     .pointerInput(progress, selectedTab) {
                         detectTapGestures { tap ->
                             if (progress < 0.56f) {
-                                val segmentWidth = size.width / 4f
-                                val index = (tap.x / segmentWidth).toInt().coerceIn(0, 3)
+                                val segmentWidth = size.width / primaryTabs.size.coerceAtLeast(1).toFloat()
+                                val index = (tap.x / segmentWidth).toInt()
+                                    .coerceIn(0, primaryTabs.lastIndex.coerceAtLeast(0))
                                 onSelect(primaryTabs[index].first)
                             } else if (progress >= 0.68f) {
                                 onSelect(selectedTab)
@@ -505,8 +530,9 @@ private fun MeloXBottomChrome(
                 val selectionEdgeInset = 5.dp
                 val selectionEdgeInsetPx = with(density) { selectionEdgeInset.toPx() }
                 val selectionTravelWidthPx = (tabBarMaxWidthPx - selectionEdgeInsetPx * 2f).coerceAtLeast(1f)
-                val selectionSegmentPx = selectionTravelWidthPx / 4f
-                val selectionWidth = (maxWidth - selectionEdgeInset * 2f) / 4f
+                val tabCount = primaryTabs.size.coerceAtLeast(1)
+                val selectionSegmentPx = selectionTravelWidthPx / tabCount.toFloat()
+                val selectionWidth = (maxWidth - selectionEdgeInset * 2f) / tabCount.toFloat()
                 Box(Modifier.fillMaxSize()) {
                     Row(
                         modifier = Modifier
