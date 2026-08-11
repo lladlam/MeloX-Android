@@ -208,7 +208,6 @@ fun MeloXIOSLyricsPanel(
     var browseGeneration by remember(document) { mutableIntStateOf(0) }
     var scrollHideDistancePx by remember(document) { mutableStateOf(0f) }
     val latestInterfaceHidden = rememberUpdatedState(isInterfaceHidden)
-    val latestAutomaticScroll = rememberUpdatedState(automaticScroll)
     val latestVisibilityCallback = rememberUpdatedState(onInterfaceVisibilityChange)
     val latestInteractionCallback = rememberUpdatedState(onInterfaceInteraction)
 
@@ -295,19 +294,26 @@ fun MeloXIOSLyricsPanel(
     val lyricInteractionConnection = remember(document, scrollHideThresholdPx) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (source != NestedScrollSource.UserInput || latestAutomaticScroll.value) return Offset.Zero
+                if (source != NestedScrollSource.UserInput) return Offset.Zero
                 val offsetDelta = -available.y // match SwiftUI contentOffset delta
                 if (kotlin.math.abs(offsetDelta) < 0.01f) return Offset.Zero
 
                 isBrowsingLyrics = true
                 browseGeneration += 1
-                latestInteractionCallback.value.invoke()
 
                 if (offsetDelta < 0f) {
-                    // Scrolling back toward previous lyrics immediately restores UI.
+                    // Browsing back toward previous lyrics restores controls immediately.
                     scrollHideDistancePx = 0f
-                    if (latestInterfaceHidden.value) latestVisibilityCallback.value.invoke(true)
+                    if (latestInterfaceHidden.value) {
+                        latestVisibilityCallback.value.invoke(true)
+                    } else {
+                        latestInteractionCallback.value.invoke()
+                    }
                 } else if (!latestInterfaceHidden.value) {
+                    // Forward browsing keeps an already-hidden interface hidden; if
+                    // controls are visible, activity resets the 5-second idle timer
+                    // and 200dp of continued scrolling hides them, matching upstream.
+                    latestInteractionCallback.value.invoke()
                     scrollHideDistancePx += offsetDelta
                     if (scrollHideDistancePx >= scrollHideThresholdPx) {
                         scrollHideDistancePx = 0f
