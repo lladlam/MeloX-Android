@@ -1,0 +1,27 @@
+name: Apply now playing regressions
+on:
+  push:
+    branches:
+      - fix/now-playing-regressions-20260811
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/now-playing-regressions-20260811
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Apply patch
+        run: python scripts/fix_now_playing_regressions.py
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add android/app/src/main/kotlin
+          git commit -m 'fix(player): repair lyrics rendering and controls layout'
+          git push origin HEAD:fix/now-playing-regressions-20260811
