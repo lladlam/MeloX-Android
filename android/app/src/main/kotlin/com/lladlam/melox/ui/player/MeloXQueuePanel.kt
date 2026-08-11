@@ -28,7 +28,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
-import com.lladlam.melox.ui.glass.meloXLiquidButton
+import com.lladlam.melox.ui.glass.meloXBackdropBlur
 
 @Composable
 fun MeloXQueuePanel(
@@ -104,13 +104,10 @@ private fun QueueSongHeaderSurface(entry: MeloXQueueEntry) {
             .fillMaxWidth()
             .padding(bottom = 8.dp)
             .clip(shape)
-            .meloXLiquidButton(
+            .meloXBackdropBlur(
                 shape = shape,
-                tint = Color.White.copy(alpha = .035f),
-                surfaceColor = Color.Black.copy(alpha = .10f),
                 blurRadius = 20.dp,
-                lensRadius = 14.dp,
-                refractionHeight = 18.dp,
+                surfaceColor = Color.Black.copy(alpha = .10f),
             )
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -132,13 +129,10 @@ private fun QueueModeControlsSurface(state: MeloXPlaybackUiState) {
             .fillMaxWidth()
             .padding(bottom = 4.dp)
             .clip(shape)
-            .meloXLiquidButton(
+            .meloXBackdropBlur(
                 shape = shape,
-                tint = Color.White.copy(alpha = .035f),
-                surfaceColor = Color.Black.copy(alpha = .095f),
                 blurRadius = 20.dp,
-                lensRadius = 14.dp,
-                refractionHeight = 18.dp,
+                surfaceColor = Color.Black.copy(alpha = .095f),
             )
             .padding(8.dp),
     ) {

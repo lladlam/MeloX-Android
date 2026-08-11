@@ -47,7 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import com.lladlam.melox.ui.glass.meloXLiquidButton
+import com.lladlam.melox.ui.glass.meloXBackdropBlur
 import kotlinx.coroutines.delay
 
 /**
@@ -256,7 +256,8 @@ internal fun MeloXIOSNowPlayingScene(
                         translationY = queueOffset.toPx()
                         scaleX = queueScale
                         scaleY = queueScale
-                    },
+                    }
+                    .padding(top = 80.dp),
             ) {
                 MeloXQueuePanel(
                     state = state,
@@ -279,13 +280,10 @@ internal fun MeloXIOSNowPlayingScene(
                         if (queueVisible) {
                             Modifier
                                 .clip(songHeaderShape)
-                                .meloXLiquidButton(
+                                .meloXBackdropBlur(
                                     shape = songHeaderShape,
-                                    tint = Color.White.copy(alpha = .035f),
-                                    surfaceColor = Color.Black.copy(alpha = .10f),
                                     blurRadius = 20.dp,
-                                    lensRadius = 14.dp,
-                                    refractionHeight = 18.dp,
+                                    surfaceColor = Color.Black.copy(alpha = .10f),
                                 )
                         } else Modifier
                     )
@@ -346,13 +344,10 @@ internal fun MeloXIOSNowPlayingScene(
                 Modifier
                     .fillMaxWidth()
                     .clip(controlsShape)
-                    .meloXLiquidButton(
+                    .meloXBackdropBlur(
                         shape = controlsShape,
-                        tint = Color.White.copy(alpha = .035f),
-                        surfaceColor = Color.Black.copy(alpha = .10f),
                         blurRadius = 20.dp,
-                        lensRadius = 14.dp,
-                        refractionHeight = 18.dp,
+                        surfaceColor = Color.Black.copy(alpha = .10f),
                     )
             } else {
                 Modifier.fillMaxWidth()

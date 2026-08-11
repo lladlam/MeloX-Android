@@ -123,21 +123,7 @@ fun MeloXIOSMiniPlayer(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 3.dp)
-            .pointerInput(state.mediaId) {
-                detectHorizontalDragGestures(
-                    onDragStart = { accumulatedDrag = 0f },
-                    onHorizontalDrag = { _, dragAmount -> accumulatedDrag += dragAmount },
-                    onDragEnd = {
-                        when {
-                            accumulatedDrag <= -48f -> state.next()
-                            accumulatedDrag >= 48f -> state.previous()
-                        }
-                        accumulatedDrag = 0f
-                    },
-                    onDragCancel = { accumulatedDrag = 0f },
-                )
-            },
+            .padding(horizontal = 16.dp, vertical = 3.dp),
     ) {
         val miniShape = Capsule()
         val dark = isSystemInDarkTheme()
@@ -177,6 +163,20 @@ fun MeloXIOSMiniPlayer(
             Row(
                 modifier = Modifier
                     .weight(1f)
+                    .pointerInput(state.mediaId) {
+                        detectHorizontalDragGestures(
+                            onDragStart = { accumulatedDrag = 0f },
+                            onHorizontalDrag = { _, dragAmount -> accumulatedDrag += dragAmount },
+                            onDragEnd = {
+                                when {
+                                    accumulatedDrag <= -48f -> state.next()
+                                    accumulatedDrag >= 48f -> state.previous()
+                                }
+                                accumulatedDrag = 0f
+                            },
+                            onDragCancel = { accumulatedDrag = 0f },
+                        )
+                    }
                     .clickable(onClick = onExpand),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -250,8 +250,7 @@ fun MeloXIOSMiniPlayer(
                     enabled = true,
                     onClick = state::togglePlayPause,
                     modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .then(chromeOverlayModifier),
+                        .align(Alignment.CenterStart),
                     visualAlpha = miniChromeAlpha,
                 )
                 MiniVectorButton(
@@ -259,8 +258,7 @@ fun MeloXIOSMiniPlayer(
                     enabled = state.hasNext || state.repeatMode != 0,
                     onClick = state::next,
                     modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .then(chromeOverlayModifier),
+                        .align(Alignment.CenterEnd),
                     visualAlpha = miniChromeAlpha * compactNextAlpha,
                 )
             }

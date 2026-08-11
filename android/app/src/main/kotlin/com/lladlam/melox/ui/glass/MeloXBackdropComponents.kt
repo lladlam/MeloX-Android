@@ -76,6 +76,31 @@ fun Modifier.meloXLiquidButton(
         )
 }
 
+/**
+ * Plain background blur. Unlike Liquid Glass this applies no lens, refraction
+ * or vibrancy; it only blurs the recorded scene and optionally lays a tint.
+ */
+@Composable
+fun Modifier.meloXBackdropBlur(
+    shape: Shape,
+    blurRadius: Dp = 20.dp,
+    surfaceColor: Color = Color.Transparent,
+): Modifier {
+    val backdrop = LocalMeloXBackdrop.current
+    if (backdrop == null) return background(surfaceColor, shape)
+    return drawBackdrop(
+        backdrop = backdrop,
+        shape = { shape },
+        effects = { blur(blurRadius.toPx()) },
+        highlight = null,
+        shadow = null,
+        innerShadow = null,
+        onDrawSurface = {
+            if (surfaceColor != Color.Transparent) drawRect(surfaceColor)
+        },
+    )
+}
+
 /** Official LiquidBottomTabs-style outer panel. */
 @Composable
 fun Modifier.meloXLiquidBottomBar(

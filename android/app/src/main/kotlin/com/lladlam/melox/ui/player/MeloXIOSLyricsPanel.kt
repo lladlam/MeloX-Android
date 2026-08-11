@@ -551,11 +551,25 @@ fun MeloXIOSLyricsPanel(
                         val visualMidY = frameMinY + visualOffset + height * 0.5f
                         val distance = abs(visualMidY - focusAnchorY)
                         val fp = focusProgress[index].value.coerceIn(0f, 1f)
+                        // The incoming line starts the 120 ms colour handoff before
+                        // its timestamp, then keeps full emphasis until the normal
+                        // focus Animatable catches up. This prevents the one-frame
+                        // dark trough that used to happen at sentence boundaries.
+                        val incomingLead = when {
+                            index == highlightedIndex + 1 -> sourceSmootherStep(
+                                ((effectivePositionMs - (line.timeMs - UpstreamLyrics.FOCUS_COLOR_DURATION_MS)) /
+                                    UpstreamLyrics.FOCUS_COLOR_DURATION_MS.toFloat()).coerceIn(0f, 1f),
+                            )
+                            index == highlightedIndex &&
+                                effectivePositionMs - line.timeMs in 0..UpstreamLyrics.FOCUS_COLOR_DURATION_MS.toLong() -> 1f
+                            else -> 0f
+                        }
+                        val effectiveFocus = max(fp, incomingLead)
                         val distanceBlur = sourceDistanceBlurRadius(
                             distancePx = distance,
                             lyricStridePx = lyricStridePx,
                             intensity = UpstreamLyrics.BLUR_INTENSITY * UpstreamLyrics.DISTANCE_BLUR_SCALE,
-                            focusProgress = fp,
+                            focusProgress = effectiveFocus,
                         )
                         val preceding = index == visualFocusIndex - 1
                         val following = index == visualFocusIndex + 1
@@ -563,14 +577,14 @@ fun MeloXIOSLyricsPanel(
                             UpstreamLyrics.BLUR_INTENSITY,
                             preceding,
                             following,
-                        )
+                        ) * (1f - effectiveFocus)
                         val distanceOpacity = sourceDistanceOpacity(
                             distance,
                             lyricStridePx,
                             UpstreamLyrics.DIM_AMOUNT,
-                            fp,
+                            effectiveFocus,
                         )
-                        val emphasis = sourceEmphasis(fp, UpstreamLyrics.DIM_AMOUNT)
+                        val emphasis = sourceEmphasis(effectiveFocus, UpstreamLyrics.DIM_AMOUNT)
                         val reveal = sourceBottomRevealOpacity(
                             frameMinY = frameMinY,
                             movementOffset = visualOffset,
@@ -585,15 +599,14 @@ fun MeloXIOSLyricsPanel(
                             line = line,
                             positionMs = renderedPositionMs,
                             timed = hasSyllableSync && index == highlightedIndex,
-                            focusProgress = fp,
+                            focusProgress = effectiveFocus,
                             visualScale = scale,
                             visualOffsetPx = visualOffset,
                             rowAlpha = rowAlpha,
                             distanceBlurDp = distanceBlur,
                             focusBlurDp = focusBlur,
                             showTranslation = MeloXSettingsRuntime.showLyricTranslation &&
-                                !line.translation.isNullOrBlank() &&
-                                index == visualFocusIndex,
+                                !line.translation.isNullOrBlank(),
                             showRomanization = MeloXSettingsRuntime.showLyricRomanization &&
                                 !line.romanization.isNullOrBlank(),
                             reserveTranslation = MeloXSettingsRuntime.showLyricTranslation && !line.translation.isNullOrBlank(),
@@ -669,9 +682,9 @@ private fun MeloXUpstreamLyricLine(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        // Romanization defaults to all-lines upstream; translation defaults to
-        // focused-line. Hidden translation is accounted for in promoted layout
-        // estimation so focus changes do not reflow the scroll geometry.
+        // When the user enables translation, every source line that has a
+        // translation keeps it directly underneath. Keeping annotations resident
+        // also prevents focus changes from reflowing the scroll geometry.
         val romanSize = max(UpstreamLyrics.FONT_SIZE_SP * UpstreamLyrics.ROMANIZATION_FONT_SCALE, 13f)
         if (showRomanization) {
             Text(
