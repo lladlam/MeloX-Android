@@ -79,6 +79,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.lladlam.melox.core.account.NeteaseSessionStore
+import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.core.library.NeteaseLibraryClient
 import com.lladlam.melox.core.library.NeteaseLibraryCache
 import com.lladlam.melox.core.library.NeteaseLibrarySnapshot
@@ -103,6 +104,7 @@ private enum class MeloXLibraryPage(val title: String) {
     Songs("歌曲"),
     Playlists("歌单"),
     History("最近播放"),
+    Downloads("下载"),
 }
 
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -122,6 +124,7 @@ fun LibraryScreen(
         )
     }
     val cache = remember(appContext) { NeteaseLibraryCache(appContext) }
+    val downloadStore = remember(appContext) { MeloXDownloadStore.get(appContext) }
 
     var selectedPage by remember { mutableStateOf(MeloXLibraryPage.Songs) }
     var selectedPlaylist by remember(session.cookie) { mutableStateOf<NeteasePlaylistSummary?>(null) }
@@ -293,29 +296,86 @@ fun LibraryScreen(
                                 songs = data.recentSongs,
                                 onPlay = { song ->
                                     PlaybackCommands.playQueue(
-                                        context = context,
-                                        songs = data.recentSongs,
-                                        selectedSongId = song.id,
+                                        context = context, songs = data.recentSongs, selectedSongId = song.id,
                                         onFailure = { errorMessage = it.message ?: "播放失败" },
                                     )
                                 },
                                 onPlayAll = {
                                     data.recentSongs.firstOrNull()?.let { first ->
                                         PlaybackCommands.playQueue(
-                                            context = context,
-                                            songs = data.recentSongs,
-                                            selectedSongId = first.id,
+                                            context = context, songs = data.recentSongs, selectedSongId = first.id,
                                             onFailure = { errorMessage = it.message ?: "播放失败" },
                                         )
                                     }
                                 },
                             )
+
+                            MeloXLibraryPage.Downloads -> MeloXLibraryDownloadsPage(downloadStore)
                         }
                     }
                 }
             }
         }
       }
+    }
+}
+
+@Composable
+private fun MeloXLibraryDownloadsPage(downloads: MeloXDownloadStore) {
+    val context = LocalContext.current
+    val active = downloads.activeDownloads.values.toList()
+    val completed = downloads.downloads.toList()
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 146.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        if (active.isNotEmpty()) {
+            item { Text("正在下载", fontSize=20.sp, fontWeight=FontWeight.Bold, modifier=Modifier.padding(top=6.dp,bottom=8.dp)) }
+            items(active, key={ "active-${it.song.id}" }) { item ->
+                Row(Modifier.fillMaxWidth().height(62.dp), verticalAlignment=Alignment.CenterVertically) {
+                    AsyncImage(item.song.artworkUrl,null,contentScale=ContentScale.Crop,modifier=Modifier.size(48.dp).clip(RoundedCornerShape(9.dp)))
+                    Column(Modifier.weight(1f).padding(start=12.dp)) {
+                        Text(item.song.name,maxLines=1,overflow=TextOverflow.Ellipsis,fontWeight=FontWeight.SemiBold)
+                        Text(item.fractionCompleted?.let { "${(it*100).toInt()}% · ${item.quality.title}" } ?: item.quality.title,color=MaterialTheme.colorScheme.onBackground.copy(alpha=.48f),fontSize=12.sp)
+                    }
+                    Text("取消",color=MaterialTheme.colorScheme.error,modifier=Modifier.clickable { downloads.cancel(item.song.id) }.padding(10.dp))
+                }
+            }
+        }
+        if (completed.isNotEmpty()) {
+            item {
+                Row(Modifier.fillMaxWidth().padding(top=14.dp,bottom=8.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                    Text("已下载",fontSize=20.sp,fontWeight=FontWeight.Bold)
+                    Text("播放全部",color=MaterialTheme.colorScheme.primary,fontWeight=FontWeight.SemiBold,modifier=Modifier.clickable {
+                        downloads.downloadedSongs.firstOrNull()?.let { PlaybackCommands.playQueue(context,downloads.downloadedSongs,it.id) }
+                    })
+                }
+            }
+            items(completed,key={ "download-${it.song.id}" }) { item ->
+                Row(
+                    Modifier.fillMaxWidth().height(62.dp).clickable { PlaybackCommands.playQueue(context,downloads.downloadedSongs,item.song.id) },
+                    verticalAlignment=Alignment.CenterVertically,
+                ) {
+                    AsyncImage(item.song.artworkUrl,null,contentScale=ContentScale.Crop,modifier=Modifier.size(48.dp).clip(RoundedCornerShape(9.dp)))
+                    Column(Modifier.weight(1f).padding(start=12.dp)) {
+                        Text(item.song.name,maxLines=1,overflow=TextOverflow.Ellipsis,fontWeight=FontWeight.SemiBold)
+                        Text("${item.song.artists} · ${item.quality.title}",maxLines=1,overflow=TextOverflow.Ellipsis,color=MaterialTheme.colorScheme.onBackground.copy(alpha=.48f),fontSize=12.sp)
+                    }
+                    Text("删除",color=MaterialTheme.colorScheme.error,modifier=Modifier.clickable { downloads.remove(item.song.id) }.padding(10.dp))
+                }
+            }
+        }
+        if (active.isEmpty() && completed.isEmpty()) {
+            item {
+                Box(Modifier.fillMaxWidth().height(260.dp),contentAlignment=Alignment.Center) {
+                    Column(horizontalAlignment=Alignment.CenterHorizontally) {
+                        Text("还没有下载歌曲",fontSize=19.sp,fontWeight=FontWeight.SemiBold)
+                        Text("在歌曲的更多操作菜单中选择“下载歌曲”。",modifier=Modifier.padding(top=7.dp),color=MaterialTheme.colorScheme.onBackground.copy(alpha=.48f),fontSize=13.sp)
+                    }
+                }
+            }
+        }
     }
 }
 
