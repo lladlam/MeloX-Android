@@ -578,7 +578,7 @@ fun MeloXIOSLyricsPanel(
                         MeloXUpstreamLyricLine(
                             line = line,
                             positionMs = renderedPositionMs,
-                            timed = hasSyllableSync && fp > 0.0001f,
+                            timed = hasSyllableSync && index == highlightedIndex,
                             focusProgress = fp,
                             visualScale = scale,
                             visualOffsetPx = visualOffset,
@@ -751,75 +751,96 @@ private fun MeloXGlyphLyricText(
 
         Canvas(Modifier.fillMaxWidth().height(height)) {
             if (!timed || line.text.isEmpty()) {
+                // drawText keeps Compose/Android's normal shaping and font fallback,
+                // including Japanese/CJK/emoji fallback fonts.
                 drawText(layout, color = Color.White)
                 return@Canvas
             }
 
-            // Glyph paths come from the full measured paragraph, so kerning,
-            // wrapping and baseline geometry stay identical for every frame.
+            // Render each timed character by clipping the *normally shaped full
+            // TextLayoutResult*. This preserves fallback glyphs. getPathForRange()
+            // is a selection/range enclosure path, not a glyph-outline API.
             for (offset in line.text.indices) {
                 val ch = line.text[offset]
-                if (ch == '\n' || ch == '\r') continue
-                val path = runCatching { layout.getPathForRange(offset, offset + 1) }.getOrNull() ?: continue
+                if (ch == '\n' || ch == '\r' || Character.isLowSurrogate(ch)) continue
                 val bounds = runCatching { layout.getBoundingBox(offset) }.getOrNull() ?: continue
+                if (!bounds.width.isFinite() || !bounds.height.isFinite() || bounds.width <= 0f || bounds.height <= 0f) continue
                 val fx = visuals.getOrElse(offset) { MeloXGlyphVisual(0f, 0f, 1f, 0f) }
+
                 withTransform({
                     translate(left = 0f, top = -fx.liftPx)
                     scale(scaleX = fx.scale, scaleY = fx.scale, pivot = bounds.center)
                 }) {
-                    // Upstream draws the complete unplayed run first. The played
-                    // run is a separate white layer revealed by a feathered mask;
-                    // this keeps brightness and timing independent instead of
-                    // interpolating one alpha value for the whole glyph.
-                    drawPath(path = path, color = Color.White.copy(alpha = UpstreamLyrics.UNPLAYED_OPACITY))
+                    clipRect(
+                        left = bounds.left,
+                        top = bounds.top,
+                        right = bounds.right,
+                        bottom = bounds.bottom,
+                    ) {
+                        // Upstream draws a complete unplayed layer first.
+                        drawText(
+                            layout,
+                            color = Color.White.copy(alpha = UpstreamLyrics.UNPLAYED_OPACITY),
+                        )
 
-                    val reveal = fx.reveal.coerceIn(0f, 1f)
-                    if (reveal > 0f && bounds.width > 0f) {
-                        val feather = max(bounds.width * UpstreamLyrics.HIGHLIGHT_GRADIENT_WIDTH, 1.5f * density.density)
+                        val reveal = fx.reveal.coerceIn(0f, 1f)
+                        if (reveal <= 0f) return@clipRect
+
+                        val feather = max(
+                            bounds.width * UpstreamLyrics.HIGHLIGHT_GRADIENT_WIDTH,
+                            1.5f * density.density,
+                        )
                         val front = bounds.left - feather + (bounds.width + feather) * reveal
                         val solidRight = min(front, bounds.right)
 
-                        fun drawMasked(alpha: Float, style: androidx.compose.ui.graphics.drawscope.DrawStyle = androidx.compose.ui.graphics.drawscope.Fill) {
+                        fun drawRevealed(alpha: Float) {
                             if (solidRight > bounds.left) {
-                                clipRect(left = bounds.left, top = bounds.top - feather, right = solidRight, bottom = bounds.bottom + feather) {
-                                    drawPath(path = path, color = Color.White.copy(alpha = alpha), style = style)
+                                clipRect(
+                                    left = bounds.left,
+                                    top = bounds.top,
+                                    right = solidRight,
+                                    bottom = bounds.bottom,
+                                ) {
+                                    drawText(layout, color = Color.White.copy(alpha = alpha))
                                 }
                             }
-                            // SwiftUI uses an 8-stop highlight gradient. Draw the
-                            // same stop count as adjacent alpha strips from the
-                            // reveal front to front+feather.
+
                             val stopCount = 8
                             for (step in 0 until stopCount) {
                                 val a = step.toFloat() / stopCount.toFloat()
                                 val b = (step + 1).toFloat() / stopCount.toFloat()
                                 val mid = (a + b) * .5f
                                 val remaining = 1f - mid
-                                val maskAlpha = remaining * (1f - UpstreamLyrics.HIGHLIGHT_GRADIENT_REDUCTION * mid)
+                                val maskAlpha = remaining *
+                                    (1f - UpstreamLyrics.HIGHLIGHT_GRADIENT_REDUCTION * mid)
                                 val left = max(front + feather * a, bounds.left)
                                 val right = min(front + feather * b, bounds.right)
                                 if (right > left) {
-                                    clipRect(left = left, top = bounds.top - feather, right = right, bottom = bounds.bottom + feather) {
-                                        drawPath(path = path, color = Color.White.copy(alpha = alpha * maskAlpha.coerceIn(0f, 1f)), style = style)
+                                    clipRect(
+                                        left = left,
+                                        top = bounds.top,
+                                        right = right,
+                                        bottom = bounds.bottom,
+                                    ) {
+                                        drawText(
+                                            layout,
+                                            color = Color.White.copy(
+                                                alpha = alpha * maskAlpha.coerceIn(0f, 1f),
+                                            ),
+                                        )
                                     }
                                 }
                             }
                         }
 
+                        // Keep the upstream long-tone envelope without relying on
+                        // vector glyph extraction. Two low-opacity passes provide
+                        // the bloom while the final pass is the actual played text.
                         if (fx.glow > 0.001f) {
-                            // Android Canvas cannot reuse SwiftUI's GraphicsContext
-                            // blur stack byte-for-byte, so approximate its two glow
-                            // layers with two revealed bloom strokes while retaining
-                            // the same timing envelope and glyph geometry.
-                            drawMasked(
-                                (fx.glow * .12f).coerceIn(0f, .30f),
-                                Stroke(width = max(1f, UpstreamLyrics.FONT_SIZE_SP * density.density * .15f)),
-                            )
-                            drawMasked(
-                                (fx.glow * .24f).coerceIn(0f, .46f),
-                                Stroke(width = max(1f, UpstreamLyrics.FONT_SIZE_SP * density.density * .075f)),
-                            )
+                            drawRevealed((fx.glow * .10f).coerceIn(0f, .24f))
+                            drawRevealed((fx.glow * .18f).coerceIn(0f, .36f))
                         }
-                        drawMasked(1f)
+                        drawRevealed(1f)
                     }
                 }
             }

@@ -393,7 +393,7 @@ private fun SharedArtworkDestination(
                 170.dp,
                 minOf(maxWidth, maxHeight - 92.dp),
             )
-            val artworkFooterHeight = 78.dp
+            val artworkFooterHeight = 78.dp + MeloXNowPlayingControlsHeight.dp
             val fullX = ((maxWidth - fullArtworkSize) / 2f).coerceAtLeast(0.dp)
             val fullY = (maxHeight - fullArtworkSize - artworkFooterHeight)
                 .coerceAtLeast(0.dp)
