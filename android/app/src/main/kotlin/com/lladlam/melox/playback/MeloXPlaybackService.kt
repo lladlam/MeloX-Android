@@ -34,6 +34,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 @OptIn(UnstableApi::class)
 class MeloXPlaybackService : MediaSessionService() {
@@ -50,6 +53,9 @@ class MeloXPlaybackService : MediaSessionService() {
     private var mixStartedAt = 0L
     private var mixDurationMs = 0L
     private var mixBaseVolume = 1f
+    private var mixOutgoingStartPositionMs = 0L
+    private var mixIncomingStartPositionMs = 0L
+    private var mixLastProgress = 0.0
 
     private val audioAttributes = AudioAttributes.Builder()
         .setUsage(C.USAGE_MEDIA)
@@ -116,6 +122,23 @@ class MeloXPlaybackService : MediaSessionService() {
                 maybeRunAutoMix(active)
             }
             handler.postDelayed(this, 100L)
+        }
+    }
+
+    /**
+     * Keep the gain envelope independent from the slower queue/autoplay monitor.
+     * Upstream MeloX advances its two-deck envelope every 20 ms; driving volume
+     * from the 100 ms mode monitor made the crossfade audibly step between gains.
+     */
+    private val mixEnvelope = object : Runnable {
+        override fun run() {
+            val active = player
+            val incoming = incomingPlayer
+            if (mixStartedAt == 0L || active == null || incoming == null) return
+            updateAutoMixEnvelope(active, incoming)
+            if (mixStartedAt > 0L) {
+                handler.postDelayed(this, AUTOMIX_ENVELOPE_INTERVAL_MS)
+            }
         }
     }
 
@@ -229,7 +252,7 @@ class MeloXPlaybackService : MediaSessionService() {
 
     private fun maybeRunAutoMix(active: ExoPlayer) {
         if (!MeloXPlaybackModePreferences.autoMix(this)) {
-            cancelPreparedMix()
+            cancelPreparedMix(releaseStandby = true)
             return
         }
         if (!active.isPlaying || active.repeatMode == Player.REPEAT_MODE_ONE || !active.hasNextMediaItem()) return
@@ -237,7 +260,7 @@ class MeloXPlaybackService : MediaSessionService() {
         val duration = active.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: return
         val remaining = duration - active.currentPosition
         val sourceId = active.currentMediaItem?.mediaId ?: return
-        if (incomingPlayer == null && remaining <= AUTOMIX_PRELOAD_MS) {
+        if (preparedMixSourceId == null && remaining <= AUTOMIX_PRELOAD_MS) {
             prepareIncoming(active, sourceId)
         }
         val incoming = incomingPlayer ?: return
@@ -254,16 +277,43 @@ class MeloXPlaybackService : MediaSessionService() {
             incoming.volume = 0f
             incoming.play()
             mixStartedAt = SystemClock.elapsedRealtime()
+            mixOutgoingStartPositionMs = active.currentPosition.coerceAtLeast(0L)
+            mixIncomingStartPositionMs = incoming.currentPosition.coerceAtLeast(0L)
+            mixLastProgress = 0.0
+            handler.removeCallbacks(mixEnvelope)
+            handler.post(mixEnvelope)
         }
-        if (mixStartedAt > 0L) {
-            val elapsed = SystemClock.elapsedRealtime() - mixStartedAt
-            val durationMs = mixDurationMs.coerceAtLeast(1L)
-            val progress = (elapsed.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
-            active.volume = mixBaseVolume * (1f - progress)
-            incoming.volume = mixBaseVolume * progress
-            if (progress >= 1f || remaining <= AUTOMIX_HANDOFF_GUARD_MS) {
-                completeAutoMix(active, incoming)
-            }
+    }
+
+    private fun updateAutoMixEnvelope(active: ExoPlayer, incoming: ExoPlayer) {
+        val duration = active.duration.takeIf { it != C.TIME_UNSET && it > 0L }
+        val remaining = duration?.minus(active.currentPosition) ?: Long.MAX_VALUE
+        val durationMs = mixDurationMs.coerceAtLeast(1L)
+        // Drive the envelope from both decks' rendered media clocks, matching
+        // upstream MeloX. This prevents the fade from running ahead while the
+        // incoming decoder is technically READY but has not advanced audio yet.
+        val outgoingProgress =
+            (active.currentPosition - mixOutgoingStartPositionMs).coerceAtLeast(0L).toDouble() /
+                durationMs.toDouble()
+        val incomingProgress =
+            (incoming.currentPosition - mixIncomingStartPositionMs).coerceAtLeast(0L).toDouble() /
+                durationMs.toDouble()
+        val progress = maxOf(
+            mixLastProgress,
+            minOf(outgoingProgress, incomingProgress),
+        ).coerceIn(0.0, 1.0)
+        mixLastProgress = progress
+
+        // Match MeloX AutoMixFadeEnvelope.equalPower: smoothstep timing avoids a
+        // derivative jump, while sin/cos gains avoid the perceived midpoint dip.
+        val smoothed = progress * progress * (3.0 - 2.0 * progress)
+        val outgoingGain = cos(smoothed * PI / 2.0).toFloat()
+        val incomingGain = sin(smoothed * PI / 2.0).toFloat()
+        active.volume = mixBaseVolume * outgoingGain
+        incoming.volume = mixBaseVolume * incomingGain
+
+        if (progress >= 1.0 || remaining <= AUTOMIX_HANDOFF_GUARD_MS) {
+            completeAutoMix(active, incoming)
         }
     }
 
@@ -277,7 +327,16 @@ class MeloXPlaybackService : MediaSessionService() {
         ) {
             return
         }
-        val incoming = buildPlayer(managesAudioFocus = false, observesSession = false)
+        // Reuse the inactive deck just like upstream MeloX. Constructing and
+        // releasing ExoPlayer at every handoff adds avoidable work at song edges.
+        val incoming = incomingPlayer ?: buildPlayer(
+            managesAudioFocus = false,
+            observesSession = false,
+        )
+        incoming.stop()
+        incoming.clearMediaItems()
+        incoming.setAudioAttributes(audioAttributes, false)
+        incoming.setHandleAudioBecomingNoisy(false)
         val items = List(active.mediaItemCount) { active.getMediaItemAt(it) }
         incoming.setMediaItems(items, nextIndex, 0L)
         incoming.volume = 0f
@@ -293,6 +352,7 @@ class MeloXPlaybackService : MediaSessionService() {
      * forward/backward jump reported at the outgoing song's original endpoint.
      */
     private fun completeAutoMix(old: ExoPlayer, incoming: ExoPlayer) {
+        handler.removeCallbacks(mixEnvelope)
         old.volume = 0f
         incoming.volume = mixBaseVolume
         incoming.setAudioAttributes(audioAttributes, true)
@@ -300,13 +360,20 @@ class MeloXPlaybackService : MediaSessionService() {
         incoming.addListener(playerListener)
         mediaSession?.setPlayer(incoming)
         player = incoming
-        incomingPlayer = null
         preparedMixSourceId = null
         mixStartedAt = 0L
         mixDurationMs = 0L
+        mixOutgoingStartPositionMs = 0L
+        mixIncomingStartPositionMs = 0L
+        mixLastProgress = 0.0
         old.removeListener(playerListener)
         old.pause()
-        old.release()
+        old.stop()
+        old.clearMediaItems()
+        old.setAudioAttributes(audioAttributes, false)
+        old.setHandleAudioBecomingNoisy(false)
+        old.volume = 0f
+        incomingPlayer = old
         applyLocalArtworkMetadata(incoming)
     }
 
@@ -346,18 +413,25 @@ class MeloXPlaybackService : MediaSessionService() {
         return true
     }
 
-    private fun cancelPreparedMix() {
+    private fun cancelPreparedMix(releaseStandby: Boolean = false) {
+        handler.removeCallbacks(mixEnvelope)
         val active = player
         if (mixStartedAt > 0L && active != null) active.volume = mixBaseVolume
         incomingPlayer?.run {
             removeListener(playerListener)
             pause()
-            release()
+            stop()
+            clearMediaItems()
+            volume = 0f
+            if (releaseStandby) release()
         }
-        incomingPlayer = null
+        if (releaseStandby) incomingPlayer = null
         preparedMixSourceId = null
         mixStartedAt = 0L
         mixDurationMs = 0L
+        mixOutgoingStartPositionMs = 0L
+        mixIncomingStartPositionMs = 0L
+        mixLastProgress = 0.0
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
@@ -369,7 +443,7 @@ class MeloXPlaybackService : MediaSessionService() {
         handler.removeCallbacks(modeMonitor)
         recommendationJob?.cancel()
         serviceScope.cancel()
-        cancelPreparedMix()
+        cancelPreparedMix(releaseStandby = true)
         mediaSession?.release()
         mediaSession = null
         player?.removeListener(playerListener)
@@ -385,5 +459,6 @@ class MeloXPlaybackService : MediaSessionService() {
         const val AUTOMIX_DURATION_MS = 6_000L
         const val MIN_AUTOMIX_DURATION_MS = 1_500L
         const val AUTOMIX_HANDOFF_GUARD_MS = 700L
+        const val AUTOMIX_ENVELOPE_INTERVAL_MS = 20L
     }
 }
