@@ -1,8 +1,8 @@
 name: Inspect player fix targets
 on:
-  push:
+  pull_request:
     branches:
-      - fix/player-queue-crossfade-download-lyrics
+      - main
 jobs:
   inspect:
     runs-on: ubuntu-latest
@@ -13,10 +13,10 @@ jobs:
           echo '=== FILES ==='
           find android/app/src/main/kotlin -type f | sort | grep -Ei 'playback|player|queue|lyric|download|setting|volume' || true
           echo '=== SETTINGS RUNTIME ==='
-          grep -RIn "showLyricTranslation\|download.*lyric\|lyrics.*download\|MeloXSettingsRuntime" android/app/src/main/kotlin | head -200 || true
+          grep -RIn "showLyricTranslation\|download.*lyric\|lyrics.*download\|MeloXSettingsRuntime" android/app/src/main/kotlin | head -240 || true
           echo '=== SHUFFLE ==='
-          grep -RIn "shuffle\|Shuffle" android/app/src/main/kotlin/com/lladlam/melox | head -240 || true
+          grep -RIn "shuffle\|Shuffle" android/app/src/main/kotlin/com/lladlam/melox | head -280 || true
           echo '=== VOLUME ==='
-          grep -RIn "volume\|AudioManager" android/app/src/main/kotlin/com/lladlam/melox | head -240 || true
+          grep -RIn "volume\|AudioManager" android/app/src/main/kotlin/com/lladlam/melox | head -280 || true
           echo '=== DOWNLOAD ==='
-          grep -RIn "MeloXDownloadStore\|start(song\|artworkUrl\|lyrics" android/app/src/main/kotlin/com/lladlam/melox/core/download android/app/src/main/kotlin/com/lladlam/melox/ui | head -260 || true
+          grep -RIn "MeloXDownloadStore\|start(song\|artworkUrl\|lyrics" android/app/src/main/kotlin/com/lladlam/melox/core/download android/app/src/main/kotlin/com/lladlam/melox/ui | head -320 || true
