@@ -1,6 +1,7 @@
 package com.lladlam.melox.ui.player
 
 import android.content.ComponentName
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import androidx.compose.animation.AnimatedContent
@@ -64,6 +65,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import coil3.compose.AsyncImage
 import com.lladlam.melox.playback.MeloXPlaybackService
+import com.lladlam.melox.playback.MeloXPlaybackModePreferences
 import com.lladlam.melox.playback.PlaybackCommands
 import kotlinx.coroutines.delay
 import kotlin.math.roundToLong
@@ -86,7 +88,7 @@ data class MeloXQueueEntry(
 )
 
 @Stable
-class MeloXPlaybackUiState internal constructor() {
+class MeloXPlaybackUiState internal constructor(private val appContext: Context) {
     private var controller: MediaController? = null
     private val sleepTimerHandler = Handler(Looper.getMainLooper())
     private var sleepTimerRunnable: Runnable? = null
@@ -119,9 +121,9 @@ class MeloXPlaybackUiState internal constructor() {
         private set
     var shuffleEnabled by mutableStateOf(false)
         private set
-    var autoplayEnabled by mutableStateOf(false)
+    var autoplayEnabled by mutableStateOf(MeloXPlaybackModePreferences.autoplay(appContext))
         private set
-    var autoMixEnabled by mutableStateOf(false)
+    var autoMixEnabled by mutableStateOf(MeloXPlaybackModePreferences.autoMix(appContext))
         private set
     var volume by mutableFloatStateOf(1f)
         private set
@@ -245,9 +247,15 @@ class MeloXPlaybackUiState internal constructor() {
         }
     }
 
-    fun toggleAutoplay() { autoplayEnabled = !autoplayEnabled }
+    fun toggleAutoplay() {
+        autoplayEnabled = !autoplayEnabled
+        MeloXPlaybackModePreferences.setAutoplay(appContext, autoplayEnabled)
+    }
 
-    fun toggleAutoMix() { autoMixEnabled = !autoMixEnabled }
+    fun toggleAutoMix() {
+        autoMixEnabled = !autoMixEnabled
+        MeloXPlaybackModePreferences.setAutoMix(appContext, autoMixEnabled)
+    }
 
     fun changeVolume(value: Float) {
         controller?.let { player ->
@@ -293,7 +301,7 @@ class MeloXPlaybackUiState internal constructor() {
 @Composable
 fun rememberMeloXPlaybackUiState(): MeloXPlaybackUiState {
     val context = LocalContext.current.applicationContext
-    val state = remember { MeloXPlaybackUiState() }
+    val state = remember(context) { MeloXPlaybackUiState(context) }
 
     DisposableEffect(context) {
         val token = SessionToken(

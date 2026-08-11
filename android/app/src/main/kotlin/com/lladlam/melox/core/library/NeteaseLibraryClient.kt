@@ -94,6 +94,21 @@ class NeteaseLibraryClient(
             parsePlaylists(values)
         }
 
+    fun similarSongsBlocking(songId: Long, limit: Int = 50): List<SearchSong> {
+        if (songId <= 0L) return emptyList()
+        // Upstream uses /api/v1/discovery/simiSong. The direct EAPI transport is
+        // accepted by the same interface host and keeps Android on one client.
+        val response = eapi(
+            uri = "/api/v1/discovery/simiSong",
+            data = JSONObject().put("songid", songId).put("limit", limit.coerceIn(1, 50)),
+            authenticated = NeteaseSessionStore.containsMusicU(cookieProvider()),
+        )
+        val songs = response.optJSONArray("songs") ?: JSONArray()
+        return buildList {
+            for (index in 0 until songs.length()) parseSong(songs.optJSONObject(index))?.let(::add)
+        }
+    }
+
     fun userPlaylistsBlocking(userId: Long, limit: Int = 2_000): List<NeteasePlaylistSummary> {
         ensureLoggedIn()
         val response = eapi(

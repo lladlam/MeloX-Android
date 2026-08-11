@@ -141,6 +141,12 @@ object PlaybackCommands {
         if (shouldResume) controller.play()
     }
 
+    internal fun mediaItemFor(
+        song: SearchSong,
+        quality: MusicQuality = MusicQualityRuntime.selected,
+        queueOrigin: String = QUEUE_ORIGIN_BASE,
+    ): MediaItem = song.toMediaItem(quality, queueOrigin)
+
     private fun SearchSong.toMediaItem(quality: MusicQuality, queueOrigin: String): MediaItem {
         val metadata = MediaMetadata.Builder()
             .setTitle(name)

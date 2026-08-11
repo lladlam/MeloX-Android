@@ -17,6 +17,7 @@ class NeteasePlaybackResolver(
     private val cookieProvider: () -> String = { "" },
     @Suppress("UNUSED_PARAMETER")
     private val client: NeteaseSearchClient = NeteaseSearchClient(cookieProvider = cookieProvider),
+    private val localSourceProvider: (Long) -> Uri? = { null },
 ) : ResolvingDataSource.Resolver {
     private data class ResolveKey(
         val songId: Long,
@@ -35,6 +36,9 @@ class NeteasePlaybackResolver(
 
         val songId = uri.lastPathSegment?.toLongOrNull()
             ?: throw IOException("Invalid MeloX song URI: $uri")
+        localSourceProvider(songId)?.let { local ->
+            return dataSpec.withUri(local)
+        }
         val requestedQuality = MusicQuality.fromApiLevel(uri.getQueryParameter(QUALITY_QUERY))
             ?: MusicQualityRuntime.selected
         val currentCookieHeader = cookieProvider()
@@ -58,6 +62,7 @@ class NeteasePlaybackResolver(
     override fun resolveReportedUri(uri: Uri): Uri {
         if (uri.scheme != MELOX_SCHEME || uri.host != SONG_HOST) return uri
         val songId = uri.lastPathSegment?.toLongOrNull() ?: return uri
+        localSourceProvider(songId)?.let { return it }
         val requestedQuality = MusicQuality.fromApiLevel(uri.getQueryParameter(QUALITY_QUERY))
             ?: MusicQualityRuntime.selected
         val currentCookieHeader = cookieProvider()

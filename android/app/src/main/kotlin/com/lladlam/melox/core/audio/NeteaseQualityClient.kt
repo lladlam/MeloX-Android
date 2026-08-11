@@ -118,6 +118,47 @@ class NeteaseQualityClient(
         )
     }
 
+    fun downloadSourceBlocking(
+        songId: Long,
+        requestedQuality: MusicQuality,
+    ): NeteasePlaybackSource {
+        val availability = audioAvailabilityBlocking(songId)
+        val loggedIn = NeteaseSessionStore.containsMusicU(cookieProvider())
+        var lastError: Throwable? = null
+        for (candidate in requestedQuality.playbackCandidates(availability)) {
+            try {
+                val payload = JSONObject()
+                    .put("id", songId)
+                    .put("level", candidate.apiLevel)
+                if (candidate.requiresImmersiveType) payload.put("immerseType", "c51")
+                val response = eapi(
+                    uri = "/api/song/enhance/download/url/v1",
+                    data = payload,
+                    authenticated = loggedIn,
+                    cookieHeaderOverride = cookieProvider().takeIf(String::isNotBlank),
+                )
+                val data = response.optJSONObject("data")
+                    ?: response.optJSONArray("data")?.optJSONObject(0)
+                    ?: throw IOException("download route returned no source")
+                val rawUrl = data.optString("url").takeIf(String::isNotBlank)
+                    ?: throw IOException("download route returned no URL")
+                val actual = MusicQuality.fromApiLevel(data.optString("level").takeIf(String::isNotBlank)) ?: candidate
+                return NeteasePlaybackSource(
+                    url = secureUrl(rawUrl),
+                    bitrate = data.optInt("br").takeIf { it > 0 },
+                    format = data.optString("type").takeIf(String::isNotBlank),
+                    quality = actual,
+                )
+            } catch (error: Throwable) {
+                lastError = error
+            }
+        }
+        // Upstream DownloadStore falls back to the ordinary playback source when
+        // the account-specific download route is unavailable.
+        return runCatching { playbackSourceBlocking(songId, requestedQuality) }
+            .getOrElse { throw IOException("无法取得下载音源", lastError ?: it) }
+    }
+
     private fun parseAvailability(song: JSONObject): SongAudioAvailability {
         fun resource(key: String): SongAudioResource? {
             val value = song.optJSONObject(key) ?: return null

@@ -46,6 +46,7 @@ import coil3.compose.AsyncImage
 import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.audio.MusicQuality
 import com.lladlam.melox.core.audio.MusicQualityPreferences
+import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.ui.MeloXBottomContentClearance
 import com.lladlam.melox.ui.glass.meloXLiquidButton
@@ -403,7 +404,7 @@ private fun ContentFeatureSettings(context: android.content.Context) {
     SettingsToggleRow(context, "播客", "feature_podcasts", true)
     SettingsToggleRow(context, "最近播放", "feature_history", true)
     SettingsToggleRow(context, "云盘", "feature_cloud", true)
-    SettingsToggleRow(context, "下载", "feature_downloads", false, "Android 下载管理尚未接入，关闭时不会展示伪下载入口。")
+    SettingsToggleRow(context, "下载", "feature_downloads", true, "歌曲更多菜单支持下载、取消和删除；播放时优先使用本地文件。")
 }
 
 @Composable
@@ -428,18 +429,55 @@ private fun ContentSettings(context: android.content.Context) {
 private fun StorageSettings(context: android.content.Context) {
     var cacheSize by remember { mutableStateOf("计算中…") }
     val scope = rememberCoroutineScope()
+    val downloads = remember(context) { MeloXDownloadStore.get(context) }
     suspend fun refresh() {
-        val bytes = withContext(Dispatchers.IO) {
-            context.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-        }
-        cacheSize = when {
-            bytes >= 1024L * 1024L -> "%.1f MB".format(bytes / 1024.0 / 1024.0)
-            bytes >= 1024L -> "%.1f KB".format(bytes / 1024.0)
-            else -> "$bytes B"
-        }
+        val bytes = withContext(Dispatchers.IO) { context.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() } }
+        cacheSize = formatBytes(bytes)
     }
     LaunchedEffect(Unit) { refresh() }
-    SettingsInfoCard("缓存空间", cacheSize)
+
+    SettingsInfoCard("临时缓存", cacheSize)
+    Spacer(Modifier.height(10.dp))
+    SettingsInfoCard("已下载歌曲", "${downloads.downloads.size} 首 · ${formatBytes(downloads.totalByteCount)}")
+    Spacer(Modifier.height(14.dp))
+
+    SettingsToggleRow(context, "按播放次数自动缓存", "downloads_auto_cache", false, "与上游 DownloadStore 对齐的自动缓存偏好；手动下载始终可用。")
+
+    if (downloads.activeDownloads.isNotEmpty()) {
+        Text("正在下载", modifier = Modifier.padding(top=10.dp,bottom=8.dp), fontWeight=FontWeight.SemiBold)
+        SettingsGlassGroup {
+            downloads.activeDownloads.values.forEach { active ->
+                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment=Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(active.song.name, maxLines=1, overflow=TextOverflow.Ellipsis)
+                        Text(active.fractionCompleted?.let { "${(it*100).toInt()}% · ${active.quality.title}" } ?: active.quality.title, color=MaterialTheme.colorScheme.onSurface.copy(alpha=.5f), fontSize=11.sp)
+                    }
+                    Text("取消", color=MaterialTheme.colorScheme.error, modifier=Modifier.clickable { downloads.cancel(active.song.id) }.padding(8.dp))
+                }
+            }
+        }
+    }
+
+    if (downloads.downloads.isNotEmpty()) {
+        Text("已下载", modifier = Modifier.padding(top=18.dp,bottom=8.dp), fontWeight=FontWeight.SemiBold)
+        SettingsGlassGroup {
+            downloads.downloads.forEach { item ->
+                Row(Modifier.fillMaxWidth().clickable { PlaybackCommands.playQueue(context, downloads.downloadedSongs, item.song.id) }.padding(14.dp), verticalAlignment=Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(item.song.name, maxLines=1, overflow=TextOverflow.Ellipsis)
+                        Text("${item.quality.title} · ${formatBytes(item.byteCount)}", color=MaterialTheme.colorScheme.onSurface.copy(alpha=.5f), fontSize=11.sp)
+                    }
+                    Text("删除", color=MaterialTheme.colorScheme.error, modifier=Modifier.clickable { downloads.remove(item.song.id) }.padding(8.dp))
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        SettingsDangerButton("删除全部已下载歌曲") { downloads.removeAll() }
+    } else if (downloads.activeDownloads.isEmpty()) {
+        SettingsInfoCard("下载", "还没有下载歌曲；可在歌曲的“更多”菜单中选择“下载歌曲”。")
+    }
+
+    downloads.errorMessage?.let { Text(it, color=MaterialTheme.colorScheme.error, fontSize=12.sp, modifier=Modifier.padding(top=10.dp)) }
     Spacer(Modifier.height(14.dp))
     SettingsActionButton("清理临时缓存") {
         scope.launch {
@@ -447,8 +485,13 @@ private fun StorageSettings(context: android.content.Context) {
             refresh()
         }
     }
-    Spacer(Modifier.height(10.dp))
-    Text("音乐库元数据缓存保存在应用 files 目录，不会被“清理临时缓存”误删。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .46f))
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1024L * 1024L * 1024L -> "%.2f GB".format(bytes / 1024.0 / 1024.0 / 1024.0)
+    bytes >= 1024L * 1024L -> "%.1f MB".format(bytes / 1024.0 / 1024.0)
+    bytes >= 1024L -> "%.1f KB".format(bytes / 1024.0)
+    else -> "$bytes B"
 }
 
 @Composable
@@ -484,10 +527,14 @@ private fun GeneralSettings(context: android.content.Context) {
 
 @Composable
 private fun AboutSettings(context: android.content.Context) {
-    SettingsInfoCard(
-        "MeloX Android",
-        "MeloX 的 Android 原生迁移版。\n\nAndroid 原生迁移与维护：lladlam\n上游 iOS 原生项目：youshen2/MeloX（SwiftUI）",
-    )
+    SettingsGlassGroup {
+        Column(Modifier.padding(18.dp)) {
+            Text("MeloX Android", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("MeloX 的 Android 原生迁移版。", modifier = Modifier.padding(top=7.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha=.62f))
+            Text("Android 原生迁移与维护：lladlam", modifier = Modifier.padding(top=14.dp), fontWeight=FontWeight.SemiBold)
+            Text("上游 iOS 原生项目：youshen2/MeloX（SwiftUI）", modifier = Modifier.padding(top=5.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha=.58f))
+        }
+    }
     Spacer(Modifier.height(14.dp))
     SettingsGlassGroup {
         Column(Modifier.padding(16.dp)) {

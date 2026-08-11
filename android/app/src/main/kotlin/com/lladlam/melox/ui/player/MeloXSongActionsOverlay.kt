@@ -48,6 +48,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.lladlam.melox.core.account.NeteaseSessionStore
+import com.lladlam.melox.core.audio.MusicQualityPreferences
+import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.core.library.NeteaseLibraryClient
 import com.lladlam.melox.core.library.NeteasePlaylistSummary
 import com.lladlam.melox.core.model.SearchSong
@@ -79,6 +81,7 @@ fun MeloXSongActionsOverlay(
     val library = remember(app) { NeteaseLibraryClient(cookieProvider = { NeteaseSessionStore.readCookie(app) }) }
     val ops = remember(app) { NeteaseMusicOperationsClient(cookieProvider = { NeteaseSessionStore.readCookie(app) }) }
     val account = remember(app) { NeteaseSearchClient(cookieProvider = { NeteaseSessionStore.readCookie(app) }) }
+    val downloads = remember(app) { MeloXDownloadStore.get(app) }
     var page by remember(song.id, visible) { mutableStateOf(SongActionPage.Main) }
     var busy by remember(song.id, visible) { mutableStateOf(false) }
     var message by remember(song.id, visible) { mutableStateOf<String?>(null) }
@@ -161,6 +164,16 @@ fun MeloXSongActionsOverlay(
                             playbackState?.let { ActionItem("定时关闭", "◷") { page=SongActionPage.Sleep } }
                             if (playbackState == null) ActionItem("下一首播放", "⇥") { PlaybackCommands.playNext(context,song); onDismiss() }
                             ActionItem("添加到播放队列", "+") { if(playbackState!=null)playbackState.addCurrentToQueue() else PlaybackCommands.addToQueue(context,song); onDismiss() }
+                            when {
+                                downloads.contains(song.id) -> ActionItem("删除下载", "↓×") { downloads.remove(song.id) }
+                                downloads.isDownloading(song.id) -> ActionItem("取消下载", "↓×") { downloads.cancel(song.id) }
+                                else -> ActionItem("下载歌曲", "↓") { downloads.start(song, MusicQualityPreferences.read(app)) }
+                            }
+                            downloads.activeDownloads[song.id]?.let { active ->
+                                val percent = active.fractionCompleted?.let { (it * 100).toInt() }
+                                Text(percent?.let { "正在下载 $it%" } ?: "正在下载…", color=Color.White.copy(alpha=.52f), fontSize=11.sp, modifier=Modifier.padding(start=46.dp,bottom=4.dp))
+                            }
+                            downloads.errorMessage?.let { Text(it,color=Color(0xFFFF8A90),fontSize=11.sp,modifier=Modifier.padding(start=46.dp,bottom=4.dp)) }
                             ActionItem("添加到歌单", "≡") { page=SongActionPage.AddToPlaylist; scope.launch { loadOwnedPlaylists() } }
                             ActionItem(if(liked==true) "取消喜爱" else "喜爱", if(liked==true) "♥" else "♡") {
                                 val desired=liked!=true; busy=true
