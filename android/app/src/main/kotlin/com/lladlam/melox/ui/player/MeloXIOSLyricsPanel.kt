@@ -6,6 +6,7 @@ import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -27,7 +28,6 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -144,7 +144,6 @@ fun MeloXIOSLyricsPanel(
         )
     }
     val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val mediaId = state.mediaId
 
@@ -389,20 +388,11 @@ fun MeloXIOSLyricsPanel(
                 return@LaunchedEffect
             }
 
-            scope.launch { handOffFocusColor(nextIndex) }
-            scope.launch { handOffFocusScale(previousIndex, nextIndex) }
-
             val baseDurationMs = sourceFocusAnimationDurationMs(nextIndex, lines)
             val isAdjacentForward = nextIndex == previousIndex + 1
             val effectivePosition = renderedPositionState.longValue +
                 if (hasSyllableSync) 0L else UpstreamLyrics.NON_YRC_ADVANCE_MS
             val remainingMs = sourceRemainingFocusDurationMs(nextIndex, effectivePosition, lines)
-
-            if (!isAdjacentForward) {
-                listState.animateScrollToItem(nextIndex + 1, targetOffset)
-                visualFocusIndex = nextIndex
-                return@LaunchedEffect
-            }
 
             val fullCascadeMs = max(baseDurationMs.toFloat(), UpstreamLyrics.CASCADE_DURATION_MS)
             val availableMs = remainingMs?.coerceAtLeast(0f)
@@ -413,15 +403,45 @@ fun MeloXIOSLyricsPanel(
                 else min(fullCascadeMs, availableMs)
             }
 
-            if (cascadeDurationMs <= 0f) {
-                listState.scrollToItem(nextIndex + 1, targetOffset)
-            } else {
-                // LazyColumn limits composition/layout to visible rows. Its scroll
-                // animation is frame-clock driven, avoiding the all-row cascade of
-                // Animatables that previously contended with glyph rendering.
-                listState.animateScrollToItem(nextIndex + 1, targetOffset)
-            }
+            // The source changes its visual focus at transition start and carries
+            // the previous presentation through a cancellable transition. Keeping
+            // visualFocusIndex on the old row until scrolling finishes made blur,
+            // opacity and timed rendering all jump on the final frame.
             visualFocusIndex = nextIndex
+
+            coroutineScope {
+                launch { handOffFocusColor(nextIndex) }
+                launch { handOffFocusScale(previousIndex, nextIndex) }
+                launch {
+                    if (!isAdjacentForward) {
+                        listState.animateScrollToItem(nextIndex + 1, targetOffset)
+                        return@launch
+                    }
+                    if (cascadeDurationMs <= 0f) {
+                        listState.scrollToItem(nextIndex + 1, targetOffset)
+                        return@launch
+                    }
+
+                    val desiredTop = -targetOffset.toFloat()
+                    val targetItem = listState.layoutInfo.visibleItemsInfo
+                        .firstOrNull { it.index == nextIndex + 1 }
+                    if (targetItem == null) {
+                        listState.animateScrollToItem(nextIndex + 1, targetOffset)
+                    } else {
+                        // animateScrollToItem uses Compose's generic spring. MeloX's
+                        // lyric motion has a fixed source duration, so drive the
+                        // adjacent-line distance with the same smooth timing curve.
+                        val distance = targetItem.offset - desiredTop
+                        listState.animateScrollBy(
+                            value = distance,
+                            animationSpec = tween(
+                                durationMillis = cascadeDurationMs.roundToInt(),
+                                easing = SourceSmoothStepEasing,
+                            ),
+                        )
+                    }
+                }
+            }
         }
 
         when {
@@ -477,7 +497,16 @@ fun MeloXIOSLyricsPanel(
                         val frameMinY = visibleItemsByIndex[index + 1]?.offset?.toFloat()
                             ?: focusAnchorY + (index - visualFocusIndex) * lyricStridePx
                         val visualMidY = frameMinY + visualOffset + height * 0.5f
-                        val distance = abs(visualMidY - focusAnchorY)
+                        // Automatic movement should not feed its own changing row
+                        // geometry back into blur/opacity. The upstream transition
+                        // freezes presentation geometry while the cascade runs.
+                        // Index distance is its stable LazyColumn equivalent; while
+                        // browsing, actual viewport distance remains interactive.
+                        val distance = if (isBrowsingLyrics || visualFocusIndex !in lines.indices) {
+                            abs(visualMidY - focusAnchorY)
+                        } else {
+                            abs(index - visualFocusIndex) * lyricStridePx
+                        }
                         val fp = focusProgress[index].value.coerceIn(0f, 1f)
                         val effectiveFocus = fp
                         val distanceBlur = sourceDistanceBlurRadius(
@@ -513,7 +542,7 @@ fun MeloXIOSLyricsPanel(
                         MeloXUpstreamLyricLine(
                             line = line,
                             playbackTimeProvider = playbackTimeProvider,
-                            timed = hasSyllableSync && index == highlightedIndex,
+                            supportsTimedLyrics = line.syllables.isNotEmpty(),
                             focusProgress = effectiveFocus,
                             visualScale = scale,
                             visualOffsetPx = visualOffset,
@@ -551,7 +580,7 @@ fun MeloXIOSLyricsPanel(
 private fun MeloXUpstreamLyricLine(
     line: LyricLine,
     playbackTimeProvider: () -> Long,
-    timed: Boolean,
+    supportsTimedLyrics: Boolean,
     focusProgress: Float,
     visualScale: Float,
     visualOffsetPx: Float,
@@ -594,7 +623,8 @@ private fun MeloXUpstreamLyricLine(
         MeloXGlyphLyricText(
             line = line,
             playbackTimeProvider = playbackTimeProvider,
-            timed = timed && line.syllables.isNotEmpty(),
+            supportsTimedLyrics = supportsTimedLyrics,
+            timingEffectsStrength = focusProgress,
             modifier = Modifier.fillMaxWidth(),
         )
 
@@ -657,7 +687,8 @@ private data class MeloXGlyphVisual(
 private fun MeloXGlyphLyricText(
     line: LyricLine,
     playbackTimeProvider: () -> Long,
-    timed: Boolean,
+    supportsTimedLyrics: Boolean,
+    timingEffectsStrength: Float,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
@@ -681,9 +712,17 @@ private fun MeloXGlyphLyricText(
         val height = with(density) { layout.size.height.toDp() }
 
         Canvas(Modifier.fillMaxWidth().height(height)) {
-            if (!timed || line.text.isEmpty()) {
+            val playbackTimeMs = playbackTimeProvider()
+            val effectsStrength = sourceTimingEffectsStrength(
+                line = line,
+                playbackTimeMs = playbackTimeMs,
+                focusProgress = timingEffectsStrength,
+            )
+            if (!supportsTimedLyrics || effectsStrength <= 0.0001f || line.text.isEmpty()) {
                 // drawText keeps Compose/Android's normal shaping and font fallback,
-                // including Japanese/CJK/emoji fallback fonts.
+                // including Japanese/CJK/emoji fallback fonts. This is also the
+                // zero-strength state of MeloX's timed renderer, not a second
+                // competing text path with different opacity.
                 drawText(layout, color = Color.White)
                 return@Canvas
             }
@@ -692,7 +731,7 @@ private fun MeloXGlyphLyricText(
             // Canvas only. It avoids recomposing or relaying out the lyric row.
             val visuals = sourceGlyphVisuals(
                 line = line,
-                playbackTimeMs = playbackTimeProvider(),
+                playbackTimeMs = playbackTimeMs,
                 density = density.density,
             )
 
@@ -707,8 +746,13 @@ private fun MeloXGlyphLyricText(
                 val fx = visuals.getOrElse(offset) { MeloXGlyphVisual(0f, 0f, 1f, 0f) }
 
                 withTransform({
-                    translate(left = 0f, top = -fx.liftPx)
-                    scale(scaleX = fx.scale, scaleY = fx.scale, pivot = bounds.center)
+                    translate(left = 0f, top = -fx.liftPx * effectsStrength)
+                    val presentationScale = 1f + (fx.scale - 1f) * effectsStrength
+                    scale(
+                        scaleX = presentationScale,
+                        scaleY = presentationScale,
+                        pivot = bounds.center,
+                    )
                 }) {
                     clipRect(
                         left = bounds.left,
@@ -719,7 +763,10 @@ private fun MeloXGlyphLyricText(
                         // Upstream draws a complete unplayed layer first.
                         drawText(
                             layout,
-                            color = Color.White.copy(alpha = UpstreamLyrics.UNPLAYED_OPACITY),
+                            color = Color.White.copy(
+                                alpha = 1f -
+                                    (1f - UpstreamLyrics.UNPLAYED_OPACITY) * effectsStrength,
+                            ),
                         )
 
                         val reveal = fx.reveal.coerceIn(0f, 1f)
@@ -775,9 +822,10 @@ private fun MeloXGlyphLyricText(
                         // Keep the upstream long-tone envelope without relying on
                         // vector glyph extraction. Two low-opacity passes provide
                         // the bloom while the final pass is the actual played text.
-                        if (fx.glow > 0.001f) {
-                            drawRevealed((fx.glow * .10f).coerceIn(0f, .24f))
-                            drawRevealed((fx.glow * .18f).coerceIn(0f, .36f))
+                        val glow = fx.glow * effectsStrength
+                        if (glow > 0.001f) {
+                            drawRevealed((glow * .10f).coerceIn(0f, .24f))
+                            drawRevealed((glow * .18f).coerceIn(0f, .36f))
                         }
                         drawRevealed(1f)
                     }
@@ -847,6 +895,28 @@ private fun sourceGlyphVisuals(
         }
     }
     return result
+}
+
+/**
+ * MeloX feeds focus-colour presentation progress into LyricGlowTextRenderer so
+ * its unplayed opacity, lift, scale and glow enter as one transition. Some YRC
+ * files place the line timestamp slightly before the first syllable timestamp;
+ * delaying presentation strength until that syllable begins prevents a fully
+ * unplayed line from dimming during this metadata gap.
+ */
+private fun sourceTimingEffectsStrength(
+    line: LyricLine,
+    playbackTimeMs: Long,
+    focusProgress: Float,
+): Float {
+    val focus = focusProgress.coerceIn(0f, 1f)
+    if (focus <= 0f || line.syllables.isEmpty()) return 0f
+    val firstSyllableStartMs = line.syllables.minOf { it.startTimeMs }
+    val activation = sourceSmootherStep(
+        (playbackTimeMs - firstSyllableStartMs).toFloat() /
+            UpstreamLyrics.FOCUS_COLOR_DURATION_MS.toFloat(),
+    )
+    return min(focus, activation)
 }
 
 private fun sourceTimedAnnotatedString(line: LyricLine, playbackTimeMs: Long) =
