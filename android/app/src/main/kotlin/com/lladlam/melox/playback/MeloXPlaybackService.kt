@@ -46,6 +46,7 @@ class MeloXPlaybackService : MediaSessionService() {
     private var recommendationSeed: Long? = null
     private var preparedMixSourceId: String? = null
     private var mixStartedAt = 0L
+    private var mixDurationMs = 0L
     private var mixBaseVolume = 1f
 
     private val audioAttributes = AudioAttributes.Builder()
@@ -65,7 +66,14 @@ class MeloXPlaybackService : MediaSessionService() {
         }
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             recommendationSeed = null
-            cancelPreparedMix()
+            // During an active crossfade the outgoing deck may report an end/transition
+            // before the 100 ms monitor tick performs the handoff. Do not tear down the
+            // prepared incoming deck in that tiny window; the next tick promotes it at
+            // the already-heard position instead of replaying the overlap from zero.
+            if (mixStartedAt == 0L) cancelPreparedMix()
+        }
+        override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+            if (mixStartedAt == 0L) cancelPreparedMix()
         }
     }
 
@@ -190,19 +198,32 @@ class MeloXPlaybackService : MediaSessionService() {
         }
         val incoming = incomingPlayer ?: return
         if (preparedMixSourceId != sourceId) {
-            cancelPreparedMix(); return
+            if (mixStartedAt > 0L) {
+                completeAutoMix(active, incoming)
+            } else {
+                cancelPreparedMix()
+            }
+            return
         }
         if (mixStartedAt == 0L && incoming.playbackState == Player.STATE_READY && remaining <= AUTOMIX_DURATION_MS) {
-            mixBaseVolume = active.volume
+            mixBaseVolume = active.volume.coerceIn(0f, 1f)
+            mixDurationMs = minOf(
+                AUTOMIX_DURATION_MS,
+                (remaining - AUTOMIX_HANDOFF_GUARD_MS).coerceAtLeast(MIN_AUTOMIX_DURATION_MS),
+            )
             incoming.volume = 0f
             incoming.play()
             mixStartedAt = SystemClock.elapsedRealtime()
         }
         if (mixStartedAt > 0L) {
-            val progress = ((SystemClock.elapsedRealtime() - mixStartedAt).toFloat() / AUTOMIX_DURATION_MS.toFloat()).coerceIn(0f, 1f)
+            val elapsed = SystemClock.elapsedRealtime() - mixStartedAt
+            val durationMs = mixDurationMs.coerceAtLeast(1L)
+            val progress = (elapsed.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
             active.volume = mixBaseVolume * (1f - progress)
             incoming.volume = mixBaseVolume * progress
-            if (progress >= 1f) completeAutoMix(active, incoming)
+            if (progress >= 1f || remaining <= AUTOMIX_HANDOFF_GUARD_MS) {
+                completeAutoMix(active, incoming)
+            }
         }
     }
 
@@ -220,6 +241,10 @@ class MeloXPlaybackService : MediaSessionService() {
     }
 
     private fun completeAutoMix(old: ExoPlayer, incoming: ExoPlayer) {
+        val heardPosition = (SystemClock.elapsedRealtime() - mixStartedAt).coerceAtLeast(0L)
+        if (heardPosition > 0L && kotlin.math.abs(incoming.currentPosition - heardPosition) > 300L) {
+            incoming.seekTo(heardPosition)
+        }
         incoming.volume = mixBaseVolume
         incoming.setAudioAttributes(audioAttributes, true)
         incoming.setHandleAudioBecomingNoisy(true)
@@ -229,6 +254,7 @@ class MeloXPlaybackService : MediaSessionService() {
         incomingPlayer = null
         preparedMixSourceId = null
         mixStartedAt = 0L
+        mixDurationMs = 0L
         old.removeListener(playerListener)
         old.pause()
         old.release()
@@ -245,6 +271,7 @@ class MeloXPlaybackService : MediaSessionService() {
         incomingPlayer = null
         preparedMixSourceId = null
         mixStartedAt = 0L
+        mixDurationMs = 0L
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
@@ -268,5 +295,7 @@ class MeloXPlaybackService : MediaSessionService() {
         const val AUTOPLAY_PRELOAD_MS = 15_000L
         const val AUTOMIX_PRELOAD_MS = 10_000L
         const val AUTOMIX_DURATION_MS = 6_000L
+        const val MIN_AUTOMIX_DURATION_MS = 1_500L
+        const val AUTOMIX_HANDOFF_GUARD_MS = 350L
     }
 }

@@ -340,14 +340,15 @@ internal fun MeloXIOSNowPlayingScene(
                 slideOutVertically(tween(220, easing = FastOutSlowInEasing)) { it / 8 },
         ) {
             val controlsShape = RoundedCornerShape(28.dp)
-            val controlsSurface = if (page == MeloXNowPlayingPage.Lyrics) {
+            val controlsSurface = if (page != MeloXNowPlayingPage.Artwork) {
                 Modifier
                     .fillMaxWidth()
+                    .height(MeloXNowPlayingControlsHeight.dp)
                     .clip(controlsShape)
                     .meloXBackdropBlur(
                         shape = controlsShape,
-                        blurRadius = 20.dp,
-                        surfaceColor = Color.Black.copy(alpha = .10f),
+                        blurRadius = 24.dp,
+                        surfaceColor = Color.Black.copy(alpha = .08f),
                     )
             } else {
                 Modifier.fillMaxWidth()

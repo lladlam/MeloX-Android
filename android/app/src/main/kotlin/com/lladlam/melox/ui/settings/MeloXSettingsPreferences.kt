@@ -25,6 +25,8 @@ object MeloXSettingsRuntime {
         internal set
     var showLyricRomanization by mutableStateOf(true)
         internal set
+    var downloadLyricsEnabled by mutableStateOf(true)
+        internal set
     var musicArea by mutableStateOf("全部")
         internal set
     var beatNetDebugEnabled by mutableStateOf(false)
@@ -46,6 +48,7 @@ object MeloXSettingsRuntime {
         keepScreenOn = MeloXSettingsPreferences.boolean(app, "player_keep_screen_on", false)
         showLyricTranslation = MeloXSettingsPreferences.boolean(app, "lyrics_translation", true)
         showLyricRomanization = MeloXSettingsPreferences.boolean(app, "lyrics_romanization", true)
+        downloadLyricsEnabled = MeloXSettingsPreferences.boolean(app, "download_lyrics", true)
         musicArea = MeloXSettingsPreferences.string(app, "music_area", "全部")
         beatNetDebugEnabled = MeloXSettingsPreferences.boolean(app, "developer_beatnet", false)
     }
@@ -75,6 +78,7 @@ object MeloXSettingsPreferences {
             "player_keep_screen_on" -> MeloXSettingsRuntime.keepScreenOn = value
             "lyrics_translation" -> MeloXSettingsRuntime.showLyricTranslation = value
             "lyrics_romanization" -> MeloXSettingsRuntime.showLyricRomanization = value
+            "download_lyrics" -> MeloXSettingsRuntime.downloadLyricsEnabled = value
             "developer_beatnet" -> MeloXSettingsRuntime.beatNetDebugEnabled = value
         }
     }

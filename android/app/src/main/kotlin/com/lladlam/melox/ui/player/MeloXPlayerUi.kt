@@ -2,6 +2,7 @@ package com.lladlam.melox.ui.player
 
 import android.content.ComponentName
 import android.content.Context
+import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import androidx.compose.animation.AnimatedContent
@@ -119,7 +120,7 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
         private set
     var repeatMode by mutableIntStateOf(Player.REPEAT_MODE_OFF)
         private set
-    var shuffleEnabled by mutableStateOf(false)
+    var shuffleEnabled by mutableStateOf(MeloXPlaybackModePreferences.shuffle(appContext))
         private set
     var autoplayEnabled by mutableStateOf(MeloXPlaybackModePreferences.autoplay(appContext))
         private set
@@ -181,8 +182,10 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
         hasNext = player.hasNextMediaItem()
         currentIndex = player.currentMediaItemIndex
         repeatMode = player.repeatMode
-        shuffleEnabled = player.shuffleModeEnabled
-        volume = player.volume
+        shuffleEnabled = MeloXPlaybackModePreferences.shuffle(appContext)
+        val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVolume.toFloat()
         queue = buildQueue(player)
     }
 
@@ -231,7 +234,9 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
 
     fun toggleShuffle() {
         controller?.let { player ->
-            player.shuffleModeEnabled = !player.shuffleModeEnabled
+            val next = !shuffleEnabled
+            PlaybackCommands.setExplicitShuffle(appContext, player, next)
+            shuffleEnabled = next
             refresh()
         }
     }
@@ -258,10 +263,11 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
     }
 
     fun changeVolume(value: Float) {
-        controller?.let { player ->
-            player.volume = value.coerceIn(0f, 1f)
-            volume = player.volume
-        }
+        val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        val target = (value.coerceIn(0f, 1f) * maxVolume).toInt().coerceIn(0, maxVolume)
+        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
+        volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVolume.toFloat()
     }
 
     fun addCurrentToQueue() {

@@ -10,11 +10,13 @@ import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.lladlam.melox.core.audio.MusicQuality
 import com.lladlam.melox.core.audio.MusicQualityPreferences
 import com.lladlam.melox.core.audio.MusicQualityRuntime
+import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.core.model.SearchSong
 import java.util.concurrent.Executor
 
@@ -23,6 +25,8 @@ object PlaybackCommands {
     const val QUEUE_ORIGIN_KEY = "melox.queue.origin"
     const val QUEUE_ORIGIN_BASE = "base"
     const val QUEUE_ORIGIN_MANUAL = "manual"
+    const val QUEUE_ORIGINAL_INDEX_KEY = "melox.queue.original_index"
+    const val QUEUE_ORIGINAL_INDEX_UNSET = -1
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val mainExecutor = Executor { command -> mainHandler.post(command) }
@@ -49,16 +53,34 @@ object PlaybackCommands {
             {
                 try {
                     val controller = controllerFuture.get()
-                    val queue = songs
-                        .ifEmpty { return@addListener }
-                        .map { song -> song.toMediaItem(quality, QUEUE_ORIGIN_BASE) }
-                    val startIndex = songs.indexOfFirst { it.id == selectedSongId }
-                        .takeIf { it >= 0 }
-                        ?: 0
+                    val sourceSongs = songs.ifEmpty { return@addListener }
+                    val downloads = MeloXDownloadStore.get(appContext)
+                    val originalQueue = sourceSongs.mapIndexed { index, song ->
+                        song.toMediaItem(
+                            quality = quality,
+                            queueOrigin = QUEUE_ORIGIN_BASE,
+                            originalIndex = index,
+                            artworkOverride = downloads.localArtworkUri(song.id),
+                        )
+                    }
+                    val sourceStartIndex = sourceSongs.indexOfFirst { it.id == selectedSongId }
+                        .takeIf { it >= 0 } ?: 0
+                    val useShuffle = MeloXPlaybackModePreferences.shuffle(appContext)
+                    val queue = if (useShuffle) {
+                        val selected = originalQueue[sourceStartIndex]
+                        listOf(selected) + originalQueue
+                            .filterIndexed { index, _ -> index != sourceStartIndex }
+                            .shuffled()
+                    } else originalQueue
+                    val startIndex = if (useShuffle) 0 else sourceStartIndex
 
                     activeController?.takeIf { it !== controller }?.release()
                     activeController = controller
 
+                    // MeloX uses the physical pending-play list as the source of truth.
+                    // Keep Media3's opaque shuffle order disabled so UI, next(), and AutoMix
+                    // all observe exactly the same order.
+                    controller.shuffleModeEnabled = false
                     controller.setMediaItems(queue, startIndex, C.TIME_UNSET)
                     controller.prepare()
                     controller.play()
@@ -84,7 +106,7 @@ object PlaybackCommands {
             playQueue(context, listOf(song), song.id)
             return
         }
-        controller.addMediaItem(song.toMediaItem(quality, QUEUE_ORIGIN_MANUAL))
+        controller.addMediaItem(song.toMediaItem(quality, QUEUE_ORIGIN_MANUAL, QUEUE_ORIGINAL_INDEX_UNSET, MeloXDownloadStore.get(context.applicationContext).localArtworkUri(song.id)))
     }
 
     fun playNext(context: Context, song: SearchSong) {
@@ -95,7 +117,7 @@ object PlaybackCommands {
             return
         }
         val insertion = (controller.currentMediaItemIndex + 1).coerceIn(0, controller.mediaItemCount)
-        controller.addMediaItem(insertion, song.toMediaItem(quality, QUEUE_ORIGIN_MANUAL))
+        controller.addMediaItem(insertion, song.toMediaItem(quality, QUEUE_ORIGIN_MANUAL, QUEUE_ORIGINAL_INDEX_UNSET, MeloXDownloadStore.get(context.applicationContext).localArtworkUri(song.id)))
     }
 
     /**
@@ -141,21 +163,69 @@ object PlaybackCommands {
         if (shouldResume) controller.play()
     }
 
+    fun setExplicitShuffle(
+        context: Context,
+        player: Player,
+        enabled: Boolean,
+    ) {
+        val count = player.mediaItemCount
+        if (count <= 0 || player.currentMediaItemIndex !in 0 until count) {
+            MeloXPlaybackModePreferences.setShuffle(context, enabled)
+            player.shuffleModeEnabled = false
+            return
+        }
+        val currentIndex = player.currentMediaItemIndex
+        val currentPosition = player.currentPosition.coerceAtLeast(0L)
+        val resume = player.playWhenReady
+        val items = List(count) { player.getMediaItemAt(it) }
+        val historyAndCurrent = items.take(currentIndex + 1)
+        val future = items.drop(currentIndex + 1)
+        val manual = future.filter { it.queueOrigin() == QUEUE_ORIGIN_MANUAL }
+        val base = future.filter { it.queueOrigin() != QUEUE_ORIGIN_MANUAL }
+        val orderedBase = if (enabled) {
+            base.shuffled()
+        } else {
+            base.sortedWith(compareBy<MediaItem> { item ->
+                item.mediaMetadata.extras?.getInt(QUEUE_ORIGINAL_INDEX_KEY, QUEUE_ORIGINAL_INDEX_UNSET)
+                    ?.takeIf { it >= 0 } ?: Int.MAX_VALUE
+            }.thenBy { it.mediaId })
+        }
+        val rebuilt = historyAndCurrent + manual + orderedBase
+        player.shuffleModeEnabled = false
+        player.setMediaItems(rebuilt, currentIndex.coerceIn(0, rebuilt.lastIndex), currentPosition)
+        player.prepare()
+        if (resume) player.play()
+        MeloXPlaybackModePreferences.setShuffle(context, enabled)
+    }
+
     internal fun mediaItemFor(
         song: SearchSong,
         quality: MusicQuality = MusicQualityRuntime.selected,
         queueOrigin: String = QUEUE_ORIGIN_BASE,
-    ): MediaItem = song.toMediaItem(quality, queueOrigin)
+        originalIndex: Int = QUEUE_ORIGINAL_INDEX_UNSET,
+        artworkOverride: Uri? = null,
+    ): MediaItem = song.toMediaItem(quality, queueOrigin, originalIndex, artworkOverride)
 
-    private fun SearchSong.toMediaItem(quality: MusicQuality, queueOrigin: String): MediaItem {
+    private fun MediaItem.queueOrigin(): String =
+        mediaMetadata.extras?.getString(QUEUE_ORIGIN_KEY) ?: QUEUE_ORIGIN_BASE
+
+    private fun SearchSong.toMediaItem(
+        quality: MusicQuality,
+        queueOrigin: String,
+        originalIndex: Int = QUEUE_ORIGINAL_INDEX_UNSET,
+        artworkOverride: Uri? = null,
+    ): MediaItem {
         val metadata = MediaMetadata.Builder()
             .setTitle(name)
             .setArtist(artists)
             .setAlbumTitle(album)
             .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
-            .setExtras(Bundle().apply { putString(QUEUE_ORIGIN_KEY, queueOrigin) })
+            .setExtras(Bundle().apply {
+                putString(QUEUE_ORIGIN_KEY, queueOrigin)
+                putInt(QUEUE_ORIGINAL_INDEX_KEY, originalIndex)
+            })
             .apply {
-                artworkUrl
+                artworkOverride?.let(::setArtworkUri) ?: artworkUrl
                     ?.takeIf(String::isNotBlank)
                     ?.let { setArtworkUri(Uri.parse(it)) }
             }

@@ -442,6 +442,7 @@ private fun StorageSettings(context: android.content.Context) {
     Spacer(Modifier.height(14.dp))
 
     SettingsToggleRow(context, "按播放次数自动缓存", "downloads_auto_cache", false, "与上游 DownloadStore 对齐的自动缓存偏好；手动下载始终可用。")
+    SettingsToggleRow(context, "下载歌词", "download_lyrics", true, "下载歌曲时同时保存歌词；默认开启，可在此关闭。封面始终随歌曲保存。")
 
     if (downloads.activeDownloads.isNotEmpty()) {
         Text("正在下载", modifier = Modifier.padding(top=10.dp,bottom=8.dp), fontWeight=FontWeight.SemiBold)

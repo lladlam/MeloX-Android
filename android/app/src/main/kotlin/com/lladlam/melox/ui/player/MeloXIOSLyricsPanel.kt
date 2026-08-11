@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.sp
 import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.lyrics.LyricLine
 import com.lladlam.melox.core.lyrics.LyricsDocument
+import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import kotlinx.coroutines.coroutineScope
@@ -176,7 +177,10 @@ fun MeloXIOSLyricsPanel(
         val songId = mediaId?.toLongOrNull() ?: return@LaunchedEffect
         isLoading = true
         errorMessage = null
-        runCatching { client.lyrics(songId) }
+        val downloaded = MeloXDownloadStore.get(context).localLyrics(songId)
+        if (downloaded != null) {
+            lyrics = downloaded
+        } else runCatching { client.lyrics(songId) }
             .onSuccess { lyrics = it }
             .onFailure { errorMessage = it.message ?: "歌词加载失败" }
         isLoading = false
@@ -358,7 +362,6 @@ fun MeloXIOSLyricsPanel(
             highlightedIndex,
             playbackFocusGeneration,
             viewportHeightPx,
-            layoutRevision,
             document,
         ) {
             val nextIndex = highlightedIndex
@@ -394,7 +397,10 @@ fun MeloXIOSLyricsPanel(
                 // Geometry may have changed after annotations were measured.
                 if (abs(scrollState.value - targetScroll) > 2) {
                     automaticScroll = true
-                    scrollState.scrollTo(targetScroll)
+                    scrollState.animateScrollTo(
+                        targetScroll,
+                        tween(120, easing = SourceSmoothStepEasing),
+                    )
                     automaticScroll = false
                 }
                 return@LaunchedEffect
@@ -551,20 +557,7 @@ fun MeloXIOSLyricsPanel(
                         val visualMidY = frameMinY + visualOffset + height * 0.5f
                         val distance = abs(visualMidY - focusAnchorY)
                         val fp = focusProgress[index].value.coerceIn(0f, 1f)
-                        // The incoming line starts the 120 ms colour handoff before
-                        // its timestamp, then keeps full emphasis until the normal
-                        // focus Animatable catches up. This prevents the one-frame
-                        // dark trough that used to happen at sentence boundaries.
-                        val incomingLead = when {
-                            index == highlightedIndex + 1 -> sourceSmootherStep(
-                                ((effectivePositionMs - (line.timeMs - UpstreamLyrics.FOCUS_COLOR_DURATION_MS)) /
-                                    UpstreamLyrics.FOCUS_COLOR_DURATION_MS.toFloat()).coerceIn(0f, 1f),
-                            )
-                            index == highlightedIndex &&
-                                effectivePositionMs - line.timeMs in 0..UpstreamLyrics.FOCUS_COLOR_DURATION_MS.toLong() -> 1f
-                            else -> 0f
-                        }
-                        val effectiveFocus = max(fp, incomingLead)
+                        val effectiveFocus = fp
                         val distanceBlur = sourceDistanceBlurRadius(
                             distancePx = distance,
                             lyricStridePx = lyricStridePx,
