@@ -12,9 +12,6 @@ on:
       - "android/**"
       - ".github/workflows/android.yml"
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -22,23 +19,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
-          fetch-depth: 0
-
-      - name: Apply final v3 compile repair
-        if: github.event_name == 'pull_request' && github.head_ref == 'fix/automix-lyrics-chrome-download-v3'
-        run: |
-          python3 .github/apply_v3d.py
-          rm -f .github/apply_v3d.py
-          git checkout origin/main -- .github/workflows/android.yml
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -A
-          if ! git diff --cached --quiet; then
-            git commit -m "fix: complete v3 compile repair"
-            git push origin HEAD:fix/automix-lyrics-chrome-download-v3
-          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
