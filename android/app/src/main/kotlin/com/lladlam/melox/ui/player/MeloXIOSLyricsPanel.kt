@@ -36,6 +36,7 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.geometry.Offset
@@ -703,7 +704,7 @@ private fun MeloXUpstreamLyricLine(
 }
 
 private data class MeloXGlyphVisual(
-    val opacity: Float,
+    val reveal: Float,
     val liftPx: Float,
     val scale: Float,
     val glow: Float,
@@ -761,19 +762,65 @@ private fun MeloXGlyphLyricText(
                 if (ch == '\n' || ch == '\r') continue
                 val path = runCatching { layout.getPathForRange(offset, offset + 1) }.getOrNull() ?: continue
                 val bounds = runCatching { layout.getBoundingBox(offset) }.getOrNull() ?: continue
-                val fx = visuals.getOrElse(offset) { MeloXGlyphVisual(UpstreamLyrics.UNPLAYED_OPACITY, 0f, 1f, 0f) }
+                val fx = visuals.getOrElse(offset) { MeloXGlyphVisual(0f, 0f, 1f, 0f) }
                 withTransform({
                     translate(left = 0f, top = -fx.liftPx)
                     scale(scaleX = fx.scale, scaleY = fx.scale, pivot = bounds.center)
                 }) {
-                    if (fx.glow > 0.001f) {
-                        drawPath(
-                            path = path,
-                            color = Color.White.copy(alpha = (fx.glow * 0.22f).coerceIn(0f, .42f)),
-                            style = Stroke(width = max(1f, UpstreamLyrics.FONT_SIZE_SP * density.density * .075f)),
-                        )
+                    // Upstream draws the complete unplayed run first. The played
+                    // run is a separate white layer revealed by a feathered mask;
+                    // this keeps brightness and timing independent instead of
+                    // interpolating one alpha value for the whole glyph.
+                    drawPath(path = path, color = Color.White.copy(alpha = UpstreamLyrics.UNPLAYED_OPACITY))
+
+                    val reveal = fx.reveal.coerceIn(0f, 1f)
+                    if (reveal > 0f && bounds.width > 0f) {
+                        val feather = max(bounds.width * UpstreamLyrics.HIGHLIGHT_GRADIENT_WIDTH, 1.5f * density.density)
+                        val front = bounds.left - feather + (bounds.width + feather) * reveal
+                        val solidRight = min(front, bounds.right)
+
+                        fun drawMasked(alpha: Float, style: androidx.compose.ui.graphics.drawscope.DrawStyle = androidx.compose.ui.graphics.drawscope.Fill) {
+                            if (solidRight > bounds.left) {
+                                clipRect(left = bounds.left, top = bounds.top - feather, right = solidRight, bottom = bounds.bottom + feather) {
+                                    drawPath(path = path, color = Color.White.copy(alpha = alpha), style = style)
+                                }
+                            }
+                            // SwiftUI uses an 8-stop highlight gradient. Draw the
+                            // same stop count as adjacent alpha strips from the
+                            // reveal front to front+feather.
+                            val stopCount = 8
+                            for (step in 0 until stopCount) {
+                                val a = step.toFloat() / stopCount.toFloat()
+                                val b = (step + 1).toFloat() / stopCount.toFloat()
+                                val mid = (a + b) * .5f
+                                val remaining = 1f - mid
+                                val maskAlpha = remaining * (1f - UpstreamLyrics.HIGHLIGHT_GRADIENT_REDUCTION * mid)
+                                val left = max(front + feather * a, bounds.left)
+                                val right = min(front + feather * b, bounds.right)
+                                if (right > left) {
+                                    clipRect(left = left, top = bounds.top - feather, right = right, bottom = bounds.bottom + feather) {
+                                        drawPath(path = path, color = Color.White.copy(alpha = alpha * maskAlpha.coerceIn(0f, 1f)), style = style)
+                                    }
+                                }
+                            }
+                        }
+
+                        if (fx.glow > 0.001f) {
+                            // Android Canvas cannot reuse SwiftUI's GraphicsContext
+                            // blur stack byte-for-byte, so approximate its two glow
+                            // layers with two revealed bloom strokes while retaining
+                            // the same timing envelope and glyph geometry.
+                            drawMasked(
+                                (fx.glow * .12f).coerceIn(0f, .30f),
+                                Stroke(width = max(1f, UpstreamLyrics.FONT_SIZE_SP * density.density * .15f)),
+                            )
+                            drawMasked(
+                                (fx.glow * .24f).coerceIn(0f, .46f),
+                                Stroke(width = max(1f, UpstreamLyrics.FONT_SIZE_SP * density.density * .075f)),
+                            )
+                        }
+                        drawMasked(1f)
                     }
-                    drawPath(path = path, color = Color.White.copy(alpha = fx.opacity.coerceIn(0f, 1f)))
                 }
             }
         }
@@ -786,7 +833,7 @@ private fun sourceGlyphVisuals(
     density: Float,
 ): List<MeloXGlyphVisual> {
     val result = MutableList(line.text.length) {
-        MeloXGlyphVisual(UpstreamLyrics.UNPLAYED_OPACITY, 0f, 1f, 0f)
+        MeloXGlyphVisual(0f, 0f, 1f, 0f)
     }
     var searchFrom = 0
     for (syllable in line.syllables) {
@@ -832,7 +879,7 @@ private fun sourceGlyphVisuals(
                     (2800f - UpstreamLyrics.LONG_TONE_THRESHOLD_MS),
             ) else 0f
             result[offset] = MeloXGlyphVisual(
-                opacity = UpstreamLyrics.UNPLAYED_OPACITY + (1f - UpstreamLyrics.UNPLAYED_OPACITY) * reveal,
+                reveal = reveal,
                 liftPx = risePx * lift,
                 scale = scale,
                 glow = envelope * glowAmount,
