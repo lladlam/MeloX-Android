@@ -118,7 +118,10 @@ class MeloXPlaybackService : MediaSessionService() {
         handler.post(modeMonitor)
     }
 
-    private fun buildPlayer(managesAudioFocus: Boolean): ExoPlayer =
+    private fun buildPlayer(
+        managesAudioFocus: Boolean,
+        observesSession: Boolean = managesAudioFocus,
+    ): ExoPlayer =
         ExoPlayer.Builder(this)
             .setMediaSourceFactory(mediaSourceFactory)
             .setWakeMode(C.WAKE_MODE_LOCAL)
@@ -126,7 +129,7 @@ class MeloXPlaybackService : MediaSessionService() {
             .apply {
                 setAudioAttributes(audioAttributes, managesAudioFocus)
                 setHandleAudioBecomingNoisy(managesAudioFocus)
-                addListener(playerListener)
+                if (observesSession) addListener(playerListener)
             }
 
     private fun maybePrepareAutoplay(active: ExoPlayer) {
@@ -206,7 +209,7 @@ class MeloXPlaybackService : MediaSessionService() {
     private fun prepareIncoming(active: ExoPlayer, sourceId: String) {
         val nextIndex = active.currentMediaItemIndex + 1
         if (nextIndex !in 0 until active.mediaItemCount) return
-        val incoming = buildPlayer(managesAudioFocus = false)
+        val incoming = buildPlayer(managesAudioFocus = false, observesSession = false)
         val items = List(active.mediaItemCount) { active.getMediaItemAt(it) }
         incoming.setMediaItems(items, nextIndex, 0L)
         incoming.volume = 0f
@@ -220,6 +223,7 @@ class MeloXPlaybackService : MediaSessionService() {
         incoming.volume = mixBaseVolume
         incoming.setAudioAttributes(audioAttributes, true)
         incoming.setHandleAudioBecomingNoisy(true)
+        incoming.addListener(playerListener)
         mediaSession?.setPlayer(incoming)
         player = incoming
         incomingPlayer = null

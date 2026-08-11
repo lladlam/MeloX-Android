@@ -134,11 +134,11 @@ class MeloXDownloadStore private constructor(private val context: Context) {
     private suspend fun download(song: SearchSong, quality: MusicQuality) {
         val temp = File(directory, "${song.id}.part")
         try {
-            val source = withContext(Dispatchers.IO) {
+            val resolvedSource = withContext(Dispatchers.IO) {
                 qualityClient.downloadSourceBlocking(song.id, quality)
             }
             val request = Request.Builder()
-                .url(source.url)
+                .url(resolvedSource.url)
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36")
                 .header("Referer", "https://music.163.com/")
                 .build()
@@ -165,7 +165,7 @@ class MeloXDownloadStore private constructor(private val context: Context) {
                                     }
                                 }
                             }
-                            Triple(received, expected, source)
+                            Triple(received, expected, resolvedSource)
                         }
                     }
                 }
