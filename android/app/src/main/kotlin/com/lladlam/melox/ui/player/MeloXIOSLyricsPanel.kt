@@ -6,7 +6,6 @@ import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -214,6 +213,17 @@ fun MeloXIOSLyricsPanel(
     val scaleProgress = remember(document) {
         List(lines.size) { Animatable(0f) }
     }
+    val cascadeLineProgress = remember(document) {
+        List(lines.size) { Animatable(1f) }
+    }
+    val cascadeScrollProgress = remember(document) { Animatable(1f) }
+    var cascadeDistancePx by remember(document) { mutableStateOf(0f) }
+    var cascadeInitialOffsets by remember(document) {
+        mutableStateOf<Map<Int, Float>>(emptyMap())
+    }
+    var cascadeDestinationOffsets by remember(document) {
+        mutableStateOf<Map<Int, Float>>(emptyMap())
+    }
     val rowHeightsPx = remember(document) { mutableStateMapOf<Int, Int>() }
     var viewportHeightPx by remember(document) { mutableIntStateOf(0) }
     var visualFocusIndex by remember(document) { mutableIntStateOf(-1) }
@@ -245,6 +255,35 @@ fun MeloXIOSLyricsPanel(
             height += annotationFontPx * 1.2f + annotationSpacingPx
         }
         return height
+    }
+
+    fun settledMovementOffset(index: Int, focusIndex: Int): Float {
+        if (focusIndex !in lines.indices || index <= focusIndex) return 0f
+        return max(
+            estimatedHeight(focusIndex) * (UpstreamLyrics.CURRENT_LINE_SCALE - 1f),
+            0f,
+        )
+    }
+
+    fun currentMovementOffset(index: Int): Float {
+        val initial = cascadeInitialOffsets[index]
+            ?: return settledMovementOffset(index, visualFocusIndex)
+        val destination = cascadeDestinationOffsets[index] ?: 0f
+        val scrollProgress = cascadeScrollProgress.value
+        val lineProgress = cascadeLineProgress[index].value
+        // The list itself moves by -distance * scrollProgress. This translation
+        // cancels that motion until the row's delayed progress starts, then lets
+        // the row catch up to its destination with the source spring.
+        return initial + cascadeDistancePx * scrollProgress -
+            (cascadeDistancePx + initial - destination) * lineProgress
+    }
+
+    suspend fun clearCascadePresentation(focusIndex: Int) {
+        visualFocusIndex = focusIndex
+        cascadeInitialOffsets = emptyMap()
+        cascadeDestinationOffsets = emptyMap()
+        cascadeDistancePx = 0f
+        cascadeScrollProgress.snapTo(1f)
     }
 
     suspend fun handOffFocusColor(nextIndex: Int) = coroutineScope {
@@ -333,6 +372,12 @@ fun MeloXIOSLyricsPanel(
         playbackFocusGeneration += 1
     }
 
+    // A real drag cancels the automatic cascade. Remove any remaining visual
+    // compensation so the rows track the user's finger one-to-one.
+    LaunchedEffect(isBrowsingLyrics, document) {
+        if (isBrowsingLyrics) clearCascadePresentation(visualFocusIndex)
+    }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
@@ -358,6 +403,7 @@ fun MeloXIOSLyricsPanel(
             highlightedIndex,
             playbackFocusGeneration,
             viewportHeightPx,
+            isBrowsingLyrics,
             document,
         ) {
             val nextIndex = highlightedIndex
@@ -380,7 +426,7 @@ fun MeloXIOSLyricsPanel(
                 scaleProgress.forEachIndexed { index, anim ->
                     anim.snapTo(if (index == nextIndex) 1f else 0f)
                 }
-                visualFocusIndex = nextIndex
+                clearCascadePresentation(nextIndex)
                 return@LaunchedEffect
             }
 
@@ -403,45 +449,113 @@ fun MeloXIOSLyricsPanel(
                 else min(fullCascadeMs, availableMs)
             }
 
-            // The source changes its visual focus at transition start and carries
-            // the previous presentation through a cancellable transition. Keeping
-            // visualFocusIndex on the old row until scrolling finishes made blur,
-            // opacity and timed rendering all jump on the final frame.
+            val desiredTop = -targetOffset.toFloat()
+            val targetItem = listState.layoutInfo.visibleItemsInfo
+                .firstOrNull { it.index == nextIndex + 1 }
+            if (!isAdjacentForward || cascadeDurationMs <= 0f || targetItem == null) {
+                clearCascadePresentation(nextIndex)
+                coroutineScope {
+                    launch { handOffFocusColor(nextIndex) }
+                    launch { handOffFocusScale(previousIndex, nextIndex) }
+                    launch {
+                        if (cascadeDurationMs <= 0f) {
+                            listState.scrollToItem(nextIndex + 1, targetOffset)
+                        } else {
+                            listState.animateScrollToItem(nextIndex + 1, targetOffset)
+                        }
+                    }
+                }
+                return@LaunchedEffect
+            }
+
+            val movementDistance = targetItem.offset - desiredTop
+            if (abs(movementDistance) <= 0.5f) {
+                clearCascadePresentation(nextIndex)
+                handOffFocusColor(nextIndex)
+                handOffFocusScale(previousIndex, nextIndex)
+                return@LaunchedEffect
+            }
+
+            val visibleLineIndexes = listState.layoutInfo.visibleItemsInfo
+                .mapNotNull { (it.index - 1).takeIf(lines.indices::contains) }
+            val firstVisible = visibleLineIndexes.minOrNull() ?: max(nextIndex - 1, 0)
+            val lastVisible = visibleLineIndexes.maxOrNull() ?: nextIndex
+            val firstMoving = min(firstVisible, max(nextIndex - 1, 0))
+            val lastMoving = max(
+                lastVisible,
+                min(nextIndex + 8, lines.lastIndex), // six safety + two preload
+            )
+            val movingIndexes = firstMoving..lastMoving
+            val carriedOffsets = movingIndexes.associateWith(::currentMovementOffset)
+            val destinations = movingIndexes.associateWith {
+                settledMovementOffset(it, nextIndex)
+            }
+
+            // Prepare a new transition from the current presentation. Animatable's
+            // cancellation and carried values make dense lyric changes continue
+            // smoothly instead of restarting every row from zero.
+            cascadeDistancePx = movementDistance
+            cascadeInitialOffsets = carriedOffsets
+            cascadeDestinationOffsets = destinations
+            cascadeScrollProgress.snapTo(0f)
+            movingIndexes.forEach { cascadeLineProgress[it].snapTo(0f) }
             visualFocusIndex = nextIndex
+
+            val firstChasing = max(nextIndex - 1, 0)
+            val maximumChaseOrder = max(lastMoving - firstChasing, 0)
+            val lineTimings = sourceCascadeLineTimings(
+                maximumLineOrder = maximumChaseOrder,
+                animationDurationMs = cascadeDurationMs,
+            )
+            val slowestDuration = lineTimings.first().durationMs
 
             coroutineScope {
                 launch { handOffFocusColor(nextIndex) }
                 launch { handOffFocusScale(previousIndex, nextIndex) }
-                launch {
-                    if (!isAdjacentForward) {
-                        listState.animateScrollToItem(nextIndex + 1, targetOffset)
-                        return@launch
-                    }
-                    if (cascadeDurationMs <= 0f) {
-                        listState.scrollToItem(nextIndex + 1, targetOffset)
-                        return@launch
-                    }
 
-                    val desiredTop = -targetOffset.toFloat()
-                    val targetItem = listState.layoutInfo.visibleItemsInfo
-                        .firstOrNull { it.index == nextIndex + 1 }
-                    if (targetItem == null) {
-                        listState.animateScrollToItem(nextIndex + 1, targetOffset)
-                    } else {
-                        // animateScrollToItem uses Compose's generic spring. MeloX's
-                        // lyric motion has a fixed source duration, so drive the
-                        // adjacent-line distance with the same smooth timing curve.
-                        val distance = targetItem.offset - desiredTop
-                        listState.animateScrollBy(
-                            value = distance,
+                // Drive the logical LazyColumn scroll and its compensation from
+                // one frame-clock value, avoiding drift between two animations.
+                launch {
+                    var previousScrollProgress = 0f
+                    listState.scroll {
+                        cascadeScrollProgress.animateTo(
+                            targetValue = 1f,
                             animationSpec = tween(
                                 durationMillis = cascadeDurationMs.roundToInt(),
                                 easing = SourceSmoothStepEasing,
+                            ),
+                        ) {
+                            val delta = (value - previousScrollProgress) * movementDistance
+                            scrollBy(delta)
+                            previousScrollProgress = value
+                        }
+                    }
+                }
+
+                movingIndexes.forEach { index ->
+                    val movementOrder = max(index - nextIndex, 0)
+                    val chaseOrder = (index - firstChasing).coerceAtLeast(0)
+                    val movementTiming = lineTimings[min(movementOrder, lineTimings.lastIndex)]
+                    val chaseTiming = lineTimings[min(chaseOrder, lineTimings.lastIndex)]
+                    val duration = slowestDuration +
+                        (chaseTiming.durationMs - slowestDuration) *
+                        UpstreamLyrics.CASCADE_CHASE_SPEED_GRADIENT
+                    val bounce = sourceCascadeBounce(chaseOrder, maximumChaseOrder)
+                    launch {
+                        if (movementTiming.delayMs > 0f) {
+                            delay(movementTiming.delayMs.toLong())
+                        }
+                        cascadeLineProgress[index].animateTo(
+                            targetValue = 1f,
+                            animationSpec = tween(
+                                durationMillis = max(duration, 1f).roundToInt(),
+                                easing = SourceSpringEasing(bounce),
                             ),
                         )
                     }
                 }
             }
+            clearCascadePresentation(nextIndex)
         }
 
         when {
@@ -493,7 +607,7 @@ fun MeloXIOSLyricsPanel(
                         key = { index, line -> "${line.timeMs}:$index" },
                     ) { index, line ->
                         val height = estimatedHeight(index)
-                        val visualOffset = 0f
+                        val visualOffset = currentMovementOffset(index)
                         val frameMinY = visibleItemsByIndex[index + 1]?.offset?.toFloat()
                             ?: focusAnchorY + (index - visualFocusIndex) * lyricStridePx
                         val visualMidY = frameMinY + visualOffset + height * 0.5f
