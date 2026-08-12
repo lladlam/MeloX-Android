@@ -9,6 +9,7 @@ enum class MeloXThemeMode { System, Light, Dark }
 enum class MeloXLyricAnnotationDisplayMode { FocusedLine, AllLines }
 enum class MeloXLyricsStyle { AppleMusic, Eva, TextPV }
 enum class MeloXTextPVStyle { Dynamic, Minimal, Cyber }
+enum class MeloXVolumeControlMode { System, Player }
 
 /** Process-visible settings used by UI paths that need immediate recomposition. */
 object MeloXSettingsRuntime {
@@ -84,6 +85,16 @@ object MeloXSettingsRuntime {
         internal set
     var musicArea by mutableStateOf("全部")
         internal set
+    var showPlaylistPlayCount by mutableStateOf(true)
+        internal set
+    var showHighQualityPlaylists by mutableStateOf(true)
+        internal set
+    var clipboardLinksEnabled by mutableStateOf(true)
+        internal set
+    var previousRestartsAfterFiveSeconds by mutableStateOf(true)
+        internal set
+    var volumeControlMode by mutableStateOf(MeloXVolumeControlMode.System)
+        internal set
 
     private var initialized = false
 
@@ -134,6 +145,13 @@ object MeloXSettingsRuntime {
         rememberLastTab = MeloXSettingsPreferences.boolean(app, "general_remember_tab", true)
         downloadLyricsEnabled = MeloXSettingsPreferences.boolean(app, "download_lyrics", true)
         musicArea = MeloXSettingsPreferences.string(app, "music_area", "全部")
+        showPlaylistPlayCount = MeloXSettingsPreferences.boolean(app, "content_playlist_play_count", true)
+        showHighQualityPlaylists = MeloXSettingsPreferences.boolean(app, "content_high_quality_playlist", true)
+        clipboardLinksEnabled = MeloXSettingsPreferences.boolean(app, "general_clipboard_links", true)
+        previousRestartsAfterFiveSeconds = MeloXSettingsPreferences.boolean(app, "playback_previous_restarts", true)
+        volumeControlMode = runCatching {
+            MeloXVolumeControlMode.valueOf(MeloXSettingsPreferences.string(app, "playback_volume_mode", MeloXVolumeControlMode.System.name))
+        }.getOrDefault(MeloXVolumeControlMode.System)
     }
 
     private fun annotationMode(context: Context, key: String): MeloXLyricAnnotationDisplayMode = runCatching {
@@ -190,6 +208,10 @@ object MeloXSettingsPreferences {
             "tab_library" -> MeloXSettingsRuntime.libraryTabEnabled = value
             "general_remember_tab" -> MeloXSettingsRuntime.rememberLastTab = value
             "download_lyrics" -> MeloXSettingsRuntime.downloadLyricsEnabled = value
+            "content_playlist_play_count" -> MeloXSettingsRuntime.showPlaylistPlayCount = value
+            "content_high_quality_playlist" -> MeloXSettingsRuntime.showHighQualityPlaylists = value
+            "general_clipboard_links" -> MeloXSettingsRuntime.clipboardLinksEnabled = value
+            "playback_previous_restarts" -> MeloXSettingsRuntime.previousRestartsAfterFiveSeconds = value
         }
     }
 
@@ -231,6 +253,9 @@ object MeloXSettingsPreferences {
             "lyrics_text_pv_style" -> MeloXSettingsRuntime.textPVStyle = runCatching {
                 MeloXTextPVStyle.valueOf(value)
             }.getOrDefault(MeloXTextPVStyle.Dynamic)
+            "playback_volume_mode" -> MeloXSettingsRuntime.volumeControlMode = runCatching {
+                MeloXVolumeControlMode.valueOf(value)
+            }.getOrDefault(MeloXVolumeControlMode.System)
         }
     }
 

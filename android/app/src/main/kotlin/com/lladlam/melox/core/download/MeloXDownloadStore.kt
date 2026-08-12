@@ -6,6 +6,7 @@ import android.os.SystemClock
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.core.content.FileProvider
+import androidx.media3.common.MediaItem
 import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.audio.MusicQuality
 import com.lladlam.melox.core.audio.NeteaseQualityClient
@@ -131,6 +132,36 @@ class MeloXDownloadStore private constructor(private val context: Context) {
     fun isDownloading(songId: Long): Boolean = activeDownloads.containsKey(songId)
     fun recordFor(songId: Long): MeloXDownloadedSong? = downloads.firstOrNull { it.song.id == songId }
     fun downloadedQuality(songId: Long): MusicQuality? = recordFor(songId)?.quality
+
+    /** Counts actual player transitions and starts the same native download pipeline at the configured threshold. */
+    fun recordPlayback(item: MediaItem) {
+        if (!MeloXSettingsPreferences.boolean(app, "downloads_auto_cache", false)) return
+        val songId = item.mediaId.toLongOrNull()?.takeIf { it > 0L } ?: return
+        if (contains(songId) || isDownloading(songId)) return
+        val counts = app.getSharedPreferences("melox_auto_cache_counts", Context.MODE_PRIVATE)
+        val key = songId.toString()
+        val count = counts.getInt(key, 0) + 1
+        counts.edit().putInt(key, count).apply()
+        val threshold = MeloXSettingsPreferences.int(app, "downloads_auto_cache_threshold", 3).coerceIn(2, 20)
+        if (count < threshold) return
+        val metadata = item.mediaMetadata
+        val song = SearchSong(
+            id = songId,
+            name = metadata.title?.toString().orEmpty().ifBlank { "未知歌曲" },
+            artists = metadata.artist?.toString().orEmpty().ifBlank { "未知歌手" },
+            album = metadata.albumTitle?.toString().orEmpty(),
+            artworkUrl = metadata.artworkUri?.toString(),
+            durationMs = 0L,
+        )
+        val quality = runCatching {
+            MusicQuality.valueOf(MeloXSettingsPreferences.string(app, "downloads_auto_cache_quality", MusicQuality.Standard.name))
+        }.getOrDefault(MusicQuality.Standard)
+        start(song, quality)
+    }
+
+    fun resetAutomaticCacheHistory() {
+        app.getSharedPreferences("melox_auto_cache_counts", Context.MODE_PRIVATE).edit().clear().apply()
+    }
 
     fun downloadedSongsForPlaylist(playlistId: Long): List<SearchSong> =
         downloadedPlaylists.firstOrNull { it.playlist.id == playlistId }

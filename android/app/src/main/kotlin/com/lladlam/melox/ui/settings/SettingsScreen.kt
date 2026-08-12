@@ -59,6 +59,7 @@ import com.lladlam.melox.playback.MeloXAutoMixFadeCurve
 import com.lladlam.melox.playback.MeloXAutoMixFallback
 import com.lladlam.melox.playback.MeloXAutoMixMode
 import com.lladlam.melox.playback.MeloXAutoMixSettings
+import com.lladlam.melox.playback.MeloXEqualizerController
 import com.lladlam.melox.playback.MeloXPlaybackModePreferences
 import com.lladlam.melox.platform.floating.MeloXFloatingLyricsService
 import com.lladlam.melox.platform.xiaomi.HyperOsFocusBridge
@@ -485,7 +486,22 @@ private fun PlaybackSettings(context: android.content.Context) {
     }
     Spacer(Modifier.height(22.dp))
     SettingsToggleRow(context, "记住播放器上次页面", "playback_remember_page", true)
+    SettingsToggleRow(context, "播放超过 5 秒时上一首先回到开头", "playback_previous_restarts", true)
     SettingsInfoCard("耳机断开时暂停", "已由 Media3 播放服务启用")
+    Spacer(Modifier.height(10.dp))
+    var volumeMode by remember { mutableStateOf(MeloXSettingsRuntime.volumeControlMode) }
+    Text("音量滑杆控制", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f))
+    Spacer(Modifier.height(8.dp))
+    SettingsGlassGroup {
+        listOf(MeloXVolumeControlMode.System to "系统媒体音量", MeloXVolumeControlMode.Player to "播放器独立音量").forEach { (mode, label) ->
+            SettingsChoiceRow(label, volumeMode == mode) {
+                volumeMode = mode
+                MeloXSettingsPreferences.setString(context, "playback_volume_mode", mode.name)
+            }
+        }
+    }
+    Spacer(Modifier.height(18.dp))
+    EqualizerSettings(context)
     Spacer(Modifier.height(10.dp))
     val legacyAutoMix = remember { MeloXSettingsPreferences.boolean(context, "playback_auto_mix", false) }
     var autoMixEnabled by remember {
@@ -506,6 +522,40 @@ private fun PlaybackSettings(context: android.content.Context) {
         MeloXPlaybackModePreferences.setAutoMix(context, it)
     }
     if (autoMixEnabled) AutoMixSettings(context)
+}
+
+@Composable
+private fun EqualizerSettings(context: android.content.Context) {
+    var enabled by remember { mutableStateOf(MeloXSettingsPreferences.boolean(context, "equalizer_enabled", false)) }
+    var preset by remember { mutableStateOf(MeloXSettingsPreferences.string(context, "equalizer_preset", "Flat")) }
+    var preamp by remember { mutableStateOf(MeloXSettingsPreferences.int(context, "equalizer_preamp_db", 0)) }
+    SettingsExternalToggleRow("均衡器", enabled, "使用 Android 原生多频段 DSP，直接作用于当前播放器音频会话。") {
+        enabled = it
+        MeloXSettingsPreferences.setBoolean(context, "equalizer_enabled", it)
+    }
+    if (!enabled) return
+    Text("预设", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f))
+    Spacer(Modifier.height(8.dp))
+    SettingsGlassGroup {
+        MeloXEqualizerController.PRESETS.keys.forEach { value ->
+            val label = mapOf("Flat" to "平直", "Bass" to "低频增强", "Vocal" to "人声", "Treble" to "高频增强", "Electronic" to "电子").getValue(value)
+            SettingsChoiceRow(label, preset == value) {
+                preset = value
+                MeloXSettingsPreferences.setString(context, "equalizer_preset", value)
+            }
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    Text("前级", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f))
+    Spacer(Modifier.height(8.dp))
+    SettingsGlassGroup {
+        listOf(-6, -3, 0, 3, 6).forEach { value ->
+            SettingsChoiceRow(if (value > 0) "+$value dB" else "$value dB", preamp == value) {
+                preamp = value
+                MeloXSettingsPreferences.setInt(context, "equalizer_preamp_db", value)
+            }
+        }
+    }
 }
 
 @Composable
@@ -806,7 +856,8 @@ private fun ContentSettings(context: android.content.Context) {
         }
     }
     Spacer(Modifier.height(20.dp))
-    SettingsInfoCard("内容展示", "播放量与精品歌单开关尚未接入数据层，暂不提供无效选项")
+    SettingsToggleRow(context, "显示歌单播放量", "content_playlist_play_count", true)
+    SettingsToggleRow(context, "发现页显示精品歌单", "content_high_quality_playlist", true)
 }
 
 @Composable
@@ -825,7 +876,27 @@ private fun StorageSettings(context: android.content.Context) {
     SettingsInfoCard("已下载歌曲", "${downloads.downloads.size} 首 · ${formatBytes(downloads.totalByteCount)}")
     Spacer(Modifier.height(14.dp))
 
-    SettingsInfoCard("自动缓存", "尚未迁移播放次数策略；手动下载始终可用")
+    var autoCache by remember { mutableStateOf(MeloXSettingsPreferences.boolean(context, "downloads_auto_cache", false)) }
+    SettingsExternalToggleRow("按播放次数自动缓存", autoCache, "歌曲实际开始播放达到阈值后自动下载；不会重复下载。") {
+        autoCache = it
+        MeloXSettingsPreferences.setBoolean(context, "downloads_auto_cache", it)
+    }
+    if (autoCache) {
+        LyricsChoiceSetting(context, "触发次数", "downloads_auto_cache_threshold", 3, listOf(2, 3, 5, 8, 10)) { "$it 次" }
+        var cacheQuality by remember { mutableStateOf(MeloXSettingsPreferences.string(context, "downloads_auto_cache_quality", MusicQuality.Standard.name)) }
+        Text("自动缓存音质", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f))
+        Spacer(Modifier.height(8.dp))
+        SettingsGlassGroup {
+            MusicQuality.entries.forEach { value ->
+                SettingsChoiceRow(value.title, cacheQuality == value.name) {
+                    cacheQuality = value.name
+                    MeloXSettingsPreferences.setString(context, "downloads_auto_cache_quality", value.name)
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        SettingsActionButton("重置自动缓存播放统计") { downloads.resetAutomaticCacheHistory() }
+    }
     Spacer(Modifier.height(10.dp))
     SettingsToggleRow(context, "下载歌词", "download_lyrics", true, "下载歌曲时同时保存歌词；默认开启，可在此关闭。封面始终随歌曲保存。")
 
@@ -908,7 +979,7 @@ private fun GeneralSettings(context: android.content.Context) {
     }
     Spacer(Modifier.height(20.dp))
     SettingsToggleRow(context, "记住上次标签页", "general_remember_tab", true)
-    SettingsInfoCard("剪贴板链接识别", "尚未迁移 Android 前台生命周期处理，暂不提供无效开关")
+    SettingsToggleRow(context, "识别剪贴板中的网易云链接", "general_clipboard_links", true, "每次回到前台只读取一次；识别歌曲或歌单后会先询问是否打开。")
 }
 
 @Composable

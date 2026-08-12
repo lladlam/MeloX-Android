@@ -69,6 +69,8 @@ import com.lladlam.melox.playback.MeloXPlaybackService
 import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.playback.MeloXPlaybackModePreferences
 import com.lladlam.melox.playback.PlaybackCommands
+import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
+import com.lladlam.melox.ui.settings.MeloXVolumeControlMode
 import kotlinx.coroutines.delay
 import kotlin.math.roundToLong
 
@@ -199,9 +201,13 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
         currentIndex = player.currentMediaItemIndex
         repeatMode = player.repeatMode
         shuffleEnabled = MeloXPlaybackModePreferences.shuffle(appContext)
-        val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
-        volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVolume.toFloat()
+        volume = if (MeloXSettingsRuntime.volumeControlMode == MeloXVolumeControlMode.Player) {
+            player.volume
+        } else {
+            val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+            audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVolume.toFloat()
+        }
         queue = buildQueue(player)
     }
 
@@ -273,7 +279,13 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
     }
 
     fun previous() {
-        controller?.seekToPreviousMediaItem()
+        controller?.let { player ->
+            if (MeloXSettingsRuntime.previousRestartsAfterFiveSeconds && player.currentPosition >= 5_000L) {
+                player.seekTo(0L)
+            } else {
+                player.seekToPreviousMediaItem()
+            }
+        }
     }
 
     fun next() {
@@ -321,11 +333,24 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
     }
 
     fun changeVolume(value: Float) {
+        if (MeloXSettingsRuntime.volumeControlMode == MeloXVolumeControlMode.Player) {
+            controller?.volume = value.coerceIn(0f, 1f)
+            volume = controller?.volume ?: value.coerceIn(0f, 1f)
+            return
+        }
         val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
         val target = (value.coerceIn(0f, 1f) * maxVolume).toInt().coerceIn(0, maxVolume)
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
         volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVolume.toFloat()
+    }
+
+    fun moveQueueItem(from: Int, to: Int) {
+        val player = controller ?: return
+        if (from == player.currentMediaItemIndex || from !in 0 until player.mediaItemCount) return
+        val safeTarget = to.coerceIn(player.currentMediaItemIndex + 1, player.mediaItemCount - 1)
+        if (from != safeTarget) player.moveMediaItem(from, safeTarget)
+        refresh()
     }
 
     fun addCurrentToQueue() {

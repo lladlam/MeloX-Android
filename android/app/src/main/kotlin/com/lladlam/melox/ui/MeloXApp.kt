@@ -36,6 +36,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -73,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.lladlam.melox.core.account.rememberNeteaseSessionStore
+import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.ui.account.NeteaseLoginScreen
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
@@ -94,7 +97,12 @@ import com.lladlam.melox.ui.settings.SettingsScreen
 import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.core.network.MeloXSearchKind
+import com.lladlam.melox.core.network.NeteaseClipboardLink
+import com.lladlam.melox.core.network.NeteaseClipboardTarget
+import com.lladlam.melox.core.library.NeteaseLibraryClient
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 enum class AppTab(val title: String) {
@@ -111,6 +119,8 @@ private val MeloXAccent = Color(0xFFFF3147)
 @Composable
 fun MeloXApp(
     openNowPlayingRequest: Int = 0,
+    clipboardLinkRequest: String? = null,
+    onClipboardLinkConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current.applicationContext
     val initialTab = if (MeloXSettingsRuntime.rememberLastTab) runCatching {
@@ -129,6 +139,7 @@ fun MeloXApp(
         label = "melox-player-transition",
     )
     val playerScope = rememberCoroutineScope()
+    val clipboardTarget = remember(clipboardLinkRequest) { clipboardLinkRequest?.let(NeteaseClipboardLink::parse) }
     val openPlayer: () -> Unit = {
         if (playbackState.hasMedia) {
             playerScope.launch {
@@ -199,6 +210,10 @@ fun MeloXApp(
                 animationSpec = playerAutomaticFractionSpec(),
             )
         }
+    }
+
+    LaunchedEffect(clipboardLinkRequest, clipboardTarget) {
+        if (clipboardLinkRequest != null && clipboardTarget == null) onClipboardLinkConsumed()
     }
 
     LaunchedEffect(playbackState.hasMedia) {
@@ -372,6 +387,31 @@ fun MeloXApp(
                 onLoggedIn = {
                     showNeteaseLogin = false
                     selectedTab = loginReturnTab
+                },
+            )
+        }
+        clipboardTarget?.let { target ->
+            AlertDialog(
+                onDismissRequest = onClipboardLinkConsumed,
+                title = { Text("打开剪贴板链接？") },
+                text = { Text(if (target is NeteaseClipboardTarget.Song) "检测到网易云歌曲，是否立即播放？" else "检测到网易云歌单，是否立即打开并播放？") },
+                dismissButton = { TextButton(onClick = onClipboardLinkConsumed) { Text("取消") } },
+                confirmButton = {
+                    TextButton(onClick = {
+                        onClipboardLinkConsumed()
+                        playerScope.launch {
+                            val client = NeteaseLibraryClient { NeteaseSessionStore.readCookie(context) }
+                            val songs = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    when (target) {
+                                        is NeteaseClipboardTarget.Song -> client.songDetailsBlocking(listOf(target.id))
+                                        is NeteaseClipboardTarget.Playlist -> client.playlistDetailBlocking(target.id).songs
+                                    }
+                                }.getOrDefault(emptyList())
+                            }
+                            songs.firstOrNull()?.let { PlaybackCommands.playQueue(context, songs, it.id) }
+                        }
+                    }) { Text("打开") }
                 },
             )
         }

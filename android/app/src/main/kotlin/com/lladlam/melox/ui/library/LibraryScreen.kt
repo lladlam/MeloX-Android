@@ -97,6 +97,7 @@ import com.lladlam.melox.ui.glass.meloXLiquidButton
 import com.lladlam.melox.ui.glass.meloXLiquidTabSelection
 import com.lladlam.melox.ui.player.MeloXFlowingLightBackdrop
 import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
+import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.launch
@@ -1487,7 +1488,10 @@ private fun MeloXStandardPlaylistHero(
             )
 
             Text(
-                text = "${if (playlist.trackCount > 0) playlist.trackCount else tracks.size} 首歌曲 · ${compactPlayCount(playlist.playCount)} 次播放",
+                text = buildString {
+                    append("${if (playlist.trackCount > 0) playlist.trackCount else tracks.size} 首歌曲")
+                    if (MeloXSettingsRuntime.showPlaylistPlayCount && playlist.playCount > 0) append(" · ${compactPlayCount(playlist.playCount)} 次播放")
+                },
                 modifier = Modifier.padding(top = 7.dp),
                 color = secondary,
                 fontSize = 15.sp,

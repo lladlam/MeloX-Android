@@ -52,6 +52,7 @@ import com.lladlam.melox.core.library.NeteaseLibraryClient
 import com.lladlam.melox.core.library.NeteasePlaylistSummary
 import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.playback.PlaybackCommands
+import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import kotlinx.coroutines.launch
 
 private val Accent = Color(0xFFFF3147)
@@ -115,7 +116,8 @@ fun MeloXExploreScreen() {
     val cache = remember(context) { NeteaseLibraryCache(context) }
     val client = remember(context) { NeteaseLibraryClient({ NeteaseSessionStore.readCookie(context) }) }
     val scope = rememberCoroutineScope()
-    var category by remember { mutableStateOf(Categories.first()) }
+    val visibleCategories = if (MeloXSettingsRuntime.showHighQualityPlaylists) Categories else Categories.filterNot { it == "精品歌单" }
+    var category by remember { mutableStateOf(visibleCategories.first()) }
     var playlists by remember { mutableStateOf<List<NeteasePlaylistSummary>>(emptyList()) }
     var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -148,7 +150,7 @@ fun MeloXExploreScreen() {
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(Categories) { item ->
+            items(visibleCategories) { item ->
                 Text(
                     text = item.removeSuffix("歌单"),
                     modifier = Modifier
@@ -193,7 +195,16 @@ private fun PlaylistCard(value: NeteasePlaylistSummary, modifier: Modifier, onCl
     Column(modifier.clickable(onClick = onClick)) {
         AsyncImage(value.coverUrl, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().height(174.dp).clip(RoundedCornerShape(14.dp)))
         Text(value.name, modifier = Modifier.padding(top = 7.dp), maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 15.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold)
+        if (MeloXSettingsRuntime.showPlaylistPlayCount && value.playCount > 0L) {
+            Text("${compactCount(value.playCount)} 次播放", color = MaterialTheme.colorScheme.onBackground.copy(alpha = .42f), fontSize = 11.sp)
+        }
     }
+}
+
+private fun compactCount(value: Long): String = when {
+    value >= 100_000_000L -> "%.1f亿".format(value / 100_000_000.0)
+    value >= 10_000L -> "%.1f万".format(value / 10_000.0)
+    else -> value.toString()
 }
 
 @Composable

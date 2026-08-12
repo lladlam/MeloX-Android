@@ -54,6 +54,7 @@ class MeloXPlaybackService : MediaSessionService() {
     private lateinit var downloadStore: MeloXDownloadStore
     private lateinit var playbackResolver: NeteasePlaybackResolver
     private lateinit var autoMixAnalyzer: MeloXAutoMixAudioAnalyzer
+    private lateinit var equalizerController: MeloXEqualizerController
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val handler = Handler(Looper.getMainLooper())
     private var recommendationJob: Job? = null
@@ -113,6 +114,7 @@ class MeloXPlaybackService : MediaSessionService() {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             recommendationSeed = null
             val transitionedId = mediaItem?.mediaId?.toLongOrNull()
+            mediaItem?.let(downloadStore::recordPlayback)
             if (transitionedId != systemLyricsSongId) resetSystemLyrics(mediaItem)
             val active = player
             if (active != null) {
@@ -130,6 +132,10 @@ class MeloXPlaybackService : MediaSessionService() {
             if (mixStartedAt == 0L) cancelPreparedMix()
         }
 
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            equalizerController.attach(audioSessionId)
+        }
+
         override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
             if (updatingSystemLyricsMetadata) return
             if (mixStartedAt == 0L) cancelPreparedMix()
@@ -145,6 +151,7 @@ class MeloXPlaybackService : MediaSessionService() {
                 maybePrepareAutoplay(active)
                 maybeRunAutoMix(active)
                 maybeUpdateSystemLyrics(active)
+                equalizerController.applySettings()
             }
             handler.postDelayed(this, 100L)
         }
@@ -178,6 +185,7 @@ class MeloXPlaybackService : MediaSessionService() {
                 ),
             )
         downloadStore = MeloXDownloadStore.get(this)
+        equalizerController = MeloXEqualizerController(this)
         val cookieProvider = { NeteaseSessionStore.readCookie(this@MeloXPlaybackService) }
         playbackResolver = NeteasePlaybackResolver(
             cookieProvider = cookieProvider,
@@ -708,6 +716,7 @@ class MeloXPlaybackService : MediaSessionService() {
         getSystemService(NotificationManager::class.java).cancel(LYRICS_NOTIFICATION_ID)
         serviceScope.cancel()
         cancelPreparedMix(releaseStandby = true)
+        equalizerController.release()
         mediaSession?.release()
         mediaSession = null
         player?.removeListener(playerListener)

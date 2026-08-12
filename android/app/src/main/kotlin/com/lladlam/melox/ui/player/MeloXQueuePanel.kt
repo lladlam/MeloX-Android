@@ -2,6 +2,7 @@ package com.lladlam.melox.ui.player
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,10 +20,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -157,10 +161,32 @@ private fun QueueSectionTitle(title: String, subdued: Boolean = false) {
 
 @Composable
 private fun QueueRow(entry: MeloXQueueEntry, state: MeloXPlaybackUiState, interactive: Boolean) {
+    val dragOffset = remember(entry.index) { mutableFloatStateOf(0f) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
+            .pointerInput(interactive, entry.index, state.currentIndex) {
+                if (!interactive || entry.index <= state.currentIndex) return@pointerInput
+                detectDragGesturesAfterLongPress(
+                    onDragEnd = { dragOffset.floatValue = 0f },
+                    onDragCancel = { dragOffset.floatValue = 0f },
+                ) { change, amount ->
+                    change.consume()
+                    dragOffset.floatValue += amount.y
+                    val rowHeight = 52.dp.toPx()
+                    when {
+                        dragOffset.floatValue > rowHeight -> {
+                            state.moveQueueItem(entry.index, entry.index + 1)
+                            dragOffset.floatValue = 0f
+                        }
+                        dragOffset.floatValue < -rowHeight -> {
+                            state.moveQueueItem(entry.index, entry.index - 1)
+                            dragOffset.floatValue = 0f
+                        }
+                    }
+                }
+            }
             .clickable(enabled = interactive) { state.playQueueIndex(entry.index) }
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -170,6 +196,9 @@ private fun QueueRow(entry: MeloXQueueEntry, state: MeloXPlaybackUiState, intera
         Column(Modifier.weight(1f)) {
             Text(entry.title, color = Color.White, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(entry.artist, color = Color.White.copy(alpha = .58f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+        }
+        if (entry.index > state.currentIndex) {
+            Text("≡", color = Color.White.copy(alpha = .48f), fontSize = 22.sp)
         }
     }
 }
