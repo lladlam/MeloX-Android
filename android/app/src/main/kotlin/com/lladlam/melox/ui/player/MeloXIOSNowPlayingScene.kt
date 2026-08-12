@@ -502,7 +502,7 @@ private fun MeloXIOSLandscapeNowPlayingScene(
                             )
                         }
 
-                        MeloXNowPlayingPage.Lyrics -> Box(Modifier.fillMaxSize()) {
+                        MeloXNowPlayingPage.Lyrics -> Box(Modifier.fillMaxSize()) lyricsBox@{
                             MeloXIOSLyricsPanel(
                                 state = state,
                                 modifier = Modifier.fillMaxSize().padding(bottom = 50.dp),
@@ -517,7 +517,7 @@ private fun MeloXIOSLandscapeNowPlayingScene(
                                 },
                                 allowAutomaticSkyline = false,
                             )
-                            AnimatedVisibility(
+                            this@lyricsBox.AnimatedVisibility(
                                 visible = showsLyricsControls,
                                 modifier = Modifier.align(Alignment.BottomCenter),
                                 enter = fadeIn(tween(180)),
