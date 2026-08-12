@@ -502,7 +502,7 @@ private fun MeloXIOSLandscapeNowPlayingScene(
                             )
                         }
 
-                        MeloXNowPlayingPage.Lyrics -> Box(Modifier.fillMaxSize()) lyricsBox@{
+                        MeloXNowPlayingPage.Lyrics -> Box(Modifier.fillMaxSize()) {
                             MeloXIOSLyricsPanel(
                                 state = state,
                                 modifier = Modifier.fillMaxSize().padding(bottom = 50.dp),
@@ -517,14 +517,13 @@ private fun MeloXIOSLandscapeNowPlayingScene(
                                 },
                                 allowAutomaticSkyline = false,
                             )
-                            this@lyricsBox.AnimatedVisibility(
+                            LandscapeLyricsPageSelector(
                                 visible = showsLyricsControls,
                                 modifier = Modifier.align(Alignment.BottomCenter),
-                                enter = fadeIn(tween(180)),
-                                exit = fadeOut(tween(160)),
-                            ) {
-                                ScenePageSelector(state = state, page = page, onPageSelected = ::select)
-                            }
+                                state = state,
+                                page = page,
+                                onPageSelected = ::select,
+                            )
                         }
 
                         MeloXNowPlayingPage.Queue -> Box(Modifier.fillMaxSize()) {
@@ -544,6 +543,24 @@ private fun MeloXIOSLandscapeNowPlayingScene(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LandscapeLyricsPageSelector(
+    visible: Boolean,
+    state: MeloXPlaybackUiState,
+    page: MeloXNowPlayingPage,
+    onPageSelected: (MeloXNowPlayingPage) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = fadeIn(tween(180)),
+        exit = fadeOut(tween(160)),
+    ) {
+        ScenePageSelector(state = state, page = page, onPageSelected = onPageSelected)
     }
 }
 
