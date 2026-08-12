@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Intent
 import android.os.Bundle
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -71,6 +72,8 @@ class MeloXPlaybackService : MediaSessionService() {
     private var reactiveAnalysisJob: Job? = null
     private var reactiveAnalysisMediaId: String? = null
     private var preparedMixSourceId: String? = null
+    private var autoMixRetrySourceId: String? = null
+    private var autoMixRetryAfterRealtimeMs = 0L
     private var mixStartedAt = 0L
     private var mixDurationMs = 0L
     private var mixBaseVolume = 1f
@@ -115,6 +118,8 @@ class MeloXPlaybackService : MediaSessionService() {
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             recommendationSeed = null
+            autoMixRetrySourceId = null
+            autoMixRetryAfterRealtimeMs = 0L
             val transitionedId = mediaItem?.mediaId?.toLongOrNull()
             reactiveAnalysisJob?.cancel()
             reactiveAnalysisJob = null
@@ -152,13 +157,18 @@ class MeloXPlaybackService : MediaSessionService() {
         override fun run() {
             val active = player
             if (active != null) {
-                applyLocalArtworkMetadata(active)
-                PlaybackCommands.prioritizeManualQueue(active)
-                maybePrepareAutoplay(active)
-                maybeRunAutoMix(active)
-                maybeUpdateSystemLyrics(active)
-                equalizerController.applySettings()
-                updateAudioReactiveVisuals(active)
+                runCatching {
+                    applyLocalArtworkMetadata(active)
+                    PlaybackCommands.prioritizeManualQueue(active)
+                    maybePrepareAutoplay(active)
+                    maybeRunAutoMix(active)
+                    maybeUpdateSystemLyrics(active)
+                    equalizerController.applySettings()
+                    updateAudioReactiveVisuals(active)
+                }.onFailure { error ->
+                    Log.e(TAG, "Playback monitor recovered from failure", error)
+                    recoverAutoMixFailure()
+                }
             }
             handler.postDelayed(this, 100L)
         }
@@ -195,8 +205,13 @@ class MeloXPlaybackService : MediaSessionService() {
             val active = player
             val incoming = incomingPlayer
             if (mixStartedAt == 0L || active == null || incoming == null) return
-            updateAutoMixEnvelope(active, incoming)
-            if (mixStartedAt > 0L) {
+            val updated = runCatching { updateAutoMixEnvelope(active, incoming) }
+                .onFailure { error ->
+                    Log.e(TAG, "AutoMix envelope failed; restoring normal playback", error)
+                    recoverAutoMixFailure()
+                }
+                .isSuccess
+            if (updated && mixStartedAt > 0L) {
                 handler.postDelayed(this, AUTOMIX_ENVELOPE_INTERVAL_MS)
             }
         }
@@ -324,6 +339,11 @@ class MeloXPlaybackService : MediaSessionService() {
         val duration = active.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: return
         val remaining = duration - active.currentPosition
         val sourceId = active.currentMediaItem?.mediaId ?: return
+        if (autoMixRetrySourceId == sourceId && SystemClock.elapsedRealtime() < autoMixRetryAfterRealtimeMs) return
+        if (autoMixRetrySourceId != null && autoMixRetrySourceId != sourceId) {
+            autoMixRetrySourceId = null
+            autoMixRetryAfterRealtimeMs = 0L
+        }
         val settings = MeloXAutoMixSettings.read(this)
         if (preparedMixSourceId == null && remaining <= settings.preloadLeadMs) {
             prepareIncoming(active, sourceId)
@@ -355,28 +375,62 @@ class MeloXPlaybackService : MediaSessionService() {
             remaining <= candidate.durationMs + candidate.outgoingEndOffsetMs
         }
         if (mixStartedAt == 0L && incoming.playbackState == Player.STATE_READY && reachedTransitionPoint) {
+            // Do not start the second live decoder while either full-track
+            // analyser still owns a MediaCodec instance. Cancellation is
+            // cooperative; the next 100 ms monitor tick starts the mix after
+            // the codec's finally block has released the native resource.
+            val activeAnalysis = listOfNotNull(mixAnalysisJob, reactiveAnalysisJob)
+                .filter(Job::isActive)
+            if (activeAnalysis.isNotEmpty()) {
+                activeAnalysis.forEach(Job::cancel)
+                return
+            }
             val actualDuration = minOf(
                 candidate.durationMs,
                 remaining - candidate.outgoingEndOffsetMs,
             )
             if (actualDuration < MeloXAutoMixPlanner.MIN_DURATION_MS) return
-            mixSettings = settings
-            mixPlan = candidate.copy(durationMs = actualDuration)
-            mixBaseVolume = active.volume.coerceIn(0f, 1f)
-            mixDurationMs = actualDuration
-            if (candidate.incomingStartMs > 0L) incoming.seekTo(candidate.incomingStartMs)
-            active.setPlaybackSpeed(candidate.outgoingStartRate)
-            incoming.setPlaybackSpeed(candidate.incomingStartRate)
-            incoming.volume = 0f
-            incoming.play()
-            mixEqualizerEnvelope.attach(active.audioSessionId, incoming.audioSessionId)
-            mixStartedAt = SystemClock.elapsedRealtime()
-            mixOutgoingStartPositionMs = active.currentPosition.coerceAtLeast(0L)
-            mixIncomingStartPositionMs = incoming.currentPosition.coerceAtLeast(0L)
-            mixLastProgress = 0.0
-            handler.removeCallbacks(mixEnvelope)
-            handler.post(mixEnvelope)
+            runCatching {
+                mixSettings = settings
+                mixPlan = candidate.copy(durationMs = actualDuration)
+                mixBaseVolume = active.volume.coerceIn(0f, 1f)
+                mixDurationMs = actualDuration
+                if (candidate.incomingStartMs > 0L) incoming.seekTo(candidate.incomingStartMs)
+                active.setPlaybackSpeed(candidate.outgoingStartRate)
+                incoming.setPlaybackSpeed(candidate.incomingStartRate)
+                incoming.volume = 0f
+                incoming.play()
+                if (supportsStableDeckEqualizers()) {
+                    mixEqualizerEnvelope.attach(active.audioSessionId, incoming.audioSessionId)
+                } else {
+                    mixEqualizerEnvelope.release()
+                }
+                mixStartedAt = SystemClock.elapsedRealtime()
+                mixOutgoingStartPositionMs = active.currentPosition.coerceAtLeast(0L)
+                mixIncomingStartPositionMs = incoming.currentPosition.coerceAtLeast(0L)
+                mixLastProgress = 0.0
+                handler.removeCallbacks(mixEnvelope)
+                handler.post(mixEnvelope)
+            }.onFailure { error ->
+                Log.e(TAG, "AutoMix start failed; continuing current song", error)
+                recoverAutoMixFailure()
+            }
         }
+    }
+
+    private fun supportsStableDeckEqualizers(): Boolean {
+        return MeloXAutoMixEqualizerEnvelope.supportsDeckEqualizers(
+            manufacturer = Build.MANUFACTURER,
+            brand = Build.BRAND,
+            userEqualizerEnabled = MeloXSettingsPreferences.boolean(this, "equalizer_enabled", false),
+        )
+    }
+
+    private fun recoverAutoMixFailure() {
+        autoMixRetrySourceId = player?.currentMediaItem?.mediaId
+        autoMixRetryAfterRealtimeMs = SystemClock.elapsedRealtime() + AUTOMIX_FAILURE_COOLDOWN_MS
+        runCatching { cancelPreparedMix(releaseStandby = true) }
+            .onFailure { Log.e(TAG, "AutoMix cleanup also failed", it) }
     }
 
     private fun maybeUpdateSystemLyrics(active: ExoPlayer) {
@@ -640,8 +694,15 @@ class MeloXPlaybackService : MediaSessionService() {
         incoming.setAudioAttributes(audioAttributes, true)
         incoming.setHandleAudioBecomingNoisy(true)
         incoming.addListener(playerListener)
-        mediaSession?.setPlayer(incoming)
+        val session = mediaSession ?: error("MediaSession unavailable during AutoMix handoff")
+        session.setPlayer(incoming)
+        // Publish both deck references together. After this point cleanup must
+        // not throw, otherwise recovery could mistake the promoted deck for the
+        // standby player and stop the song that is already audible.
         player = incoming
+        incomingPlayer = old
+        autoMixRetrySourceId = null
+        autoMixRetryAfterRealtimeMs = 0L
         preparedMixSourceId = null
         mixAnalysisJob?.cancel()
         mixAnalysisJob = null
@@ -652,16 +713,15 @@ class MeloXPlaybackService : MediaSessionService() {
         mixOutgoingStartPositionMs = 0L
         mixIncomingStartPositionMs = 0L
         mixLastProgress = 0.0
-        old.removeListener(playerListener)
-        old.pause()
-        old.stop()
-        old.clearMediaItems()
-        old.setAudioAttributes(audioAttributes, false)
-        old.setHandleAudioBecomingNoisy(false)
-        old.setPlaybackSpeed(1f)
-        old.volume = 0f
-        incomingPlayer = old
-        applyLocalArtworkMetadata(incoming)
+        runCatching { old.removeListener(playerListener) }
+        runCatching { old.pause() }
+        runCatching { old.stop() }
+        runCatching { old.clearMediaItems() }
+        runCatching { old.setAudioAttributes(audioAttributes, false) }
+        runCatching { old.setHandleAudioBecomingNoisy(false) }
+        runCatching { old.setPlaybackSpeed(1f) }
+        runCatching { old.volume = 0f }
+        runCatching { applyLocalArtworkMetadata(incoming) }
     }
 
     private fun applyLocalArtworkMetadata(active: ExoPlayer) {
@@ -709,17 +769,17 @@ class MeloXPlaybackService : MediaSessionService() {
         analyzedMixPlan = null
         val active = player
         if (mixStartedAt > 0L && active != null) {
-            active.volume = mixBaseVolume
-            active.setPlaybackSpeed(1f)
+            runCatching { active.volume = mixBaseVolume }
+            runCatching { active.setPlaybackSpeed(1f) }
         }
         incomingPlayer?.run {
-            removeListener(playerListener)
-            pause()
-            stop()
-            clearMediaItems()
-            volume = 0f
-            setPlaybackSpeed(1f)
-            if (releaseStandby) release()
+            runCatching { removeListener(playerListener) }
+            runCatching { pause() }
+            runCatching { stop() }
+            runCatching { clearMediaItems() }
+            runCatching { volume = 0f }
+            runCatching { setPlaybackSpeed(1f) }
+            if (releaseStandby) runCatching { release() }
         }
         if (releaseStandby) incomingPlayer = null
         preparedMixSourceId = null
@@ -758,6 +818,7 @@ class MeloXPlaybackService : MediaSessionService() {
         const val TAG = "MeloXPlayback"
         const val AUTOPLAY_PRELOAD_MS = 15_000L
         const val AUTOMIX_ENVELOPE_INTERVAL_MS = 20L
+        const val AUTOMIX_FAILURE_COOLDOWN_MS = 30_000L
         const val ANALYSIS_FALLBACK_GUARD_MS = 1_200L
         const val SYSTEM_ORIGINAL_TITLE_KEY = "melox.system.original_title"
         const val SYSTEM_ORIGINAL_ARTIST_KEY = "melox.system.original_artist"

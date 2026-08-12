@@ -67,6 +67,42 @@ class MeloXAutoMixTest {
         assertEquals(0f, MeloXAudioReactiveRuntime.pulseAt(longArrayOf(), 1_000L, 200L), .001f)
     }
 
+    @Test
+    fun deckEqualizerPolicySkipsUnstableXiaomiFamilyEffects() {
+        assertTrue(
+            !MeloXAutoMixEqualizerEnvelope.supportsDeckEqualizers(
+                manufacturer = "Xiaomi",
+                brand = "REDMI",
+                userEqualizerEnabled = false,
+            ),
+        )
+        assertTrue(
+            !MeloXAutoMixEqualizerEnvelope.supportsDeckEqualizers(
+                manufacturer = "POCO",
+                brand = "POCO",
+                userEqualizerEnabled = false,
+            ),
+        )
+    }
+
+    @Test
+    fun deckEqualizerPolicyAllowsKnownSafeVendorOnlyWithoutUserEq() {
+        assertTrue(
+            MeloXAutoMixEqualizerEnvelope.supportsDeckEqualizers(
+                manufacturer = "samsung",
+                brand = "samsung",
+                userEqualizerEnabled = false,
+            ),
+        )
+        assertTrue(
+            !MeloXAutoMixEqualizerEnvelope.supportsDeckEqualizers(
+                manufacturer = "samsung",
+                brand = "samsung",
+                userEqualizerEnabled = true,
+            ),
+        )
+    }
+
     private fun analysis(durationMs: Long, bpm: Double, rising: Boolean): MeloXAutoMixTrackAnalysis {
         val frames = (0L..durationMs step 250L).map { time ->
             val normalized = time.toFloat() / durationMs

@@ -17,6 +17,10 @@ import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 data class MeloXAutoMixFrame(
@@ -62,16 +66,22 @@ data class MeloXAutoMixTrackAnalysis(
  */
 class MeloXAutoMixAudioAnalyzer(private val context: Context) {
     private val cache = ConcurrentHashMap<String, MeloXAutoMixTrackAnalysis>()
+    private val decodeMutex = Mutex()
 
     suspend fun analyze(songId: Long, uri: Uri): MeloXAutoMixTrackAnalysis =
         withContext(Dispatchers.IO) {
             val key = "$songId|$uri"
-            cache[key] ?: decode(uri).also { cache[key] = it }
+            cache[key] ?: decodeMutex.withLock {
+                // The flowing-light sampler and AutoMix planner share this
+                // analyser. Serialising misses prevents three MediaCodec
+                // decoders from competing with the two live ExoPlayers.
+                cache[key] ?: decode(uri).also { cache[key] = it }
+            }
         }
 
     fun clear() = cache.clear()
 
-    private fun decode(uri: Uri): MeloXAutoMixTrackAnalysis {
+    private suspend fun decode(uri: Uri): MeloXAutoMixTrackAnalysis {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
         try {
@@ -105,6 +115,11 @@ class MeloXAutoMixAudioAnalyzer(private val context: Context) {
             var outputEnded = false
             var outputFormat = inputFormat
             while (!outputEnded) {
+                // MediaCodec work is native and may otherwise keep running
+                // after the planner is cancelled at the transition boundary.
+                // Releasing it before the standby ExoPlayer starts avoids a
+                // short-lived three-decoder spike on constrained devices.
+                currentCoroutineContext().ensureActive()
                 if (!inputEnded) {
                     val inputIndex = decoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
                     if (inputIndex >= 0) {

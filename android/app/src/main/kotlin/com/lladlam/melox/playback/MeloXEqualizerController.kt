@@ -22,17 +22,22 @@ class MeloXEqualizerController(private val context: Context) {
 
     fun applySettings() {
         val equalizer = effect ?: return
-        val enabled = MeloXSettingsPreferences.boolean(context, "equalizer_enabled", false)
-        val preset = MeloXSettingsPreferences.string(context, "equalizer_preset", "Flat")
-        val preamp = MeloXSettingsPreferences.int(context, "equalizer_preamp_db", 0).coerceIn(-6, 6)
-        val gains = PRESETS[preset] ?: PRESETS.getValue("Flat")
-        val range = equalizer.bandLevelRange
-        repeat(equalizer.numberOfBands.toInt()) { index ->
-            val source = (index * gains.size / equalizer.numberOfBands.toInt()).coerceIn(gains.indices)
-            val level = ((gains[source] + preamp) * 100).coerceIn(range[0].toInt(), range[1].toInt())
-            equalizer.setBandLevel(index.toShort(), level.toShort())
+        runCatching {
+            val enabled = MeloXSettingsPreferences.boolean(context, "equalizer_enabled", false)
+            val preset = MeloXSettingsPreferences.string(context, "equalizer_preset", "Flat")
+            val preamp = MeloXSettingsPreferences.int(context, "equalizer_preamp_db", 0).coerceIn(-6, 6)
+            val gains = PRESETS[preset] ?: PRESETS.getValue("Flat")
+            val range = equalizer.bandLevelRange
+            repeat(equalizer.numberOfBands.toInt()) { index ->
+                val source = (index * gains.size / equalizer.numberOfBands.toInt()).coerceIn(gains.indices)
+                val level = ((gains[source] + preamp) * 100).coerceIn(range[0].toInt(), range[1].toInt())
+                equalizer.setBandLevel(index.toShort(), level.toShort())
+            }
+            equalizer.enabled = enabled
+        }.onFailure {
+            Log.w("MeloXPlayback", "Equalizer update failed; releasing effect", it)
+            release()
         }
-        equalizer.enabled = enabled
     }
 
     fun release() {

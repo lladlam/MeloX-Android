@@ -14,8 +14,9 @@ class MeloXAutoMixEqualizerEnvelope {
 
     fun attach(outgoingSessionId: Int, incomingSessionId: Int) {
         release()
-        outgoing = DeckEqualizer(outgoingSessionId)
-        incoming = DeckEqualizer(incomingSessionId)
+        if (outgoingSessionId <= 0 || incomingSessionId <= 0 || outgoingSessionId == incomingSessionId) return
+        outgoing = runCatching { DeckEqualizer(outgoingSessionId) }.getOrNull()
+        incoming = runCatching { DeckEqualizer(incomingSessionId) }.getOrNull()
     }
 
     fun apply(progress: Double) {
@@ -35,13 +36,15 @@ class MeloXAutoMixEqualizerEnvelope {
 
     private class DeckEqualizer(audioSessionId: Int) {
         private val equalizer = runCatching { Equalizer(0, audioSessionId) }.getOrNull()
-        private val bassBands: List<Short> = equalizer?.let { effect ->
-            (0 until effect.numberOfBands.toInt()).map { it.toShort() }.filter { band ->
-                val range = effect.getBandFreqRange(band)
-                val centreMilliHertz = (range[0].toLong() + range[1].toLong()) / 2L
-                centreMilliHertz <= 300_000L
-            }
-        }.orEmpty()
+        private val bassBands: List<Short> = runCatching {
+            equalizer?.let { effect ->
+                (0 until effect.numberOfBands.toInt()).map { it.toShort() }.filter { band ->
+                    val range = effect.getBandFreqRange(band)
+                    val centreMilliHertz = (range[0].toLong() + range[1].toLong()) / 2L
+                    centreMilliHertz <= 300_000L
+                }
+            }.orEmpty()
+        }.getOrDefault(emptyList())
 
         init {
             runCatching { equalizer?.enabled = true }
@@ -49,11 +52,13 @@ class MeloXAutoMixEqualizerEnvelope {
 
         fun setBassCut(decibels: Double) {
             val effect = equalizer ?: return
-            val range = effect.bandLevelRange
-            val millibels = (decibels * 100.0).roundToInt()
-                .coerceIn(range[0].toInt(), minOf(0, range[1].toInt()))
-                .toShort()
-            bassBands.forEach { band -> runCatching { effect.setBandLevel(band, millibels) } }
+            runCatching {
+                val range = effect.bandLevelRange
+                val millibels = (decibels * 100.0).roundToInt()
+                    .coerceIn(range[0].toInt(), minOf(0, range[1].toInt()))
+                    .toShort()
+                bassBands.forEach { band -> effect.setBandLevel(band, millibels) }
+            }
         }
 
         fun release() {
@@ -68,5 +73,23 @@ class MeloXAutoMixEqualizerEnvelope {
     private fun smoothStep(value: Double): Double {
         val p = value.coerceIn(0.0, 1.0)
         return p * p * (3.0 - 2.0 * p)
+    }
+
+    companion object {
+        /**
+         * Several Xiaomi-family AudioEffect implementations are unstable when
+         * two Equalizers are created for two simultaneously playing sessions.
+         * The gain/tempo crossfade remains enabled; only the optional bass-swap
+         * envelope is omitted on those devices or when the user's EQ is active.
+         */
+        internal fun supportsDeckEqualizers(
+            manufacturer: String,
+            brand: String,
+            userEqualizerEnabled: Boolean,
+        ): Boolean {
+            if (userEqualizerEnabled) return false
+            val vendor = "$manufacturer $brand".lowercase()
+            return listOf("xiaomi", "redmi", "poco").none(vendor::contains)
+        }
     }
 }
