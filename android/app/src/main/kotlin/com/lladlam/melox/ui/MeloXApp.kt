@@ -146,6 +146,7 @@ fun MeloXApp(
         mutableStateOf(if (MeloXSettingsPreferences.boolean(context, "onboarding_completed", false)) -1 else 0)
     }
     var availableUpdate by remember { mutableStateOf<MeloXRelease?>(null) }
+    var heartModeLaunchAttempted by remember { mutableStateOf(false) }
     val playbackState = rememberMeloXPlaybackUiState()
     val playerTransitionState = remember { SeekableTransitionState(false) }
     val playerTransition = rememberTransition(
@@ -253,6 +254,30 @@ fun MeloXApp(
     LaunchedEffect(neteaseSession.cookie) {
         if (neteaseSession.isLoggedIn) {
             neteaseSession.refreshProfile()
+        }
+    }
+
+    LaunchedEffect(
+        neteaseSession.cookie,
+        onboardingPage,
+        MeloXSettingsRuntime.startsHeartModeOnLaunch,
+        playbackState.hasMedia,
+    ) {
+        if (heartModeLaunchAttempted || onboardingPage >= 0 || playbackState.hasMedia ||
+            !MeloXSettingsRuntime.startsHeartModeOnLaunch || !neteaseSession.isLoggedIn
+        ) return@LaunchedEffect
+        heartModeLaunchAttempted = true
+        if (neteaseSession.profile == null) neteaseSession.refreshProfile(force = true)
+        val userId = neteaseSession.profile?.userId ?: return@LaunchedEffect
+        val client = NeteaseLibraryClient(cookieProvider = { NeteaseSessionStore.readCookie(context) })
+        val songs = runCatching {
+            val snapshot = client.snapshot(userId)
+            val seed = snapshot.likedSongs.randomOrNull() ?: error("收藏歌曲为空")
+            val playlist = snapshot.playlists.firstOrNull() ?: error("没有可用歌单")
+            client.intelligenceModeSongs(seed.id, playlist.id)
+        }.getOrNull().orEmpty()
+        songs.firstOrNull()?.let { first ->
+            PlaybackCommands.playQueue(context, songs, first.id, heartMode = true)
         }
     }
 

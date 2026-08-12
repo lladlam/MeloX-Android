@@ -1,6 +1,14 @@
 package com.lladlam.melox.playback
 
 import android.content.Context
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+
+object MeloXPlaybackModeRuntime {
+    var heartModeActive by mutableStateOf(false)
+        internal set
+}
 
 object MeloXPlaybackModePreferences {
     private const val NAME = "melox_playback_modes"

@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.lladlam.melox.ui.glass.meloXBackdropBlur
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
+import com.lladlam.melox.playback.MeloXPlaybackModeRuntime
 import kotlinx.coroutines.delay
 
 /**
@@ -329,6 +330,9 @@ internal fun MeloXIOSNowPlayingScene(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
+                    if (MeloXPlaybackModeRuntime.heartModeActive) {
+                        Text("心动模式", color = Color(0xFFFF7BA5), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
                     Text(
                         text = state.title.ifBlank { "正在播放" },
                         color = Color.White,
@@ -582,6 +586,9 @@ private fun LandscapeSongHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
+            if (MeloXPlaybackModeRuntime.heartModeActive) {
+                Text("心动模式", color = Color(0xFFFF7BA5), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
             Text(
                 text = state.title.ifBlank { "正在播放" },
                 color = Color.White,

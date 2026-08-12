@@ -327,7 +327,7 @@ fun LibraryScreen(
                                     val playlistId = data.playlists.firstOrNull()?.id
                                     if (seed != null && playlistId != null) scope.launch {
                                         runCatching { client.intelligenceModeSongs(seed.id, playlistId) }
-                                            .onSuccess { songs -> songs.firstOrNull()?.let { PlaybackCommands.playQueue(context, songs, it.id) } }
+                                            .onSuccess { songs -> songs.firstOrNull()?.let { PlaybackCommands.playQueue(context, songs, it.id, heartMode = true) } }
                                             .onFailure { errorMessage = it.message ?: "无法启动心动模式" }
                                     }
                                 },

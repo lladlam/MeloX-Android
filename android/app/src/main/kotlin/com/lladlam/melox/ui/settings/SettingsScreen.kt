@@ -608,6 +608,7 @@ private fun PlaybackSettings(context: android.content.Context) {
     Spacer(Modifier.height(22.dp))
     SettingsToggleRow(context, "记住播放器上次页面", "playback_remember_page", true)
     SettingsToggleRow(context, "播放超过 5 秒时上一首先回到开头", "playback_previous_restarts", true)
+    SettingsToggleRow(context, "登录后以心动模式开始播放", "playback_heart_mode_on_launch", false, "仅在启动时没有现有播放队列时执行。")
     SettingsInfoCard("耳机断开时暂停", "已由 Media3 播放服务启用")
     Spacer(Modifier.height(10.dp))
     var volumeMode by remember { mutableStateOf(MeloXSettingsRuntime.volumeControlMode) }

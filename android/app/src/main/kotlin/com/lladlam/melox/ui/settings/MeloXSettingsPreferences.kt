@@ -262,6 +262,8 @@ object MeloXSettingsRuntime {
         internal set
     var previousRestartsAfterFiveSeconds by mutableStateOf(true)
         internal set
+    var startsHeartModeOnLaunch by mutableStateOf(false)
+        internal set
     var volumeControlMode by mutableStateOf(MeloXVolumeControlMode.System)
         internal set
 
@@ -420,6 +422,7 @@ object MeloXSettingsRuntime {
         showHighQualityPlaylists = MeloXSettingsPreferences.boolean(app, "content_high_quality_playlist", true)
         clipboardLinksEnabled = MeloXSettingsPreferences.boolean(app, "general_clipboard_links", true)
         previousRestartsAfterFiveSeconds = MeloXSettingsPreferences.boolean(app, "playback_previous_restarts", true)
+        startsHeartModeOnLaunch = MeloXSettingsPreferences.boolean(app, "playback_heart_mode_on_launch", false)
         volumeControlMode = runCatching {
             MeloXVolumeControlMode.valueOf(MeloXSettingsPreferences.string(app, "playback_volume_mode", MeloXVolumeControlMode.System.name))
         }.getOrDefault(MeloXVolumeControlMode.System)
@@ -505,6 +508,7 @@ object MeloXSettingsPreferences {
             "content_high_quality_playlist" -> MeloXSettingsRuntime.showHighQualityPlaylists = value
             "general_clipboard_links" -> MeloXSettingsRuntime.clipboardLinksEnabled = value
             "playback_previous_restarts" -> MeloXSettingsRuntime.previousRestartsAfterFiveSeconds = value
+            "playback_heart_mode_on_launch" -> MeloXSettingsRuntime.startsHeartModeOnLaunch = value
         }
     }
 

@@ -128,7 +128,9 @@ fun MeloXHomeScreen() {
                                             else -> emptyList()
                                         }
                                     }.onSuccess { songs ->
-                                        songs.firstOrNull()?.let { PlaybackCommands.playQueue(context, songs, it.id) }
+                                        songs.firstOrNull()?.let {
+                                            PlaybackCommands.playQueue(context, songs, it.id, heartMode = action == "心动模式")
+                                        }
                                             ?: run { error = "没有可播放的推荐歌曲" }
                                     }.onFailure { error = it.message ?: "$action 加载失败" }
                                     activeAction = null

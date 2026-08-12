@@ -43,6 +43,7 @@ object PlaybackCommands {
         songs: List<SearchSong>,
         selectedSongId: Long,
         startPositionMs: Long = C.TIME_UNSET,
+        heartMode: Boolean = false,
         onFailure: ((Throwable) -> Unit)? = null,
     ) {
         val appContext = context.applicationContext
@@ -100,6 +101,7 @@ object PlaybackCommands {
                     activeController = controller
                     controller.shuffleModeEnabled = false
                     controller.setMediaItems(queue, startIndex, startPositionMs)
+                    MeloXPlaybackModeRuntime.heartModeActive = heartMode
                     controller.prepare()
                     controller.play()
 
