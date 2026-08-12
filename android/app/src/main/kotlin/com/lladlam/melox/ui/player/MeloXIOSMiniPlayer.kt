@@ -9,6 +9,8 @@ import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -44,7 +46,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.lladlam.melox.ui.glass.meloXLiquidBottomBar
 import com.kyant.shapes.Capsule
 
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -128,11 +129,6 @@ fun MeloXIOSMiniPlayer(
     ) {
         val miniShape = Capsule()
         val dark = isSystemInDarkTheme()
-        val glassTint = if (dark) {
-            Color.Black.copy(alpha = 0.12f)
-        } else {
-            Color.White.copy(alpha = 0.16f)
-        }
         val fallbackTint = if (dark) {
             MaterialTheme.colorScheme.surface.copy(alpha = 0.64f)
         } else {
@@ -144,16 +140,13 @@ fun MeloXIOSMiniPlayer(
                 .fillMaxWidth()
                 .height(50.dp)
                 .graphicsLayer { alpha = miniSurfaceAlpha }
-                .meloXLiquidBottomBar(
-                    shape = miniShape,
-                    tint = glassTint,
-                    surfaceColor = fallbackTint.copy(
-                        alpha = fallbackTint.alpha * 0.40f,
-                    ),
-                    // MiniPlayer keeps the liquid refraction/highlight, but its
-                    // background must remain sharp instead of blurring the list.
-                    blurRadius = 0.dp,
-                ),
+                // MiniPlayer is intentionally a sharp translucent surface: it
+                // must not sample or blur the scrolling content behind it.
+                .background(
+                    fallbackTint.copy(alpha = fallbackTint.alpha * 0.40f),
+                    miniShape,
+                )
+                .border(.75.dp, Color.White.copy(alpha = if (dark) .16f else .56f), miniShape),
         )
 
         Row(

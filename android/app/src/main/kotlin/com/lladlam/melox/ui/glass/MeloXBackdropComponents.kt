@@ -107,7 +107,6 @@ fun Modifier.meloXLiquidBottomBar(
     shape: Shape,
     tint: Color,
     surfaceColor: Color,
-    blurRadius: Dp = 8.dp,
 ): Modifier {
     val backdrop = LocalMeloXBackdrop.current
     if (backdrop == null) {
@@ -120,7 +119,7 @@ fun Modifier.meloXLiquidBottomBar(
         shape = { shape },
         effects = {
             vibrancy()
-            blur(blurRadius.toPx())
+            blur(8.dp.toPx())
             lens(24.dp.toPx(), 24.dp.toPx(), chromaticAberration = false)
         },
         onDrawSurface = {
