@@ -1,5 +1,7 @@
 package com.lladlam.melox.ui.cloud
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,6 +61,7 @@ fun MeloXCloudMusicScreen(modifier: Modifier = Modifier) {
     var error by remember { mutableStateOf<String?>(null) }
     var quota by remember { mutableStateOf("") }
     var pendingDelete by remember { mutableStateOf<MeloXCloudSong?>(null) }
+    var uploading by remember { mutableStateOf(false) }
 
     suspend fun refresh() {
         loading = true
@@ -72,6 +75,18 @@ fun MeloXCloudMusicScreen(modifier: Modifier = Modifier) {
             }
             .onFailure { error = it.message ?: "云盘加载失败" }
         loading = false
+    }
+
+    val uploadLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            uploading = true
+            error = null
+            runCatching { client.uploadCloudSong(app, uri) }
+                .onSuccess { refresh() }
+                .onFailure { error = it.message ?: "云盘上传失败" }
+            uploading = false
+        }
     }
 
     LaunchedEffect(Unit) { refresh() }
@@ -113,6 +128,11 @@ fun MeloXCloudMusicScreen(modifier: Modifier = Modifier) {
                 Text("音乐云盘", fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 Text(quota, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .5f))
             }
+            Text(
+                if (uploading) "上传中…" else "上传",
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.clickable(enabled = !uploading) { uploadLauncher.launch("audio/*") }.padding(10.dp),
+            )
             Text("刷新", color = MaterialTheme.colorScheme.primary, modifier = Modifier.clickable { scope.launch { refresh() } }.padding(10.dp))
         }
         Box(
