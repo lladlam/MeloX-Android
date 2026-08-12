@@ -410,6 +410,15 @@ private fun SystemPlaybackSettings(context: android.content.Context) {
             "已检测到 HyperOS ${protocol.version} 焦点通知协议，歌词通知会附带实时播放负载。"
         },
     )
+    LyricsStringChoiceSetting(
+        context,
+        "系统媒体标题格式",
+        "system_lyrics_title_mode",
+        MeloXSystemLyricTitleMode.LyricFirst.name,
+        MeloXSystemLyricTitleMode.entries.map { it.name },
+    ) { if (it == MeloXSystemLyricTitleMode.LyricFirst.name) "歌词作为标题" else "歌曲作为标题" }
+    SettingsToggleRow(context, "通知显示下一句", "lyrics_notification_next_line", false)
+    SettingsToggleRow(context, "通知显示播放进度", "lyrics_notification_progress", true)
 }
 
 @Composable
@@ -423,6 +432,21 @@ private fun SkylineLyricsSettings(context: android.content.Context) {
         enabled = it
         MeloXSettingsPreferences.setBoolean(context, "lyrics_skyline_enabled", it)
     }
+    SettingsToggleRow(context, "显示封面与歌曲信息", "lyrics_skyline_song_info", true)
+    LyricsChoiceSetting(
+        context,
+        "环境歌词数量",
+        "lyrics_skyline_ambient_lines",
+        2,
+        listOf(0, 1, 2, 3, 4),
+    ) { if (it == 0) "关闭" else "$it 行" }
+    LyricsFloatChoiceSetting(
+        context,
+        "主歌词字号",
+        "lyrics_skyline_font_scale",
+        1f,
+        listOf(.8f, .9f, 1f, 1.15f, 1.3f),
+    ) { "${(it * 100).toInt()}%" }
     SettingsInfoCard("显示条件", "仅在播放器歌词页横屏时切换；竖屏继续使用歌词设置中选择的渲染器。")
 }
 
@@ -469,6 +493,29 @@ private fun FloatingLyricsSettings(context: android.content.Context) {
         "悬浮窗权限",
         if (permissionGranted) "已允许；关闭开关或通知中的“停止”即可结束服务。" else "未允许；开启时会跳转到系统授权页。",
     )
+    LyricsStringChoiceSetting(
+        context,
+        "副歌词内容",
+        "floating_lyrics_secondary_mode",
+        MeloXSecondaryLyricMode.Auto.name,
+        MeloXSecondaryLyricMode.entries.map { it.name },
+    ) {
+        when (MeloXSecondaryLyricMode.valueOf(it)) {
+            MeloXSecondaryLyricMode.Auto -> "自动（翻译/罗马音/下一句）"
+            MeloXSecondaryLyricMode.Translation -> "翻译"
+            MeloXSecondaryLyricMode.Romanization -> "罗马音"
+            MeloXSecondaryLyricMode.NextLine -> "下一句"
+            MeloXSecondaryLyricMode.Hidden -> "不显示"
+        }
+    }
+    LyricsChoiceSetting(
+        context,
+        "主歌词字号",
+        "floating_lyrics_font_size",
+        18,
+        listOf(14, 16, 18, 20, 24, 28),
+    ) { "$it sp" }
+    SettingsToggleRow(context, "高对比背景", "floating_lyrics_high_contrast", true, "重新开启悬浮歌词后生效。")
 }
 
 @Composable
@@ -538,11 +585,23 @@ private fun EqualizerSettings(context: android.content.Context) {
     Spacer(Modifier.height(8.dp))
     SettingsGlassGroup {
         MeloXEqualizerController.PRESETS.keys.forEach { value ->
-            val label = mapOf("Flat" to "平直", "Bass" to "低频增强", "Vocal" to "人声", "Treble" to "高频增强", "Electronic" to "电子").getValue(value)
+            val label = mapOf("Flat" to "平直", "Bass" to "低频增强", "Vocal" to "人声", "Treble" to "高频增强", "Electronic" to "电子", "Custom" to "自定义").getValue(value)
             SettingsChoiceRow(label, preset == value) {
                 preset = value
                 MeloXSettingsPreferences.setString(context, "equalizer_preset", value)
             }
+        }
+    }
+    if (preset == "Custom") {
+        Spacer(Modifier.height(12.dp))
+        listOf("60 Hz", "230 Hz", "910 Hz", "3.6 kHz", "14 kHz").forEachIndexed { index, label ->
+            LyricsChoiceSetting(
+                context,
+                label,
+                "equalizer_custom_band_$index",
+                0,
+                listOf(-6, -3, 0, 3, 6),
+            ) { if (it > 0) "+$it dB" else "$it dB" }
         }
     }
     Spacer(Modifier.height(12.dp))

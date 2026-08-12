@@ -29,6 +29,7 @@ import com.lladlam.melox.core.lyrics.LyricsDocument
 import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.playback.MeloXPlaybackService
 import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
+import com.lladlam.melox.ui.settings.MeloXSecondaryLyricMode
 import java.util.concurrent.Executor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -134,10 +135,24 @@ class MeloXFloatingLyricsService : Service() {
         lastIndex = index
         val line = document.lines.getOrNull(index)
         primaryText?.text = line?.text.orEmpty()
-        secondaryText?.text = when {
-            MeloXSettingsPreferences.boolean(this, "lyrics_translation", true) && !line?.translation.isNullOrBlank() -> line?.translation.orEmpty()
-            MeloXSettingsPreferences.boolean(this, "lyrics_romanization", true) && !line?.romanization.isNullOrBlank() -> line?.romanization.orEmpty()
-            else -> document.lines.getOrNull(index + 1)?.text.orEmpty()
+        val mode = runCatching {
+            MeloXSecondaryLyricMode.valueOf(
+                MeloXSettingsPreferences.string(this, "floating_lyrics_secondary_mode", MeloXSecondaryLyricMode.Auto.name),
+            )
+        }.getOrDefault(MeloXSecondaryLyricMode.Auto)
+        val translation = line?.translation.orEmpty()
+        val romanization = line?.romanization.orEmpty()
+        val nextLine = document.lines.getOrNull(index + 1)?.text.orEmpty()
+        secondaryText?.text = when (mode) {
+            MeloXSecondaryLyricMode.Translation -> translation
+            MeloXSecondaryLyricMode.Romanization -> romanization
+            MeloXSecondaryLyricMode.NextLine -> nextLine
+            MeloXSecondaryLyricMode.Hidden -> ""
+            MeloXSecondaryLyricMode.Auto -> when {
+                MeloXSettingsPreferences.boolean(this, "lyrics_translation", true) && translation.isNotBlank() -> translation
+                MeloXSettingsPreferences.boolean(this, "lyrics_romanization", true) && romanization.isNotBlank() -> romanization
+                else -> nextLine
+            }
         }
     }
 
@@ -145,26 +160,28 @@ class MeloXFloatingLyricsService : Service() {
         val manager = getSystemService(WindowManager::class.java)
         windowManager = manager
         val density = resources.displayMetrics.density
+        val highContrast = MeloXSettingsPreferences.boolean(this, "floating_lyrics_high_contrast", true)
+        val fontSize = MeloXSettingsPreferences.int(this, "floating_lyrics_font_size", 18).coerceIn(14, 28)
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setPadding((18 * density).toInt(), (10 * density).toInt(), (18 * density).toInt(), (10 * density).toInt())
             background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(Color.argb(178, 18, 18, 22))
+                setColor(if (highContrast) Color.argb(205, 12, 12, 16) else Color.argb(125, 18, 18, 22))
                 cornerRadius = 22 * density
                 setStroke((1 * density).toInt(), Color.argb(75, 255, 255, 255))
             }
         }
         primaryText = TextView(this).apply {
             setTextColor(Color.WHITE)
-            textSize = 18f
+            textSize = fontSize.toFloat()
             gravity = Gravity.CENTER
             maxLines = 2
             text = "MeloX 悬浮歌词"
         }
         secondaryText = TextView(this).apply {
             setTextColor(Color.argb(150, 255, 255, 255))
-            textSize = 12f
+            textSize = (fontSize * .68f).coerceAtLeast(10f)
             gravity = Gravity.CENTER
             maxLines = 1
         }

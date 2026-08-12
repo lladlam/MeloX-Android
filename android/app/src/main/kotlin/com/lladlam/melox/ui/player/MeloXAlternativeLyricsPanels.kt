@@ -355,28 +355,37 @@ internal fun MeloXSkylineLyricsPanel(
 ) {
     val state = rememberAlternativeLyrics(playback)
     Box(modifier.fillMaxSize().clickable(onClick = onInteraction)) {
-        state.lines.getOrNull(state.index + 1)?.let { ambient ->
-            Text(
-                ambient.text,
-                color = Color.White.copy(alpha = .075f),
-                fontSize = 72.sp,
-                lineHeight = 78.sp,
-                fontWeight = FontWeight.Black,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
+        val ambientLines = state.lines.drop(state.index + 1).take(MeloXSettingsRuntime.skylineAmbientLines)
+        if (ambientLines.isNotEmpty()) {
+            Column(
                 modifier = Modifier.align(Alignment.CenterEnd).fillMaxWidth(.58f).rotate(-5f),
-            )
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                ambientLines.forEachIndexed { ambientIndex, ambient ->
+                    Text(
+                        ambient.text,
+                        color = Color.White.copy(alpha = (.075f - ambientIndex * .012f).coerceAtLeast(.025f)),
+                        fontSize = (64f - ambientIndex * 7f).coerceAtLeast(38f).sp,
+                        lineHeight = (70f - ambientIndex * 7f).coerceAtLeast(44f).sp,
+                        fontWeight = FontWeight.Black,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
         Row(Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(.42f), verticalArrangement = Arrangement.Center) {
-                Artwork(playback.artworkUrl, Modifier.size(132.dp).clip(RoundedCornerShape(20.dp)))
-                Text(playback.title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 14.dp))
-                Text(playback.artist, color = Color.White.copy(alpha = .52f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (MeloXSettingsRuntime.skylineShowSongInfo) {
+                Column(Modifier.weight(.42f), verticalArrangement = Arrangement.Center) {
+                    Artwork(playback.artworkUrl, Modifier.size(132.dp).clip(RoundedCornerShape(20.dp)))
+                    Text(playback.title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 14.dp))
+                    Text(playback.artist, color = Color.White.copy(alpha = .52f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Spacer(Modifier.width(34.dp))
             }
-            Spacer(Modifier.width(34.dp))
             AnimatedContent(
                 targetState = state.index,
-                modifier = Modifier.weight(.58f),
+                modifier = Modifier.weight(if (MeloXSettingsRuntime.skylineShowSongInfo) .58f else 1f),
                 transitionSpec = {
                     (slideInVertically(tween(560, easing = FastOutSlowInEasing)) { it / 4 } + fadeIn(tween(420))) togetherWith
                         (slideOutVertically(tween(380)) { -it / 5 } + fadeOut(tween(300)))
@@ -388,8 +397,8 @@ internal fun MeloXSkylineLyricsPanel(
                     Text(
                         line?.text.orEmpty(),
                         color = Color.White,
-                        fontSize = 42.sp,
-                        lineHeight = 48.sp,
+                        fontSize = (42f * MeloXSettingsRuntime.skylineMainFontScale).sp,
+                        lineHeight = (48f * MeloXSettingsRuntime.skylineMainFontScale).sp,
                         fontWeight = FontWeight.ExtraBold,
                         modifier = Modifier.clickable { line?.let { playback.seekTo(it.timeMs) } },
                     )

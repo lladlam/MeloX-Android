@@ -10,6 +10,8 @@ enum class MeloXLyricAnnotationDisplayMode { FocusedLine, AllLines }
 enum class MeloXLyricsStyle { AppleMusic, Eva, TextPV }
 enum class MeloXTextPVStyle { Dynamic, Minimal, Cyber }
 enum class MeloXVolumeControlMode { System, Player }
+enum class MeloXSecondaryLyricMode { Auto, Translation, Romanization, NextLine, Hidden }
+enum class MeloXSystemLyricTitleMode { LyricFirst, SongFirst }
 
 /** Process-visible settings used by UI paths that need immediate recomposition. */
 object MeloXSettingsRuntime {
@@ -75,11 +77,29 @@ object MeloXSettingsRuntime {
         internal set
     var skylineEnabled by mutableStateOf(true)
         internal set
+    var skylineShowSongInfo by mutableStateOf(true)
+        internal set
+    var skylineAmbientLines by mutableStateOf(2)
+        internal set
+    var skylineMainFontScale by mutableStateOf(1f)
+        internal set
     var systemLyricsEnabled by mutableStateOf(false)
         internal set
     var lyricNotificationsEnabled by mutableStateOf(false)
         internal set
+    var systemLyricTitleMode by mutableStateOf(MeloXSystemLyricTitleMode.LyricFirst)
+        internal set
+    var lyricNotificationShowNextLine by mutableStateOf(false)
+        internal set
+    var lyricNotificationShowProgress by mutableStateOf(true)
+        internal set
     var floatingLyricsEnabled by mutableStateOf(false)
+        internal set
+    var floatingSecondaryMode by mutableStateOf(MeloXSecondaryLyricMode.Auto)
+        internal set
+    var floatingFontSizeSp by mutableStateOf(18)
+        internal set
+    var floatingHighContrast by mutableStateOf(true)
         internal set
     var homeTabEnabled by mutableStateOf(true)
         internal set
@@ -156,9 +176,26 @@ object MeloXSettingsRuntime {
             MeloXTextPVStyle.valueOf(MeloXSettingsPreferences.string(app, "lyrics_text_pv_style", MeloXTextPVStyle.Dynamic.name))
         }.getOrDefault(MeloXTextPVStyle.Dynamic)
         skylineEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_skyline_enabled", true)
+        skylineShowSongInfo = MeloXSettingsPreferences.boolean(app, "lyrics_skyline_song_info", true)
+        skylineAmbientLines = MeloXSettingsPreferences.int(app, "lyrics_skyline_ambient_lines", 2).coerceIn(0, 4)
+        skylineMainFontScale = MeloXSettingsPreferences.float(app, "lyrics_skyline_font_scale", 1f).coerceIn(.8f, 1.3f)
         systemLyricsEnabled = MeloXSettingsPreferences.boolean(app, "system_lyrics_enabled", false)
         lyricNotificationsEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_notifications_enabled", false)
+        systemLyricTitleMode = runCatching {
+            MeloXSystemLyricTitleMode.valueOf(
+                MeloXSettingsPreferences.string(app, "system_lyrics_title_mode", MeloXSystemLyricTitleMode.LyricFirst.name),
+            )
+        }.getOrDefault(MeloXSystemLyricTitleMode.LyricFirst)
+        lyricNotificationShowNextLine = MeloXSettingsPreferences.boolean(app, "lyrics_notification_next_line", false)
+        lyricNotificationShowProgress = MeloXSettingsPreferences.boolean(app, "lyrics_notification_progress", true)
         floatingLyricsEnabled = MeloXSettingsPreferences.boolean(app, "floating_lyrics_enabled", false)
+        floatingSecondaryMode = runCatching {
+            MeloXSecondaryLyricMode.valueOf(
+                MeloXSettingsPreferences.string(app, "floating_lyrics_secondary_mode", MeloXSecondaryLyricMode.Auto.name),
+            )
+        }.getOrDefault(MeloXSecondaryLyricMode.Auto)
+        floatingFontSizeSp = MeloXSettingsPreferences.int(app, "floating_lyrics_font_size", 18).coerceIn(14, 28)
+        floatingHighContrast = MeloXSettingsPreferences.boolean(app, "floating_lyrics_high_contrast", true)
         homeTabEnabled = MeloXSettingsPreferences.boolean(app, "tab_home", true)
         exploreTabEnabled = MeloXSettingsPreferences.boolean(app, "tab_explore", true)
         libraryTabEnabled = MeloXSettingsPreferences.boolean(app, "tab_library", true)
@@ -233,9 +270,13 @@ object MeloXSettingsPreferences {
             "lyrics_reduce_motion" -> MeloXSettingsRuntime.lyricReduceMotion = value
             "lyrics_advance_word_by_word" -> MeloXSettingsRuntime.lyricAdvanceAppliesToWordByWord = value
             "lyrics_skyline_enabled" -> MeloXSettingsRuntime.skylineEnabled = value
+            "lyrics_skyline_song_info" -> MeloXSettingsRuntime.skylineShowSongInfo = value
             "system_lyrics_enabled" -> MeloXSettingsRuntime.systemLyricsEnabled = value
             "lyrics_notifications_enabled" -> MeloXSettingsRuntime.lyricNotificationsEnabled = value
+            "lyrics_notification_next_line" -> MeloXSettingsRuntime.lyricNotificationShowNextLine = value
+            "lyrics_notification_progress" -> MeloXSettingsRuntime.lyricNotificationShowProgress = value
             "floating_lyrics_enabled" -> MeloXSettingsRuntime.floatingLyricsEnabled = value
+            "floating_lyrics_high_contrast" -> MeloXSettingsRuntime.floatingHighContrast = value
             "tab_home" -> MeloXSettingsRuntime.homeTabEnabled = value
             "tab_explore" -> MeloXSettingsRuntime.exploreTabEnabled = value
             "tab_library" -> MeloXSettingsRuntime.libraryTabEnabled = value
@@ -256,6 +297,8 @@ object MeloXSettingsPreferences {
             "lyrics_follow_delay_ms" -> MeloXSettingsRuntime.lyricFollowDelayMs = value.coerceIn(1_000, 8_000)
             "lyrics_refresh_rate" -> MeloXSettingsRuntime.lyricRefreshRate =
                 value.takeIf { it in setOf(30, 60, 90, 120) } ?: 60
+            "lyrics_skyline_ambient_lines" -> MeloXSettingsRuntime.skylineAmbientLines = value.coerceIn(0, 4)
+            "floating_lyrics_font_size" -> MeloXSettingsRuntime.floatingFontSizeSp = value.coerceIn(14, 28)
         }
     }
 
@@ -269,6 +312,7 @@ object MeloXSettingsPreferences {
             "lyrics_inactive_opacity" -> MeloXSettingsRuntime.lyricInactiveOpacity = value.coerceIn(.15f, .65f)
             "lyrics_glow_strength" -> MeloXSettingsRuntime.lyricGlowStrength = value.coerceIn(0f, 1.5f)
             "lyrics_long_tone_strength" -> MeloXSettingsRuntime.lyricLongToneStrength = value.coerceIn(0f, 1.5f)
+            "lyrics_skyline_font_scale" -> MeloXSettingsRuntime.skylineMainFontScale = value.coerceIn(.8f, 1.3f)
         }
     }
 
@@ -296,6 +340,12 @@ object MeloXSettingsPreferences {
             "lyrics_text_pv_style" -> MeloXSettingsRuntime.textPVStyle = runCatching {
                 MeloXTextPVStyle.valueOf(value)
             }.getOrDefault(MeloXTextPVStyle.Dynamic)
+            "system_lyrics_title_mode" -> MeloXSettingsRuntime.systemLyricTitleMode = runCatching {
+                MeloXSystemLyricTitleMode.valueOf(value)
+            }.getOrDefault(MeloXSystemLyricTitleMode.LyricFirst)
+            "floating_lyrics_secondary_mode" -> MeloXSettingsRuntime.floatingSecondaryMode = runCatching {
+                MeloXSecondaryLyricMode.valueOf(value)
+            }.getOrDefault(MeloXSecondaryLyricMode.Auto)
             "playback_volume_mode" -> MeloXSettingsRuntime.volumeControlMode = runCatching {
                 MeloXVolumeControlMode.valueOf(value)
             }.getOrDefault(MeloXVolumeControlMode.System)

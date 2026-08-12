@@ -26,7 +26,13 @@ class MeloXEqualizerController(private val context: Context) {
             val enabled = MeloXSettingsPreferences.boolean(context, "equalizer_enabled", false)
             val preset = MeloXSettingsPreferences.string(context, "equalizer_preset", "Flat")
             val preamp = MeloXSettingsPreferences.int(context, "equalizer_preamp_db", 0).coerceIn(-6, 6)
-            val gains = PRESETS[preset] ?: PRESETS.getValue("Flat")
+            val gains = if (preset == "Custom") {
+                IntArray(5) { index ->
+                    MeloXSettingsPreferences.int(context, "equalizer_custom_band_$index", 0).coerceIn(-6, 6)
+                }
+            } else {
+                PRESETS[preset] ?: PRESETS.getValue("Flat")
+            }
             val range = equalizer.bandLevelRange
             repeat(equalizer.numberOfBands.toInt()) { index ->
                 val source = (index * gains.size / equalizer.numberOfBands.toInt()).coerceIn(gains.indices)
@@ -53,6 +59,7 @@ class MeloXEqualizerController(private val context: Context) {
             "Vocal" to intArrayOf(-2, 0, 3, 4, 2),
             "Treble" to intArrayOf(-2, -1, 1, 4, 5),
             "Electronic" to intArrayOf(4, 2, 0, 2, 4),
+            "Custom" to intArrayOf(0, 0, 0, 0, 0),
         )
     }
 }
