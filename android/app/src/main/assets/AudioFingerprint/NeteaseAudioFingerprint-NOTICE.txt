@@ -1,0 +1,11 @@
+NetEase audio fingerprint runtime
+
+The bundled afp.js and afp.wasm.js files are copied without modification from
+@neteaseapireborn/api 4.29.7, which MeloX's reference project YesPlayMusic uses
+for its /audio/match implementation.
+
+Source:
+https://github.com/neteasecloudmusicapienhanced/api-enhanced
+
+The package is distributed under the MIT License. A copy is included in
+NeteaseAPI-LICENSE.txt.

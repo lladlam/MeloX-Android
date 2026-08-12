@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+<script src="afp.wasm.js"></script>
+<script>
+globalThis.require = function(path) {
+  if (path.includes('logger')) return { info() {}, warn() {}, error() {} };
+  if (path.includes('afp.wasm')) return { WASM_BINARY: WASM_BINARY };
+  throw new Error('Unsupported local module: ' + path);
+};
+</script>
+<script src="afp.js"></script>
+</body>
+</html>

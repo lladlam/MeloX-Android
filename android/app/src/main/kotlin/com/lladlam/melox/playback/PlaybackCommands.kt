@@ -40,6 +40,7 @@ object PlaybackCommands {
         context: Context,
         songs: List<SearchSong>,
         selectedSongId: Long,
+        startPositionMs: Long = C.TIME_UNSET,
         onFailure: ((Throwable) -> Unit)? = null,
     ) {
         val appContext = context.applicationContext
@@ -96,7 +97,7 @@ object PlaybackCommands {
                     activeController?.takeIf { it !== controller }?.release()
                     activeController = controller
                     controller.shuffleModeEnabled = false
-                    controller.setMediaItems(queue, startIndex, C.TIME_UNSET)
+                    controller.setMediaItems(queue, startIndex, startPositionMs)
                     controller.prepare()
                     controller.play()
 

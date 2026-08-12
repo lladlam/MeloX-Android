@@ -59,6 +59,8 @@ import com.lladlam.melox.core.network.MeloXMessageContact
 import com.lladlam.melox.core.network.MeloXPrivateMessage
 import com.lladlam.melox.core.network.NeteaseMusicOperationsClient
 import com.lladlam.melox.core.network.NeteaseSearchClient
+import com.lladlam.melox.core.recognition.SongRecognitionClient
+import com.lladlam.melox.core.recognition.SongRecognitionResult
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.playback.MeloXAutoMixFadeCurve
 import com.lladlam.melox.playback.MeloXAutoMixFallback
@@ -71,6 +73,8 @@ import com.lladlam.melox.platform.xiaomi.HyperOsFocusBridge
 import com.lladlam.melox.ui.MeloXBottomContentClearance
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -82,6 +86,7 @@ private enum class SettingsRoute(val title: String) {
     SkylineLyrics("全屏天际歌词"),
     FloatingLyrics("悬浮窗歌词"),
     ContentFeatures("功能模块"),
+    Recognition("听歌识曲"),
     Messages("私信与站内分享"),
     Content("发现内容"),
     Storage("存储管理"),
@@ -113,6 +118,7 @@ private val SettingsSections = listOf(
     )),
     SettingsSection("内容与存储", listOf(
         SettingsItem(SettingsRoute.ContentFeatures, "播客、云盘、最近播放等模块", "☷", "播客 广播 云盘 最近播放 下载"),
+        SettingsItem(SettingsRoute.Recognition, "麦克风音频指纹与持续识别", "⌁", "听歌识曲 麦克风 指纹 Shazam 持续识别"),
         SettingsItem(SettingsRoute.Messages, "联系人、会话历史与文字私信", "✉", "私信 联系人 会话 分享 网易云"),
         SettingsItem(SettingsRoute.Content, "地区、歌单信息和发现内容", "▦", "华语 欧美 韩国 日本 播放量"),
         SettingsItem(SettingsRoute.Storage, "空间统计与缓存清理", "▰", "缓存 存储 清理 数据库"),
@@ -365,6 +371,7 @@ private fun SettingsDetailScreen(route: SettingsRoute, onBack: () -> Unit) {
             SettingsRoute.SkylineLyrics -> SkylineLyricsSettings(context)
             SettingsRoute.FloatingLyrics -> FloatingLyricsSettings(context)
             SettingsRoute.ContentFeatures -> ContentFeatureSettings(context)
+            SettingsRoute.Recognition -> RecognitionSettings(context)
             SettingsRoute.Messages -> MessagesSettings(context)
             SettingsRoute.Content -> ContentSettings(context)
             SettingsRoute.Storage -> StorageSettings(context)
@@ -1239,6 +1246,123 @@ private fun GeneralSettings(context: android.content.Context) {
         }
     }
     SettingsToggleRow(context, "识别剪贴板中的网易云链接", "general_clipboard_links", true, "每次回到前台只读取一次；识别歌曲或歌单后会先询问是否打开。")
+}
+
+@Composable
+private fun RecognitionSettings(context: android.content.Context) {
+    val client = remember(context) { SongRecognitionClient(context.applicationContext) }
+    val scope = rememberCoroutineScope()
+    var duration by remember {
+        mutableStateOf(MeloXSettingsPreferences.string(context, "recognition_duration", "6").toIntOrNull() ?: 6)
+    }
+    var working by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf("靠近声源后开始识别") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var results by remember { mutableStateOf<List<SongRecognitionResult>>(emptyList()) }
+    var recognitionJob by remember { mutableStateOf<Job?>(null) }
+
+    fun startCapture() {
+        recognitionJob?.cancel()
+        recognitionJob = scope.launch {
+            working = true
+            error = null
+            if (duration != 0) results = emptyList()
+            try {
+                if (duration == 0) {
+                    status = "正在持续识别；点击停止结束"
+                    while (isActive) {
+                        val found = client.recognize(9)
+                        if (found.isNotEmpty()) {
+                            results = (found + results).distinctBy { it.song.id }.take(100)
+                        }
+                    }
+                } else {
+                    status = "正在聆听 ${duration} 秒…"
+                    val found = client.recognize(duration)
+                    results = found
+                    status = if (found.isEmpty()) "没有识别到歌曲，请靠近声源后重试" else "识别完成"
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                status = if (results.isEmpty()) "识别已停止" else "已停止，保留识别结果"
+            } catch (failure: Throwable) {
+                error = failure.message ?: "听歌识曲失败"
+                status = "无法完成识别"
+            } finally {
+                working = false
+            }
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) startCapture() else error = "没有麦克风权限；请在系统设置中允许 MeloX 使用麦克风。"
+    }
+
+    SettingsInfoCard("网易云音频指纹", "音频只在设备上转为指纹；匹配请求发送指纹，不上传原始录音。持续识别会每 9 秒追加一次结果。")
+    Spacer(Modifier.height(14.dp))
+    Text("识别时长", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f))
+    Spacer(Modifier.height(8.dp))
+    SettingsGlassGroup {
+        listOf(3 to "3 秒 · 更快", 6 to "6 秒 · 推荐", 9 to "9 秒 · 嘈杂环境", 0 to "持续识别").forEach { (value, title) ->
+            SettingsChoiceRow(title, duration == value) {
+                if (!working) {
+                    duration = value
+                    MeloXSettingsPreferences.setString(context, "recognition_duration", value.toString())
+                }
+            }
+        }
+    }
+    Spacer(Modifier.height(14.dp))
+    SettingsActionButton(if (working) "停止识别" else "开始听歌识曲") {
+        if (working) {
+            recognitionJob?.cancel()
+        } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            startCapture()
+        } else {
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+    Row(Modifier.fillMaxWidth().padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (working) {
+            CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.size(10.dp))
+        }
+        Text(status, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f), fontSize = 13.sp)
+    }
+    error?.let { message ->
+        SettingsInfoCard("识别失败", message)
+        Spacer(Modifier.height(12.dp))
+    }
+    if (results.isNotEmpty()) {
+        Text("识别结果", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
+        SettingsGlassGroup {
+            Column {
+                results.forEach { result ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            PlaybackCommands.playQueue(
+                                context = context,
+                                songs = results.map { it.song },
+                                selectedSongId = result.song.id,
+                                startPositionMs = result.startTimeMs,
+                            )
+                        }.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AsyncImage(result.song.artworkUrl, null, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(9.dp)))
+                        Spacer(Modifier.size(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(result.song.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                            Text(result.song.artists, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .5f))
+                        }
+                        if (result.startTimeMs > 0L) Text("${result.startTimeMs / 1000}s", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .42f))
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
