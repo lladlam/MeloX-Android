@@ -58,6 +58,8 @@ data class MeloXAutoMixAnalysis(
 data class MeloXAutoMixPlan(
     val durationMs: Long,
     val incomingStartMs: Long,
+    val outgoingStartMs: Long = 0L,
+    val outgoingEndOffsetMs: Long = 0L,
     val outgoingStartRate: Float = 1f,
     val outgoingEndRate: Float = 1f,
     val incomingStartRate: Float = 1f,
@@ -95,6 +97,7 @@ object MeloXAutoMixPlanner {
         val rates = if (settings.tempoMatching) tempoRates(outgoing.bpm, incoming.bpm, settings.maxTempoAdjustment) else 1f to 1f
         return MeloXAutoMixPlan(
             durationMs = duration,
+            outgoingStartMs = 0L,
             incomingStartMs = incomingStart,
             outgoingStartRate = 1f,
             outgoingEndRate = rates.first,
@@ -105,14 +108,25 @@ object MeloXAutoMixPlanner {
     }
 
     private fun fallback(settings: MeloXAutoMixSettings, remainingMs: Long): MeloXAutoMixPlan = when (settings.fallback) {
-        MeloXAutoMixFallback.Crossfade -> fixed(settings.fixedDurationMs, remainingMs)
-        MeloXAutoMixFallback.ShortCrossfade -> fixed(3_000L, remainingMs)
+        MeloXAutoMixFallback.Crossfade -> fallbackCrossfade(settings.fixedDurationMs, settings.tailCutBars, remainingMs)
+        MeloXAutoMixFallback.ShortCrossfade -> fallbackCrossfade(3_000L, settings.tailCutBars, remainingMs)
         MeloXAutoMixFallback.Normal -> MeloXAutoMixPlan(0L, 0L)
     }
 
     private fun fixed(requestedMs: Long, remainingMs: Long): MeloXAutoMixPlan {
-        val duration = minOf(requestedMs, remainingMs - HANDOFF_GUARD_MS)
+        val duration = minOf(requestedMs, remainingMs)
         return if (duration >= MIN_DURATION_MS) MeloXAutoMixPlan(duration, 0L) else MeloXAutoMixPlan(0L, 0L)
+    }
+
+    private fun fallbackCrossfade(requestedMs: Long, tailCutBars: Int, remainingMs: Long): MeloXAutoMixPlan {
+        val tailCutMs = tailCutBars.coerceAtLeast(0) * 4 * 500L
+        val available = remainingMs - tailCutMs
+        val duration = minOf(requestedMs, available)
+        return if (duration >= MIN_DURATION_MS) {
+            MeloXAutoMixPlan(durationMs = duration, incomingStartMs = 0L, outgoingEndOffsetMs = tailCutMs)
+        } else {
+            MeloXAutoMixPlan(0L, 0L)
+        }
     }
 
     private fun tempoRates(outgoingBpm: Double, incomingBpm: Double, maxAdjustment: Double): Pair<Float, Float> {

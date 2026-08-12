@@ -7,6 +7,8 @@ import androidx.compose.runtime.setValue
 
 enum class MeloXThemeMode { System, Light, Dark }
 enum class MeloXLyricAnnotationDisplayMode { FocusedLine, AllLines }
+enum class MeloXLyricsStyle { AppleMusic, Eva, TextPV }
+enum class MeloXTextPVStyle { Dynamic, Minimal, Cyber }
 
 /** Process-visible settings used by UI paths that need immediate recomposition. */
 object MeloXSettingsRuntime {
@@ -58,6 +60,18 @@ object MeloXSettingsRuntime {
         internal set
     var lyricBlurStrength by mutableStateOf(1f)
         internal set
+    var lyricsStyle by mutableStateOf(MeloXLyricsStyle.AppleMusic)
+        internal set
+    var textPVStyle by mutableStateOf(MeloXTextPVStyle.Dynamic)
+        internal set
+    var skylineEnabled by mutableStateOf(true)
+        internal set
+    var systemLyricsEnabled by mutableStateOf(false)
+        internal set
+    var lyricNotificationsEnabled by mutableStateOf(false)
+        internal set
+    var floatingLyricsEnabled by mutableStateOf(false)
+        internal set
     var homeTabEnabled by mutableStateOf(true)
         internal set
     var exploreTabEnabled by mutableStateOf(true)
@@ -104,6 +118,16 @@ object MeloXSettingsRuntime {
         lyricFontScale = MeloXSettingsPreferences.float(app, "lyrics_font_scale", 1f).coerceIn(.8f, 1.25f)
         lyricSpacingScale = MeloXSettingsPreferences.float(app, "lyrics_spacing_scale", 1f).coerceIn(.7f, 1.5f)
         lyricBlurStrength = MeloXSettingsPreferences.float(app, "lyrics_blur_strength", 1f).coerceIn(0f, 1.5f)
+        lyricsStyle = runCatching {
+            MeloXLyricsStyle.valueOf(MeloXSettingsPreferences.string(app, "lyrics_style", MeloXLyricsStyle.AppleMusic.name))
+        }.getOrDefault(MeloXLyricsStyle.AppleMusic)
+        textPVStyle = runCatching {
+            MeloXTextPVStyle.valueOf(MeloXSettingsPreferences.string(app, "lyrics_text_pv_style", MeloXTextPVStyle.Dynamic.name))
+        }.getOrDefault(MeloXTextPVStyle.Dynamic)
+        skylineEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_skyline_enabled", true)
+        systemLyricsEnabled = MeloXSettingsPreferences.boolean(app, "system_lyrics_enabled", false)
+        lyricNotificationsEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_notifications_enabled", false)
+        floatingLyricsEnabled = MeloXSettingsPreferences.boolean(app, "floating_lyrics_enabled", false)
         homeTabEnabled = MeloXSettingsPreferences.boolean(app, "tab_home", true)
         exploreTabEnabled = MeloXSettingsPreferences.boolean(app, "tab_explore", true)
         libraryTabEnabled = MeloXSettingsPreferences.boolean(app, "tab_library", true)
@@ -157,6 +181,10 @@ object MeloXSettingsPreferences {
             "lyrics_auto_follow" -> MeloXSettingsRuntime.lyricAutoFollowEnabled = value
             "lyrics_reduce_motion" -> MeloXSettingsRuntime.lyricReduceMotion = value
             "lyrics_advance_word_by_word" -> MeloXSettingsRuntime.lyricAdvanceAppliesToWordByWord = value
+            "lyrics_skyline_enabled" -> MeloXSettingsRuntime.skylineEnabled = value
+            "system_lyrics_enabled" -> MeloXSettingsRuntime.systemLyricsEnabled = value
+            "lyrics_notifications_enabled" -> MeloXSettingsRuntime.lyricNotificationsEnabled = value
+            "floating_lyrics_enabled" -> MeloXSettingsRuntime.floatingLyricsEnabled = value
             "tab_home" -> MeloXSettingsRuntime.homeTabEnabled = value
             "tab_explore" -> MeloXSettingsRuntime.exploreTabEnabled = value
             "tab_library" -> MeloXSettingsRuntime.libraryTabEnabled = value
@@ -197,6 +225,12 @@ object MeloXSettingsPreferences {
             "lyrics_translation_display_mode" -> MeloXSettingsRuntime.lyricTranslationDisplayMode = runCatching {
                 MeloXLyricAnnotationDisplayMode.valueOf(value)
             }.getOrDefault(MeloXLyricAnnotationDisplayMode.FocusedLine)
+            "lyrics_style" -> MeloXSettingsRuntime.lyricsStyle = runCatching {
+                MeloXLyricsStyle.valueOf(value)
+            }.getOrDefault(MeloXLyricsStyle.AppleMusic)
+            "lyrics_text_pv_style" -> MeloXSettingsRuntime.textPVStyle = runCatching {
+                MeloXTextPVStyle.valueOf(value)
+            }.getOrDefault(MeloXTextPVStyle.Dynamic)
         }
     }
 

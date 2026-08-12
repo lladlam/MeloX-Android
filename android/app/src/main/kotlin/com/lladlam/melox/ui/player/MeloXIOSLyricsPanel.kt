@@ -52,6 +52,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
@@ -75,6 +76,7 @@ import com.lladlam.melox.core.lyrics.withPseudoTiming
 import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
+import com.lladlam.melox.ui.settings.MeloXLyricsStyle
 import com.lladlam.melox.ui.settings.MeloXLyricAnnotationDisplayMode
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -140,6 +142,32 @@ private object UpstreamLyrics {
 
 @Composable
 fun MeloXIOSLyricsPanel(
+    state: MeloXPlaybackUiState,
+    modifier: Modifier = Modifier,
+    isInterfaceHidden: Boolean = false,
+    onInterfaceInteraction: () -> Unit = {},
+    onInterfaceVisibilityChange: (Boolean) -> Unit = {},
+) {
+    val configuration = LocalConfiguration.current
+    if (configuration.screenWidthDp > configuration.screenHeightDp && MeloXSettingsRuntime.skylineEnabled) {
+        MeloXSkylineLyricsPanel(state, modifier, onInterfaceInteraction)
+        return
+    }
+    when (MeloXSettingsRuntime.lyricsStyle) {
+        MeloXLyricsStyle.AppleMusic -> MeloXAppleMusicLyricsPanel(
+            state,
+            modifier,
+            isInterfaceHidden,
+            onInterfaceInteraction,
+            onInterfaceVisibilityChange,
+        )
+        MeloXLyricsStyle.Eva -> MeloXEvaLyricsPanel(state, modifier, onInterfaceInteraction)
+        MeloXLyricsStyle.TextPV -> MeloXTextPVLyricsPanel(state, modifier, onInterfaceInteraction)
+    }
+}
+
+@Composable
+private fun MeloXAppleMusicLyricsPanel(
     state: MeloXPlaybackUiState,
     modifier: Modifier = Modifier,
     isInterfaceHidden: Boolean = false,

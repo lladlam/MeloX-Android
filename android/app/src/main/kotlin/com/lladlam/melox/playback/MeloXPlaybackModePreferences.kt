@@ -54,6 +54,10 @@ object MeloXPlaybackModePreferences {
         preferences(context).edit().putBoolean(key, value).apply()
     }
 
+    fun setAutoMixFloat(context: Context, key: String, value: Float) {
+        preferences(context).edit().putFloat(key, value).apply()
+    }
+
     fun reset(context: Context) {
         preferences(context).edit().clear().apply()
     }

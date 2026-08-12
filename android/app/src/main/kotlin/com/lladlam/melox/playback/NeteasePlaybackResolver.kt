@@ -28,6 +28,27 @@ class NeteasePlaybackResolver(
     private val resolvedUris = ConcurrentHashMap<ResolveKey, Uri>()
     private val qualityClient = NeteaseQualityClient(cookieProvider = cookieProvider)
 
+    /**
+     * Resolves the same source used by ExoPlayer for offline analysis. Keeping
+     * this path in the resolver guarantees that AutoMix never analyses a
+     * different quality (or a stale anonymous URL) from the playing deck.
+     */
+    fun resolveSongUri(
+        songId: Long,
+        quality: MusicQuality = MusicQualityRuntime.selected,
+    ): Uri {
+        localSourceProvider(songId)?.let { return it }
+        val cookieHeader = cookieProvider()
+        val key = ResolveKey(songId, quality, cookieHeader)
+        return resolvedUris[key] ?: run {
+            val source = qualityClient.playbackSourceBlocking(
+                songId = songId,
+                requestedQuality = quality,
+            )
+            Uri.parse(source.url).also { resolvedUris[key] = it }
+        }
+    }
+
     override fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
         val uri = dataSpec.uri
         if (uri.scheme != MELOX_SCHEME || uri.host != SONG_HOST) {
@@ -44,17 +65,7 @@ class NeteasePlaybackResolver(
         val currentCookieHeader = cookieProvider()
         val key = ResolveKey(songId, requestedQuality, currentCookieHeader)
 
-        val resolved = resolvedUris[key] ?: run {
-            val source = qualityClient.playbackSourceBlocking(
-                songId = songId,
-                requestedQuality = requestedQuality,
-            )
-            Uri.parse(source.url).also { resolvedUri ->
-                // A quality or login change creates a different ResolveKey, so a
-                // stale lower-quality CDN URL can never shadow the new request.
-                resolvedUris[key] = resolvedUri
-            }
-        }
+        val resolved = resolveSongUri(songId, requestedQuality)
 
         return dataSpec.withUri(resolved)
     }

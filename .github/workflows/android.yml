@@ -31,9 +31,9 @@ jobs:
         with:
           gradle-version: "9.5.0"
 
-      - name: Build debug APK
+      - name: Test and build debug APK
         working-directory: android
-        run: gradle :app:assembleDebug --stacktrace
+        run: gradle :app:testDebugUnitTest :app:assembleDebug --stacktrace
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v7

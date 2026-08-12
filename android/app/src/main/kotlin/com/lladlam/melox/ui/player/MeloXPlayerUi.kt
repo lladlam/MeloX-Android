@@ -181,8 +181,10 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
             ?: MediaMetadata.EMPTY
 
         mediaId = item?.mediaId
-        title = metadata.title?.toString().orEmpty()
-        artist = metadata.artist?.toString().orEmpty()
+        val originalTitle = metadata.extras?.getString("melox.system.original_title")
+        val originalArtist = metadata.extras?.getString("melox.system.original_artist")
+        title = originalTitle ?: metadata.title?.toString().orEmpty()
+        artist = originalArtist ?: metadata.artist?.toString().orEmpty()
         album = metadata.albumTitle?.toString().orEmpty()
         val currentSongId = item?.mediaId?.toLongOrNull()
         artworkUrl = currentSongId?.let(downloadStore::localArtworkUri)?.toString()
@@ -246,8 +248,10 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
             MeloXQueueEntry(
                 index = index,
                 mediaId = item.mediaId,
-                title = metadata.title?.toString().orEmpty().ifBlank { "未知歌曲" },
-                artist = metadata.artist?.toString().orEmpty(),
+                title = metadata.extras?.getString("melox.system.original_title")
+                    ?: metadata.title?.toString().orEmpty().ifBlank { "未知歌曲" },
+                artist = metadata.extras?.getString("melox.system.original_artist")
+                    ?: metadata.artist?.toString().orEmpty(),
                 artworkUrl = item.mediaId.toLongOrNull()?.let(downloadStore::localArtworkUri)?.toString()
                     ?: metadata.artworkUri?.toString(),
                 origin = if (metadata.extras?.getString(PlaybackCommands.QUEUE_ORIGIN_KEY) == PlaybackCommands.QUEUE_ORIGIN_MANUAL) {
