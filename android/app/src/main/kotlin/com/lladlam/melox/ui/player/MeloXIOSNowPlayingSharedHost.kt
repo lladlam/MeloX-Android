@@ -273,6 +273,7 @@ fun MeloXIOSNowPlayingSharedHost(
                 ) {
                     if (MeloXSettingsRuntime.flowingBackdropEnabled) {
                         MeloXFlowingLightBackdrop(
+                            mediaId = state.mediaId,
                             artworkUrl = state.artworkUrl,
                             isPlaying = state.isPlaying,
                         )

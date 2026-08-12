@@ -762,6 +762,10 @@ private fun LyricsSettings(context: android.content.Context) {
     LyricsFloatChoiceSetting(context, "歌词字号", "lyrics_font_scale", 1f, listOf(.85f, 1f, 1.12f, 1.25f)) { "${(it * 100).toInt()}%" }
     LyricsFloatChoiceSetting(context, "行间距", "lyrics_spacing_scale", 1f, listOf(.8f, 1f, 1.2f, 1.4f)) { "${(it * 100).toInt()}%" }
     LyricsFloatChoiceSetting(context, "远近模糊", "lyrics_blur_strength", 1f, listOf(0f, .6f, 1f, 1.4f)) { if (it == 0f) "关闭" else "${(it * 100).toInt()}%" }
+    LyricsFloatChoiceSetting(context, "当前行放大", "lyrics_focus_scale", 1.02f, listOf(1f, 1.02f, 1.04f, 1.08f)) { "${(it * 100).toInt()}%" }
+    LyricsFloatChoiceSetting(context, "未播放文字亮度", "lyrics_inactive_opacity", .3f, listOf(.2f, .3f, .45f, .6f)) { "${(it * 100).toInt()}%" }
+    LyricsFloatChoiceSetting(context, "逐字光晕", "lyrics_glow_strength", 1f, listOf(0f, .6f, 1f, 1.4f)) { if (it == 0f) "关闭" else "${(it * 100).toInt()}%" }
+    LyricsFloatChoiceSetting(context, "长音延展", "lyrics_long_tone_strength", 1f, listOf(0f, .6f, 1f, 1.4f)) { if (it == 0f) "关闭" else "${(it * 100).toInt()}%" }
 }
 
 @Composable

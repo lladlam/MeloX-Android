@@ -241,6 +241,8 @@ private fun MeloXAppleMusicLyricsPanel(
     // recomposing and relaying out the complete lyric list.
     val refreshRate = MeloXSettingsRuntime.lyricRefreshRate
     val interludes = remember(lines) { sourceLyricInterludes(lines) }
+    val interludeByLyricIndex = remember(interludes) { interludes.associateBy { it.followingLyricIndex } }
+    val revealedInterludes = remember(document) { mutableStateMapOf<Long, Boolean>() }
     var activeInterludeIndex by remember(document) { mutableIntStateOf(-1) }
     LaunchedEffect(state.isPlaying, mediaId, document, hasSyllableSync, lineAdvanceMs, refreshRate) {
         var lastFrameNanos = 0L
@@ -258,10 +260,19 @@ private fun MeloXAppleMusicLyricsPanel(
             }
             renderedPositionState.longValue = position
             val effectivePosition = position + lineAdvanceMs
-            val nextIndex = sourceHighlightedIndex(lines, effectivePosition)
-            if (nextIndex != highlightedIndex) highlightedIndex = nextIndex
             val nextInterlude = interludes.indexOfFirst { position >= it.startTimeMs && position < it.followingLyricTimeMs }
             if (nextInterlude != activeInterludeIndex) activeInterludeIndex = nextInterlude
+            val activeInterlude = interludes.getOrNull(nextInterlude)
+            if (activeInterlude != null) revealedInterludes[activeInterlude.startTimeMs] = true
+            val nextIndex = if (
+                MeloXSettingsRuntime.lyricInterludeCountdownEnabled &&
+                activeInterlude != null && position < activeInterlude.countdownEndTimeMs
+            ) {
+                activeInterlude.followingLyricIndex
+            } else {
+                sourceHighlightedIndex(lines, effectivePosition)
+            }
+            if (nextIndex != highlightedIndex) highlightedIndex = nextIndex
             if (!state.isPlaying) delay(200L)
         }
     }
@@ -327,7 +338,7 @@ private fun MeloXAppleMusicLyricsPanel(
     fun settledMovementOffset(index: Int, focusIndex: Int): Float {
         if (focusIndex !in lines.indices || index <= focusIndex) return 0f
         return max(
-            estimatedHeight(focusIndex) * (UpstreamLyrics.CURRENT_LINE_SCALE - 1f),
+            estimatedHeight(focusIndex) * (MeloXSettingsRuntime.lyricFocusScale - 1f),
             0f,
         )
     }
@@ -692,7 +703,11 @@ private fun MeloXAppleMusicLyricsPanel(
                         items = lines,
                         key = { index, line -> "${line.timeMs}:$index" },
                     ) { index, line ->
-                        val height = estimatedHeight(index)
+                        val interlude = interludeByLyricIndex[index]
+                        val showsInterlude = MeloXSettingsRuntime.lyricInterludeCountdownEnabled &&
+                            interlude != null && revealedInterludes[interlude.startTimeMs] == true
+                        val interludeHeightPx = if (showsInterlude) with(density) { 56.dp.toPx() } else 0f
+                        val height = estimatedHeight(index) + interludeHeightPx
                         val visualOffset = currentMovementOffset(index)
                         val frameMinY = visibleItemsByIndex[index + 1]?.offset?.toFloat()
                             ?: focusAnchorY + (index - visualFocusIndex) * lyricStridePx
@@ -738,7 +753,16 @@ private fun MeloXAppleMusicLyricsPanel(
                         )
                         val rowAlpha = (distanceOpacity * emphasis * reveal).coerceIn(0f, 1f)
                         val scale = 1f +
-                            (UpstreamLyrics.CURRENT_LINE_SCALE - 1f) * scaleProgress[index].value
+                            (MeloXSettingsRuntime.lyricFocusScale - 1f) * scaleProgress[index].value
+
+                        if (showsInterlude && interlude != null) {
+                            MeloXLyricInterludeCountdown(
+                                interlude = interlude,
+                                playbackTimeProvider = { renderedPositionState.longValue },
+                                reduceMotion = MeloXSettingsRuntime.lyricReduceMotion,
+                                modifier = Modifier.padding(bottom = 8.dp),
+                            )
+                        }
 
                         MeloXUpstreamLyricLine(
                             line = line,
@@ -787,19 +811,6 @@ private fun MeloXAppleMusicLyricsPanel(
                     }
                 }
 
-                if (MeloXSettingsRuntime.lyricInterludeCountdownEnabled && activeInterludeIndex in interludes.indices) {
-                    MeloXLyricInterludeCountdown(
-                        interlude = interludes[activeInterludeIndex],
-                        playbackTimeProvider = { renderedPositionState.longValue },
-                        reduceMotion = MeloXSettingsRuntime.lyricReduceMotion,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(
-                                start = 8.dp,
-                                top = with(density) { (topPaddingPx - 24.dp.toPx()).coerceAtLeast(0f).toDp() },
-                            ),
-                    )
-                }
             }
         }
     }
@@ -957,10 +968,16 @@ private fun MeloXRubyLyricText(
                     maxLines = 1,
                 )
                 if (!unit.romanizationText.isNullOrBlank()) {
+                    val originalUnits = unit.originalText.codePointCount(0, unit.originalText.length).coerceAtLeast(1)
+                    val rubyUnits = unit.romanizationText.codePointCount(0, unit.romanizationText.length).coerceAtLeast(1)
+                    // Match upstream ruby cells: a long phonetic annotation may
+                    // compress inside its base glyph cell instead of forcing an
+                    // otherwise short lyric unit onto its own wrapped row.
+                    val rubyCompression = (originalUnits * 1.85f / rubyUnits).coerceIn(.68f, 1f)
                     Text(
                         text = unit.romanizationText,
                         color = Color.White.copy(alpha = UpstreamLyrics.ANNOTATION_OPACITY),
-                        fontSize = rubySize.sp,
+                        fontSize = (rubySize * rubyCompression).sp,
                         lineHeight = (rubySize * 1.2f).sp,
                         fontWeight = FontWeight.Black,
                         maxLines = 1,
@@ -982,6 +999,7 @@ private data class MeloXLyricInterlude(
     val startTimeMs: Long,
     val countdownEndTimeMs: Long,
     val followingLyricTimeMs: Long,
+    val followingLyricIndex: Int,
 )
 
 private fun sourceLyricInterludes(lines: List<LyricLine>): List<MeloXLyricInterlude> = buildList {
@@ -997,7 +1015,7 @@ private fun sourceLyricInterludes(lines: List<LyricLine>): List<MeloXLyricInterl
         }
         val countdownEnd = (line.timeMs - 250L).coerceAtLeast(start)
         if (countdownEnd - start >= 4_000L) {
-            add(MeloXLyricInterlude(start, countdownEnd, line.timeMs))
+            add(MeloXLyricInterlude(start, countdownEnd, line.timeMs, index))
         }
     }
 }
@@ -1149,7 +1167,7 @@ private fun MeloXGlyphLyricText(
                             layout,
                             color = Color.White.copy(
                                 alpha = 1f -
-                                    (1f - UpstreamLyrics.UNPLAYED_OPACITY) * effectsStrength,
+                                    (1f - MeloXSettingsRuntime.lyricInactiveOpacity) * effectsStrength,
                             ),
                         )
 
@@ -1206,7 +1224,7 @@ private fun MeloXGlyphLyricText(
                         // Keep the upstream long-tone envelope without relying on
                         // vector glyph extraction. Two low-opacity passes provide
                         // the bloom while the final pass is the actual played text.
-                        val glow = fx.glow * effectsStrength
+                        val glow = fx.glow * effectsStrength * MeloXSettingsRuntime.lyricGlowStrength
                         if (glow > 0.001f) {
                             drawRevealed((glow * .10f).coerceIn(0f, .24f))
                             drawRevealed((glow * .18f).coerceIn(0f, .36f))
@@ -1269,7 +1287,8 @@ private fun sourceGlyphVisuals(
                 )
             } else 0f
             val scale = if (reduceMotion) 1f else
-                1f + (UpstreamLyrics.LONG_TONE_MAX_SCALE - 1f) * envelope * expansionAmount
+                1f + (UpstreamLyrics.LONG_TONE_MAX_SCALE - 1f) * envelope * expansionAmount *
+                    MeloXSettingsRuntime.lyricLongToneStrength
             val glowAmount = if (longTone) .32f + .38f * sourceSmootherStep(
                 (syllableDuration - UpstreamLyrics.LONG_TONE_THRESHOLD_MS) /
                     (2800f - UpstreamLyrics.LONG_TONE_THRESHOLD_MS),
@@ -1360,16 +1379,17 @@ private fun sourceTimedAnnotatedString(line: LyricLine, playbackTimeMs: Long) =
                     )
                 } else 0f
                 val glyphScale = 1f +
-                    (UpstreamLyrics.LONG_TONE_MAX_SCALE - 1f) * longEnvelope * expansionAmount
+                    (UpstreamLyrics.LONG_TONE_MAX_SCALE - 1f) * longEnvelope * expansionAmount *
+                        MeloXSettingsRuntime.lyricLongToneStrength
                 val glowAmount = if (isLongTone) {
                     0.32f + 0.38f * sourceSmootherStep(
                         (syllableDuration - UpstreamLyrics.LONG_TONE_THRESHOLD_MS) /
                             (2800f - UpstreamLyrics.LONG_TONE_THRESHOLD_MS),
                     )
                 } else 0f
-                val glowStrength = longEnvelope * glowAmount
-                val opacity = UpstreamLyrics.UNPLAYED_OPACITY +
-                    (1f - UpstreamLyrics.UNPLAYED_OPACITY) * revealProgress
+                val glowStrength = longEnvelope * glowAmount * MeloXSettingsRuntime.lyricGlowStrength
+                val opacity = MeloXSettingsRuntime.lyricInactiveOpacity +
+                    (1f - MeloXSettingsRuntime.lyricInactiveOpacity) * revealProgress
 
                 val startOffset = length
                 append(character)

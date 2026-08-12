@@ -68,6 +68,8 @@ class MeloXPlaybackService : MediaSessionService() {
     private var mixAnalysisJob: Job? = null
     private var mixAnalysisSourceId: String? = null
     private var analyzedMixPlan: MeloXAutoMixPlan? = null
+    private var reactiveAnalysisJob: Job? = null
+    private var reactiveAnalysisMediaId: String? = null
     private var preparedMixSourceId: String? = null
     private var mixStartedAt = 0L
     private var mixDurationMs = 0L
@@ -114,6 +116,10 @@ class MeloXPlaybackService : MediaSessionService() {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             recommendationSeed = null
             val transitionedId = mediaItem?.mediaId?.toLongOrNull()
+            reactiveAnalysisJob?.cancel()
+            reactiveAnalysisJob = null
+            reactiveAnalysisMediaId = null
+            MeloXAudioReactiveRuntime.select(mediaItem?.mediaId)
             mediaItem?.let(downloadStore::recordPlayback)
             if (transitionedId != systemLyricsSongId) resetSystemLyrics(mediaItem)
             val active = player
@@ -152,8 +158,30 @@ class MeloXPlaybackService : MediaSessionService() {
                 maybeRunAutoMix(active)
                 maybeUpdateSystemLyrics(active)
                 equalizerController.applySettings()
+                updateAudioReactiveVisuals(active)
             }
             handler.postDelayed(this, 100L)
+        }
+    }
+
+    private fun updateAudioReactiveVisuals(active: ExoPlayer) {
+        val item = active.currentMediaItem ?: return
+        MeloXAudioReactiveRuntime.publish(item.mediaId, active.currentPosition, active.isPlaying)
+        if (!MeloXSettingsPreferences.boolean(this, "player_flowing_backdrop", true)) return
+        if (reactiveAnalysisMediaId == item.mediaId || reactiveAnalysisJob?.isActive == true) return
+        val songId = item.mediaId.toLongOrNull() ?: return
+        reactiveAnalysisMediaId = item.mediaId
+        reactiveAnalysisJob = serviceScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val quality = MusicQualityPreferences.read(this@MeloXPlaybackService)
+                    val uri = playbackResolver.resolveSongUri(songId, quality)
+                    autoMixAnalyzer.analyze(songId, uri)
+                }
+            }
+            result.onSuccess { MeloXAudioReactiveRuntime.attach(item.mediaId, it) }
+                .onFailure { Log.w(TAG, "Audio-reactive analysis unavailable for ${item.mediaId}", it) }
+            reactiveAnalysisJob = null
         }
     }
 
@@ -717,6 +745,7 @@ class MeloXPlaybackService : MediaSessionService() {
         serviceScope.cancel()
         cancelPreparedMix(releaseStandby = true)
         equalizerController.release()
+        MeloXAudioReactiveRuntime.clear()
         mediaSession?.release()
         mediaSession = null
         player?.removeListener(playerListener)

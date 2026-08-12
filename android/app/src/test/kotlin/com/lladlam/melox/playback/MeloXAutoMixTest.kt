@@ -52,6 +52,21 @@ class MeloXAutoMixTest {
         assertTrue(plan.incomingStartRate in .92f..1.08f)
     }
 
+    @Test
+    fun audioReactivePulsePeaksOnBeatAndFallsOutsideWindow() {
+        val beats = longArrayOf(1_000L, 2_000L)
+        assertEquals(1f, MeloXAudioReactiveRuntime.pulseAt(beats, 1_000L, 200L), .001f)
+        assertEquals(.5f, MeloXAudioReactiveRuntime.pulseAt(beats, 1_100L, 200L), .001f)
+        assertEquals(0f, MeloXAudioReactiveRuntime.pulseAt(beats, 1_300L, 200L), .001f)
+    }
+
+    @Test
+    fun audioReactivePulseUsesNearestEventOnEitherSide() {
+        val beats = longArrayOf(1_000L, 2_000L)
+        assertEquals(.75f, MeloXAudioReactiveRuntime.pulseAt(beats, 1_950L, 200L), .001f)
+        assertEquals(0f, MeloXAudioReactiveRuntime.pulseAt(longArrayOf(), 1_000L, 200L), .001f)
+    }
+
     private fun analysis(durationMs: Long, bpm: Double, rising: Boolean): MeloXAutoMixTrackAnalysis {
         val frames = (0L..durationMs step 250L).map { time ->
             val normalized = time.toFloat() / durationMs

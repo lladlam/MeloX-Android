@@ -61,6 +61,14 @@ object MeloXSettingsRuntime {
         internal set
     var lyricBlurStrength by mutableStateOf(1f)
         internal set
+    var lyricFocusScale by mutableStateOf(1.02f)
+        internal set
+    var lyricInactiveOpacity by mutableStateOf(.3f)
+        internal set
+    var lyricGlowStrength by mutableStateOf(1f)
+        internal set
+    var lyricLongToneStrength by mutableStateOf(1f)
+        internal set
     var lyricsStyle by mutableStateOf(MeloXLyricsStyle.AppleMusic)
         internal set
     var textPVStyle by mutableStateOf(MeloXTextPVStyle.Dynamic)
@@ -129,6 +137,10 @@ object MeloXSettingsRuntime {
         lyricFontScale = MeloXSettingsPreferences.float(app, "lyrics_font_scale", 1f).coerceIn(.8f, 1.25f)
         lyricSpacingScale = MeloXSettingsPreferences.float(app, "lyrics_spacing_scale", 1f).coerceIn(.7f, 1.5f)
         lyricBlurStrength = MeloXSettingsPreferences.float(app, "lyrics_blur_strength", 1f).coerceIn(0f, 1.5f)
+        lyricFocusScale = MeloXSettingsPreferences.float(app, "lyrics_focus_scale", 1.02f).coerceIn(1f, 1.08f)
+        lyricInactiveOpacity = MeloXSettingsPreferences.float(app, "lyrics_inactive_opacity", .3f).coerceIn(.15f, .65f)
+        lyricGlowStrength = MeloXSettingsPreferences.float(app, "lyrics_glow_strength", 1f).coerceIn(0f, 1.5f)
+        lyricLongToneStrength = MeloXSettingsPreferences.float(app, "lyrics_long_tone_strength", 1f).coerceIn(0f, 1.5f)
         lyricsStyle = runCatching {
             MeloXLyricsStyle.valueOf(MeloXSettingsPreferences.string(app, "lyrics_style", MeloXLyricsStyle.AppleMusic.name))
         }.getOrDefault(MeloXLyricsStyle.AppleMusic)
@@ -231,6 +243,10 @@ object MeloXSettingsPreferences {
             "lyrics_font_scale" -> MeloXSettingsRuntime.lyricFontScale = value.coerceIn(.8f, 1.25f)
             "lyrics_spacing_scale" -> MeloXSettingsRuntime.lyricSpacingScale = value.coerceIn(.7f, 1.5f)
             "lyrics_blur_strength" -> MeloXSettingsRuntime.lyricBlurStrength = value.coerceIn(0f, 1.5f)
+            "lyrics_focus_scale" -> MeloXSettingsRuntime.lyricFocusScale = value.coerceIn(1f, 1.08f)
+            "lyrics_inactive_opacity" -> MeloXSettingsRuntime.lyricInactiveOpacity = value.coerceIn(.15f, .65f)
+            "lyrics_glow_strength" -> MeloXSettingsRuntime.lyricGlowStrength = value.coerceIn(0f, 1.5f)
+            "lyrics_long_tone_strength" -> MeloXSettingsRuntime.lyricLongToneStrength = value.coerceIn(0f, 1.5f)
         }
     }
 
