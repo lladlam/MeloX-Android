@@ -78,6 +78,22 @@ data class MeloXPodcastPage<T>(
     val totalCount: Int = values.size,
 )
 
+data class MeloXCloudSong(
+    val id: Long,
+    val song: SearchSong,
+    val fileSize: Long = 0L,
+    val bitrate: Int = 0,
+    val addTimeMs: Long = 0L,
+)
+
+data class MeloXCloudPage(
+    val values: List<MeloXCloudSong>,
+    val totalCount: Int,
+    val usedBytes: Long,
+    val maxBytes: Long,
+    val hasMore: Boolean,
+)
+
 /** Search routes mirrored from upstream MeloX SearchView/NeteaseAPI. */
 class NeteaseUniversalSearchClient(
     private val cookieProvider: () -> String,
@@ -147,6 +163,43 @@ class NeteaseUniversalSearchClient(
         val arr = JSONArray().put(JSONObject().put("id", songId))
         val result = eapi("/api/v3/song/detail", JSONObject().put("c", arr.toString()))
         parseSong(result.optJSONArray("songs")?.optJSONObject(0))
+    }
+
+    suspend fun cloudSongs(limit: Int = 200, offset: Int = 0): MeloXCloudPage = withContext(Dispatchers.IO) {
+        val response = eapi(
+            "/api/v1/cloud/get",
+            JSONObject().put("limit", limit.coerceIn(1, 200)).put("offset", offset.coerceAtLeast(0)),
+        )
+        val data = response.optJSONArray("data") ?: JSONArray()
+        val values = buildList {
+            for (index in 0 until data.length()) {
+                val value = data.optJSONObject(index) ?: continue
+                val simple = value.optJSONObject("simpleSong")
+                val parsed = parseSong(simple) ?: continue
+                add(
+                    MeloXCloudSong(
+                        id = value.optLong("songId", parsed.id),
+                        song = parsed,
+                        fileSize = value.optLong("fileSize", 0L),
+                        bitrate = value.optInt("bitrate", 0),
+                        addTimeMs = value.optLong("addTime", 0L),
+                    ),
+                )
+            }
+        }
+        val total = response.optInt("count", offset + values.size)
+        MeloXCloudPage(
+            values = values,
+            totalCount = total,
+            usedBytes = response.optLong("size", 0L),
+            maxBytes = response.optLong("maxSize", 0L),
+            hasMore = response.optBoolean("hasMore", offset + values.size < total),
+        )
+    }
+
+    suspend fun deleteCloudSong(songId: Long) = withContext(Dispatchers.IO) {
+        eapi("/api/cloud/del", JSONObject().put("songIds", JSONArray().put(songId)))
+        Unit
     }
 
     suspend fun podcastCategories(): List<MeloXPodcastCategory> = withContext(Dispatchers.IO) {

@@ -124,9 +124,13 @@ fun MeloXApp(
     onClipboardLinkConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current.applicationContext
-    val initialTab = if (MeloXSettingsRuntime.rememberLastTab) runCatching {
-        AppTab.valueOf(MeloXSettingsPreferences.string(context, "general_last_tab", AppTab.Home.name))
-    }.getOrDefault(AppTab.Home) else AppTab.Home
+    val initialTab = runCatching {
+        AppTab.valueOf(
+            if (MeloXSettingsRuntime.rememberLastTab) {
+                MeloXSettingsPreferences.string(context, "general_last_tab", MeloXSettingsRuntime.defaultTab)
+            } else MeloXSettingsRuntime.defaultTab,
+        )
+    }.getOrDefault(AppTab.Home)
     var selectedTab by remember { mutableStateOf(initialTab) }
     var showNeteaseLogin by remember { mutableStateOf(false) }
     var loginReturnTab by remember { mutableStateOf(AppTab.Settings) }
@@ -238,12 +242,16 @@ fun MeloXApp(
         }
     }
 
-    val visibleRootTabs = buildList {
-        if (MeloXSettingsRuntime.homeTabEnabled) add(AppTab.Home)
-        if (MeloXSettingsRuntime.exploreTabEnabled) add(AppTab.Explore)
-        if (MeloXSettingsRuntime.libraryTabEnabled) add(AppTab.Library)
-        add(AppTab.Settings)
-    }
+    val visibleRootTabs = MeloXSettingsRuntime.tabOrder.mapNotNull { runCatching { AppTab.valueOf(it) }.getOrNull() }
+        .filter {
+            when (it) {
+                AppTab.Home -> MeloXSettingsRuntime.homeTabEnabled
+                AppTab.Explore -> MeloXSettingsRuntime.exploreTabEnabled
+                AppTab.Library -> MeloXSettingsRuntime.libraryTabEnabled
+                AppTab.Settings -> true
+                AppTab.Search -> false
+            }
+        }.let { if (AppTab.Settings in it) it else it + AppTab.Settings }
     LaunchedEffect(visibleRootTabs, selectedTab) {
         if (selectedTab !in visibleRootTabs && selectedTab != AppTab.Search) {
             selectedTab = visibleRootTabs.first()

@@ -89,6 +89,14 @@ object MeloXSettingsRuntime {
         internal set
     var rememberLastTab by mutableStateOf(true)
         internal set
+    var tabOrder by mutableStateOf(listOf("Home", "Explore", "Library", "Settings"))
+        internal set
+    var defaultTab by mutableStateOf("Home")
+        internal set
+    var rememberLibraryPage by mutableStateOf(true)
+        internal set
+    var defaultLibraryPage by mutableStateOf("Songs")
+        internal set
     var downloadLyricsEnabled by mutableStateOf(true)
         internal set
     var musicArea by mutableStateOf("全部")
@@ -155,6 +163,12 @@ object MeloXSettingsRuntime {
         exploreTabEnabled = MeloXSettingsPreferences.boolean(app, "tab_explore", true)
         libraryTabEnabled = MeloXSettingsPreferences.boolean(app, "tab_library", true)
         rememberLastTab = MeloXSettingsPreferences.boolean(app, "general_remember_tab", true)
+        tabOrder = MeloXSettingsPreferences.string(app, "tab_order", "Home,Explore,Library,Settings")
+            .split(',').filter { it in setOf("Home", "Explore", "Library", "Settings") }.distinct()
+            .let { order -> (order + listOf("Home", "Explore", "Library", "Settings")).distinct() }
+        defaultTab = MeloXSettingsPreferences.string(app, "general_default_tab", "Home")
+        rememberLibraryPage = MeloXSettingsPreferences.boolean(app, "library_remember_page", true)
+        defaultLibraryPage = MeloXSettingsPreferences.string(app, "library_default_page", "Songs")
         downloadLyricsEnabled = MeloXSettingsPreferences.boolean(app, "download_lyrics", true)
         musicArea = MeloXSettingsPreferences.string(app, "music_area", "全部")
         showPlaylistPlayCount = MeloXSettingsPreferences.boolean(app, "content_playlist_play_count", true)
@@ -226,6 +240,7 @@ object MeloXSettingsPreferences {
             "tab_explore" -> MeloXSettingsRuntime.exploreTabEnabled = value
             "tab_library" -> MeloXSettingsRuntime.libraryTabEnabled = value
             "general_remember_tab" -> MeloXSettingsRuntime.rememberLastTab = value
+            "library_remember_page" -> MeloXSettingsRuntime.rememberLibraryPage = value
             "download_lyrics" -> MeloXSettingsRuntime.downloadLyricsEnabled = value
             "content_playlist_play_count" -> MeloXSettingsRuntime.showPlaylistPlayCount = value
             "content_high_quality_playlist" -> MeloXSettingsRuntime.showHighQualityPlaylists = value
@@ -264,6 +279,11 @@ object MeloXSettingsPreferences {
                 MeloXThemeMode.valueOf(value)
             }.getOrDefault(MeloXThemeMode.System)
             "music_area" -> MeloXSettingsRuntime.musicArea = value
+            "tab_order" -> MeloXSettingsRuntime.tabOrder = value.split(',')
+                .filter { it in setOf("Home", "Explore", "Library", "Settings") }.distinct()
+                .let { order -> (order + listOf("Home", "Explore", "Library", "Settings")).distinct() }
+            "general_default_tab" -> MeloXSettingsRuntime.defaultTab = value
+            "library_default_page" -> MeloXSettingsRuntime.defaultLibraryPage = value
             "lyrics_romanization_display_mode" -> MeloXSettingsRuntime.lyricRomanizationDisplayMode = runCatching {
                 MeloXLyricAnnotationDisplayMode.valueOf(value)
             }.getOrDefault(MeloXLyricAnnotationDisplayMode.FocusedLine)

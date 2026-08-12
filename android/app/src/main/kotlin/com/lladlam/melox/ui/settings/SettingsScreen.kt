@@ -843,7 +843,7 @@ private fun ContentFeatureSettings(context: android.content.Context) {
     SettingsToggleRow(context, "最近播放", "feature_history", true)
     SettingsInfoCard("下载", "已启用 · 更多菜单可下载，播放优先本地文件")
     Spacer(Modifier.height(10.dp))
-    SettingsInfoCard("云盘", "尚未迁移，暂不显示无效开关")
+    SettingsInfoCard("云盘", "已启用 · 音乐库可读取、搜索、播放和删除网易云云盘歌曲")
 }
 
 @Composable
@@ -960,7 +960,40 @@ private fun TabLayoutSettings(context: android.content.Context) {
     SettingsToggleRow(context, "首页", "tab_home", true)
     SettingsToggleRow(context, "发现", "tab_explore", true)
     SettingsToggleRow(context, "音乐库", "tab_library", true)
-    SettingsInfoCard("标签栏", "页面开关立即生效；设置与搜索始终保留")
+    Spacer(Modifier.height(14.dp))
+    var order by remember { mutableStateOf(MeloXSettingsRuntime.tabOrder) }
+    Text("标签栏顺序", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f))
+    Spacer(Modifier.height(8.dp))
+    SettingsGlassGroup {
+        order.forEachIndexed { index, page ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(when (page) { "Home" -> "首页"; "Explore" -> "发现"; "Library" -> "音乐库"; else -> "设置" }, Modifier.weight(1f))
+                Text("↑", modifier = Modifier.clickable(enabled = index > 0) {
+                    order = order.toMutableList().apply { add(index - 1, removeAt(index)) }
+                    MeloXSettingsPreferences.setString(context, "tab_order", order.joinToString(","))
+                }.padding(10.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = if (index > 0) 1f else .25f))
+                Text("↓", modifier = Modifier.clickable(enabled = index < order.lastIndex) {
+                    order = order.toMutableList().apply { add(index + 1, removeAt(index)) }
+                    MeloXSettingsPreferences.setString(context, "tab_order", order.joinToString(","))
+                }.padding(10.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = if (index < order.lastIndex) 1f else .25f))
+            }
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    SettingsInfoCard("标签栏", "页面开关和排序立即生效；设置与搜索始终保留")
+    Spacer(Modifier.height(16.dp))
+    SettingsToggleRow(context, "记住音乐库子页面", "library_remember_page", true)
+    var libraryPage by remember { mutableStateOf(MeloXSettingsRuntime.defaultLibraryPage) }
+    Text("音乐库默认页", modifier = Modifier.padding(top = 12.dp), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f))
+    Spacer(Modifier.height(8.dp))
+    SettingsGlassGroup {
+        listOf("Songs" to "歌曲", "Playlists" to "歌单", "Podcasts" to "播客", "Cloud" to "云盘", "History" to "最近播放", "Downloads" to "下载").forEach { (value, title) ->
+            SettingsChoiceRow(title, libraryPage == value) {
+                libraryPage = value
+                MeloXSettingsPreferences.setString(context, "library_default_page", value)
+            }
+        }
+    }
     Text("搜索保持为独立的右侧 Liquid Glass 按钮。", modifier = Modifier.padding(top = 12.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .46f))
 }
 
@@ -983,6 +1016,17 @@ private fun GeneralSettings(context: android.content.Context) {
     }
     Spacer(Modifier.height(20.dp))
     SettingsToggleRow(context, "记住上次标签页", "general_remember_tab", true)
+    var defaultTab by remember { mutableStateOf(MeloXSettingsRuntime.defaultTab) }
+    Text("默认启动页", modifier = Modifier.padding(top = 14.dp), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f))
+    Spacer(Modifier.height(8.dp))
+    SettingsGlassGroup {
+        listOf("Home" to "首页", "Explore" to "发现", "Library" to "音乐库", "Settings" to "设置").forEach { (value, title) ->
+            SettingsChoiceRow(title, defaultTab == value) {
+                defaultTab = value
+                MeloXSettingsPreferences.setString(context, "general_default_tab", value)
+            }
+        }
+    }
     SettingsToggleRow(context, "识别剪贴板中的网易云链接", "general_clipboard_links", true, "每次回到前台只读取一次；识别歌曲或歌单后会先询问是否打开。")
 }
 

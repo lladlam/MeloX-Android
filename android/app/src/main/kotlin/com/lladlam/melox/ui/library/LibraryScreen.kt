@@ -99,6 +99,7 @@ import com.lladlam.melox.ui.player.MeloXFlowingLightBackdrop
 import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.podcast.MeloXPodcastScreen
+import com.lladlam.melox.ui.cloud.MeloXCloudMusicScreen
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.launch
@@ -108,6 +109,7 @@ private enum class MeloXLibraryPage(val title: String) {
     Songs("歌曲"),
     Playlists("歌单"),
     Podcasts("播客"),
+    Cloud("云盘"),
     History("最近播放"),
     Downloads("下载"),
 }
@@ -131,7 +133,13 @@ fun LibraryScreen(
     val cache = remember(appContext) { NeteaseLibraryCache(appContext) }
     val downloadStore = remember(appContext) { MeloXDownloadStore.get(appContext) }
 
-    var selectedPage by remember { mutableStateOf(MeloXLibraryPage.Songs) }
+    val initialLibraryPage = remember {
+        val name = if (MeloXSettingsRuntime.rememberLibraryPage) {
+            MeloXSettingsPreferences.string(appContext, "library_last_page", MeloXSettingsRuntime.defaultLibraryPage)
+        } else MeloXSettingsRuntime.defaultLibraryPage
+        runCatching { MeloXLibraryPage.valueOf(name) }.getOrDefault(MeloXLibraryPage.Songs)
+    }
+    var selectedPage by remember { mutableStateOf(initialLibraryPage) }
     var selectedPlaylist by remember(session.cookie) { mutableStateOf<NeteasePlaylistSummary?>(null) }
     var snapshot by remember(session.cookie) { mutableStateOf<NeteaseLibrarySnapshot?>(null) }
     var loading by remember(session.cookie) { mutableStateOf(false) }
@@ -158,6 +166,12 @@ fun LibraryScreen(
         cache.loadSnapshot(userId)?.let { snapshot = it }
         if (NeteaseLibraryCache.beginLibraryColdStartRefresh(userId)) {
             refreshLibrary()
+        }
+    }
+
+    LaunchedEffect(selectedPage) {
+        if (MeloXSettingsRuntime.rememberLibraryPage) {
+            MeloXSettingsPreferences.setString(appContext, "library_last_page", selectedPage.name)
         }
     }
 
@@ -298,6 +312,8 @@ fun LibraryScreen(
                             )
 
                             MeloXLibraryPage.Podcasts -> MeloXPodcastScreen(subscriptionsOnly = true)
+
+                            MeloXLibraryPage.Cloud -> MeloXCloudMusicScreen()
 
                             MeloXLibraryPage.History -> MeloXLibrarySongsPage(
                                 songs = data.recentSongs,
