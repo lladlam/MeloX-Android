@@ -20,6 +20,7 @@ enum class MeloXTextPVStyle {
 enum class MeloXVolumeControlMode { System, Player }
 enum class MeloXSecondaryLyricMode { Auto, Translation, Romanization, NextLine, Hidden }
 enum class MeloXSystemLyricTitleMode { LyricFirst, SongFirst }
+enum class MeloXScreenAwakeMode { Disabled, Player, Lyrics, HiddenLyricsInterface }
 enum class MeloXLyricsGroupingMode { Word, Character }
 enum class MeloXLyricsFontWeight(val composeWeight: FontWeight) {
     Light(FontWeight.Light), Regular(FontWeight.Normal), Medium(FontWeight.Medium),
@@ -34,11 +35,17 @@ object MeloXSettingsRuntime {
         internal set
     var listeningHistoryEnabled by mutableStateOf(true)
         internal set
+    var downloadsEnabled by mutableStateOf(true)
+        internal set
+    var cloudMusicEnabled by mutableStateOf(true)
+        internal set
     var flowingBackdropEnabled by mutableStateOf(true)
         internal set
     var artworkMotionEnabled by mutableStateOf(true)
         internal set
     var keepScreenOn by mutableStateOf(false)
+        internal set
+    var screenAwakeMode by mutableStateOf(MeloXScreenAwakeMode.Disabled)
         internal set
     var showLyricTranslation by mutableStateOf(true)
         internal set
@@ -174,9 +181,20 @@ object MeloXSettingsRuntime {
         }.getOrDefault(MeloXThemeMode.System)
         podcastsEnabled = MeloXSettingsPreferences.boolean(app, "feature_podcasts", true)
         listeningHistoryEnabled = MeloXSettingsPreferences.boolean(app, "feature_history", true)
+        downloadsEnabled = MeloXSettingsPreferences.boolean(app, "feature_downloads", true)
+        cloudMusicEnabled = MeloXSettingsPreferences.boolean(app, "feature_cloud_music", true)
         flowingBackdropEnabled = MeloXSettingsPreferences.boolean(app, "player_flowing_backdrop", true)
         artworkMotionEnabled = MeloXSettingsPreferences.boolean(app, "player_artwork_motion", true)
         keepScreenOn = MeloXSettingsPreferences.boolean(app, "player_keep_screen_on", false)
+        screenAwakeMode = runCatching {
+            MeloXScreenAwakeMode.valueOf(
+                MeloXSettingsPreferences.string(
+                    app,
+                    "player_screen_awake_mode",
+                    if (keepScreenOn) MeloXScreenAwakeMode.Player.name else MeloXScreenAwakeMode.Disabled.name,
+                ),
+            )
+        }.getOrDefault(MeloXScreenAwakeMode.Disabled)
         showLyricTranslation = MeloXSettingsPreferences.boolean(app, "lyrics_translation", true)
         showLyricRomanization = MeloXSettingsPreferences.boolean(app, "lyrics_romanization", true)
         lyricWordByWordEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_word_by_word", true)
@@ -304,6 +322,8 @@ object MeloXSettingsPreferences {
         when (key) {
             "feature_podcasts" -> MeloXSettingsRuntime.podcastsEnabled = value
             "feature_history" -> MeloXSettingsRuntime.listeningHistoryEnabled = value
+            "feature_downloads" -> MeloXSettingsRuntime.downloadsEnabled = value
+            "feature_cloud_music" -> MeloXSettingsRuntime.cloudMusicEnabled = value
             "player_flowing_backdrop" -> MeloXSettingsRuntime.flowingBackdropEnabled = value
             "player_artwork_motion" -> MeloXSettingsRuntime.artworkMotionEnabled = value
             "player_keep_screen_on" -> MeloXSettingsRuntime.keepScreenOn = value
@@ -414,6 +434,9 @@ object MeloXSettingsPreferences {
             "playback_volume_mode" -> MeloXSettingsRuntime.volumeControlMode = runCatching {
                 MeloXVolumeControlMode.valueOf(value)
             }.getOrDefault(MeloXVolumeControlMode.System)
+            "player_screen_awake_mode" -> MeloXSettingsRuntime.screenAwakeMode = runCatching {
+                MeloXScreenAwakeMode.valueOf(value)
+            }.getOrDefault(MeloXScreenAwakeMode.Disabled)
         }
     }
 

@@ -80,6 +80,7 @@ internal fun MeloXIOSNowPlayingScene(
     showLandscapeSkyline: Boolean = false,
     onShowLandscapeSkyline: () -> Unit = {},
     onHideLandscapeSkyline: () -> Unit = {},
+    onLyricsInterfaceHiddenChange: (Boolean) -> Unit = {},
     grabberDragModifier: Modifier = Modifier,
 ) {
     val configuration = LocalConfiguration.current
@@ -105,6 +106,12 @@ internal fun MeloXIOSNowPlayingScene(
     val queueVisible = page == MeloXNowPlayingPage.Queue
     var showsLyricsControls by remember(state.mediaId) { mutableStateOf(true) }
     var lyricsControlsActivityGeneration by remember(state.mediaId) { mutableIntStateOf(0) }
+
+    LaunchedEffect(page, showsLyricsControls) {
+        onLyricsInterfaceHiddenChange(
+            page == MeloXNowPlayingPage.Lyrics && !showsLyricsControls,
+        )
+    }
 
     fun setLyricsControlsVisible(visible: Boolean) {
         showsLyricsControls = visible

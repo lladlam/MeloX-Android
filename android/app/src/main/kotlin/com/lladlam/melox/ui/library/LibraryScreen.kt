@@ -115,6 +115,14 @@ private enum class MeloXLibraryPage(val title: String) {
     Downloads("下载"),
 }
 
+private fun MeloXLibraryPage.isEnabled(): Boolean = when (this) {
+    MeloXLibraryPage.Podcasts -> MeloXSettingsRuntime.podcastsEnabled
+    MeloXLibraryPage.History -> MeloXSettingsRuntime.listeningHistoryEnabled
+    MeloXLibraryPage.Cloud -> MeloXSettingsRuntime.cloudMusicEnabled
+    MeloXLibraryPage.Downloads -> MeloXSettingsRuntime.downloadsEnabled
+    else -> true
+}
+
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun LibraryScreen(
@@ -138,7 +146,10 @@ fun LibraryScreen(
         val name = if (MeloXSettingsRuntime.rememberLibraryPage) {
             MeloXSettingsPreferences.string(appContext, "library_last_page", MeloXSettingsRuntime.defaultLibraryPage)
         } else MeloXSettingsRuntime.defaultLibraryPage
-        runCatching { MeloXLibraryPage.valueOf(name) }.getOrDefault(MeloXLibraryPage.Songs)
+        runCatching { MeloXLibraryPage.valueOf(name) }
+            .getOrDefault(MeloXLibraryPage.Songs)
+            .takeIf { it.isEnabled() }
+            ?: MeloXLibraryPage.Songs
     }
     var selectedPage by remember { mutableStateOf(initialLibraryPage) }
     var selectedPlaylist by remember(session.cookie) { mutableStateOf<NeteasePlaylistSummary?>(null) }
@@ -174,6 +185,15 @@ fun LibraryScreen(
         if (MeloXSettingsRuntime.rememberLibraryPage) {
             MeloXSettingsPreferences.setString(appContext, "library_last_page", selectedPage.name)
         }
+    }
+
+    LaunchedEffect(
+        MeloXSettingsRuntime.podcastsEnabled,
+        MeloXSettingsRuntime.listeningHistoryEnabled,
+        MeloXSettingsRuntime.cloudMusicEnabled,
+        MeloXSettingsRuntime.downloadsEnabled,
+    ) {
+        if (!selectedPage.isEnabled()) selectedPage = MeloXLibraryPage.Songs
     }
 
     BackHandler(enabled = playlistBackEnabled && selectedPlaylist != null) {
@@ -742,10 +762,7 @@ private fun MeloXLibrarySegmentedPicker(
     onSelected: (MeloXLibraryPage) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val pages = MeloXLibraryPage.entries.filter {
-        (it != MeloXLibraryPage.Podcasts || MeloXSettingsRuntime.podcastsEnabled) &&
-            (it != MeloXLibraryPage.History || MeloXSettingsRuntime.listeningHistoryEnabled)
-    }
+    val pages = MeloXLibraryPage.entries.filter { it.isEnabled() }
     val panelShape = RoundedCornerShape(16.dp)
     val lensShape = RoundedCornerShape(15.dp)
     val panelBackdrop = rememberLayerBackdrop()

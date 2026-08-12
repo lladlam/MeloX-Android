@@ -72,6 +72,7 @@ import com.lladlam.melox.core.audio.MusicQualityRuntime
 import com.lladlam.melox.core.audio.NeteaseQualityClient
 import com.lladlam.melox.core.audio.SongAudioAvailability
 import com.lladlam.melox.ui.glass.meloXLiquidButton
+import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.playback.PlaybackCommands
 import kotlinx.coroutines.delay
 import kotlin.math.roundToLong
@@ -94,10 +95,11 @@ fun MeloXIOSNowPlayingV2(
             .background(if (drawBackdrop) Color.Black else Color.Transparent),
     ) {
         if (drawBackdrop) {
-            MeloXFlowingLightBackdrop(
-                artworkUrl = state.artworkUrl,
-                isPlaying = state.isPlaying,
-            )
+            if (MeloXSettingsRuntime.flowingBackdropEnabled) {
+                MeloXFlowingLightBackdrop(artworkUrl = state.artworkUrl, isPlaying = state.isPlaying)
+            } else {
+                MeloXBlurredArtworkBackdrop(state.artworkUrl)
+            }
         }
 
         Column(

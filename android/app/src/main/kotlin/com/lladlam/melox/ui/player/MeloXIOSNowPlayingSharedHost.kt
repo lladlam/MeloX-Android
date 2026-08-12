@@ -61,6 +61,7 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.lladlam.melox.ui.glass.LocalMeloXBackdrop
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
+import com.lladlam.melox.ui.settings.MeloXScreenAwakeMode
 import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
 import com.lladlam.melox.core.network.MeloXSearchKind
 import kotlinx.coroutines.CoroutineStart
@@ -99,6 +100,7 @@ fun MeloXIOSNowPlayingSharedHost(
     var showActions by remember { mutableStateOf(false) }
     var showQuality by remember { mutableStateOf(false) }
     var showLandscapeSkyline by remember { mutableStateOf(false) }
+    var lyricsInterfaceHidden by remember { mutableStateOf(false) }
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
     var gestureCollapseProgress by remember { mutableFloatStateOf(0f) }
@@ -106,11 +108,17 @@ fun MeloXIOSNowPlayingSharedHost(
     val scope = rememberCoroutineScope()
     val hostView = LocalView.current
     LaunchedEffect(isLandscape) {
-        if (!isLandscape) showLandscapeSkyline = false
+        if (!isLandscape) showLandscapeSkyline = false else lyricsInterfaceHidden = false
     }
-    DisposableEffect(MeloXSettingsRuntime.keepScreenOn) {
+    DisposableEffect(MeloXSettingsRuntime.screenAwakeMode, page, lyricsInterfaceHidden) {
         val previous = hostView.keepScreenOn
-        hostView.keepScreenOn = MeloXSettingsRuntime.keepScreenOn
+        hostView.keepScreenOn = when (MeloXSettingsRuntime.screenAwakeMode) {
+            MeloXScreenAwakeMode.Disabled -> false
+            MeloXScreenAwakeMode.Player -> true
+            MeloXScreenAwakeMode.Lyrics -> page == MeloXNowPlayingPage.Lyrics
+            MeloXScreenAwakeMode.HiddenLyricsInterface ->
+                page == MeloXNowPlayingPage.Lyrics && lyricsInterfaceHidden
+        }
         onDispose { hostView.keepScreenOn = previous }
     }
 
@@ -286,7 +294,7 @@ fun MeloXIOSNowPlayingSharedHost(
                             isPlaying = state.isPlaying,
                         )
                     } else {
-                        Box(Modifier.fillMaxSize().background(Color(0xFF15171B)))
+                        MeloXBlurredArtworkBackdrop(state.artworkUrl)
                     }
                 }
 
@@ -322,6 +330,7 @@ fun MeloXIOSNowPlayingSharedHost(
                             showLandscapeSkyline = showLandscapeSkyline,
                             onShowLandscapeSkyline = { showLandscapeSkyline = true },
                             onHideLandscapeSkyline = { showLandscapeSkyline = false },
+                            onLyricsInterfaceHiddenChange = { lyricsInterfaceHidden = it },
                             grabberDragModifier = alternateGrabberDragModifier,
                         )
                     }

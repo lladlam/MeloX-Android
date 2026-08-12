@@ -766,9 +766,22 @@ private fun AutoMixSettings(context: android.content.Context) {
 
 @Composable
 private fun PlayerAppearanceSettings(context: android.content.Context) {
-    SettingsToggleRow(context, "流光背景", "player_flowing_backdrop", true)
+    SettingsToggleRow(context, "流动光影背景", "player_flowing_backdrop", true, "关闭后使用模糊封面背景。")
     SettingsToggleRow(context, "封面播放动效", "player_artwork_motion", true)
-    SettingsToggleRow(context, "播放页保持屏幕常亮", "player_keep_screen_on", false)
+    LyricsStringChoiceSetting(
+        context,
+        "屏幕常亮范围",
+        "player_screen_awake_mode",
+        MeloXScreenAwakeMode.Disabled.name,
+        MeloXScreenAwakeMode.entries.map { it.name },
+    ) {
+        when (MeloXScreenAwakeMode.valueOf(it)) {
+            MeloXScreenAwakeMode.Disabled -> "关闭"
+            MeloXScreenAwakeMode.Player -> "播放器常亮"
+            MeloXScreenAwakeMode.Lyrics -> "歌词页常亮"
+            MeloXScreenAwakeMode.HiddenLyricsInterface -> "歌词页隐藏 UI 后常亮"
+        }
+    }
 }
 
 @Composable
@@ -956,9 +969,8 @@ private fun LyricsFloatChoiceSetting(
 private fun ContentFeatureSettings(context: android.content.Context) {
     SettingsToggleRow(context, "播客", "feature_podcasts", true)
     SettingsToggleRow(context, "最近播放", "feature_history", true)
-    SettingsInfoCard("下载", "已启用 · 更多菜单可下载，播放优先本地文件")
-    Spacer(Modifier.height(10.dp))
-    SettingsInfoCard("云盘", "已启用 · 音乐库可读取、搜索、播放和删除网易云云盘歌曲")
+    SettingsToggleRow(context, "下载", "feature_downloads", true, "控制音乐库下载入口；已下载文件不会被删除。")
+    SettingsToggleRow(context, "音乐云盘", "feature_cloud_music", true, "读取、搜索、上传、播放和删除网易云云盘歌曲。")
 }
 
 @Composable
@@ -1253,7 +1265,13 @@ private fun TabLayoutSettings(context: android.content.Context) {
     Text("音乐库默认页", modifier = Modifier.padding(top = 12.dp), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f))
     Spacer(Modifier.height(8.dp))
     SettingsGlassGroup {
-        listOf("Songs" to "歌曲", "Playlists" to "歌单", "Podcasts" to "播客", "Cloud" to "云盘", "History" to "最近播放", "Downloads" to "下载").forEach { (value, title) ->
+        listOf("Songs" to "歌曲", "Playlists" to "歌单", "Podcasts" to "播客", "Cloud" to "云盘", "History" to "最近播放", "Downloads" to "下载")
+            .filter { (value, _) ->
+                (value != "Podcasts" || MeloXSettingsRuntime.podcastsEnabled) &&
+                    (value != "Cloud" || MeloXSettingsRuntime.cloudMusicEnabled) &&
+                    (value != "History" || MeloXSettingsRuntime.listeningHistoryEnabled) &&
+                    (value != "Downloads" || MeloXSettingsRuntime.downloadsEnabled)
+            }.forEach { (value, title) ->
             SettingsChoiceRow(title, libraryPage == value) {
                 libraryPage = value
                 MeloXSettingsPreferences.setString(context, "library_default_page", value)

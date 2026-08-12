@@ -12,10 +12,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import com.lladlam.melox.playback.MeloXAudioReactiveRuntime
 import kotlinx.coroutines.delay
 import kotlin.math.cos
@@ -23,6 +28,29 @@ import kotlin.math.sin
 
 private const val PALETTE_TRANSITION_MS = 800
 private const val FLOW_FRAME_MS = 33L
+
+@Composable
+internal fun MeloXBlurredArtworkBackdrop(
+    artworkUrl: String?,
+    modifier: Modifier = Modifier,
+) {
+    androidx.compose.foundation.layout.Box(modifier.fillMaxSize()) {
+        AsyncImage(
+            model = artworkUrl,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = 1.18f; scaleY = 1.18f }.blur(38.dp),
+        )
+        Canvas(Modifier.fillMaxSize()) {
+            drawRect(Color.Black.copy(alpha = .30f))
+            drawRect(
+                brush = Brush.verticalGradient(
+                    listOf(Color.Black.copy(alpha = .05f), Color.Black.copy(alpha = .48f)),
+                ),
+            )
+        }
+    }
+}
 
 /**
  * Android renderer for MeloX's artwork-driven Flowing Light background.
