@@ -852,6 +852,29 @@ private fun LyricsSettings(context: android.content.Context) {
     LyricsChoiceSetting(context, "歌词刷新率", "lyrics_refresh_rate", 60, listOf(30, 60, 90, 120)) { "$it FPS" }
     LyricsChoiceSetting(context, "手动滚动后恢复跟随", "lyrics_follow_delay_ms", 3_000, listOf(1_500, 3_000, 5_000, 8_000)) { "${it / 1_000f} 秒" }
     LyricsFloatChoiceSetting(context, "歌词字号", "lyrics_font_scale", 1f, listOf(.85f, 1f, 1.12f, 1.25f)) { "${(it * 100).toInt()}%" }
+    LyricsStringChoiceSetting(
+        context, "歌词字重", "lyrics_font_weight", MeloXLyricsFontWeight.Heavy.name,
+        MeloXLyricsFontWeight.entries.map { it.name },
+    ) { value ->
+        when (MeloXLyricsFontWeight.valueOf(value)) {
+            MeloXLyricsFontWeight.Light -> "细体"
+            MeloXLyricsFontWeight.Regular -> "常规"
+            MeloXLyricsFontWeight.Medium -> "中等"
+            MeloXLyricsFontWeight.SemiBold -> "半粗体"
+            MeloXLyricsFontWeight.Bold -> "粗体"
+            MeloXLyricsFontWeight.Heavy -> "特粗体"
+        }
+    }
+    LyricsStringChoiceSetting(
+        context, "抬升方式", "lyrics_lift_mode", MeloXLyricsGroupingMode.Character.name,
+        MeloXLyricsGroupingMode.entries.map { it.name },
+    ) { if (it == MeloXLyricsGroupingMode.Word.name) "按词抬升" else "按字抬升" }
+    LyricsStringChoiceSetting(
+        context, "长音识别方式", "lyrics_long_tone_detection", MeloXLyricsGroupingMode.Character.name,
+        MeloXLyricsGroupingMode.entries.map { it.name },
+    ) { if (it == MeloXLyricsGroupingMode.Word.name) "按词识别" else "按字识别" }
+    SettingsToggleRow(context, "仅长音显示光晕", "lyrics_glow_long_tones_only", true)
+    LyricsChoiceSetting(context, "长音判定时长", "lyrics_long_tone_threshold_ms", 950, listOf(300, 500, 700, 950, 1_200, 1_500)) { "${it / 1000f} 秒" }
     LyricsFloatChoiceSetting(context, "行间距", "lyrics_spacing_scale", 1f, listOf(.8f, 1f, 1.2f, 1.4f)) { "${(it * 100).toInt()}%" }
     LyricsFloatChoiceSetting(context, "远近模糊", "lyrics_blur_strength", 1f, listOf(0f, .6f, 1f, 1.4f)) { if (it == 0f) "关闭" else "${(it * 100).toInt()}%" }
     LyricsFloatChoiceSetting(context, "当前行放大", "lyrics_focus_scale", 1.02f, listOf(1f, 1.02f, 1.04f, 1.08f)) { "${(it * 100).toInt()}%" }
@@ -1202,6 +1225,28 @@ private fun TabLayoutSettings(context: android.content.Context) {
     }
     Spacer(Modifier.height(12.dp))
     SettingsInfoCard("标签栏", "页面开关和排序立即生效；设置与搜索始终保留")
+    Spacer(Modifier.height(18.dp))
+    Text("首页区块", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f))
+    Spacer(Modifier.height(8.dp))
+    SettingsToggleRow(context, "快捷入口", "home_quick_actions", true)
+    SettingsToggleRow(context, "推荐歌单", "home_playlists", true)
+    SettingsToggleRow(context, "推荐新歌", "home_new_songs", true)
+    var homeOrder by remember { mutableStateOf(MeloXSettingsRuntime.homeSectionOrder) }
+    SettingsGlassGroup {
+        homeOrder.forEachIndexed { index, section ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(when (section) { "QuickActions" -> "快捷入口"; "Playlists" -> "推荐歌单"; else -> "推荐新歌" }, Modifier.weight(1f))
+                Text("↑", modifier = Modifier.clickable(enabled = index > 0) {
+                    homeOrder = homeOrder.toMutableList().apply { add(index - 1, removeAt(index)) }
+                    MeloXSettingsPreferences.setString(context, "home_section_order", homeOrder.joinToString(","))
+                }.padding(10.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = if (index > 0) 1f else .25f))
+                Text("↓", modifier = Modifier.clickable(enabled = index < homeOrder.lastIndex) {
+                    homeOrder = homeOrder.toMutableList().apply { add(index + 1, removeAt(index)) }
+                    MeloXSettingsPreferences.setString(context, "home_section_order", homeOrder.joinToString(","))
+                }.padding(10.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = if (index < homeOrder.lastIndex) 1f else .25f))
+            }
+        }
+    }
     Spacer(Modifier.height(16.dp))
     SettingsToggleRow(context, "记住音乐库子页面", "library_remember_page", true)
     var libraryPage by remember { mutableStateOf(MeloXSettingsRuntime.defaultLibraryPage) }

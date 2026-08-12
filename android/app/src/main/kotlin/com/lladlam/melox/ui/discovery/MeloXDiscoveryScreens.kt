@@ -105,38 +105,46 @@ fun MeloXHomeScreen() {
                 verticalArrangement = Arrangement.spacedBy(22.dp),
             ) {
                 item { LargeTitle("首页") }
-                item {
-                    HomeQuickActions(activeAction) { action ->
-                        activeAction = action
-                        scope.launch {
-                            runCatching {
-                                when (action) {
-                                    "每日推荐" -> client.dailyRecommendedSongs()
-                                    "热歌榜" -> client.hotSongs()
-                                    "私人漫游" -> client.personalFm(explore = true)
-                                    "相似歌曲" -> PlaybackCommands.currentSongId()?.let { client.similarSongsBlocking(it) }
-                                        ?: throw IllegalStateException("请先播放一首歌曲")
-                                    "心动模式" -> {
-                                        val userId = session.profile?.userId ?: throw IllegalStateException("请先登录网易云音乐")
-                                        val snapshot = client.snapshot(userId)
-                                        val seed = snapshot.likedSongs.randomOrNull() ?: throw IllegalStateException("收藏歌曲为空")
-                                        val playlist = snapshot.playlists.firstOrNull() ?: throw IllegalStateException("没有可用歌单")
-                                        client.intelligenceModeSongs(seed.id, playlist.id)
-                                    }
-                                    else -> emptyList()
+                MeloXSettingsRuntime.homeSectionOrder.forEach { section ->
+                    when (section) {
+                        "QuickActions" -> if (MeloXSettingsRuntime.homeQuickActionsEnabled) item {
+                            HomeQuickActions(activeAction) { action ->
+                                activeAction = action
+                                scope.launch {
+                                    runCatching {
+                                        when (action) {
+                                            "每日推荐" -> client.dailyRecommendedSongs()
+                                            "热歌榜" -> client.hotSongs()
+                                            "私人漫游" -> client.personalFm(explore = true)
+                                            "相似歌曲" -> PlaybackCommands.currentSongId()?.let { client.similarSongsBlocking(it) }
+                                                ?: throw IllegalStateException("请先播放一首歌曲")
+                                            "心动模式" -> {
+                                                val userId = session.profile?.userId ?: throw IllegalStateException("请先登录网易云音乐")
+                                                val snapshot = client.snapshot(userId)
+                                                val seed = snapshot.likedSongs.randomOrNull() ?: throw IllegalStateException("收藏歌曲为空")
+                                                val playlist = snapshot.playlists.firstOrNull() ?: throw IllegalStateException("没有可用歌单")
+                                                client.intelligenceModeSongs(seed.id, playlist.id)
+                                            }
+                                            else -> emptyList()
+                                        }
+                                    }.onSuccess { songs ->
+                                        songs.firstOrNull()?.let { PlaybackCommands.playQueue(context, songs, it.id) }
+                                            ?: run { error = "没有可播放的推荐歌曲" }
+                                    }.onFailure { error = it.message ?: "$action 加载失败" }
+                                    activeAction = null
                                 }
-                            }.onSuccess { songs ->
-                                songs.firstOrNull()?.let { PlaybackCommands.playQueue(context, songs, it.id) }
-                                    ?: run { error = "没有可播放的推荐歌曲" }
-                            }.onFailure { error = it.message ?: "$action 加载失败" }
-                            activeAction = null
+                            }
+                        }
+                        "Playlists" -> if (MeloXSettingsRuntime.homePlaylistsEnabled) {
+                            item { SectionTitle("每日推荐", "下拉刷新") }
+                            item { PlaylistRow(value.playlists) { selectedPlaylist = it } }
+                        }
+                        "NewSongs" -> if (MeloXSettingsRuntime.homeNewSongsEnabled) {
+                            item { SectionTitle("为你推荐", "新歌") }
+                            items(value.newSongs, key = { it.id }) { song -> SongRow(song) { PlaybackCommands.playQueue(context, value.newSongs, song.id) } }
                         }
                     }
                 }
-                item { SectionTitle("每日推荐", "下拉可刷新") }
-                item { PlaylistRow(value.playlists) { selectedPlaylist = it } }
-                item { SectionTitle("为你推荐", "新歌") }
-                items(value.newSongs, key = { it.id }) { song -> SongRow(song) { PlaybackCommands.playQueue(context, value.newSongs, song.id) } }
                 error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) } }
             }
         }

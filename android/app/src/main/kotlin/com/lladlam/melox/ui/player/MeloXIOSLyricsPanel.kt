@@ -79,6 +79,7 @@ import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.settings.MeloXLyricsStyle
 import com.lladlam.melox.ui.settings.MeloXLyricAnnotationDisplayMode
+import com.lladlam.melox.ui.settings.MeloXLyricsGroupingMode
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -914,7 +915,7 @@ private fun MeloXUpstreamLyricLine(
                     UpstreamLyrics.FONT_SIZE_SP * fontScale * UpstreamLyrics.TRANSLATION_FONT_SCALE,
                     13f,
                 ).sp * 1.2f,
-                fontWeight = FontWeight.Black,
+                fontWeight = MeloXSettingsRuntime.lyricFontWeight.composeWeight,
             )
         } else if (reserveTranslation) {
             val translationHeight = with(LocalDensity.current) { (translationSize * 1.2f).sp.toDp() }
@@ -971,7 +972,7 @@ private fun MeloXRubyLyricText(
                     },
                     fontSize = primarySize.sp,
                     lineHeight = (UpstreamLyrics.LINE_HEIGHT_SP * fontScale).sp,
-                    fontWeight = FontWeight.Black,
+                    fontWeight = MeloXSettingsRuntime.lyricFontWeight.composeWeight,
                     maxLines = 1,
                 )
                 if (!unit.romanizationText.isNullOrBlank()) {
@@ -986,7 +987,7 @@ private fun MeloXRubyLyricText(
                         color = Color.White.copy(alpha = UpstreamLyrics.ANNOTATION_OPACITY),
                         fontSize = (rubySize * rubyCompression).sp,
                         lineHeight = (rubySize * 1.2f).sp,
-                        fontWeight = FontWeight.Black,
+                        fontWeight = MeloXSettingsRuntime.lyricFontWeight.composeWeight,
                         maxLines = 1,
                     )
                 }
@@ -1106,7 +1107,7 @@ private fun MeloXGlyphLyricText(
             color = Color.White,
             fontSize = (UpstreamLyrics.FONT_SIZE_SP * fontScale).sp,
             lineHeight = (UpstreamLyrics.LINE_HEIGHT_SP * fontScale).sp,
-            fontWeight = FontWeight.Black,
+            fontWeight = MeloXSettingsRuntime.lyricFontWeight.composeWeight,
         )
         val layout = remember(line.text, widthPx, style) {
             textMeasurer.measure(
@@ -1276,11 +1277,18 @@ private fun sourceGlyphVisuals(
                 else -> ((playbackTimeMs - start) / duration).coerceIn(0f, 1f)
             }
             val char = line.text[offset]
-            val longTone = syllableDuration >= UpstreamLyrics.LONG_TONE_THRESHOLD_MS && !char.isWhitespace()
+            val longToneDuration = if (MeloXSettingsRuntime.lyricLongToneDetectionMode == MeloXLyricsGroupingMode.Word) {
+                syllableDuration
+            } else {
+                duration
+            }
+            val longTone = longToneDuration >= MeloXSettingsRuntime.lyricLongToneThresholdMs && !char.isWhitespace()
             val reveal = sourceHighlightRevealProgress(playbackTimeMs.toFloat(), start, end, raw, longTone)
-            val liftEnd = end + UpstreamLyrics.LIFT_CONTINUATION_MS
-            val lift = if (playbackTimeMs <= start) 0f else sourceSmootherStep(
-                ((playbackTimeMs - start) / max(liftEnd - start, 1f)).toFloat(),
+            val liftStart = if (MeloXSettingsRuntime.lyricLiftMode == MeloXLyricsGroupingMode.Word) syllable.startTimeMs.toFloat() else start
+            val liftBaseEnd = if (MeloXSettingsRuntime.lyricLiftMode == MeloXLyricsGroupingMode.Word) syllable.endTimeMs.toFloat() else end
+            val liftEnd = liftBaseEnd + UpstreamLyrics.LIFT_CONTINUATION_MS
+            val lift = if (playbackTimeMs <= liftStart) 0f else sourceSmootherStep(
+                ((playbackTimeMs - liftStart) / max(liftEnd - liftStart, 1f)).toFloat(),
             )
             val risePx = if (reduceMotion) 0f else
                 min(max(UpstreamLyrics.FONT_SIZE_SP * fontScale * .1f, 1.5f), 6f) * density
@@ -1304,7 +1312,9 @@ private fun sourceGlyphVisuals(
                 reveal = reveal,
                 liftPx = risePx * lift,
                 scale = scale,
-                glow = if (reduceMotion) 0f else envelope * glowAmount,
+                glow = if (reduceMotion || (MeloXSettingsRuntime.lyricGlowLongTonesOnly && !longTone)) 0f else {
+                    if (longTone) envelope * glowAmount else reveal * .22f
+                },
             )
         }
     }
@@ -1404,7 +1414,7 @@ private fun sourceTimedAnnotatedString(line: LyricLine, playbackTimeMs: Long) =
                     SpanStyle(
                         color = Color.White.copy(alpha = opacity.coerceIn(0f, 1f)),
                         fontSize = (UpstreamLyrics.FONT_SIZE_SP * glyphScale).sp,
-                        fontWeight = FontWeight.Black,
+                        fontWeight = MeloXSettingsRuntime.lyricFontWeight.composeWeight,
                         baselineShift = BaselineShift(
                             (playedRise / UpstreamLyrics.FONT_SIZE_SP) * liftProgress,
                         ),

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.font.FontWeight
 
 enum class MeloXThemeMode { System, Light, Dark }
 enum class MeloXLyricAnnotationDisplayMode { FocusedLine, AllLines }
@@ -19,6 +20,11 @@ enum class MeloXTextPVStyle {
 enum class MeloXVolumeControlMode { System, Player }
 enum class MeloXSecondaryLyricMode { Auto, Translation, Romanization, NextLine, Hidden }
 enum class MeloXSystemLyricTitleMode { LyricFirst, SongFirst }
+enum class MeloXLyricsGroupingMode { Word, Character }
+enum class MeloXLyricsFontWeight(val composeWeight: FontWeight) {
+    Light(FontWeight.Light), Regular(FontWeight.Normal), Medium(FontWeight.Medium),
+    SemiBold(FontWeight.SemiBold), Bold(FontWeight.Bold), Heavy(FontWeight.Black),
+}
 
 /** Process-visible settings used by UI paths that need immediate recomposition. */
 object MeloXSettingsRuntime {
@@ -66,6 +72,16 @@ object MeloXSettingsRuntime {
         internal set
     var lyricFontScale by mutableStateOf(1f)
         internal set
+    var lyricFontWeight by mutableStateOf(MeloXLyricsFontWeight.Heavy)
+        internal set
+    var lyricLiftMode by mutableStateOf(MeloXLyricsGroupingMode.Character)
+        internal set
+    var lyricLongToneDetectionMode by mutableStateOf(MeloXLyricsGroupingMode.Character)
+        internal set
+    var lyricGlowLongTonesOnly by mutableStateOf(true)
+        internal set
+    var lyricLongToneThresholdMs by mutableStateOf(950)
+        internal set
     var lyricSpacingScale by mutableStateOf(1f)
         internal set
     var lyricBlurStrength by mutableStateOf(1f)
@@ -109,6 +125,14 @@ object MeloXSettingsRuntime {
     var floatingHighContrast by mutableStateOf(true)
         internal set
     var homeTabEnabled by mutableStateOf(true)
+        internal set
+    var homeQuickActionsEnabled by mutableStateOf(true)
+        internal set
+    var homePlaylistsEnabled by mutableStateOf(true)
+        internal set
+    var homeNewSongsEnabled by mutableStateOf(true)
+        internal set
+    var homeSectionOrder by mutableStateOf(listOf("QuickActions", "Playlists", "NewSongs"))
         internal set
     var exploreTabEnabled by mutableStateOf(true)
         internal set
@@ -170,6 +194,17 @@ object MeloXSettingsRuntime {
         lyricTranslationDisplayMode = annotationMode(app, "lyrics_translation_display_mode")
         lyricFollowDelayMs = MeloXSettingsPreferences.int(app, "lyrics_follow_delay_ms", 3_000).coerceIn(1_000, 8_000)
         lyricFontScale = MeloXSettingsPreferences.float(app, "lyrics_font_scale", 1f).coerceIn(.8f, 1.25f)
+        lyricFontWeight = runCatching {
+            MeloXLyricsFontWeight.valueOf(MeloXSettingsPreferences.string(app, "lyrics_font_weight", MeloXLyricsFontWeight.Heavy.name))
+        }.getOrDefault(MeloXLyricsFontWeight.Heavy)
+        lyricLiftMode = runCatching {
+            MeloXLyricsGroupingMode.valueOf(MeloXSettingsPreferences.string(app, "lyrics_lift_mode", MeloXLyricsGroupingMode.Character.name))
+        }.getOrDefault(MeloXLyricsGroupingMode.Character)
+        lyricLongToneDetectionMode = runCatching {
+            MeloXLyricsGroupingMode.valueOf(MeloXSettingsPreferences.string(app, "lyrics_long_tone_detection", MeloXLyricsGroupingMode.Character.name))
+        }.getOrDefault(MeloXLyricsGroupingMode.Character)
+        lyricGlowLongTonesOnly = MeloXSettingsPreferences.boolean(app, "lyrics_glow_long_tones_only", true)
+        lyricLongToneThresholdMs = MeloXSettingsPreferences.int(app, "lyrics_long_tone_threshold_ms", 950).coerceIn(300, 1_500)
         lyricSpacingScale = MeloXSettingsPreferences.float(app, "lyrics_spacing_scale", 1f).coerceIn(.7f, 1.5f)
         lyricBlurStrength = MeloXSettingsPreferences.float(app, "lyrics_blur_strength", 1f).coerceIn(0f, 1.5f)
         lyricFocusScale = MeloXSettingsPreferences.float(app, "lyrics_focus_scale", 1.02f).coerceIn(1f, 1.08f)
@@ -204,6 +239,12 @@ object MeloXSettingsRuntime {
         floatingFontSizeSp = MeloXSettingsPreferences.int(app, "floating_lyrics_font_size", 18).coerceIn(14, 28)
         floatingHighContrast = MeloXSettingsPreferences.boolean(app, "floating_lyrics_high_contrast", true)
         homeTabEnabled = MeloXSettingsPreferences.boolean(app, "tab_home", true)
+        homeQuickActionsEnabled = MeloXSettingsPreferences.boolean(app, "home_quick_actions", true)
+        homePlaylistsEnabled = MeloXSettingsPreferences.boolean(app, "home_playlists", true)
+        homeNewSongsEnabled = MeloXSettingsPreferences.boolean(app, "home_new_songs", true)
+        homeSectionOrder = MeloXSettingsPreferences.string(app, "home_section_order", "QuickActions,Playlists,NewSongs")
+            .split(',').filter { it in setOf("QuickActions", "Playlists", "NewSongs") }.distinct()
+            .let { order -> (order + listOf("QuickActions", "Playlists", "NewSongs")).distinct() }
         exploreTabEnabled = MeloXSettingsPreferences.boolean(app, "tab_explore", true)
         libraryTabEnabled = MeloXSettingsPreferences.boolean(app, "tab_library", true)
         rememberLastTab = MeloXSettingsPreferences.boolean(app, "general_remember_tab", true)
@@ -275,6 +316,7 @@ object MeloXSettingsPreferences {
             "lyrics_interlude_countdown" -> MeloXSettingsRuntime.lyricInterludeCountdownEnabled = value
             "lyrics_auto_follow" -> MeloXSettingsRuntime.lyricAutoFollowEnabled = value
             "lyrics_reduce_motion" -> MeloXSettingsRuntime.lyricReduceMotion = value
+            "lyrics_glow_long_tones_only" -> MeloXSettingsRuntime.lyricGlowLongTonesOnly = value
             "lyrics_advance_word_by_word" -> MeloXSettingsRuntime.lyricAdvanceAppliesToWordByWord = value
             "lyrics_skyline_enabled" -> MeloXSettingsRuntime.skylineEnabled = value
             "lyrics_skyline_song_info" -> MeloXSettingsRuntime.skylineShowSongInfo = value
@@ -285,6 +327,9 @@ object MeloXSettingsPreferences {
             "floating_lyrics_enabled" -> MeloXSettingsRuntime.floatingLyricsEnabled = value
             "floating_lyrics_high_contrast" -> MeloXSettingsRuntime.floatingHighContrast = value
             "tab_home" -> MeloXSettingsRuntime.homeTabEnabled = value
+            "home_quick_actions" -> MeloXSettingsRuntime.homeQuickActionsEnabled = value
+            "home_playlists" -> MeloXSettingsRuntime.homePlaylistsEnabled = value
+            "home_new_songs" -> MeloXSettingsRuntime.homeNewSongsEnabled = value
             "tab_explore" -> MeloXSettingsRuntime.exploreTabEnabled = value
             "tab_library" -> MeloXSettingsRuntime.libraryTabEnabled = value
             "general_remember_tab" -> MeloXSettingsRuntime.rememberLastTab = value
@@ -304,6 +349,7 @@ object MeloXSettingsPreferences {
             "lyrics_follow_delay_ms" -> MeloXSettingsRuntime.lyricFollowDelayMs = value.coerceIn(1_000, 8_000)
             "lyrics_refresh_rate" -> MeloXSettingsRuntime.lyricRefreshRate =
                 value.takeIf { it in setOf(30, 60, 90, 120) } ?: 60
+            "lyrics_long_tone_threshold_ms" -> MeloXSettingsRuntime.lyricLongToneThresholdMs = value.coerceIn(300, 1_500)
             "lyrics_skyline_ambient_lines" -> MeloXSettingsRuntime.skylineAmbientLines = value.coerceIn(0, 4)
             "floating_lyrics_font_size" -> MeloXSettingsRuntime.floatingFontSizeSp = value.coerceIn(14, 28)
         }
@@ -333,6 +379,9 @@ object MeloXSettingsPreferences {
             "tab_order" -> MeloXSettingsRuntime.tabOrder = value.split(',')
                 .filter { it in setOf("Home", "Explore", "Library", "Settings") }.distinct()
                 .let { order -> (order + listOf("Home", "Explore", "Library", "Settings")).distinct() }
+            "home_section_order" -> MeloXSettingsRuntime.homeSectionOrder = value.split(',')
+                .filter { it in setOf("QuickActions", "Playlists", "NewSongs") }.distinct()
+                .let { order -> (order + listOf("QuickActions", "Playlists", "NewSongs")).distinct() }
             "general_default_tab" -> MeloXSettingsRuntime.defaultTab = value
             "library_default_page" -> MeloXSettingsRuntime.defaultLibraryPage = value
             "lyrics_romanization_display_mode" -> MeloXSettingsRuntime.lyricRomanizationDisplayMode = runCatching {
@@ -347,6 +396,15 @@ object MeloXSettingsPreferences {
             "lyrics_text_pv_style" -> MeloXSettingsRuntime.textPVStyle = runCatching {
                 MeloXTextPVStyle.valueOf(value)
             }.getOrDefault(MeloXTextPVStyle.BlueBold)
+            "lyrics_font_weight" -> MeloXSettingsRuntime.lyricFontWeight = runCatching {
+                MeloXLyricsFontWeight.valueOf(value)
+            }.getOrDefault(MeloXLyricsFontWeight.Heavy)
+            "lyrics_lift_mode" -> MeloXSettingsRuntime.lyricLiftMode = runCatching {
+                MeloXLyricsGroupingMode.valueOf(value)
+            }.getOrDefault(MeloXLyricsGroupingMode.Character)
+            "lyrics_long_tone_detection" -> MeloXSettingsRuntime.lyricLongToneDetectionMode = runCatching {
+                MeloXLyricsGroupingMode.valueOf(value)
+            }.getOrDefault(MeloXLyricsGroupingMode.Character)
             "system_lyrics_title_mode" -> MeloXSettingsRuntime.systemLyricTitleMode = runCatching {
                 MeloXSystemLyricTitleMode.valueOf(value)
             }.getOrDefault(MeloXSystemLyricTitleMode.LyricFirst)
