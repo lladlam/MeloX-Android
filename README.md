@@ -14,7 +14,7 @@
 
 ## 项目说明
 
-MeloX Android 基于 [youshen2/MeloX](https://github.com/youshen2/MeloX) 的设计、交互与业务逻辑进行原生 Android 迁移。
+MeloX Android 基于 [lladlam/MeloX](https://github.com/lladlam/MeloX) 的设计、交互与业务逻辑进行原生 Android 迁移。
 
 项目目标不是使用 WebView 套壳，而是尽可能使用 Android 原生能力重新实现 MeloX：
 
@@ -205,7 +205,7 @@ MeloX Android 的主体代码来自 MeloX 的 Android 迁移工作，同时直�
 
 ### 上游项目
 
-- [youshen2/MeloX](https://github.com/youshen2/MeloX) — 本项目的上游 MeloX，实现、界面、交互与网易云音乐业务逻辑的主要迁移来源；主体采用 GPLv3。
+- [lladlam/MeloX](https://github.com/lladlam/MeloX) — 本项目的上游 MeloX，实现、界面、交互与网易云音乐业务逻辑的主要迁移来源；主体采用 GPLv3。
 
 ### Android 直接依赖
 

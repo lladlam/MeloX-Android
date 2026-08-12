@@ -68,6 +68,7 @@ import coil3.compose.AsyncImage
 import com.lladlam.melox.playback.MeloXPlaybackService
 import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.playback.MeloXPlaybackModePreferences
+import com.lladlam.melox.playback.MeloXPlaybackModeRuntime
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.settings.MeloXVolumeControlMode
@@ -176,6 +177,8 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
             return
         }
         cancelPendingMediaClear()
+        MeloXPlaybackModeRuntime.heartModeActive = item.mediaMetadata.extras
+            ?.getBoolean(PlaybackCommands.HEART_MODE_KEY, false) == true
         val metadata = player.mediaMetadata.takeUnless { it == MediaMetadata.EMPTY }
             ?: item?.mediaMetadata
             ?: MediaMetadata.EMPTY
@@ -236,6 +239,7 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
 
     private fun clearMediaState(player: Player) {
         cancelPendingMediaClear()
+        MeloXPlaybackModeRuntime.heartModeActive = false
         mediaId = null
         title = ""
         artist = ""

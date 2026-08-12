@@ -29,6 +29,7 @@ object PlaybackCommands {
     const val QUEUE_ORIGIN_MANUAL = "manual"
     const val QUEUE_ORIGINAL_INDEX_KEY = "melox.queue.original_index"
     const val QUEUE_ORIGINAL_INDEX_UNSET = -1
+    const val HEART_MODE_KEY = "melox.playback.heart_mode"
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val mainExecutor = Executor { command -> mainHandler.post(command) }
@@ -83,6 +84,7 @@ object PlaybackCommands {
                             queueOrigin = QUEUE_ORIGIN_BASE,
                             originalIndex = index,
                             artworkOverride = downloads.localArtworkUri(song.id),
+                            heartMode = heartMode,
                         )
                     }
                     val selectedItemIndex = originalQueue.indexOfFirst {
@@ -243,7 +245,8 @@ object PlaybackCommands {
         queueOrigin: String = QUEUE_ORIGIN_BASE,
         originalIndex: Int = QUEUE_ORIGINAL_INDEX_UNSET,
         artworkOverride: Uri? = null,
-    ): MediaItem = song.toMediaItem(quality, queueOrigin, originalIndex, artworkOverride)
+        heartMode: Boolean = MeloXPlaybackModeRuntime.heartModeActive,
+    ): MediaItem = song.toMediaItem(quality, queueOrigin, originalIndex, artworkOverride, heartMode)
 
     private fun reorderFutureInPlace(player: Player, desiredFuture: List<MediaItem>) {
         val start = player.currentMediaItemIndex + 1
@@ -271,6 +274,7 @@ object PlaybackCommands {
         queueOrigin: String,
         originalIndex: Int = QUEUE_ORIGINAL_INDEX_UNSET,
         artworkOverride: Uri? = null,
+        heartMode: Boolean = MeloXPlaybackModeRuntime.heartModeActive,
     ): MediaItem {
         val metadata = MediaMetadata.Builder()
             .setTitle(name)
@@ -281,6 +285,7 @@ object PlaybackCommands {
                 Bundle().apply {
                     putString(QUEUE_ORIGIN_KEY, queueOrigin)
                     putInt(QUEUE_ORIGINAL_INDEX_KEY, originalIndex)
+                    putBoolean(HEART_MODE_KEY, heartMode)
                 },
             )
             .apply {
