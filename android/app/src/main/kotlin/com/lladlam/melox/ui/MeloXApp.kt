@@ -100,6 +100,7 @@ import com.lladlam.melox.core.network.MeloXSearchKind
 import com.lladlam.melox.core.network.NeteaseClipboardLink
 import com.lladlam.melox.core.network.NeteaseClipboardTarget
 import com.lladlam.melox.core.library.NeteaseLibraryClient
+import com.lladlam.melox.playback.PlaybackCommands
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -400,7 +401,7 @@ fun MeloXApp(
                     TextButton(onClick = {
                         onClipboardLinkConsumed()
                         playerScope.launch {
-                            val client = NeteaseLibraryClient { NeteaseSessionStore.readCookie(context) }
+                            val client = NeteaseLibraryClient(cookieProvider = { NeteaseSessionStore.readCookie(context) })
                             val songs = withContext(Dispatchers.IO) {
                                 runCatching {
                                     when (target) {
