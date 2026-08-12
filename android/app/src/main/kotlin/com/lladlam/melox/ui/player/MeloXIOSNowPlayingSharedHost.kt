@@ -53,6 +53,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource.Companion.UserI
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -96,6 +97,7 @@ fun MeloXIOSNowPlayingSharedHost(
     }
     var showActions by remember { mutableStateOf(false) }
     var showQuality by remember { mutableStateOf(false) }
+    var showLandscapeSkyline by remember { mutableStateOf(false) }
     var gestureCollapseProgress by remember { mutableFloatStateOf(0f) }
     var settleJob by remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
@@ -143,7 +145,7 @@ fun MeloXIOSNowPlayingSharedHost(
     // composed later and temporarily disable this handler, so Back always unwinds
     // the topmost visual layer before the player itself is dismissed.
     BackHandler(enabled = !showActions && !showQuality) {
-        onDismiss()
+        if (showLandscapeSkyline) showLandscapeSkyline = false else onDismiss()
     }
 
     BoxWithConstraints(
@@ -294,6 +296,7 @@ fun MeloXIOSNowPlayingSharedHost(
                             transitionSourcePage = transitionSourcePage,
                             onDismiss = onDismiss,
                             onPageChanged = { destination ->
+                                showLandscapeSkyline = false
                                 if (destination != page) {
                                     transitionSourcePage = page
                                     page = destination
@@ -310,6 +313,9 @@ fun MeloXIOSNowPlayingSharedHost(
                                 showActions = false
                                 showQuality = true
                             },
+                            showLandscapeSkyline = showLandscapeSkyline,
+                            onShowLandscapeSkyline = { showLandscapeSkyline = true },
+                            onHideLandscapeSkyline = { showLandscapeSkyline = false },
                             grabberDragModifier = alternateGrabberDragModifier,
                         )
                     }
@@ -322,6 +328,7 @@ fun MeloXIOSNowPlayingSharedHost(
                 expansionProgress = expansionProgress,
                 sharedTransitionScope = sharedTransitionScope,
                 animatedVisibilityScope = animatedVisibilityScope,
+                hidden = showLandscapeSkyline,
             )
         }
 
@@ -349,7 +356,10 @@ private fun SharedArtworkDestination(
     expansionProgress: Float,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
+    hidden: Boolean = false,
 ) {
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
     // Upstream keeps one artwork alive and animates its frame for 0.48s when
     // switching between artwork and alternate pages.
     val headerProgress by animateFloatAsState(
@@ -387,88 +397,80 @@ private fun SharedArtworkDestination(
         label = "shared-artwork-shadow",
     )
 
+    val pageFrameProgress = if (isLandscape) 0f else headerProgress
     val fullScreenScaleBlend = smoothStep(expansionProgress, 0.30f, 0.88f)
     val effectiveScale = 1f +
-        (playbackScale - 1f) * fullScreenScaleBlend * (1f - headerProgress)
+        (playbackScale - 1f) * fullScreenScaleBlend * (1f - pageFrameProgress)
 
-    Column(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .padding(horizontal = 32.dp),
+            .padding(horizontal = if (isLandscape) 20.dp else 32.dp),
     ) {
-        Spacer(Modifier.height(30.dp))
-
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-        ) {
-            // Keep the destination strictly square and fully inside the stable
-            // SharedTransition coordinate space. The old maxWidth + 16dp target
-            // was wider than its parent and could be clipped/scaled differently
-            // on the two axes while the overlay was active.
-            val fullArtworkSize = maxOf(
-                170.dp,
-                minOf(maxWidth, maxHeight - 92.dp),
-            )
-            // The Box already excludes MeloXNowPlayingControlsHeight via the
-            // Spacer below it. Subtracting controls here again pushed artwork far
-            // too high and separated it from the metadata placeholder.
-            val artworkFooterHeight = 78.dp
-            val fullX = ((maxWidth - fullArtworkSize) / 2f).coerceAtLeast(0.dp)
-            val fullY = (maxHeight - fullArtworkSize - artworkFooterHeight)
+        val contentTop = 30.dp
+        val portraitContentHeight = (maxHeight - contentTop - MeloXNowPlayingControlsHeight.dp)
+            .coerceAtLeast(1.dp)
+        val fullArtworkSize = if (isLandscape) {
+            maxOf(170.dp, minOf(460.dp, maxHeight - 42.dp, maxWidth * .43f))
+        } else {
+            maxOf(170.dp, minOf(maxWidth, portraitContentHeight - 92.dp))
+        }
+        val artworkFooterHeight = 78.dp
+        val fullX = if (isLandscape) {
+            ((maxWidth * .43f - fullArtworkSize) / 2f).coerceAtLeast(0.dp)
+        } else {
+            ((maxWidth - fullArtworkSize) / 2f).coerceAtLeast(0.dp)
+        }
+        val fullY = if (isLandscape) {
+            contentTop + ((maxHeight - contentTop - fullArtworkSize) / 2f).coerceAtLeast(0.dp)
+        } else {
+            contentTop + (portraitContentHeight - fullArtworkSize - artworkFooterHeight)
                 .coerceAtLeast(0.dp)
-
-            val targetSize = lerpDp(fullArtworkSize, 72.dp, headerProgress)
-            val targetX = lerpDp(fullX, 0.dp, headerProgress)
-            val targetY = lerpDp(fullY, 0.dp, headerProgress)
-            val targetRadius = 12.dp
-
-            val artworkSharedState = with(sharedTransitionScope) {
-                rememberSharedContentState(key = sharedArtworkKey())
-            }
-            val sharedModifier = with(sharedTransitionScope) {
-                Modifier.sharedElement(
-                    sharedContentState = artworkSharedState,
-                    animatedVisibilityScope = animatedVisibilityScope,
-                    boundsTransform = MeloXPlayerLinearBoundsTransform,
-                    zIndexInOverlay = 3f,
-                )
-            }
-
-            // Position and size the element *before* attaching sharedElement.
-            // That makes the shared overlay capture the actual square bounds at
-            // the final on-screen coordinate instead of a zero-origin box whose
-            // child is offset internally. It also removes the one-frame flash
-            // seen when expanding from compact MiniPlayer mode.
-            Box(
-                modifier = Modifier
-                    .offset(x = targetX, y = targetY)
-                    .size(targetSize)
-                    .then(sharedModifier),
-            ) {
-                Artwork(
-                    url = state.artworkUrl,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            scaleX = effectiveScale
-                            scaleY = effectiveScale
-                        }
-                        .shadow(
-                            elevation = shadowElevation * (1f - headerProgress * 0.55f),
-                            shape = RoundedCornerShape(targetRadius),
-                            clip = false,
-                            ambientColor = Color.Black.copy(alpha = 0.28f),
-                            spotColor = Color.Black.copy(alpha = 0.28f),
-                        )
-                        .clip(RoundedCornerShape(targetRadius)),
-                )
-            }
         }
 
-        Spacer(Modifier.height(MeloXNowPlayingControlsHeight.dp))
+        val targetSize = lerpDp(fullArtworkSize, 72.dp, pageFrameProgress)
+        val targetX = lerpDp(fullX, 0.dp, pageFrameProgress)
+        val targetY = lerpDp(fullY, contentTop, pageFrameProgress)
+        val targetRadius = 12.dp
+
+        val artworkSharedState = with(sharedTransitionScope) {
+            rememberSharedContentState(key = sharedArtworkKey())
+        }
+        val sharedModifier = with(sharedTransitionScope) {
+            Modifier.sharedElement(
+                sharedContentState = artworkSharedState,
+                animatedVisibilityScope = animatedVisibilityScope,
+                boundsTransform = MeloXPlayerLinearBoundsTransform,
+                zIndexInOverlay = 3f,
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .offset(x = targetX, y = targetY)
+                .size(targetSize)
+                .graphicsLayer { alpha = if (hidden) 0f else 1f }
+                .then(sharedModifier),
+        ) {
+            Artwork(
+                url = state.artworkUrl,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = effectiveScale
+                        scaleY = effectiveScale
+                    }
+                    .shadow(
+                        elevation = shadowElevation * (1f - pageFrameProgress * 0.55f),
+                        shape = RoundedCornerShape(targetRadius),
+                        clip = false,
+                        ambientColor = Color.Black.copy(alpha = 0.28f),
+                        spotColor = Color.Black.copy(alpha = 0.28f),
+                    )
+                    .clip(RoundedCornerShape(targetRadius)),
+            )
+        }
     }
 }
 

@@ -29,6 +29,55 @@ data class MeloXSearchMediaItem(
     val trackCount: Int = 0,
 )
 
+data class MeloXPodcastHost(
+    val id: Long = 0L,
+    val nickname: String = "网易云主播",
+    val avatarUrl: String? = null,
+)
+
+data class MeloXPodcast(
+    val id: Long,
+    val name: String,
+    val artworkUrl: String? = null,
+    val description: String? = null,
+    val recommendation: String? = null,
+    val categoryId: Long? = null,
+    val category: String? = null,
+    val programCount: Int = 0,
+    val subscriberCount: Long = 0L,
+    val playCount: Long = 0L,
+    val host: MeloXPodcastHost? = null,
+    val subscribed: Boolean = false,
+)
+
+data class MeloXPodcastCategory(
+    val id: Long,
+    val name: String,
+    val artworkUrl: String? = null,
+)
+
+data class MeloXPodcastProgram(
+    val id: Long,
+    val name: String,
+    val artworkUrl: String? = null,
+    val description: String? = null,
+    val createTimeMs: Long? = null,
+    val durationMs: Long = 0L,
+    val listenerCount: Long = 0L,
+    val likedCount: Long = 0L,
+    val commentCount: Long = 0L,
+    val radioId: Long,
+    val radioName: String,
+    val host: MeloXPodcastHost? = null,
+    val playbackSong: SearchSong? = null,
+)
+
+data class MeloXPodcastPage<T>(
+    val values: List<T>,
+    val hasMore: Boolean = false,
+    val totalCount: Int = values.size,
+)
+
 /** Search routes mirrored from upstream MeloX SearchView/NeteaseAPI. */
 class NeteaseUniversalSearchClient(
     private val cookieProvider: () -> String,
@@ -100,6 +149,113 @@ class NeteaseUniversalSearchClient(
         parseSong(result.optJSONArray("songs")?.optJSONObject(0))
     }
 
+    suspend fun podcastCategories(): List<MeloXPodcastCategory> = withContext(Dispatchers.IO) {
+        val values = eapi("/api/djradio/category/get", JSONObject()).optJSONArray("categories") ?: JSONArray()
+        buildList {
+            for (index in 0 until values.length()) {
+                val value = values.optJSONObject(index) ?: continue
+                val id = value.optLong("id", -1L)
+                if (id <= 0L) continue
+                add(
+                    MeloXPodcastCategory(
+                        id = id,
+                        name = value.optString("name").ifBlank { "播客" },
+                        artworkUrl = secure(
+                            value.optString("pic96x96Url").takeIf(String::isNotBlank)
+                                ?: value.optString("pic56x56Url").takeIf(String::isNotBlank),
+                        ),
+                    ),
+                )
+            }
+        }
+    }
+
+    suspend fun featuredPodcasts(): List<MeloXPodcast> = withContext(Dispatchers.IO) {
+        parsePodcasts(eapi("/api/djradio/recommend/v1", JSONObject()).optJSONArray("djRadios"))
+    }
+
+    suspend fun personalizedPodcasts(limit: Int = 12): List<MeloXPodcast> = withContext(Dispatchers.IO) {
+        parsePodcasts(
+            eapi("/api/djradio/personalize/rcmd", JSONObject().put("limit", limit.coerceIn(1, 50)))
+                .optJSONArray("data"),
+        )
+    }
+
+    suspend fun podcastsByCategory(
+        categoryId: Long,
+        offset: Int = 0,
+        limit: Int = 30,
+    ): MeloXPodcastPage<MeloXPodcast> = withContext(Dispatchers.IO) {
+        val response = eapi(
+            "/api/djradio/hot",
+            JSONObject()
+                .put("cateId", categoryId)
+                .put("limit", limit.coerceIn(1, 50))
+                .put("offset", offset.coerceAtLeast(0)),
+        )
+        val values = parsePodcasts(response.optJSONArray("djRadios"))
+        val total = response.optInt("count", offset + values.size)
+        MeloXPodcastPage(
+            values = values,
+            hasMore = if (response.has("hasMore")) response.optBoolean("hasMore") else offset + values.size < total,
+            totalCount = total,
+        )
+    }
+
+    suspend fun podcastDetail(id: Long): MeloXPodcast? = withContext(Dispatchers.IO) {
+        val response = eapi("/api/djradio/v2/get", JSONObject().put("id", id))
+        parsePodcast(response.optJSONObject("data") ?: response.optJSONObject("djRadio"))
+    }
+
+    suspend fun podcastPrograms(
+        radioId: Long,
+        offset: Int = 0,
+        limit: Int = 30,
+        ascending: Boolean = false,
+    ): MeloXPodcastPage<MeloXPodcastProgram> = withContext(Dispatchers.IO) {
+        val response = eapi(
+            "/api/dj/program/byradio",
+            JSONObject()
+                .put("radioId", radioId)
+                .put("limit", limit.coerceIn(1, 50))
+                .put("offset", offset.coerceAtLeast(0))
+                .put("asc", ascending),
+        )
+        val source = response.optJSONArray("programs") ?: JSONArray()
+        val values = buildList {
+            for (index in 0 until source.length()) parsePodcastProgram(source.optJSONObject(index))?.let(::add)
+        }
+        val total = response.optInt("count", offset + values.size)
+        MeloXPodcastPage(
+            values = values,
+            hasMore = if (response.has("more")) response.optBoolean("more") else offset + values.size < total,
+            totalCount = total,
+        )
+    }
+
+    suspend fun subscribedPodcasts(offset: Int = 0, limit: Int = 50): MeloXPodcastPage<MeloXPodcast> =
+        withContext(Dispatchers.IO) {
+            val response = eapi(
+                "/api/djradio/get/subed",
+                JSONObject()
+                    .put("limit", limit.coerceIn(1, 100))
+                    .put("offset", offset.coerceAtLeast(0))
+                    .put("total", true),
+            )
+            val values = parsePodcasts(response.optJSONArray("djRadios")).map { it.copy(subscribed = true) }
+            val total = response.optInt("count", offset + values.size)
+            MeloXPodcastPage(
+                values = values,
+                hasMore = if (response.has("hasMore")) response.optBoolean("hasMore") else offset + values.size < total,
+                totalCount = total,
+            )
+        }
+
+    suspend fun setPodcastSubscribed(id: Long, subscribed: Boolean) = withContext(Dispatchers.IO) {
+        eapi(if (subscribed) "/api/djradio/sub" else "/api/djradio/unsub", JSONObject().put("id", id))
+        Unit
+    }
+
     suspend fun collectionSongs(item: MeloXSearchMediaItem): List<SearchSong> = withContext(Dispatchers.IO) {
         val values = when (item.kind) {
             MeloXSearchKind.Albums -> eapi("/api/v1/album/${item.id}", JSONObject()).optJSONArray("songs")
@@ -142,6 +298,84 @@ class NeteaseUniversalSearchClient(
             durationMs = value.optLong("dt", value.optLong("duration", 0L)).coerceAtLeast(0L),
         )
     }
+
+    private fun parsePodcasts(values: JSONArray?): List<MeloXPodcast> {
+        val source = values ?: JSONArray()
+        return buildList {
+            for (index in 0 until source.length()) parsePodcast(source.optJSONObject(index))?.let(::add)
+        }
+    }
+
+    private fun parsePodcast(value: JSONObject?): MeloXPodcast? {
+        value ?: return null
+        val id = value.optLong("id", -1L)
+        if (id <= 0L) return null
+        val host = parsePodcastHost(value.optJSONObject("dj"))
+        return MeloXPodcast(
+            id = id,
+            name = value.optString("name").ifBlank { "未知播客" },
+            artworkUrl = secure(value.optString("picUrl").takeIf(String::isNotBlank)),
+            description = value.optString("desc").takeIf(String::isNotBlank),
+            recommendation = value.optString("rcmdText").takeIf(String::isNotBlank)
+                ?: value.optString("rcmdtext").takeIf(String::isNotBlank),
+            categoryId = value.optLong("categoryId", 0L).takeIf { it > 0L },
+            category = value.optString("category").takeIf(String::isNotBlank),
+            programCount = value.optInt("programCount", 0),
+            subscriberCount = value.optLong("subCount", 0L),
+            playCount = value.optLong("playCount", 0L),
+            host = host,
+            subscribed = value.optBoolean("subed", false),
+        )
+    }
+
+    private fun parsePodcastHost(value: JSONObject?): MeloXPodcastHost? {
+        value ?: return null
+        return MeloXPodcastHost(
+            id = value.optLong("userId", 0L),
+            nickname = value.optString("nickname").ifBlank { "网易云主播" },
+            avatarUrl = secure(value.optString("avatarUrl").takeIf(String::isNotBlank)),
+        )
+    }
+
+    private fun parsePodcastProgram(value: JSONObject?): MeloXPodcastProgram? {
+        value ?: return null
+        val id = value.optLong("id", -1L)
+        if (id <= 0L) return null
+        val radio = value.optJSONObject("radio") ?: JSONObject()
+        val host = parsePodcastHost(value.optJSONObject("dj"))
+        val radioName = radio.optString("name").ifBlank { "未知播客" }
+        val cover = secure(
+            value.optString("coverUrl").takeIf(String::isNotBlank)
+                ?: radio.optString("picUrl").takeIf(String::isNotBlank),
+        )
+        val parsedMainSong = parseSong(value.optJSONObject("mainSong"))
+        val resolvedDuration = value.optLong("duration", 0L).takeIf { it > 0L }
+            ?: parsedMainSong?.durationMs.orEmptyDuration()
+        val mainSong = parsedMainSong?.copy(
+            name = value.optString("name").ifBlank { "未知节目" },
+            artists = host?.nickname ?: radioName,
+            album = radioName,
+            artworkUrl = cover,
+            durationMs = resolvedDuration,
+        )
+        return MeloXPodcastProgram(
+            id = id,
+            name = value.optString("name").ifBlank { "未知节目" },
+            artworkUrl = cover,
+            description = value.optString("description").takeIf(String::isNotBlank),
+            createTimeMs = value.optLong("createTime", 0L).takeIf { it > 0L },
+            durationMs = resolvedDuration,
+            listenerCount = value.optLong("listenerCount", 0L),
+            likedCount = value.optLong("likedCount", 0L),
+            commentCount = value.optLong("commentCount", 0L),
+            radioId = radio.optLong("id", 0L),
+            radioName = radioName,
+            host = host,
+            playbackSong = mainSong,
+        )
+    }
+
+    private fun Long?.orEmptyDuration(): Long = this ?: 0L
 
     private fun eapi(uri: String, data: JSONObject): JSONObject {
         val now = System.currentTimeMillis()

@@ -1,10 +1,12 @@
 package com.lladlam.melox.ui.player
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -21,8 +23,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -42,12 +46,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.lladlam.melox.ui.glass.meloXBackdropBlur
+import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import kotlinx.coroutines.delay
 
 /**
@@ -71,8 +77,27 @@ internal fun MeloXIOSNowPlayingScene(
     onPageChanged: (MeloXNowPlayingPage) -> Unit,
     onShowActions: () -> Unit,
     onShowQuality: () -> Unit,
+    showLandscapeSkyline: Boolean = false,
+    onShowLandscapeSkyline: () -> Unit = {},
+    onHideLandscapeSkyline: () -> Unit = {},
     grabberDragModifier: Modifier = Modifier,
 ) {
+    val configuration = LocalConfiguration.current
+    if (configuration.screenWidthDp > configuration.screenHeightDp) {
+        MeloXIOSLandscapeNowPlayingScene(
+            state = state,
+            page = page,
+            onDismiss = onDismiss,
+            onPageChanged = onPageChanged,
+            onShowActions = onShowActions,
+            onShowQuality = onShowQuality,
+            showSkyline = showLandscapeSkyline,
+            onShowSkyline = onShowLandscapeSkyline,
+            onHideSkyline = onHideLandscapeSkyline,
+            grabberDragModifier = grabberDragModifier,
+        )
+        return
+    }
     val directLyricsQueue = isDirectLyricsQueueTransition(transitionSourcePage, page)
 
     val artworkVisible = page == MeloXNowPlayingPage.Artwork
@@ -372,6 +397,201 @@ internal fun MeloXIOSNowPlayingScene(
                     },
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun MeloXIOSLandscapeNowPlayingScene(
+    state: MeloXPlaybackUiState,
+    page: MeloXNowPlayingPage,
+    onDismiss: () -> Unit,
+    onPageChanged: (MeloXNowPlayingPage) -> Unit,
+    onShowActions: () -> Unit,
+    onShowQuality: () -> Unit,
+    showSkyline: Boolean,
+    onShowSkyline: () -> Unit,
+    onHideSkyline: () -> Unit,
+    grabberDragModifier: Modifier,
+) {
+    var showsLyricsControls by remember(state.mediaId) { mutableStateOf(true) }
+    var activityGeneration by remember(state.mediaId) { mutableIntStateOf(0) }
+
+    fun select(destination: MeloXNowPlayingPage) {
+        showsLyricsControls = true
+        activityGeneration += 1
+        onPageChanged(if (page == destination) MeloXNowPlayingPage.Artwork else destination)
+    }
+
+    LaunchedEffect(page) {
+        showsLyricsControls = true
+        activityGeneration += 1
+    }
+    LaunchedEffect(page, showsLyricsControls, activityGeneration) {
+        if (page != MeloXNowPlayingPage.Lyrics || !showsLyricsControls) return@LaunchedEffect
+        delay(5_000L)
+        showsLyricsControls = false
+    }
+
+    if (showSkyline && page == MeloXNowPlayingPage.Lyrics) {
+        Box(Modifier.fillMaxSize()) {
+            MeloXSkylineLyricsPanel(
+                playback = state,
+                modifier = Modifier.fillMaxSize(),
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(top = 12.dp, end = 20.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = .24f))
+                    .clickable(onClick = onHideSkyline)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            ) {
+                Text(
+                    text = "退出天际歌词",
+                    color = Color.White.copy(alpha = .86f),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+        return
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .padding(horizontal = 20.dp, vertical = 2.dp),
+    ) {
+        SceneGrabber(onDismiss = onDismiss, dragModifier = grabberDragModifier)
+
+        Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            // The shared host owns the only artwork instance in this empty left
+            // column, so rotations and page changes never duplicate the cover.
+            Spacer(Modifier.weight(.43f).fillMaxHeight())
+            Spacer(Modifier.width(24.dp))
+
+            Column(modifier = Modifier.weight(.57f).fillMaxHeight()) {
+                LandscapeSongHeader(
+                    state = state,
+                    onShowActions = onShowActions,
+                    onShowSkyline = if (
+                        page == MeloXNowPlayingPage.Lyrics && MeloXSettingsRuntime.skylineEnabled
+                    ) onShowSkyline else null,
+                )
+
+                AnimatedContent(
+                    targetState = page,
+                    modifier = Modifier.fillMaxSize(),
+                    transitionSpec = { fadeIn(tween(260)) togetherWith fadeOut(tween(180)) },
+                    label = "landscape-player-page",
+                ) { destination ->
+                    when (destination) {
+                        MeloXNowPlayingPage.Artwork -> Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            MeloXNowPlayingCoreControls(
+                                state = state,
+                                page = page,
+                                onShowQuality = onShowQuality,
+                                onPageSelected = ::select,
+                            )
+                        }
+
+                        MeloXNowPlayingPage.Lyrics -> Box(Modifier.fillMaxSize()) {
+                            MeloXIOSLyricsPanel(
+                                state = state,
+                                modifier = Modifier.fillMaxSize().padding(bottom = 50.dp),
+                                isInterfaceHidden = !showsLyricsControls,
+                                onInterfaceInteraction = {
+                                    showsLyricsControls = true
+                                    activityGeneration += 1
+                                },
+                                onInterfaceVisibilityChange = {
+                                    showsLyricsControls = it
+                                    if (it) activityGeneration += 1
+                                },
+                                allowAutomaticSkyline = false,
+                            )
+                            AnimatedVisibility(
+                                visible = showsLyricsControls,
+                                modifier = Modifier.align(Alignment.BottomCenter),
+                                enter = fadeIn(tween(180)),
+                                exit = fadeOut(tween(160)),
+                            ) {
+                                ScenePageSelector(state = state, page = page, onPageSelected = ::select)
+                            }
+                        }
+
+                        MeloXNowPlayingPage.Queue -> Box(Modifier.fillMaxSize()) {
+                            MeloXQueuePanel(
+                                state = state,
+                                modifier = Modifier.fillMaxSize().padding(bottom = 50.dp),
+                                showSongHeader = false,
+                                interactive = true,
+                            )
+                            ScenePageSelector(
+                                state = state,
+                                page = page,
+                                onPageSelected = ::select,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LandscapeSongHeader(
+    state: MeloXPlaybackUiState,
+    onShowActions: () -> Unit,
+    onShowSkyline: (() -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().height(64.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = state.title.ifBlank { "正在播放" },
+                color = Color.White,
+                fontSize = 19.sp,
+                lineHeight = 23.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = state.artist,
+                color = Color.White.copy(alpha = .58f),
+                fontSize = 15.sp,
+                lineHeight = 19.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (onShowSkyline != null) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .clickable(onClick = onShowSkyline),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("↗", color = Color.White.copy(alpha = .84f), fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Box(
+            modifier = Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onShowActions),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("•••", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

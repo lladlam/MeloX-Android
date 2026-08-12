@@ -473,7 +473,7 @@ private fun SceneVolumeControl(state: MeloXPlaybackUiState) {
 }
 
 @Composable
-private fun ScenePageSelector(
+internal fun ScenePageSelector(
     state: MeloXPlaybackUiState,
     page: MeloXNowPlayingPage,
     onPageSelected: (MeloXNowPlayingPage) -> Unit,

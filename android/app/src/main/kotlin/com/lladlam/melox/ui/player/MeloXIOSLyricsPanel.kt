@@ -147,9 +147,10 @@ fun MeloXIOSLyricsPanel(
     isInterfaceHidden: Boolean = false,
     onInterfaceInteraction: () -> Unit = {},
     onInterfaceVisibilityChange: (Boolean) -> Unit = {},
+    allowAutomaticSkyline: Boolean = true,
 ) {
     val configuration = LocalConfiguration.current
-    if (configuration.screenWidthDp > configuration.screenHeightDp && MeloXSettingsRuntime.skylineEnabled) {
+    if (allowAutomaticSkyline && configuration.screenWidthDp > configuration.screenHeightDp && MeloXSettingsRuntime.skylineEnabled) {
         MeloXSkylineLyricsPanel(state, modifier, onInterfaceInteraction)
         return
     }

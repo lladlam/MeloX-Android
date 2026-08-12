@@ -98,6 +98,7 @@ import com.lladlam.melox.ui.glass.meloXLiquidTabSelection
 import com.lladlam.melox.ui.player.MeloXFlowingLightBackdrop
 import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
+import com.lladlam.melox.ui.podcast.MeloXPodcastScreen
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.launch
@@ -106,6 +107,7 @@ import kotlin.math.roundToInt
 private enum class MeloXLibraryPage(val title: String) {
     Songs("歌曲"),
     Playlists("歌单"),
+    Podcasts("播客"),
     History("最近播放"),
     Downloads("下载"),
 }
@@ -294,6 +296,8 @@ fun LibraryScreen(
                                 sharedTransitionScope = sharedScope,
                                 animatedVisibilityScope = playlistTransitionVisibilityScope,
                             )
+
+                            MeloXLibraryPage.Podcasts -> MeloXPodcastScreen(subscriptionsOnly = true)
 
                             MeloXLibraryPage.History -> MeloXLibrarySongsPage(
                                 songs = data.recentSongs,
@@ -712,7 +716,9 @@ private fun MeloXLibrarySegmentedPicker(
     onSelected: (MeloXLibraryPage) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val pages = MeloXLibraryPage.entries
+    val pages = MeloXLibraryPage.entries.filter {
+        it != MeloXLibraryPage.Podcasts || MeloXSettingsRuntime.podcastsEnabled
+    }
     val panelShape = RoundedCornerShape(16.dp)
     val lensShape = RoundedCornerShape(15.dp)
     val panelBackdrop = rememberLayerBackdrop()

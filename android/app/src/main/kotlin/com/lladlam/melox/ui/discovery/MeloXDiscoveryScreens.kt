@@ -53,10 +53,11 @@ import com.lladlam.melox.core.library.NeteasePlaylistSummary
 import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
+import com.lladlam.melox.ui.podcast.MeloXPodcastScreen
 import kotlinx.coroutines.launch
 
 private val Accent = Color(0xFFFF3147)
-private val Categories = listOf("推荐歌单", "排行榜", "精品歌单", "全部", "华语", "欧美", "流行", "摇滚", "民谣", "电子", "轻音乐", "影视原声", "ACG")
+private val Categories = listOf("推荐歌单", "排行榜", "精品歌单", "播客", "全部", "华语", "欧美", "流行", "摇滚", "民谣", "电子", "轻音乐", "影视原声", "ACG")
 
 @Composable
 fun MeloXHomeScreen() {
@@ -116,7 +117,10 @@ fun MeloXExploreScreen() {
     val cache = remember(context) { NeteaseLibraryCache(context) }
     val client = remember(context) { NeteaseLibraryClient({ NeteaseSessionStore.readCookie(context) }) }
     val scope = rememberCoroutineScope()
-    val visibleCategories = if (MeloXSettingsRuntime.showHighQualityPlaylists) Categories else Categories.filterNot { it == "精品歌单" }
+    val visibleCategories = Categories.filter { item ->
+        (item != "精品歌单" || MeloXSettingsRuntime.showHighQualityPlaylists) &&
+            (item != "播客" || MeloXSettingsRuntime.podcastsEnabled)
+    }
     var category by remember { mutableStateOf(visibleCategories.first()) }
     var playlists by remember { mutableStateOf<List<NeteasePlaylistSummary>>(emptyList()) }
     var refreshing by remember { mutableStateOf(false) }
@@ -129,6 +133,7 @@ fun MeloXExploreScreen() {
     }
 
     fun refresh() {
+        if (category == "播客") return
         if (refreshing) return
         val requested = category
         scope.launch {
@@ -140,6 +145,7 @@ fun MeloXExploreScreen() {
         }
     }
     LaunchedEffect(category) {
+        if (category == "播客") return@LaunchedEffect
         playlists = cache.loadExplore(category).orEmpty()
         if (NeteaseLibraryCache.beginExploreColdStartRefresh(category)) refresh()
     }
@@ -164,8 +170,14 @@ fun MeloXExploreScreen() {
                 )
             }
         }
-        PullToRefreshBox(isRefreshing = refreshing, onRefresh = ::refresh, modifier = Modifier.weight(1f)) {
-            if (playlists.isEmpty()) EmptyOrLoading(refreshing, error) else PlaylistGrid(playlists) { selectedPlaylist = it }
+        Box(modifier = Modifier.weight(1f)) {
+            if (category == "播客") {
+                MeloXPodcastScreen()
+            } else {
+                PullToRefreshBox(isRefreshing = refreshing, onRefresh = ::refresh, modifier = Modifier.fillMaxSize()) {
+                    if (playlists.isEmpty()) EmptyOrLoading(refreshing, error) else PlaylistGrid(playlists) { selectedPlaylist = it }
+                }
+            }
         }
     }
 }
