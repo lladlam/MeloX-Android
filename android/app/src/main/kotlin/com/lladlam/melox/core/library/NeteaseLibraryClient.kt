@@ -103,6 +103,23 @@ class NeteaseLibraryClient(
             parsePlaylists(values)
         }
 
+    suspend fun intelligenceModeSongs(seedSongId: Long, playlistId: Long): List<SearchSong> = withContext(Dispatchers.IO) {
+        ensureLoggedIn()
+        val response = eapi(
+            uri = "/api/playmode/intelligence/list",
+            data = JSONObject().put("songId", seedSongId).put("type", "fromPlayOne")
+                .put("playlistId", playlistId).put("startMusicId", seedSongId).put("count", 1),
+            authenticated = true,
+        )
+        val data = response.optJSONArray("data") ?: JSONArray()
+        val ids = buildList {
+            for (index in 0 until data.length()) data.optJSONObject(index)?.optLong("id", 0L)?.takeIf { it > 0L }?.let(::add)
+        }
+        if (ids.isEmpty()) throw IOException("网易云暂时没有返回可播放的心动模式歌曲")
+        val byId = ids.chunked(100).flatMap { page -> songDetailsBlocking(page) }.associateBy(SearchSong::id)
+        ids.mapNotNull(byId::get)
+    }
+
     fun similarSongsBlocking(songId: Long, limit: Int = 50): List<SearchSong> {
         if (songId <= 0L) return emptyList()
         // Upstream uses /api/v1/discovery/simiSong. The direct EAPI transport is

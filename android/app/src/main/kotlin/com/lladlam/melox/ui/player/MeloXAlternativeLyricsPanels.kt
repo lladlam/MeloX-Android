@@ -281,16 +281,26 @@ internal fun MeloXTextPVLyricsPanel(
 private fun TextPVBackground(style: MeloXTextPVStyle, phase: Float) {
     Canvas(Modifier.fillMaxSize()) {
         when (style) {
-            MeloXTextPVStyle.Dynamic -> {
-                drawRect(Color.Black.copy(alpha = .10f))
+            MeloXTextPVStyle.BlueBold, MeloXTextPVStyle.BluePlane, MeloXTextPVStyle.Dynamic -> {
+                drawRect(Color(0xFF123A91).copy(alpha = .56f))
                 repeat(7) { index ->
                     val x = size.width * ((index * .19f + phase * .12f) % 1.15f - .08f)
                     drawLine(Color.White.copy(alpha = .05f), Offset(x, 0f), Offset(x - size.height * .18f, size.height), 2f)
                 }
                 drawCircle(Color.White.copy(alpha = .08f), radius = size.minDimension * .28f, center = Offset(size.width * .78f, size.height * .22f), style = Stroke(3f))
             }
-            MeloXTextPVStyle.Minimal -> drawRect(Color.Black.copy(alpha = .08f))
-            MeloXTextPVStyle.Cyber -> {
+            MeloXTextPVStyle.KineticSplit, MeloXTextPVStyle.CrimeScene -> {
+                drawRect(Color(0xFFF0E6D5).copy(alpha = .72f))
+                drawLine(Color(0xFF8E1832).copy(alpha = .72f), Offset(-size.width * .1f, size.height * (.72f - phase * .12f)), Offset(size.width * 1.1f, size.height * (.28f + phase * .12f)), size.minDimension * .055f)
+            }
+            MeloXTextPVStyle.Geometric -> {
+                drawRect(Color(0xFFF5C928).copy(alpha = .76f))
+                repeat(4) { index ->
+                    drawRect(Color.Black.copy(alpha = .06f + index * .018f), topLeft = Offset(size.width * (.08f + index * .07f), size.height * (.12f + index * .07f)), size = androidx.compose.ui.geometry.Size(size.minDimension * (.74f - index * .1f), size.minDimension * (.74f - index * .1f)), style = Stroke(3f))
+                }
+            }
+            MeloXTextPVStyle.CyberGrunge, MeloXTextPVStyle.RainCity, MeloXTextPVStyle.CyberpunkHUD,
+            MeloXTextPVStyle.SpiderWeb, MeloXTextPVStyle.Cyber -> {
                 drawRect(Color(0xFF061018).copy(alpha = .52f))
                 val spacing = size.minDimension / 12f
                 var x = -spacing + phase * spacing
@@ -304,6 +314,44 @@ private fun TextPVBackground(style: MeloXTextPVStyle, phase: Float) {
                     y += spacing
                 }
             }
+            MeloXTextPVStyle.EmotionCinema, MeloXTextPVStyle.CalmVillain, MeloXTextPVStyle.Haruhikage,
+            MeloXTextPVStyle.Minimal -> {
+                drawRect(Color(0xFF24334A).copy(alpha = .38f))
+                repeat(5) { index ->
+                    val y = size.height * (.18f + index * .15f)
+                    drawLine(Color(0xFF9CC8FF).copy(alpha = .05f), Offset(0f, y), Offset(size.width, y + sin(phase * 6.28f + index) * 24f), 2f)
+                }
+            }
+            MeloXTextPVStyle.HystericNight -> {
+                drawRect(Color(0xFF180A25).copy(alpha = .58f))
+                repeat(10) { index ->
+                    val angle = index * PI.toFloat() / 5f + phase * .35f
+                    val end = Offset(size.width / 2f + kotlin.math.cos(angle) * size.maxDimension, size.height / 2f + sin(angle) * size.maxDimension)
+                    drawLine(Color(0xFFE46CFF).copy(alpha = .055f), center, end, size.minDimension * .025f)
+                }
+            }
+            MeloXTextPVStyle.StaggeredText -> drawRect(Color.Black.copy(alpha = .14f))
+            MeloXTextPVStyle.GirlyClouds, MeloXTextPVStyle.SweetPink -> {
+                drawRect(Color(0xFFF3A9C3).copy(alpha = .55f))
+                repeat(7) { index ->
+                    val x = size.width * ((index * .22f + phase * .08f) % 1.2f - .1f)
+                    drawLine(Color.White.copy(alpha = .11f), Offset(x, 0f), Offset(x - size.height * .25f, size.height), size.minDimension * .018f)
+                }
+                drawCircle(Color.White.copy(alpha = .12f), size.minDimension * .22f, Offset(size.width * .12f, size.height * .15f))
+            }
+            MeloXTextPVStyle.FlyMeToTheMoon -> {
+                drawRect(Color(0xFF080D24).copy(alpha = .74f))
+                repeat(18) { index -> drawCircle(Color.White.copy(alpha = .1f), 1.5f + index % 3, Offset(size.width * ((index * .173f) % 1f), size.height * ((index * .317f) % 1f))) }
+                drawCircle(Color(0xFFBFCBFF).copy(alpha = .16f), size.minDimension * .24f, Offset(size.width * .78f, size.height * .22f))
+            }
+            MeloXTextPVStyle.KawaiiPixel -> {
+                drawRect(Color(0xFFB8F1EA).copy(alpha = .52f))
+                val spacing = size.minDimension / 14f
+                var x = 0f
+                while (x < size.width) { drawLine(Color(0xFFFF79AE).copy(alpha = .08f), Offset(x, 0f), Offset(x, size.height), 2f); x += spacing }
+                var y = 0f
+                while (y < size.height) { drawLine(Color.White.copy(alpha = .09f), Offset(0f, y), Offset(size.width, y), 2f); y += spacing }
+            }
         }
     }
 }
@@ -316,27 +364,26 @@ private fun TextPVComposition(
     phase: Float,
     onSeek: () -> Unit,
 ) {
-    val alignment = when (style) {
-        MeloXTextPVStyle.Dynamic -> Alignment.CenterStart
-        MeloXTextPVStyle.Minimal -> Alignment.Center
-        MeloXTextPVStyle.Cyber -> Alignment.BottomStart
-    }
+    val centered = style in setOf(MeloXTextPVStyle.Geometric, MeloXTextPVStyle.GirlyClouds, MeloXTextPVStyle.SweetPink, MeloXTextPVStyle.FlyMeToTheMoon, MeloXTextPVStyle.Minimal)
+    val bottom = style in setOf(MeloXTextPVStyle.CyberGrunge, MeloXTextPVStyle.RainCity, MeloXTextPVStyle.CyberpunkHUD, MeloXTextPVStyle.SpiderWeb, MeloXTextPVStyle.Cyber)
+    val alignment = if (centered) Alignment.Center else if (bottom) Alignment.BottomStart else Alignment.CenterStart
     Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = alignment) {
         Column(Modifier.fillMaxWidth().clickable(onClick = onSeek)) {
-            if (style == MeloXTextPVStyle.Cyber) {
+            if (bottom) {
                 Text("LYRIC // ${(phase * 999).toInt().toString().padStart(3, '0')}", color = Color(0xFF76E8FF), fontSize = 11.sp, letterSpacing = 2.sp)
             }
             Text(
                 line.text,
                 color = Color.White,
-                fontSize = when (style) {
-                    MeloXTextPVStyle.Dynamic -> 48.sp
-                    MeloXTextPVStyle.Minimal -> 38.sp
-                    MeloXTextPVStyle.Cyber -> 42.sp
+                fontSize = when {
+                    centered -> 38.sp
+                    bottom -> 42.sp
+                    style == MeloXTextPVStyle.StaggeredText -> 52.sp
+                    else -> 48.sp
                 },
                 lineHeight = 52.sp,
                 fontWeight = FontWeight.Black,
-                textAlign = if (style == MeloXTextPVStyle.Minimal) TextAlign.Center else TextAlign.Start,
+                textAlign = if (centered) TextAlign.Center else TextAlign.Start,
                 modifier = Modifier.scale(1f + sin(phase * 2f * PI.toFloat()) * .012f),
             )
             if (MeloXSettingsRuntime.showLyricTranslation && !line.translation.isNullOrBlank()) {

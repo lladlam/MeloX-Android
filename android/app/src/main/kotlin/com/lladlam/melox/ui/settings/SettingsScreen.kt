@@ -784,9 +784,24 @@ private fun LyricsSettings(context: android.content.Context) {
         Spacer(Modifier.height(8.dp))
         SettingsGlassGroup {
             listOf(
-                MeloXTextPVStyle.Dynamic to "动态拼贴",
-                MeloXTextPVStyle.Minimal to "极简字幕",
-                MeloXTextPVStyle.Cyber to "赛博网格",
+                MeloXTextPVStyle.BlueBold to "蓝色冲击",
+                MeloXTextPVStyle.KineticSplit to "斩击",
+                MeloXTextPVStyle.BluePlane to "蓝色构成",
+                MeloXTextPVStyle.CyberGrunge to "赛博废墟",
+                MeloXTextPVStyle.Geometric to "几何",
+                MeloXTextPVStyle.RainCity to "黑客帝国",
+                MeloXTextPVStyle.CyberpunkHUD to "夜之城监控",
+                MeloXTextPVStyle.EmotionCinema to "情绪电影",
+                MeloXTextPVStyle.HystericNight to "歇斯底里之夜",
+                MeloXTextPVStyle.SpiderWeb to "蛛网",
+                MeloXTextPVStyle.StaggeredText to "错落文字",
+                MeloXTextPVStyle.CalmVillain to "冷静的反派",
+                MeloXTextPVStyle.GirlyClouds to "少女云朵",
+                MeloXTextPVStyle.SweetPink to "格子花边",
+                MeloXTextPVStyle.FlyMeToTheMoon to "Fly Me to the Moon",
+                MeloXTextPVStyle.KawaiiPixel to "Kawaii 像素",
+                MeloXTextPVStyle.CrimeScene to "案发现场",
+                MeloXTextPVStyle.Haruhikage to "春日影",
             ).forEach { (style, title) ->
                 SettingsChoiceRow(title, pvStyle == style) {
                     MeloXSettingsPreferences.setString(context, "lyrics_text_pv_style", style.name)

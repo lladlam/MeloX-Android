@@ -8,7 +8,14 @@ import androidx.compose.runtime.setValue
 enum class MeloXThemeMode { System, Light, Dark }
 enum class MeloXLyricAnnotationDisplayMode { FocusedLine, AllLines }
 enum class MeloXLyricsStyle { AppleMusic, Eva, TextPV }
-enum class MeloXTextPVStyle { Dynamic, Minimal, Cyber }
+enum class MeloXTextPVStyle {
+    BlueBold, KineticSplit, BluePlane, CyberGrunge, Geometric, RainCity,
+    CyberpunkHUD, EmotionCinema, HystericNight, SpiderWeb, StaggeredText,
+    CalmVillain, GirlyClouds, SweetPink, FlyMeToTheMoon, KawaiiPixel,
+    CrimeScene, Haruhikage,
+    /** Compatibility values kept for installs that used the early Android preview. */
+    Dynamic, Minimal, Cyber,
+}
 enum class MeloXVolumeControlMode { System, Player }
 enum class MeloXSecondaryLyricMode { Auto, Translation, Romanization, NextLine, Hidden }
 enum class MeloXSystemLyricTitleMode { LyricFirst, SongFirst }
@@ -73,7 +80,7 @@ object MeloXSettingsRuntime {
         internal set
     var lyricsStyle by mutableStateOf(MeloXLyricsStyle.AppleMusic)
         internal set
-    var textPVStyle by mutableStateOf(MeloXTextPVStyle.Dynamic)
+    var textPVStyle by mutableStateOf(MeloXTextPVStyle.BlueBold)
         internal set
     var skylineEnabled by mutableStateOf(true)
         internal set
@@ -173,8 +180,8 @@ object MeloXSettingsRuntime {
             MeloXLyricsStyle.valueOf(MeloXSettingsPreferences.string(app, "lyrics_style", MeloXLyricsStyle.AppleMusic.name))
         }.getOrDefault(MeloXLyricsStyle.AppleMusic)
         textPVStyle = runCatching {
-            MeloXTextPVStyle.valueOf(MeloXSettingsPreferences.string(app, "lyrics_text_pv_style", MeloXTextPVStyle.Dynamic.name))
-        }.getOrDefault(MeloXTextPVStyle.Dynamic)
+            MeloXTextPVStyle.valueOf(MeloXSettingsPreferences.string(app, "lyrics_text_pv_style", MeloXTextPVStyle.BlueBold.name))
+        }.getOrDefault(MeloXTextPVStyle.BlueBold)
         skylineEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_skyline_enabled", true)
         skylineShowSongInfo = MeloXSettingsPreferences.boolean(app, "lyrics_skyline_song_info", true)
         skylineAmbientLines = MeloXSettingsPreferences.int(app, "lyrics_skyline_ambient_lines", 2).coerceIn(0, 4)
@@ -339,7 +346,7 @@ object MeloXSettingsPreferences {
             }.getOrDefault(MeloXLyricsStyle.AppleMusic)
             "lyrics_text_pv_style" -> MeloXSettingsRuntime.textPVStyle = runCatching {
                 MeloXTextPVStyle.valueOf(value)
-            }.getOrDefault(MeloXTextPVStyle.Dynamic)
+            }.getOrDefault(MeloXTextPVStyle.BlueBold)
             "system_lyrics_title_mode" -> MeloXSettingsRuntime.systemLyricTitleMode = runCatching {
                 MeloXSystemLyricTitleMode.valueOf(value)
             }.getOrDefault(MeloXSystemLyricTitleMode.LyricFirst)

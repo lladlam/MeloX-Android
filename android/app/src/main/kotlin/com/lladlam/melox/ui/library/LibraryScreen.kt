@@ -302,6 +302,15 @@ fun LibraryScreen(
                                         )
                                     }
                                 },
+                                onHeartMode = {
+                                    val seed = data.likedSongs.randomOrNull()
+                                    val playlistId = data.playlists.firstOrNull()?.id
+                                    if (seed != null && playlistId != null) scope.launch {
+                                        runCatching { client.intelligenceModeSongs(seed.id, playlistId) }
+                                            .onSuccess { songs -> songs.firstOrNull()?.let { PlaybackCommands.playQueue(context, songs, it.id) } }
+                                            .onFailure { errorMessage = it.message ?: "无法启动心动模式" }
+                                    }
+                                },
                             )
 
                             MeloXLibraryPage.Playlists -> MeloXLibraryPlaylistsPage(
@@ -848,6 +857,7 @@ private fun MeloXLibrarySongsPage(
     songs: List<SearchSong>,
     onPlay: (SearchSong) -> Unit,
     onPlayAll: () -> Unit,
+    onHeartMode: (() -> Unit)? = null,
 ) {
     if (songs.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -866,6 +876,16 @@ private fun MeloXLibrarySongsPage(
     ) {
         item {
             MeloXPlayAllRow(onPlayAll)
+            onHeartMode?.let { action ->
+                Row(
+                    Modifier.fillMaxWidth().height(52.dp).clickable(onClick = action).padding(start = 20.dp, end = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Text("♥", color = Color(0xFFFF3147), fontSize = 23.sp)
+                    Text("心动模式", fontSize = 17.sp, color = MaterialTheme.colorScheme.onBackground)
+                }
+            }
             MeloXInsetDivider(leading = 68.dp)
         }
         items(songs, key = { it.id }) { song ->
