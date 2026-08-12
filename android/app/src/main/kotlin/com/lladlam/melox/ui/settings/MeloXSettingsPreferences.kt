@@ -17,6 +17,17 @@ enum class MeloXTextPVStyle {
     /** Compatibility values kept for installs that used the early Android preview. */
     Dynamic, Minimal, Cyber,
 }
+
+val MeloXTextPVStyle.referenceAnimationSpeed: Float
+    get() = when (this) {
+        MeloXTextPVStyle.StaggeredText -> 3.4f
+        MeloXTextPVStyle.GirlyClouds -> 1.5f
+        MeloXTextPVStyle.SweetPink, MeloXTextPVStyle.KawaiiPixel -> 1f
+        MeloXTextPVStyle.FlyMeToTheMoon -> 3.7f
+        MeloXTextPVStyle.CrimeScene -> 2.5f
+        MeloXTextPVStyle.Haruhikage -> .8f
+        else -> 2f
+    }
 enum class MeloXVolumeControlMode { System, Player }
 enum class MeloXSecondaryLyricMode { Auto, Translation, Romanization, NextLine, Hidden }
 enum class MeloXSystemLyricTitleMode { LyricFirst, SongFirst }
@@ -105,13 +116,43 @@ object MeloXSettingsRuntime {
         internal set
     var textPVStyle by mutableStateOf(MeloXTextPVStyle.BlueBold)
         internal set
+    var textPVMotionIntensity by mutableStateOf(1f)
+        internal set
+    var textPVAnimationSpeed by mutableStateOf(2f)
+        internal set
     var skylineEnabled by mutableStateOf(true)
         internal set
     var skylineShowSongInfo by mutableStateOf(true)
         internal set
+    var skylineKeepsScreenAwake by mutableStateOf(true)
+        internal set
     var skylineAmbientLines by mutableStateOf(2)
         internal set
-    var skylineMainFontScale by mutableStateOf(1f)
+    var skylineCurrentFontSize by mutableStateOf(54f)
+        internal set
+    var skylineCurrentMaximumScale by mutableStateOf(1.1f)
+        internal set
+    var skylineNextFontSize by mutableStateOf(24f)
+        internal set
+    var skylineCurrentSpacing by mutableStateOf(14f)
+        internal set
+    var skylineCurrentWidth by mutableStateOf(.64f)
+        internal set
+    var skylineNextOpacity by mutableStateOf(.48f)
+        internal set
+    var skylineAmbientFontSize by mutableStateOf(44f)
+        internal set
+    var skylineAmbientMaximumCharacters by mutableStateOf(4)
+        internal set
+    var skylineAmbientMaximumVisibleTexts by mutableStateOf(16)
+        internal set
+    var skylineAmbientOpacity by mutableStateOf(1f)
+        internal set
+    var skylineAmbientBlur by mutableStateOf(1f)
+        internal set
+    var skylineAmbientMaximumTilt by mutableStateOf(8f)
+        internal set
+    var skylineAmbientDrift by mutableStateOf(1f)
         internal set
     var systemLyricsEnabled by mutableStateOf(false)
         internal set
@@ -235,10 +276,30 @@ object MeloXSettingsRuntime {
         textPVStyle = runCatching {
             MeloXTextPVStyle.valueOf(MeloXSettingsPreferences.string(app, "lyrics_text_pv_style", MeloXTextPVStyle.BlueBold.name))
         }.getOrDefault(MeloXTextPVStyle.BlueBold)
+        textPVMotionIntensity = MeloXSettingsPreferences.float(app, "lyrics_text_pv_motion_intensity", 1f)
+            .coerceIn(0f, 2f)
+        textPVAnimationSpeed = MeloXSettingsPreferences.float(
+            app,
+            "lyrics_text_pv_animation_speed",
+            textPVStyle.referenceAnimationSpeed,
+        ).coerceIn(0f, 4f)
         skylineEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_skyline_enabled", true)
         skylineShowSongInfo = MeloXSettingsPreferences.boolean(app, "lyrics_skyline_song_info", true)
+        skylineKeepsScreenAwake = MeloXSettingsPreferences.boolean(app, "lyrics_skyline_keep_awake", true)
         skylineAmbientLines = MeloXSettingsPreferences.int(app, "lyrics_skyline_ambient_lines", 2).coerceIn(0, 4)
-        skylineMainFontScale = MeloXSettingsPreferences.float(app, "lyrics_skyline_font_scale", 1f).coerceIn(.8f, 1.3f)
+        skylineCurrentFontSize = MeloXSettingsPreferences.float(app, "lyrics_skyline_current_font_size", 54f).coerceIn(36f, 84f)
+        skylineCurrentMaximumScale = MeloXSettingsPreferences.float(app, "lyrics_skyline_current_max_scale", 1.1f).coerceIn(1f, 1.2f)
+        skylineNextFontSize = MeloXSettingsPreferences.float(app, "lyrics_skyline_next_font_size", 24f).coerceIn(14f, 44f)
+        skylineCurrentSpacing = MeloXSettingsPreferences.float(app, "lyrics_skyline_current_spacing", 14f).coerceIn(4f, 36f)
+        skylineCurrentWidth = MeloXSettingsPreferences.float(app, "lyrics_skyline_current_width", .64f).coerceIn(.4f, .82f)
+        skylineNextOpacity = MeloXSettingsPreferences.float(app, "lyrics_skyline_next_opacity", .48f).coerceIn(.2f, .8f)
+        skylineAmbientFontSize = MeloXSettingsPreferences.float(app, "lyrics_skyline_ambient_font_size", 44f).coerceIn(24f, 72f)
+        skylineAmbientMaximumCharacters = MeloXSettingsPreferences.int(app, "lyrics_skyline_ambient_max_characters", 4).coerceIn(1, 4)
+        skylineAmbientMaximumVisibleTexts = MeloXSettingsPreferences.int(app, "lyrics_skyline_ambient_max_visible", 16).coerceIn(4, 24)
+        skylineAmbientOpacity = MeloXSettingsPreferences.float(app, "lyrics_skyline_ambient_opacity", 1f).coerceIn(.4f, 1.8f)
+        skylineAmbientBlur = MeloXSettingsPreferences.float(app, "lyrics_skyline_ambient_blur", 1f).coerceIn(0f, 2f)
+        skylineAmbientMaximumTilt = MeloXSettingsPreferences.float(app, "lyrics_skyline_ambient_max_tilt", 8f).coerceIn(0f, 20f)
+        skylineAmbientDrift = MeloXSettingsPreferences.float(app, "lyrics_skyline_ambient_drift", 1f).coerceIn(0f, 2f)
         systemLyricsEnabled = MeloXSettingsPreferences.boolean(app, "system_lyrics_enabled", false)
         lyricNotificationsEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_notifications_enabled", false)
         systemLyricTitleMode = runCatching {
@@ -340,6 +401,7 @@ object MeloXSettingsPreferences {
             "lyrics_advance_word_by_word" -> MeloXSettingsRuntime.lyricAdvanceAppliesToWordByWord = value
             "lyrics_skyline_enabled" -> MeloXSettingsRuntime.skylineEnabled = value
             "lyrics_skyline_song_info" -> MeloXSettingsRuntime.skylineShowSongInfo = value
+            "lyrics_skyline_keep_awake" -> MeloXSettingsRuntime.skylineKeepsScreenAwake = value
             "system_lyrics_enabled" -> MeloXSettingsRuntime.systemLyricsEnabled = value
             "lyrics_notifications_enabled" -> MeloXSettingsRuntime.lyricNotificationsEnabled = value
             "lyrics_notification_next_line" -> MeloXSettingsRuntime.lyricNotificationShowNextLine = value
@@ -371,6 +433,8 @@ object MeloXSettingsPreferences {
                 value.takeIf { it in setOf(30, 60, 90, 120) } ?: 60
             "lyrics_long_tone_threshold_ms" -> MeloXSettingsRuntime.lyricLongToneThresholdMs = value.coerceIn(300, 1_500)
             "lyrics_skyline_ambient_lines" -> MeloXSettingsRuntime.skylineAmbientLines = value.coerceIn(0, 4)
+            "lyrics_skyline_ambient_max_characters" -> MeloXSettingsRuntime.skylineAmbientMaximumCharacters = value.coerceIn(1, 4)
+            "lyrics_skyline_ambient_max_visible" -> MeloXSettingsRuntime.skylineAmbientMaximumVisibleTexts = value.coerceIn(4, 24)
             "floating_lyrics_font_size" -> MeloXSettingsRuntime.floatingFontSizeSp = value.coerceIn(14, 28)
         }
     }
@@ -385,7 +449,19 @@ object MeloXSettingsPreferences {
             "lyrics_inactive_opacity" -> MeloXSettingsRuntime.lyricInactiveOpacity = value.coerceIn(.15f, .65f)
             "lyrics_glow_strength" -> MeloXSettingsRuntime.lyricGlowStrength = value.coerceIn(0f, 1.5f)
             "lyrics_long_tone_strength" -> MeloXSettingsRuntime.lyricLongToneStrength = value.coerceIn(0f, 1.5f)
-            "lyrics_skyline_font_scale" -> MeloXSettingsRuntime.skylineMainFontScale = value.coerceIn(.8f, 1.3f)
+            "lyrics_skyline_current_font_size" -> MeloXSettingsRuntime.skylineCurrentFontSize = value.coerceIn(36f, 84f)
+            "lyrics_skyline_current_max_scale" -> MeloXSettingsRuntime.skylineCurrentMaximumScale = value.coerceIn(1f, 1.2f)
+            "lyrics_skyline_next_font_size" -> MeloXSettingsRuntime.skylineNextFontSize = value.coerceIn(14f, 44f)
+            "lyrics_skyline_current_spacing" -> MeloXSettingsRuntime.skylineCurrentSpacing = value.coerceIn(4f, 36f)
+            "lyrics_skyline_current_width" -> MeloXSettingsRuntime.skylineCurrentWidth = value.coerceIn(.4f, .82f)
+            "lyrics_skyline_next_opacity" -> MeloXSettingsRuntime.skylineNextOpacity = value.coerceIn(.2f, .8f)
+            "lyrics_skyline_ambient_font_size" -> MeloXSettingsRuntime.skylineAmbientFontSize = value.coerceIn(24f, 72f)
+            "lyrics_skyline_ambient_opacity" -> MeloXSettingsRuntime.skylineAmbientOpacity = value.coerceIn(.4f, 1.8f)
+            "lyrics_skyline_ambient_blur" -> MeloXSettingsRuntime.skylineAmbientBlur = value.coerceIn(0f, 2f)
+            "lyrics_skyline_ambient_max_tilt" -> MeloXSettingsRuntime.skylineAmbientMaximumTilt = value.coerceIn(0f, 20f)
+            "lyrics_skyline_ambient_drift" -> MeloXSettingsRuntime.skylineAmbientDrift = value.coerceIn(0f, 2f)
+            "lyrics_text_pv_motion_intensity" -> MeloXSettingsRuntime.textPVMotionIntensity = value.coerceIn(0f, 2f)
+            "lyrics_text_pv_animation_speed" -> MeloXSettingsRuntime.textPVAnimationSpeed = value.coerceIn(0f, 4f)
         }
     }
 
@@ -413,9 +489,16 @@ object MeloXSettingsPreferences {
             "lyrics_style" -> MeloXSettingsRuntime.lyricsStyle = runCatching {
                 MeloXLyricsStyle.valueOf(value)
             }.getOrDefault(MeloXLyricsStyle.AppleMusic)
-            "lyrics_text_pv_style" -> MeloXSettingsRuntime.textPVStyle = runCatching {
-                MeloXTextPVStyle.valueOf(value)
-            }.getOrDefault(MeloXTextPVStyle.BlueBold)
+            "lyrics_text_pv_style" -> {
+                MeloXSettingsRuntime.textPVStyle = runCatching {
+                    MeloXTextPVStyle.valueOf(value)
+                }.getOrDefault(MeloXTextPVStyle.BlueBold)
+                setFloat(
+                    context,
+                    "lyrics_text_pv_animation_speed",
+                    MeloXSettingsRuntime.textPVStyle.referenceAnimationSpeed,
+                )
+            }
             "lyrics_font_weight" -> MeloXSettingsRuntime.lyricFontWeight = runCatching {
                 MeloXLyricsFontWeight.valueOf(value)
             }.getOrDefault(MeloXLyricsFontWeight.Heavy)

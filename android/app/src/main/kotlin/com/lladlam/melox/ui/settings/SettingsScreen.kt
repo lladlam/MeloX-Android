@@ -31,6 +31,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -450,6 +451,7 @@ private fun SkylineLyricsSettings(context: android.content.Context) {
         enabled = it
         MeloXSettingsPreferences.setBoolean(context, "lyrics_skyline_enabled", it)
     }
+    SettingsToggleRow(context, "屏幕常亮", "lyrics_skyline_keep_awake", true, "仅在全屏天际歌词可见时阻止自动锁屏。")
     SettingsToggleRow(context, "显示封面与歌曲信息", "lyrics_skyline_song_info", true)
     LyricsChoiceSetting(
         context,
@@ -458,13 +460,67 @@ private fun SkylineLyricsSettings(context: android.content.Context) {
         2,
         listOf(0, 1, 2, 3, 4),
     ) { if (it == 0) "关闭" else "$it 行" }
-    LyricsFloatChoiceSetting(
-        context,
-        "主歌词字号",
-        "lyrics_skyline_font_scale",
-        1f,
-        listOf(.8f, .9f, 1f, 1.15f, 1.3f),
-    ) { "${(it * 100).toInt()}%" }
+    var currentFontSize by remember { mutableStateOf(MeloXSettingsRuntime.skylineCurrentFontSize) }
+    var currentScale by remember { mutableStateOf(MeloXSettingsRuntime.skylineCurrentMaximumScale) }
+    var currentWidth by remember { mutableStateOf(MeloXSettingsRuntime.skylineCurrentWidth) }
+    var nextFontSize by remember { mutableStateOf(MeloXSettingsRuntime.skylineNextFontSize) }
+    var nextOpacity by remember { mutableStateOf(MeloXSettingsRuntime.skylineNextOpacity) }
+    var currentSpacing by remember { mutableStateOf(MeloXSettingsRuntime.skylineCurrentSpacing) }
+    var ambientFontSize by remember { mutableStateOf(MeloXSettingsRuntime.skylineAmbientFontSize) }
+    var ambientOpacity by remember { mutableStateOf(MeloXSettingsRuntime.skylineAmbientOpacity) }
+    var ambientBlur by remember { mutableStateOf(MeloXSettingsRuntime.skylineAmbientBlur) }
+    var ambientTilt by remember { mutableStateOf(MeloXSettingsRuntime.skylineAmbientMaximumTilt) }
+    var ambientDrift by remember { mutableStateOf(MeloXSettingsRuntime.skylineAmbientDrift) }
+    SettingsFloatSlider("当前歌词字号", currentFontSize, 36f..84f, 47, { "${it.toInt()} sp" }) {
+        currentFontSize = it; MeloXSettingsPreferences.setFloat(context, "lyrics_skyline_current_font_size", it)
+    }
+    SettingsFloatSlider("逐字歌词最大缩放", currentScale, 1f..1.2f, 19, { "%.2f×".format(it) }) {
+        currentScale = it; MeloXSettingsPreferences.setFloat(context, "lyrics_skyline_current_max_scale", it)
+    }
+    SettingsFloatSlider("中央显示宽度", currentWidth, .4f..82f / 100f, 20, { "${(it * 100).toInt()}%" }) {
+        currentWidth = it; MeloXSettingsPreferences.setFloat(context, "lyrics_skyline_current_width", it)
+    }
+    SettingsFloatSlider("下一句字号", nextFontSize, 14f..44f, 29, { "${it.toInt()} sp" }) {
+        nextFontSize = it; MeloXSettingsPreferences.setFloat(context, "lyrics_skyline_next_font_size", it)
+    }
+    SettingsFloatSlider("下一句亮度", nextOpacity, .2f..8f / 10f, 11, { "${(it * 100).toInt()}%" }) {
+        nextOpacity = it; MeloXSettingsPreferences.setFloat(context, "lyrics_skyline_next_opacity", it)
+    }
+    SettingsFloatSlider("中央歌词间距", currentSpacing, 4f..36f, 31, { "${it.toInt()} dp" }) {
+        currentSpacing = it; MeloXSettingsPreferences.setFloat(context, "lyrics_skyline_current_spacing", it)
+    }
+    LyricsChoiceSetting(context, "单组最大字数", "lyrics_skyline_ambient_max_characters", 4, listOf(1, 2, 3, 4)) { "$it 个字" }
+    LyricsChoiceSetting(context, "同屏文字上限", "lyrics_skyline_ambient_max_visible", 16, listOf(4, 8, 12, 16, 20, 24)) { "$it 组" }
+    SettingsFloatSlider("背景字号", ambientFontSize, 24f..72f, 47, { "${it.toInt()} sp" }) {
+        ambientFontSize = it; MeloXSettingsPreferences.setFloat(context, "lyrics_skyline_ambient_font_size", it)
+    }
+    SettingsFloatSlider("背景字亮度", ambientOpacity, .4f..1.8f, 13, { "%.1f×".format(it) }) {
+        ambientOpacity = it; MeloXSettingsPreferences.setFloat(context, "lyrics_skyline_ambient_opacity", it)
+    }
+    SettingsFloatSlider("背景字模糊", ambientBlur, 0f..2f, 19, { "%.1f×".format(it) }) {
+        ambientBlur = it; MeloXSettingsPreferences.setFloat(context, "lyrics_skyline_ambient_blur", it)
+    }
+    SettingsFloatSlider("最大倾斜角度", ambientTilt, 0f..20f, 19, { "${it.toInt()}°" }) {
+        ambientTilt = it; MeloXSettingsPreferences.setFloat(context, "lyrics_skyline_ambient_max_tilt", it)
+    }
+    SettingsFloatSlider("漂移幅度", ambientDrift, 0f..2f, 19, { "%.1f×".format(it) }) {
+        ambientDrift = it; MeloXSettingsPreferences.setFloat(context, "lyrics_skyline_ambient_drift", it)
+    }
+    SettingsActionButton("恢复全屏天际歌词默认设置") {
+        listOf(
+            "lyrics_skyline_current_font_size" to 54f, "lyrics_skyline_current_max_scale" to 1.1f,
+            "lyrics_skyline_next_font_size" to 24f, "lyrics_skyline_current_spacing" to 14f,
+            "lyrics_skyline_current_width" to .64f, "lyrics_skyline_next_opacity" to .48f,
+            "lyrics_skyline_ambient_font_size" to 44f, "lyrics_skyline_ambient_opacity" to 1f,
+            "lyrics_skyline_ambient_blur" to 1f, "lyrics_skyline_ambient_max_tilt" to 8f,
+            "lyrics_skyline_ambient_drift" to 1f,
+        ).forEach { (key, value) -> MeloXSettingsPreferences.setFloat(context, key, value) }
+        MeloXSettingsPreferences.setInt(context, "lyrics_skyline_ambient_max_characters", 4)
+        MeloXSettingsPreferences.setInt(context, "lyrics_skyline_ambient_max_visible", 16)
+        currentFontSize = 54f; currentScale = 1.1f; nextFontSize = 24f; currentSpacing = 14f
+        currentWidth = .64f; nextOpacity = .48f; ambientFontSize = 44f; ambientOpacity = 1f
+        ambientBlur = 1f; ambientTilt = 8f; ambientDrift = 1f
+    }
     SettingsInfoCard("显示条件", "仅在播放器歌词页横屏时切换；竖屏继续使用歌词设置中选择的渲染器。")
 }
 
@@ -803,6 +859,8 @@ private fun LyricsSettings(context: android.content.Context) {
     }
     if (lyricsStyle == MeloXLyricsStyle.TextPV) {
         var pvStyle by remember { mutableStateOf(MeloXSettingsRuntime.textPVStyle) }
+        var pvMotionIntensity by remember { mutableStateOf(MeloXSettingsRuntime.textPVMotionIntensity) }
+        var pvAnimationSpeed by remember { mutableStateOf(MeloXSettingsRuntime.textPVAnimationSpeed) }
         Text("文字 PV 风格", modifier = Modifier.padding(top = 14.dp), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f))
         Spacer(Modifier.height(8.dp))
         SettingsGlassGroup {
@@ -829,8 +887,35 @@ private fun LyricsSettings(context: android.content.Context) {
                 SettingsChoiceRow(title, pvStyle == style) {
                     MeloXSettingsPreferences.setString(context, "lyrics_text_pv_style", style.name)
                     pvStyle = style
+                    pvAnimationSpeed = style.referenceAnimationSpeed
                 }
             }
+        }
+        SettingsFloatSlider(
+            "动效强度",
+            pvMotionIntensity,
+            0f..2f,
+            19,
+        ) {
+            pvMotionIntensity = it
+            MeloXSettingsPreferences.setFloat(context, "lyrics_text_pv_motion_intensity", it)
+        }
+        SettingsFloatSlider(
+            "动画速度",
+            pvAnimationSpeed,
+            0f..4f,
+            39,
+        ) {
+            pvAnimationSpeed = it
+            MeloXSettingsPreferences.setFloat(context, "lyrics_text_pv_animation_speed", it)
+        }
+        SettingsActionButton("恢复文字 PV 默认设置") {
+            MeloXSettingsPreferences.setString(context, "lyrics_text_pv_style", MeloXTextPVStyle.BlueBold.name)
+            MeloXSettingsPreferences.setFloat(context, "lyrics_text_pv_motion_intensity", 1f)
+            MeloXSettingsPreferences.setFloat(context, "lyrics_text_pv_animation_speed", 2f)
+            pvStyle = MeloXTextPVStyle.BlueBold
+            pvMotionIntensity = 1f
+            pvAnimationSpeed = 2f
         }
     }
     Spacer(Modifier.height(16.dp))
@@ -963,6 +1048,31 @@ private fun LyricsFloatChoiceSetting(
         }
     }
     Spacer(Modifier.height(10.dp))
+}
+
+@Composable
+private fun SettingsFloatSlider(
+    title: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    label: (Float) -> String = { "${(it * 100).toInt()}%" },
+    onValueChange: (Float) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(title, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f))
+        Text(label(value), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f))
+    }
+    Slider(
+        value = value,
+        onValueChange = onValueChange,
+        valueRange = range,
+        steps = steps,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable

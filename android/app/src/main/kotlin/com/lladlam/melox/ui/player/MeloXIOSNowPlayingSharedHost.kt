@@ -110,9 +110,17 @@ fun MeloXIOSNowPlayingSharedHost(
     LaunchedEffect(isLandscape) {
         if (!isLandscape) showLandscapeSkyline = false else lyricsInterfaceHidden = false
     }
-    DisposableEffect(MeloXSettingsRuntime.screenAwakeMode, page, lyricsInterfaceHidden) {
+    val skylineVisible = isLandscape && page == MeloXNowPlayingPage.Lyrics &&
+        (MeloXSettingsRuntime.skylineEnabled || showLandscapeSkyline)
+    DisposableEffect(
+        MeloXSettingsRuntime.screenAwakeMode,
+        MeloXSettingsRuntime.skylineKeepsScreenAwake,
+        page,
+        lyricsInterfaceHidden,
+        skylineVisible,
+    ) {
         val previous = hostView.keepScreenOn
-        hostView.keepScreenOn = when (MeloXSettingsRuntime.screenAwakeMode) {
+        hostView.keepScreenOn = (skylineVisible && MeloXSettingsRuntime.skylineKeepsScreenAwake) || when (MeloXSettingsRuntime.screenAwakeMode) {
             MeloXScreenAwakeMode.Disabled -> false
             MeloXScreenAwakeMode.Player -> true
             MeloXScreenAwakeMode.Lyrics -> page == MeloXNowPlayingPage.Lyrics

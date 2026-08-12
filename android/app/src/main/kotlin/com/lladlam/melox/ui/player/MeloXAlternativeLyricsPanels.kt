@@ -42,10 +42,12 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
@@ -246,14 +248,26 @@ internal fun MeloXTextPVLyricsPanel(
 ) {
     val state = rememberAlternativeLyrics(playback)
     val transition = rememberInfiniteTransition(label = "text-pv-clock")
+    val animationSpeed = MeloXSettingsRuntime.textPVAnimationSpeed
+    val motionIntensity = if (MeloXSettingsRuntime.lyricReduceMotion) 0f else {
+        MeloXSettingsRuntime.textPVMotionIntensity
+    }
     val phase by transition.animateFloat(
         initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(7_000, easing = FastOutSlowInEasing), RepeatMode.Restart),
+        targetValue = if (animationSpeed <= 0f || motionIntensity <= 0f) 0f else 1f,
+        animationSpec = infiniteRepeatable(
+            tween(
+                durationMillis = if (animationSpeed <= 0f) 14_000 else {
+                    (14_000f / animationSpeed).toInt().coerceIn(3_500, 140_000)
+                },
+                easing = FastOutSlowInEasing,
+            ),
+            RepeatMode.Restart,
+        ),
         label = "text-pv-phase",
     )
     Box(modifier.fillMaxSize().clickable(onClick = onInteraction)) {
-        TextPVBackground(MeloXSettingsRuntime.textPVStyle, phase)
+        TextPVBackground(MeloXSettingsRuntime.textPVStyle, phase, motionIntensity)
         AlternativeLoading(state)
         if (state.lines.isNotEmpty()) {
             AnimatedContent(
@@ -270,6 +284,7 @@ internal fun MeloXTextPVLyricsPanel(
                     next = state.lines.getOrNull(index + 1),
                     style = MeloXSettingsRuntime.textPVStyle,
                     phase = phase,
+                    motionIntensity = motionIntensity,
                     onSeek = { playback.seekTo(state.lines[index].timeMs) },
                 )
             }
@@ -278,20 +293,20 @@ internal fun MeloXTextPVLyricsPanel(
 }
 
 @Composable
-private fun TextPVBackground(style: MeloXTextPVStyle, phase: Float) {
+private fun TextPVBackground(style: MeloXTextPVStyle, phase: Float, motionIntensity: Float) {
     Canvas(Modifier.fillMaxSize()) {
         when (style) {
             MeloXTextPVStyle.BlueBold, MeloXTextPVStyle.BluePlane, MeloXTextPVStyle.Dynamic -> {
                 drawRect(Color(0xFF123A91).copy(alpha = .56f))
                 repeat(7) { index ->
-                    val x = size.width * ((index * .19f + phase * .12f) % 1.15f - .08f)
+                    val x = size.width * ((index * .19f + phase * .12f * motionIntensity) % 1.15f - .08f)
                     drawLine(Color.White.copy(alpha = .05f), Offset(x, 0f), Offset(x - size.height * .18f, size.height), 2f)
                 }
                 drawCircle(Color.White.copy(alpha = .08f), radius = size.minDimension * .28f, center = Offset(size.width * .78f, size.height * .22f), style = Stroke(3f))
             }
             MeloXTextPVStyle.KineticSplit, MeloXTextPVStyle.CrimeScene -> {
                 drawRect(Color(0xFFF0E6D5).copy(alpha = .72f))
-                drawLine(Color(0xFF8E1832).copy(alpha = .72f), Offset(-size.width * .1f, size.height * (.72f - phase * .12f)), Offset(size.width * 1.1f, size.height * (.28f + phase * .12f)), size.minDimension * .055f)
+                drawLine(Color(0xFF8E1832).copy(alpha = .72f), Offset(-size.width * .1f, size.height * (.72f - phase * .12f * motionIntensity)), Offset(size.width * 1.1f, size.height * (.28f + phase * .12f * motionIntensity)), size.minDimension * .055f)
             }
             MeloXTextPVStyle.Geometric -> {
                 drawRect(Color(0xFFF5C928).copy(alpha = .76f))
@@ -303,12 +318,12 @@ private fun TextPVBackground(style: MeloXTextPVStyle, phase: Float) {
             MeloXTextPVStyle.SpiderWeb, MeloXTextPVStyle.Cyber -> {
                 drawRect(Color(0xFF061018).copy(alpha = .52f))
                 val spacing = size.minDimension / 12f
-                var x = -spacing + phase * spacing
+                var x = -spacing + phase * spacing * motionIntensity
                 while (x < size.width + spacing) {
                     drawLine(Color(0xFF76E8FF).copy(alpha = .10f), Offset(x, 0f), Offset(x, size.height), 1f)
                     x += spacing
                 }
-                var y = -spacing + phase * spacing
+                var y = -spacing + phase * spacing * motionIntensity
                 while (y < size.height + spacing) {
                     drawLine(Color(0xFFFF4B89).copy(alpha = .08f), Offset(0f, y), Offset(size.width, y), 1f)
                     y += spacing
@@ -319,13 +334,13 @@ private fun TextPVBackground(style: MeloXTextPVStyle, phase: Float) {
                 drawRect(Color(0xFF24334A).copy(alpha = .38f))
                 repeat(5) { index ->
                     val y = size.height * (.18f + index * .15f)
-                    drawLine(Color(0xFF9CC8FF).copy(alpha = .05f), Offset(0f, y), Offset(size.width, y + sin(phase * 6.28f + index) * 24f), 2f)
+                    drawLine(Color(0xFF9CC8FF).copy(alpha = .05f), Offset(0f, y), Offset(size.width, y + sin(phase * 6.28f + index) * 24f * motionIntensity), 2f)
                 }
             }
             MeloXTextPVStyle.HystericNight -> {
                 drawRect(Color(0xFF180A25).copy(alpha = .58f))
                 repeat(10) { index ->
-                    val angle = index * PI.toFloat() / 5f + phase * .35f
+                    val angle = index * PI.toFloat() / 5f + phase * .35f * motionIntensity
                     val end = Offset(size.width / 2f + kotlin.math.cos(angle) * size.maxDimension, size.height / 2f + sin(angle) * size.maxDimension)
                     drawLine(Color(0xFFE46CFF).copy(alpha = .055f), center, end, size.minDimension * .025f)
                 }
@@ -334,7 +349,7 @@ private fun TextPVBackground(style: MeloXTextPVStyle, phase: Float) {
             MeloXTextPVStyle.GirlyClouds, MeloXTextPVStyle.SweetPink -> {
                 drawRect(Color(0xFFF3A9C3).copy(alpha = .55f))
                 repeat(7) { index ->
-                    val x = size.width * ((index * .22f + phase * .08f) % 1.2f - .1f)
+                    val x = size.width * ((index * .22f + phase * .08f * motionIntensity) % 1.2f - .1f)
                     drawLine(Color.White.copy(alpha = .11f), Offset(x, 0f), Offset(x - size.height * .25f, size.height), size.minDimension * .018f)
                 }
                 drawCircle(Color.White.copy(alpha = .12f), size.minDimension * .22f, Offset(size.width * .12f, size.height * .15f))
@@ -362,6 +377,7 @@ private fun TextPVComposition(
     next: LyricLine?,
     style: MeloXTextPVStyle,
     phase: Float,
+    motionIntensity: Float,
     onSeek: () -> Unit,
 ) {
     val centered = style in setOf(MeloXTextPVStyle.Geometric, MeloXTextPVStyle.GirlyClouds, MeloXTextPVStyle.SweetPink, MeloXTextPVStyle.FlyMeToTheMoon, MeloXTextPVStyle.Minimal)
@@ -384,7 +400,7 @@ private fun TextPVComposition(
                 lineHeight = 52.sp,
                 fontWeight = FontWeight.Black,
                 textAlign = if (centered) TextAlign.Center else TextAlign.Start,
-                modifier = Modifier.scale(1f + sin(phase * 2f * PI.toFloat()) * .012f),
+                modifier = Modifier.scale(1f + sin(phase * 2f * PI.toFloat()) * .012f * motionIntensity),
             )
             if (MeloXSettingsRuntime.showLyricTranslation && !line.translation.isNullOrBlank()) {
                 Text(line.translation.orEmpty(), color = Color.White.copy(alpha = .62f), fontSize = 15.sp, modifier = Modifier.padding(top = 12.dp))
@@ -402,21 +418,38 @@ internal fun MeloXSkylineLyricsPanel(
 ) {
     val state = rememberAlternativeLyrics(playback)
     Box(modifier.fillMaxSize().clickable(onClick = onInteraction)) {
-        val ambientLines = state.lines.drop(state.index + 1).take(MeloXSettingsRuntime.skylineAmbientLines)
-        if (ambientLines.isNotEmpty()) {
+        val ambientTexts = state.lines
+            .drop(state.index + 1)
+            .take(MeloXSettingsRuntime.skylineAmbientLines)
+            .flatMap { it.text.chunked(MeloXSettingsRuntime.skylineAmbientMaximumCharacters) }
+            .filter(String::isNotBlank)
+            .take(MeloXSettingsRuntime.skylineAmbientMaximumVisibleTexts)
+        if (ambientTexts.isNotEmpty()) {
             Column(
                 modifier = Modifier.align(Alignment.CenterEnd).fillMaxWidth(.58f).rotate(-5f),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
             ) {
-                ambientLines.forEachIndexed { ambientIndex, ambient ->
+                ambientTexts.forEachIndexed { ambientIndex, ambient ->
+                    val fade = (1f - ambientIndex.toFloat() / ambientTexts.size.coerceAtLeast(1))
+                    val tilt = sin((ambientIndex + 1) * 1.73f) * MeloXSettingsRuntime.skylineAmbientMaximumTilt
+                    val drift = if (MeloXSettingsRuntime.lyricReduceMotion) 0f else {
+                        sin(state.positionMs / 1_800f + ambientIndex) * 14f * MeloXSettingsRuntime.skylineAmbientDrift
+                    }
                     Text(
-                        ambient.text,
-                        color = Color.White.copy(alpha = (.075f - ambientIndex * .012f).coerceAtLeast(.025f)),
-                        fontSize = (64f - ambientIndex * 7f).coerceAtLeast(38f).sp,
-                        lineHeight = (70f - ambientIndex * 7f).coerceAtLeast(44f).sp,
+                        ambient,
+                        color = Color.White.copy(
+                            alpha = (.08f * MeloXSettingsRuntime.skylineAmbientOpacity * (.45f + fade * .55f))
+                                .coerceIn(.02f, .22f),
+                        ),
+                        fontSize = MeloXSettingsRuntime.skylineAmbientFontSize.sp,
+                        lineHeight = (MeloXSettingsRuntime.skylineAmbientFontSize * 1.08f).sp,
                         fontWeight = FontWeight.Black,
-                        maxLines = 2,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .graphicsLayer { translationX = drift }
+                            .rotate(tilt)
+                            .blur((MeloXSettingsRuntime.skylineAmbientBlur * (1f + ambientIndex * .08f)).dp),
                     )
                 }
             }
@@ -440,20 +473,44 @@ internal fun MeloXSkylineLyricsPanel(
                 label = "skyline-focus",
             ) { index ->
                 val line = state.lines.getOrNull(index)
-                Column(verticalArrangement = Arrangement.Center) {
+                val nextLine = state.lines.getOrNull(index + 1)
+                val lineEnd = line?.durationMs?.let { line.timeMs + it }
+                    ?: nextLine?.timeMs
+                    ?: (line?.timeMs?.plus(3_000L) ?: 1L)
+                val timedProgress = if (line == null || line.syllables.isEmpty()) 0f else {
+                    ((state.positionMs - line.timeMs).toFloat() / (lineEnd - line.timeMs).coerceAtLeast(1L))
+                        .coerceIn(0f, 1f)
+                }
+                val currentScale = 1f +
+                    (MeloXSettingsRuntime.skylineCurrentMaximumScale - 1f) * timedProgress
+                Column(
+                    modifier = Modifier.fillMaxWidth(MeloXSettingsRuntime.skylineCurrentWidth),
+                    verticalArrangement = Arrangement.Center,
+                ) {
                     Text(
                         line?.text.orEmpty(),
                         color = Color.White,
-                        fontSize = (42f * MeloXSettingsRuntime.skylineMainFontScale).sp,
-                        lineHeight = (48f * MeloXSettingsRuntime.skylineMainFontScale).sp,
+                        fontSize = MeloXSettingsRuntime.skylineCurrentFontSize.sp,
+                        lineHeight = (MeloXSettingsRuntime.skylineCurrentFontSize * 1.12f).sp,
                         fontWeight = FontWeight.ExtraBold,
-                        modifier = Modifier.clickable { line?.let { playback.seekTo(it.timeMs) } },
+                        modifier = Modifier
+                            .scale(currentScale)
+                            .clickable { line?.let { playback.seekTo(it.timeMs) } },
                     )
                     if (MeloXSettingsRuntime.showLyricTranslation && !line?.translation.isNullOrBlank()) {
                         Text(line?.translation.orEmpty(), color = Color.White.copy(alpha = .62f), fontSize = 16.sp, modifier = Modifier.padding(top = 10.dp))
                     }
-                    state.lines.getOrNull(index + 1)?.let { next ->
-                        Text(next.text, color = Color.White.copy(alpha = .28f), fontSize = 24.sp, lineHeight = 29.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 30.dp))
+                    nextLine?.let { next ->
+                        Text(
+                            next.text,
+                            color = Color.White.copy(alpha = MeloXSettingsRuntime.skylineNextOpacity),
+                            fontSize = MeloXSettingsRuntime.skylineNextFontSize.sp,
+                            lineHeight = (MeloXSettingsRuntime.skylineNextFontSize * 1.2f).sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = MeloXSettingsRuntime.skylineCurrentSpacing.dp),
+                        )
                     }
                 }
             }
