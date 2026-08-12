@@ -133,20 +133,26 @@ private fun PodcastHome(
         error = null
         runCatching {
             coroutineScope {
-                val subscribed = async {
-                    runCatching {
-                        if (NeteaseSessionStore.containsMusicU(NeteaseSessionStore.readCookie(context))) {
-                            client.subscribedPodcasts(limit = 50).values
-                        } else emptyList()
-                    }.getOrDefault(emptyList())
-                }
-                val featured = async { runCatching { if (subscriptionsOnly) emptyList() else client.featuredPodcasts() }.getOrDefault(emptyList()) }
-                val personalized = async { runCatching { if (subscriptionsOnly) emptyList() else client.personalizedPodcasts(12) }.getOrDefault(emptyList()) }
-                val loadedCategories = async { runCatching { if (subscriptionsOnly) emptyList() else client.podcastCategories() }.getOrDefault(emptyList()) }
+                val subscribed = async { runCatching {
+                    if (NeteaseSessionStore.containsMusicU(NeteaseSessionStore.readCookie(context))) {
+                        client.subscribedPodcasts(limit = 50).values
+                    } else emptyList()
+                } }
+                val featured = async { runCatching { if (subscriptionsOnly) emptyList() else client.featuredPodcasts() } }
+                val personalized = async { runCatching { if (subscriptionsOnly) emptyList() else client.personalizedPodcasts(12) } }
+                val loadedCategories = async { runCatching { if (subscriptionsOnly) emptyList() else client.podcastCategories() } }
+                val subscribedResult = subscribed.await()
+                val featuredResult = featured.await()
+                val personalizedResult = personalized.await()
+                val categoriesResult = loadedCategories.await()
+                val failures = listOf(subscribedResult, featuredResult, personalizedResult, categoriesResult)
+                    .mapNotNull { it.exceptionOrNull() }
+                if (failures.isNotEmpty() && failures.size == 4) throw failures.first()
                 HomePayload(
-                    recommended = (featured.await() + personalized.await()).distinctBy(MeloXPodcast::id),
-                    categories = loadedCategories.await(),
-                    subscriptions = subscribed.await(),
+                    recommended = (featuredResult.getOrDefault(emptyList()) + personalizedResult.getOrDefault(emptyList()))
+                        .distinctBy(MeloXPodcast::id),
+                    categories = categoriesResult.getOrDefault(emptyList()),
+                    subscriptions = subscribedResult.getOrDefault(emptyList()),
                 )
             }
         }.onSuccess {

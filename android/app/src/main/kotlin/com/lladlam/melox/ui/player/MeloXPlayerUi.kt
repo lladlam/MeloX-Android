@@ -96,7 +96,6 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
     private var controller: MediaController? = null
     private val downloadStore = MeloXDownloadStore.get(appContext)
     private val sleepTimerHandler = Handler(Looper.getMainLooper())
-    private var sleepTimerRunnable: Runnable? = null
     private var pendingMediaClearRunnable: Runnable? = null
 
     var mediaId by mutableStateOf<String?>(null)
@@ -164,7 +163,6 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
         controller?.removeListener(listener)
         controller?.release()
         controller = null
-        cancelSleepTimer()
     }
 
     internal fun refresh() {
@@ -208,6 +206,11 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
             val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
             audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVolume.toFloat()
         }
+        sleepTimerEndRealtimeMs = com.lladlam.melox.ui.settings.MeloXSettingsPreferences.long(
+            appContext,
+            SLEEP_TIMER_END_KEY,
+            0L,
+        ).takeIf { it > System.currentTimeMillis() } ?: 0L
         queue = buildQueue(player)
     }
 
@@ -374,27 +377,24 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
 }
 
     fun setSleepTimer(minutes: Int) {
-        cancelSleepTimer()
         if (minutes <= 0) return
         val delayMillis = minutes * 60_000L
-        sleepTimerEndRealtimeMs = android.os.SystemClock.elapsedRealtime() + delayMillis
-        val runnable = Runnable {
-            controller?.pause()
-            sleepTimerEndRealtimeMs = 0L
-            sleepTimerRunnable = null
-        }
-        sleepTimerRunnable = runnable
-        sleepTimerHandler.postDelayed(runnable, delayMillis)
+        sleepTimerEndRealtimeMs = System.currentTimeMillis() + delayMillis
+        com.lladlam.melox.ui.settings.MeloXSettingsPreferences.setLong(
+            appContext,
+            SLEEP_TIMER_END_KEY,
+            sleepTimerEndRealtimeMs,
+        )
     }
 
     fun cancelSleepTimer() {
-        sleepTimerRunnable?.let(sleepTimerHandler::removeCallbacks)
-        sleepTimerRunnable = null
         sleepTimerEndRealtimeMs = 0L
+        com.lladlam.melox.ui.settings.MeloXSettingsPreferences.setLong(appContext, SLEEP_TIMER_END_KEY, 0L)
     }
 
     private companion object {
         const val MEDIA_CLEAR_GRACE_MS = 500L
+        const val SLEEP_TIMER_END_KEY = "playback_sleep_timer_end_epoch_ms"
     }
 }
 

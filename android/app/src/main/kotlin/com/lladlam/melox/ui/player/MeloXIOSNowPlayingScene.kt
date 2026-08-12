@@ -515,7 +515,7 @@ private fun MeloXIOSLandscapeNowPlayingScene(
                                     showsLyricsControls = it
                                     if (it) activityGeneration += 1
                                 },
-                                allowAutomaticSkyline = false,
+                                allowAutomaticSkyline = true,
                             )
                             LandscapeLyricsPageSelector(
                                 visible = showsLyricsControls,

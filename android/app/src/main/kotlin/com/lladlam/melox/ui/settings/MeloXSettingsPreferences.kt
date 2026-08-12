@@ -193,6 +193,13 @@ object MeloXSettingsPreferences {
     fun float(context: Context, key: String, default: Float = 0f): Float =
         prefs(context).getFloat(key, default)
 
+    fun long(context: Context, key: String, default: Long = 0L): Long =
+        prefs(context).getLong(key, default)
+
+    fun setLong(context: Context, key: String, value: Long) {
+        prefs(context).edit().putLong(key, value).apply()
+    }
+
     fun setBoolean(context: Context, key: String, value: Boolean) {
         prefs(context).edit().putBoolean(key, value).apply()
         when (key) {

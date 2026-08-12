@@ -52,6 +52,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -892,7 +893,8 @@ private fun MeloXUpstreamLyricLine(
         // also prevents focus changes from reflowing the scroll geometry.
         val romanSize = max(UpstreamLyrics.FONT_SIZE_SP * fontScale * UpstreamLyrics.ROMANIZATION_FONT_SCALE, 13f)
         if (!showRomanization && reserveRomanization) {
-            Spacer(Modifier.height((romanSize * 1.2f).dp + UpstreamLyrics.ANNOTATION_SPACING_DP.dp))
+            val romanHeight = with(LocalDensity.current) { (romanSize * 1.2f).sp.toDp() }
+            Spacer(Modifier.height(romanHeight + UpstreamLyrics.ANNOTATION_SPACING_DP.dp))
         }
 
         val translationSize = max(UpstreamLyrics.FONT_SIZE_SP * fontScale * UpstreamLyrics.TRANSLATION_FONT_SCALE, 13f)
@@ -915,7 +917,8 @@ private fun MeloXUpstreamLyricLine(
                 fontWeight = FontWeight.Black,
             )
         } else if (reserveTranslation) {
-            Spacer(Modifier.height((translationSize * 1.2f).dp + UpstreamLyrics.ANNOTATION_SPACING_DP.dp))
+            val translationHeight = with(LocalDensity.current) { (translationSize * 1.2f).sp.toDp() }
+            Spacer(Modifier.height(translationHeight + UpstreamLyrics.ANNOTATION_SPACING_DP.dp))
         }
     }
 }
@@ -943,7 +946,6 @@ private fun MeloXRubyLyricText(
         return
     }
 
-    val playbackTimeMs = playbackTimeProvider()
     val primarySize = UpstreamLyrics.FONT_SIZE_SP * fontScale
     val rubySize = max(primarySize * UpstreamLyrics.ROMANIZATION_FONT_SCALE, 13f)
     FlowRow(
@@ -952,17 +954,21 @@ private fun MeloXRubyLyricText(
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         units.forEach { unit ->
-            val reveal = if (!supportsTimedLyrics || unit.originalSyllables.isEmpty()) {
-                1f
-            } else {
-                val start = unit.originalSyllables.minOf { it.startTimeMs }
-                val end = unit.originalSyllables.maxOf { it.endTimeMs }.coerceAtLeast(start + 1L)
-                ((playbackTimeMs - start).toFloat() / (end - start).toFloat()).coerceIn(0f, 1f)
-            }
+            val start = unit.originalSyllables.minOfOrNull { it.startTimeMs } ?: 0L
+            val end = unit.originalSyllables.maxOfOrNull { it.endTimeMs }?.coerceAtLeast(start + 1L) ?: 1L
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     text = unit.originalText,
-                    color = Color.White.copy(alpha = if (supportsTimedLyrics) 0.3f + reveal * 0.7f else 1f),
+                    color = Color.White,
+                    modifier = Modifier.graphicsLayer {
+                        alpha = if (!supportsTimedLyrics || unit.originalSyllables.isEmpty()) {
+                            1f
+                        } else {
+                            val reveal = ((playbackTimeProvider() - start).toFloat() / (end - start).toFloat())
+                                .coerceIn(0f, 1f)
+                            0.3f + reveal * 0.7f
+                        }
+                    },
                     fontSize = primarySize.sp,
                     lineHeight = (UpstreamLyrics.LINE_HEIGHT_SP * fontScale).sp,
                     fontWeight = FontWeight.Black,

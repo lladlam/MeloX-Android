@@ -65,6 +65,8 @@ class MeloXPlaybackService : MediaSessionService() {
     private var systemLyricsDocument: LyricsDocument? = null
     private var systemLyricsOriginalMetadata: MediaMetadata? = null
     private var systemLyricsLastIndex = Int.MIN_VALUE
+    private var systemLyricsLastDispatchRealtimeMs = 0L
+    private var systemLyricsLastPlaying = false
     private var updatingSystemLyricsMetadata = false
     private var mixAnalysisJob: Job? = null
     private var mixAnalysisSourceId: String? = null
@@ -162,6 +164,7 @@ class MeloXPlaybackService : MediaSessionService() {
                     PlaybackCommands.prioritizeManualQueue(active)
                     maybePrepareAutoplay(active)
                     maybeRunAutoMix(active)
+                    enforceSleepTimer(active)
                     maybeUpdateSystemLyrics(active)
                     equalizerController.applySettings()
                     updateAudioReactiveVisuals(active)
@@ -193,6 +196,14 @@ class MeloXPlaybackService : MediaSessionService() {
                 .onFailure { Log.w(TAG, "Audio-reactive analysis unavailable for ${item.mediaId}", it) }
             reactiveAnalysisJob = null
         }
+    }
+
+    /** Keep timers alive across Activity recreation by owning them in playback. */
+    private fun enforceSleepTimer(active: ExoPlayer) {
+        val end = MeloXSettingsPreferences.long(this, SLEEP_TIMER_END_KEY, 0L)
+        if (end <= 0L || System.currentTimeMillis() < end) return
+        active.pause()
+        MeloXSettingsPreferences.setLong(this, SLEEP_TIMER_END_KEY, 0L)
     }
 
     /**
@@ -448,14 +459,20 @@ class MeloXPlaybackService : MediaSessionService() {
         val document = systemLyricsDocument ?: return
         val advance = MeloXSettingsPreferences.int(this, "lyrics_advance_ms", 0).toLong()
         val index = document.highlightedIndex(active.currentPosition + advance) ?: return
-        if (index == systemLyricsLastIndex) return
+        val now = SystemClock.elapsedRealtime()
+        val lineChanged = index != systemLyricsLastIndex
+        val playbackChanged = active.isPlaying != systemLyricsLastPlaying
+        val periodicRefresh = now - systemLyricsLastDispatchRealtimeMs >= 1_000L
+        if (!lineChanged && !playbackChanged && !periodicRefresh) return
         systemLyricsLastIndex = index
+        systemLyricsLastPlaying = active.isPlaying
+        systemLyricsLastDispatchRealtimeMs = now
         val line = document.lines.getOrNull(index)?.text?.trim().orEmpty()
         if (line.isBlank()) return
         val original = systemLyricsOriginalMetadata ?: currentItem.mediaMetadata.also {
             systemLyricsOriginalMetadata = it
         }
-        if (metadataEnabled) {
+        if (metadataEnabled && lineChanged) {
             val originalExtras = Bundle(original.extras ?: Bundle()).apply {
                 putString(SYSTEM_ORIGINAL_TITLE_KEY, original.title?.toString().orEmpty())
                 putString(SYSTEM_ORIGINAL_ARTIST_KEY, original.artist?.toString().orEmpty())
@@ -470,7 +487,7 @@ class MeloXPlaybackService : MediaSessionService() {
             updatingSystemLyricsMetadata = true
             active.replaceMediaItem(active.currentMediaItemIndex, item)
             handler.post { updatingSystemLyricsMetadata = false }
-        } else {
+        } else if (!metadataEnabled) {
             restoreSystemLyricsMetadata(active)
         }
         if (notificationEnabled) postLyricsNotification(line, original) else {
@@ -501,6 +518,7 @@ class MeloXPlaybackService : MediaSessionService() {
         systemLyricsDocument = null
         systemLyricsOriginalMetadata = item?.mediaMetadata
         systemLyricsLastIndex = Int.MIN_VALUE
+        systemLyricsLastDispatchRealtimeMs = 0L
     }
 
     private fun restoreSystemLyricsMetadata(active: ExoPlayer) {
@@ -701,6 +719,9 @@ class MeloXPlaybackService : MediaSessionService() {
         // standby player and stop the song that is already audible.
         player = incoming
         incomingPlayer = old
+        // The listener is attached after this deck already owns its session, so
+        // an audio-session callback is not guaranteed during promotion.
+        equalizerController.attach(incoming.audioSessionId)
         autoMixRetrySourceId = null
         autoMixRetryAfterRealtimeMs = 0L
         preparedMixSourceId = null
@@ -820,6 +841,7 @@ class MeloXPlaybackService : MediaSessionService() {
         const val AUTOMIX_ENVELOPE_INTERVAL_MS = 20L
         const val AUTOMIX_FAILURE_COOLDOWN_MS = 30_000L
         const val ANALYSIS_FALLBACK_GUARD_MS = 1_200L
+        const val SLEEP_TIMER_END_KEY = "playback_sleep_timer_end_epoch_ms"
         const val SYSTEM_ORIGINAL_TITLE_KEY = "melox.system.original_title"
         const val SYSTEM_ORIGINAL_ARTIST_KEY = "melox.system.original_artist"
         const val LYRICS_NOTIFICATION_CHANNEL = "melox_lyrics"

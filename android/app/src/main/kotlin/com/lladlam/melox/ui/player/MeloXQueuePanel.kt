@@ -71,14 +71,14 @@ fun MeloXQueuePanel(
         ) {
             if (history.isNotEmpty()) {
                 item(key = "history-title") { QueueSectionTitle("历史记录", subdued = true) }
-                items(history, key = { "history-${it.index}-${it.mediaId}" }) { entry ->
+                items(history, key = { "history-${it.mediaId}" }) { entry ->
                     QueueRow(entry, state, interactive)
                 }
             }
 
             if (manualQueue.isNotEmpty()) {
                 item(key = "manual-title") { QueueSectionTitle("队列") }
-                items(manualQueue, key = { "manual-${it.index}-${it.mediaId}" }) { entry ->
+                items(manualQueue, key = { "manual-${it.mediaId}" }) { entry ->
                     QueueRow(entry, state, interactive)
                 }
             }
@@ -91,7 +91,7 @@ fun MeloXQueuePanel(
                     }
                 }
             } else {
-                items(continuing, key = { "continue-${it.index}-${it.mediaId}" }) { entry ->
+                items(continuing, key = { "continue-${it.mediaId}" }) { entry ->
                     QueueRow(entry, state, interactive)
                 }
             }
@@ -161,12 +161,12 @@ private fun QueueSectionTitle(title: String, subdued: Boolean = false) {
 
 @Composable
 private fun QueueRow(entry: MeloXQueueEntry, state: MeloXPlaybackUiState, interactive: Boolean) {
-    val dragOffset = remember(entry.index) { mutableFloatStateOf(0f) }
+    val dragOffset = remember(entry.mediaId) { mutableFloatStateOf(0f) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .pointerInput(interactive, entry.index, state.currentIndex) {
+            .pointerInput(interactive, entry.mediaId, state.currentIndex) {
                 if (!interactive || entry.index <= state.currentIndex) return@pointerInput
                 detectDragGesturesAfterLongPress(
                     onDragEnd = { dragOffset.floatValue = 0f },
@@ -177,17 +177,27 @@ private fun QueueRow(entry: MeloXQueueEntry, state: MeloXPlaybackUiState, intera
                     val rowHeight = 52.dp.toPx()
                     when {
                         dragOffset.floatValue > rowHeight -> {
-                            state.moveQueueItem(entry.index, entry.index + 1)
-                            dragOffset.floatValue = 0f
+                            val current = state.queue.indexOfFirst { it.mediaId == entry.mediaId }
+                            if (current > state.currentIndex && current < state.queue.lastIndex) {
+                                state.moveQueueItem(current, current + 1)
+                                dragOffset.floatValue -= rowHeight
+                            }
                         }
                         dragOffset.floatValue < -rowHeight -> {
-                            state.moveQueueItem(entry.index, entry.index - 1)
-                            dragOffset.floatValue = 0f
+                            val current = state.queue.indexOfFirst { it.mediaId == entry.mediaId }
+                            if (current > state.currentIndex + 1) {
+                                state.moveQueueItem(current, current - 1)
+                                dragOffset.floatValue += rowHeight
+                            }
                         }
                     }
                 }
             }
-            .clickable(enabled = interactive) { state.playQueueIndex(entry.index) }
+            .clickable(enabled = interactive) {
+                state.queue.indexOfFirst { it.mediaId == entry.mediaId }
+                    .takeIf { it >= 0 }
+                    ?.let(state::playQueueIndex)
+            }
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),

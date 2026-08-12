@@ -19,8 +19,8 @@ import kotlin.math.sqrt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 data class MeloXAutoMixFrame(
@@ -66,15 +66,14 @@ data class MeloXAutoMixTrackAnalysis(
  */
 class MeloXAutoMixAudioAnalyzer(private val context: Context) {
     private val cache = ConcurrentHashMap<String, MeloXAutoMixTrackAnalysis>()
-    private val decodeMutex = Mutex()
+    // Allow the outgoing and incoming analysis to progress together while
+    // preventing unrelated visual analysis from spawning an unbounded decoder set.
+    private val decodePermits = Semaphore(2)
 
     suspend fun analyze(songId: Long, uri: Uri): MeloXAutoMixTrackAnalysis =
         withContext(Dispatchers.IO) {
             val key = "$songId|$uri"
-            cache[key] ?: decodeMutex.withLock {
-                // The flowing-light sampler and AutoMix planner share this
-                // analyser. Serialising misses prevents three MediaCodec
-                // decoders from competing with the two live ExoPlayers.
+            cache[key] ?: decodePermits.withPermit {
                 cache[key] ?: decode(uri).also { cache[key] = it }
             }
         }

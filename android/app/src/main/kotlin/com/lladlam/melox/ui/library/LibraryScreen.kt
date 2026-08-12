@@ -717,7 +717,8 @@ private fun MeloXLibrarySegmentedPicker(
     modifier: Modifier = Modifier,
 ) {
     val pages = MeloXLibraryPage.entries.filter {
-        it != MeloXLibraryPage.Podcasts || MeloXSettingsRuntime.podcastsEnabled
+        (it != MeloXLibraryPage.Podcasts || MeloXSettingsRuntime.podcastsEnabled) &&
+            (it != MeloXLibraryPage.History || MeloXSettingsRuntime.listeningHistoryEnabled)
     }
     val panelShape = RoundedCornerShape(16.dp)
     val lensShape = RoundedCornerShape(15.dp)

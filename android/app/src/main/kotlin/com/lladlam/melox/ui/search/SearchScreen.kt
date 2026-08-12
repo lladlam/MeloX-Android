@@ -61,6 +61,7 @@ import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.ui.MeloXBottomContentClearance
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
+import com.lladlam.melox.ui.podcast.MeloXPodcastScreen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -92,6 +93,7 @@ fun SearchScreen() {
     var categoryTitle by remember { mutableStateOf<String?>(null) }
     var categoryPlaylists by remember { mutableStateOf<List<NeteasePlaylistSummary>>(emptyList()) }
     var selectedMedia by remember { mutableStateOf<MeloXSearchMediaItem?>(null) }
+    var podcastDiscovery by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val launchRequest = MeloXSearchLaunchBus.request
@@ -136,8 +138,17 @@ fun SearchScreen() {
         loading = false
     }
 
-    BackHandler(enabled = selectedMedia != null || categoryTitle != null) {
-        if (selectedMedia != null) selectedMedia = null else { categoryTitle = null; categoryPlaylists = emptyList() }
+    BackHandler(enabled = podcastDiscovery || selectedMedia != null || categoryTitle != null) {
+        when {
+            podcastDiscovery -> podcastDiscovery = false
+            selectedMedia != null -> selectedMedia = null
+            else -> { categoryTitle = null; categoryPlaylists = emptyList() }
+        }
+    }
+
+    if (podcastDiscovery) {
+        MeloXPodcastScreen()
+        return
     }
 
     selectedMedia?.let { destination ->
@@ -177,14 +188,17 @@ fun SearchScreen() {
                     recommendations = recommendations,
                     onPlaylist = { selectedMedia = it.asSearchItem() },
                     onCategory = { category ->
-                        categoryTitle = category
-                        loading = true; error = null
-                        scope.launch {
-                            runCatching {
-                                if (category == "播客") emptyList() else library.explorePlaylists(category, 50)
-                            }.onSuccess { categoryPlaylists = it }
-                                .onFailure { error = it.message ?: "类别加载失败" }
-                            loading = false
+                        if (category == "播客") {
+                            podcastDiscovery = true
+                        } else {
+                            categoryTitle = category
+                            loading = true; error = null
+                            scope.launch {
+                                runCatching { library.explorePlaylists(category, 50) }
+                                    .onSuccess { categoryPlaylists = it }
+                                    .onFailure { error = it.message ?: "类别加载失败" }
+                                loading = false
+                            }
                         }
                     },
                 )

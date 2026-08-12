@@ -79,7 +79,7 @@ fun MeloXHomeScreen() {
         if (refreshing) return
         scope.launch {
             refreshing = true
-            runCatching { client.homeContent() }
+            runCatching { client.homeContent(area = MeloXSettingsRuntime.musicArea) }
                 .onSuccess { content = it; cache.saveHomeContent(it); error = null }
                 .onFailure { error = it.message ?: "首页加载失败" }
             refreshing = false

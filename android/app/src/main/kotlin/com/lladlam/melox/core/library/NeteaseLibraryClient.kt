@@ -39,7 +39,7 @@ class NeteaseLibraryClient(
     suspend fun playlistDetail(playlistId: Long): NeteasePlaylistDetail =
         withContext(Dispatchers.IO) { playlistDetailBlocking(playlistId) }
 
-    suspend fun homeContent(limit: Int = 12): NeteaseHomeContent = withContext(Dispatchers.IO) {
+    suspend fun homeContent(limit: Int = 12, area: String = "全部"): NeteaseHomeContent = withContext(Dispatchers.IO) {
         val authenticated = NeteaseSessionStore.containsMusicU(cookieProvider())
         val playlistsResponse = eapi(
             uri = "/api/personalized/playlist",
@@ -48,7 +48,16 @@ class NeteaseLibraryClient(
         )
         val songsResponse = eapi(
             uri = "/api/personalized/newsong",
-            data = JSONObject().put("type", "recommend").put("limit", limit).put("areaId", 0),
+            data = JSONObject().put("type", "recommend").put("limit", limit).put(
+                "areaId",
+                when (area) {
+                    "华语" -> 7
+                    "日本" -> 8
+                    "韩国" -> 16
+                    "欧美" -> 96
+                    else -> 0
+                },
+            ),
             authenticated = authenticated,
         )
         val songItems = songsResponse.optJSONArray("result") ?: JSONArray()

@@ -35,8 +35,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,6 +62,7 @@ import com.lladlam.melox.core.lyrics.withPseudoTiming
 import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.settings.MeloXTextPVStyle
+import kotlinx.coroutines.isActive
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -91,9 +94,38 @@ private fun rememberAlternativeLyrics(state: MeloXPlaybackUiState): AlternativeL
         if (MeloXSettingsRuntime.lyricPseudoTimingEnabled) document?.withPseudoTiming() else document
     }
     val lines = rendered?.lines.orEmpty()
-    val position = state.positionMs + MeloXSettingsRuntime.lyricAdvanceMs
+    val smoothPosition = rememberSmoothPlaybackPosition(state)
+    val position = smoothPosition + MeloXSettingsRuntime.lyricAdvanceMs
     val index = rendered?.highlightedIndex(position)?.coerceIn(0, lines.lastIndex.coerceAtLeast(0)) ?: 0
     return AlternativeLyricsState(lines, index, position, loading, error)
+}
+
+/**
+ * Alternative lyric scenes used to inherit the 500 ms controller polling tick.
+ * Extrapolate from the latest authoritative controller position on every frame so
+ * short lines are not skipped and AnimatedContent is not restarted late.
+ */
+@Composable
+private fun rememberSmoothPlaybackPosition(state: MeloXPlaybackUiState): Long {
+    var position by remember(state.mediaId) { mutableLongStateOf(state.positionMs) }
+    LaunchedEffect(state.mediaId, state.positionMs, state.isPlaying, state.durationMs) {
+        val anchorPosition = state.positionMs
+        if (!state.isPlaying) {
+            position = anchorPosition
+            return@LaunchedEffect
+        }
+        var anchorFrameNanos = 0L
+        while (isActive) {
+            withFrameNanos { frameNanos ->
+                if (anchorFrameNanos == 0L) anchorFrameNanos = frameNanos
+                val elapsedMs = (frameNanos - anchorFrameNanos) / 1_000_000L
+                position = (anchorPosition + elapsedMs).coerceAtMost(
+                    state.durationMs.takeIf { it > 0L } ?: Long.MAX_VALUE,
+                )
+            }
+        }
+    }
+    return position
 }
 
 private data class AlternativeLyricsState(
