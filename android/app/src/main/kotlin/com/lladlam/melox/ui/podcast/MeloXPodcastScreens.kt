@@ -64,7 +64,9 @@ fun MeloXPodcastScreen(
 ) {
     val context = LocalContext.current.applicationContext
     val client = remember(context) {
-        NeteaseUniversalSearchClient { NeteaseSessionStore.readCookie(context) }
+        NeteaseUniversalSearchClient(
+            cookieProvider = { NeteaseSessionStore.readCookie(context) },
+        )
     }
     var category by remember { mutableStateOf<MeloXPodcastCategory?>(null) }
     var podcast by remember { mutableStateOf<MeloXPodcast?>(null) }
