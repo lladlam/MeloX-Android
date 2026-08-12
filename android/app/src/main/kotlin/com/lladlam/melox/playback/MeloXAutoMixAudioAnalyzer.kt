@@ -639,7 +639,7 @@ object MeloXAutoMixTransitionScorer {
 
     private fun boundaryStrength(analysis: MeloXAutoMixTrackAnalysis, timeMs: Long): Double {
         val frame = analysis.frameAt(timeMs) ?: return 0.0
-        return (frame.novelty * .58 + frame.onset * .42).coerceIn(0f, 1f).toDouble()
+        return (frame.novelty * .58f + frame.onset * .42f).coerceIn(0f, 1f).toDouble()
     }
 
     private fun contourPenalty(analysis: MeloXAutoMixTrackAnalysis, timeMs: Long, expectsRise: Boolean): Double {
