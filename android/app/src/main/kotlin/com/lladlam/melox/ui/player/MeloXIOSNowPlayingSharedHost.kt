@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -98,10 +99,15 @@ fun MeloXIOSNowPlayingSharedHost(
     var showActions by remember { mutableStateOf(false) }
     var showQuality by remember { mutableStateOf(false) }
     var showLandscapeSkyline by remember { mutableStateOf(false) }
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
     var gestureCollapseProgress by remember { mutableFloatStateOf(0f) }
     var settleJob by remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
     val hostView = LocalView.current
+    LaunchedEffect(isLandscape) {
+        if (!isLandscape) showLandscapeSkyline = false
+    }
     DisposableEffect(MeloXSettingsRuntime.keepScreenOn) {
         val previous = hostView.keepScreenOn
         hostView.keepScreenOn = MeloXSettingsRuntime.keepScreenOn
