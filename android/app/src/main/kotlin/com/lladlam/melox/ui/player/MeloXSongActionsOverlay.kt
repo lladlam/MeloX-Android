@@ -246,7 +246,7 @@ fun MeloXSongActionsOverlay(
                         SongActionPage.Wiki -> {
                             if(busy) LoadingRow("正在读取百科")
                             LazyColumn(Modifier.fillMaxWidth().height(360.dp)) {
-                                items(wiki,key={it.title+it.lines.hashCode()}) { section -> Column(Modifier.fillMaxWidth().padding(vertical=9.dp)){Text(section.title,color=Color.White,fontWeight=FontWeight.Bold,fontSize=16.sp);section.lines.take(12).forEach{line->Text(line,color=Color.White.copy(alpha=.70f),fontSize=13.sp,modifier=Modifier.padding(top=4.dp))}} }
+                                items(wiki,key={it.title+it.lines.hashCode()}) { section -> Column(Modifier.fillMaxWidth().padding(vertical=9.dp)){Text(section.title,color=Color.White,fontWeight=FontWeight.Bold,fontSize=16.sp);section.lines.forEach{line->Text(line,color=Color.White.copy(alpha=.70f),fontSize=13.sp,modifier=Modifier.padding(top=4.dp))}} }
                             }
                             if(!busy&&wiki.isEmpty()&&message==null) Text("暂无百科资料",color=Color.White.copy(alpha=.5f),modifier=Modifier.padding(12.dp))
                             ActionItem("返回","‹"){page=SongActionPage.Main}

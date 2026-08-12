@@ -93,10 +93,10 @@ class NeteaseMusicOperationsClient(
         Unit
     }
 
-    suspend fun songComments(songId: Long, limit: Int = 40): List<MeloXMusicComment> = withContext(Dispatchers.IO) {
+    suspend fun songComments(songId: Long, limit: Int = 100): List<MeloXMusicComment> = withContext(Dispatchers.IO) {
         val result = eapi(
             "/api/v1/resource/comments/R_SO_4_$songId",
-            JSONObject().put("rid", songId).put("limit", limit).put("offset", 0).put("beforeTime", 0),
+            JSONObject().put("rid", songId).put("limit", limit.coerceIn(1, 100)).put("offset", 0).put("beforeTime", 0),
             NeteaseSessionStore.containsMusicU(cookieProvider()),
         )
         val hot = result.optJSONArray("hotComments") ?: JSONArray()

@@ -36,6 +36,8 @@ object PlaybackCommands {
     @Volatile
     private var activeController: MediaController? = null
 
+    fun currentSongId(): Long? = activeController?.currentMediaItem?.mediaId?.toLongOrNull()
+
     fun playQueue(
         context: Context,
         songs: List<SearchSong>,

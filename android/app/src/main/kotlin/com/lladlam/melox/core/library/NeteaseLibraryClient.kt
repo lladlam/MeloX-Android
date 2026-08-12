@@ -120,6 +120,40 @@ class NeteaseLibraryClient(
         ids.mapNotNull(byId::get)
     }
 
+    suspend fun dailyRecommendedSongs(): List<SearchSong> = withContext(Dispatchers.IO) {
+        ensureLoggedIn()
+        val response = eapi(
+            "/api/v3/discovery/recommend/songs",
+            JSONObject().put("offset", 0).put("total", true).put("limit", 100),
+            true,
+        )
+        val values = response.optJSONObject("data")?.optJSONArray("dailySongs")
+            ?: response.optJSONArray("recommend") ?: JSONArray()
+        buildList {
+            for (index in 0 until values.length()) parseSong(values.optJSONObject(index))?.let(::add)
+        }
+    }
+
+    suspend fun personalFm(explore: Boolean = true, limit: Int = 30): List<SearchSong> = withContext(Dispatchers.IO) {
+        ensureLoggedIn()
+        val response = eapi(
+            "/api/v1/radio/get",
+            JSONObject().put("mode", if (explore) "EXPLORE" else "FAMILIAR").put("limit", limit.coerceIn(1, 50)),
+            true,
+        )
+        val values = response.optJSONArray("data") ?: JSONArray()
+        buildList {
+            for (index in 0 until values.length()) parseSong(values.optJSONObject(index))?.let(::add)
+        }
+    }
+
+    suspend fun hotSongs(): List<SearchSong> = withContext(Dispatchers.IO) {
+        val charts = explorePlaylists("排行榜", 80)
+        val hot = charts.firstOrNull { it.name.contains("热歌") } ?: charts.firstOrNull()
+            ?: throw IOException("网易云没有返回排行榜")
+        playlistDetailBlocking(hot.id).songs
+    }
+
     fun similarSongsBlocking(songId: Long, limit: Int = 50): List<SearchSong> {
         if (songId <= 0L) return emptyList()
         // Upstream uses /api/v1/discovery/simiSong. The direct EAPI transport is

@@ -1,5 +1,7 @@
 package com.lladlam.melox.ui
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.EnterTransition
@@ -76,6 +78,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.lladlam.melox.core.account.rememberNeteaseSessionStore
 import com.lladlam.melox.core.account.NeteaseSessionStore
+import com.lladlam.melox.BuildConfig
 import com.lladlam.melox.ui.account.NeteaseLoginScreen
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
@@ -100,6 +103,8 @@ import com.lladlam.melox.core.network.MeloXSearchKind
 import com.lladlam.melox.core.network.NeteaseClipboardLink
 import com.lladlam.melox.core.network.NeteaseClipboardTarget
 import com.lladlam.melox.core.library.NeteaseLibraryClient
+import com.lladlam.melox.core.update.MeloXRelease
+import com.lladlam.melox.core.update.MeloXUpdateClient
 import com.lladlam.melox.playback.PlaybackCommands
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -137,6 +142,10 @@ fun MeloXApp(
     var tabBarMinimized by remember { mutableStateOf(false) }
     var scrollAccumulator by remember { mutableFloatStateOf(0f) }
     var libraryModalVisible by remember { mutableStateOf(false) }
+    var onboardingPage by remember {
+        mutableStateOf(if (MeloXSettingsPreferences.boolean(context, "onboarding_completed", false)) -1 else 0)
+    }
+    var availableUpdate by remember { mutableStateOf<MeloXRelease?>(null) }
     val playbackState = rememberMeloXPlaybackUiState()
     val playerTransitionState = remember { SeekableTransitionState(false) }
     val playerTransition = rememberTransition(
@@ -179,6 +188,20 @@ fun MeloXApp(
         )
     }
     val bottomChromeBackdrop = rememberLayerBackdrop()
+
+    LaunchedEffect(Unit) {
+        if (MeloXSettingsPreferences.boolean(context, "update_auto_check", true)) {
+            val now = System.currentTimeMillis()
+            val last = MeloXSettingsPreferences.string(context, "update_last_check_ms", "0").toLongOrNull() ?: 0L
+            if (now - last >= 24L * 60L * 60L * 1000L) {
+                MeloXSettingsPreferences.setString(context, "update_last_check_ms", now.toString())
+                val client = MeloXUpdateClient()
+                runCatching { client.latestStableRelease() }.getOrNull()?.let { release ->
+                    if (client.isNewer(release.version, BuildConfig.VERSION_NAME)) availableUpdate = release
+                }
+            }
+        }
+    }
 
     val tabBarMinimizeConnection = remember {
         object : NestedScrollConnection {
@@ -421,6 +444,57 @@ fun MeloXApp(
                             songs.firstOrNull()?.let { PlaybackCommands.playQueue(context, songs, it.id) }
                         }
                     }) { Text("打开") }
+                },
+            )
+        }
+        if (onboardingPage >= 0) {
+            AlertDialog(
+                onDismissRequest = {},
+                title = { Text(if (onboardingPage == 0) "欢迎使用 MeloX" else "连接网易云音乐") },
+                text = {
+                    Text(
+                        if (onboardingPage == 0) {
+                            "用原生方式发现、播放和收藏网易云音乐。MeloX 是非官方第三方客户端，与网易云音乐及其关联公司不存在隶属、合作或授权关系。"
+                        } else {
+                            "登录后可以同步收藏歌曲、歌单和播放历史，并使用每日推荐等账号功能。登录不是开始使用 MeloX 的必要条件，Cookie 只保存在本机。"
+                        },
+                    )
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        if (onboardingPage == 0) {
+                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lladlam/MeloX-Android"))) }
+                        } else {
+                            MeloXSettingsPreferences.setBoolean(context, "onboarding_completed", true)
+                            onboardingPage = -1
+                        }
+                    }) { Text(if (onboardingPage == 0) "项目与许可" else "稍后再说") }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (onboardingPage == 0) {
+                            onboardingPage = 1
+                        } else {
+                            MeloXSettingsPreferences.setBoolean(context, "onboarding_completed", true)
+                            onboardingPage = -1
+                            loginReturnTab = AppTab.Settings
+                            showNeteaseLogin = true
+                        }
+                    }) { Text(if (onboardingPage == 0) "继续" else "登录网易云音乐") }
+                },
+            )
+        }
+        availableUpdate?.takeIf { onboardingPage < 0 }?.let { release ->
+            AlertDialog(
+                onDismissRequest = { availableUpdate = null },
+                title = { Text("发现 MeloX ${release.version}") },
+                text = { Text(release.name + release.notes.takeIf(String::isNotBlank)?.let { "\n\n${it.take(500)}" }.orEmpty()) },
+                dismissButton = { TextButton(onClick = { availableUpdate = null }) { Text("稍后") } },
+                confirmButton = {
+                    TextButton(onClick = {
+                        availableUpdate = null
+                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(release.apkUrl ?: release.pageUrl))) }
+                    }) { Text(if (release.apkUrl != null) "下载 APK" else "查看发布") }
                 },
             )
         }

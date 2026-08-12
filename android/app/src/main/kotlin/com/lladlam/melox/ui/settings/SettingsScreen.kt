@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import coil3.compose.AsyncImage
+import com.lladlam.melox.BuildConfig
 import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.audio.MusicQuality
 import com.lladlam.melox.core.audio.MusicQualityPreferences
@@ -61,6 +62,8 @@ import com.lladlam.melox.core.network.NeteaseMusicOperationsClient
 import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.core.recognition.SongRecognitionClient
 import com.lladlam.melox.core.recognition.SongRecognitionResult
+import com.lladlam.melox.core.update.MeloXRelease
+import com.lladlam.melox.core.update.MeloXUpdateClient
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.playback.MeloXAutoMixFadeCurve
 import com.lladlam.melox.playback.MeloXAutoMixFallback
@@ -1367,12 +1370,49 @@ private fun RecognitionSettings(context: android.content.Context) {
 
 @Composable
 private fun AboutSettings(context: android.content.Context) {
+    val updateClient = remember { MeloXUpdateClient() }
+    val scope = rememberCoroutineScope()
+    var checking by remember { mutableStateOf(false) }
+    var release by remember { mutableStateOf<MeloXRelease?>(null) }
+    var updateStatus by remember { mutableStateOf<String?>(null) }
     SettingsGlassGroup {
         Column(Modifier.padding(18.dp)) {
             Text("MeloX Android", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Text("MeloX 的 Android 原生迁移版。", modifier = Modifier.padding(top=7.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha=.62f))
+            Text("版本 ${BuildConfig.VERSION_NAME} · MeloX 的 Android 原生迁移版。", modifier = Modifier.padding(top=7.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha=.62f))
             Text("Android 原生迁移与维护：lladlam", modifier = Modifier.padding(top=14.dp), fontWeight=FontWeight.SemiBold)
             Text("上游 iOS 原生项目：youshen2/MeloX（SwiftUI）", modifier = Modifier.padding(top=5.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha=.58f))
+        }
+    }
+    Spacer(Modifier.height(14.dp))
+    SettingsToggleRow(context, "自动检查更新", "update_auto_check", true, "应用启动后检查 GitHub 正式版本；不会自动下载安装。")
+    SettingsActionButton(if (checking) "正在检查…" else "检查更新") {
+        if (!checking) scope.launch {
+            checking = true
+            runCatching { updateClient.latestStableRelease() }
+                .onSuccess {
+                    release = it
+                    updateStatus = if (updateClient.isNewer(it.version, BuildConfig.VERSION_NAME)) {
+                        "发现新版本 ${it.version}：${it.name}"
+                    } else {
+                        "当前已是最新版本（${BuildConfig.VERSION_NAME}）"
+                    }
+                }
+                .onFailure { updateStatus = it.message ?: "更新检查失败" }
+            checking = false
+        }
+    }
+    updateStatus?.let { message ->
+        Spacer(Modifier.height(10.dp))
+        SettingsInfoCard("更新状态", message)
+    }
+    release?.takeIf { updateClient.isNewer(it.version, BuildConfig.VERSION_NAME) }?.let { available ->
+        Spacer(Modifier.height(10.dp))
+        SettingsActionButton(if (available.apkUrl != null) "下载 ${available.version} APK" else "打开 ${available.version} 发布页") {
+            val target = available.apkUrl ?: available.pageUrl
+            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target))) }
+        }
+        if (available.notes.isNotBlank()) {
+            Text(available.notes.take(700), modifier = Modifier.padding(top = 10.dp), fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f))
         }
     }
     Spacer(Modifier.height(14.dp))
