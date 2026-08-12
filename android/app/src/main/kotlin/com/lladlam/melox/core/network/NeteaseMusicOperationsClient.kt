@@ -38,6 +38,19 @@ data class MeloXListenTogetherPlayback(
     val progressMs: Long,
     val isPlaying: Boolean,
 )
+data class MeloXMessageContact(
+    val id: Long,
+    val name: String,
+    val avatarUrl: String?,
+    val signature: String,
+)
+data class MeloXPrivateMessage(
+    val id: Long,
+    val fromUserId: Long,
+    val toUserId: Long,
+    val text: String,
+    val timeMs: Long,
+)
 
 /** Authenticated write/comment/wiki routes mirrored from upstream MeloX NeteaseAPI. */
 class NeteaseMusicOperationsClient(
@@ -272,6 +285,93 @@ class NeteaseMusicOperationsClient(
         ensureLoggedIn()
         eapi("/api/listen/together/end/v2", JSONObject().put("roomId", roomId), true)
         Unit
+    }
+
+    suspend fun messageContacts(userId: Long, limit: Int = 200): List<MeloXMessageContact> = withContext(Dispatchers.IO) {
+        ensureLoggedIn()
+        val response = eapi(
+            "/api/user/getfollows/$userId",
+            JSONObject().put("offset", 0).put("limit", limit.coerceIn(1, 1_000)).put("order", true),
+            true,
+        )
+        parseMessageContacts(response.optJSONArray("follow"))
+    }
+
+    suspend fun privateMessageConversations(limit: Int = 50): List<MeloXMessageContact> = withContext(Dispatchers.IO) {
+        ensureLoggedIn()
+        val response = eapi(
+            "/api/msg/private/users",
+            JSONObject().put("offset", 0).put("limit", limit.coerceIn(1, 100)).put("total", "true"),
+            true,
+        )
+        val messages = response.optJSONArray("msgs") ?: JSONArray()
+        buildList {
+            for (index in 0 until messages.length()) {
+                val value = messages.optJSONObject(index) ?: continue
+                val candidates = listOf(value.optJSONObject("fromUser"), value.optJSONObject("toUser"))
+                candidates.mapNotNull(::parseMessageContact).forEach { contact ->
+                    if (none { it.id == contact.id }) add(contact)
+                }
+            }
+        }
+    }
+
+    suspend fun privateMessageHistory(userId: Long, limit: Int = 100): List<MeloXPrivateMessage> = withContext(Dispatchers.IO) {
+        ensureLoggedIn()
+        val response = eapi(
+            "/api/msg/private/history",
+            JSONObject().put("userId", userId).put("limit", limit.coerceIn(1, 200)).put("time", -1).put("total", "true"),
+            true,
+        )
+        val messages = response.optJSONArray("msgs") ?: JSONArray()
+        buildList {
+            for (index in 0 until messages.length()) {
+                val value = messages.optJSONObject(index) ?: continue
+                val time = value.optLong("time", 0L)
+                val serialized = value.optString("msg")
+                val payload = runCatching { JSONObject(serialized) }.getOrNull()
+                val text = payload?.optString("msg")?.takeIf(String::isNotBlank)
+                    ?: payload?.optJSONObject("song")?.optString("name")?.takeIf(String::isNotBlank)?.let { "[歌曲] $it" }
+                    ?: payload?.optJSONObject("playlist")?.optString("name")?.takeIf(String::isNotBlank)?.let { "[歌单] $it" }
+                    ?: serialized.ifBlank { "私信" }
+                add(MeloXPrivateMessage(
+                    id = value.optLong("id", time),
+                    fromUserId = value.optJSONObject("fromUser")?.optLong("userId", 0L) ?: 0L,
+                    toUserId = value.optJSONObject("toUser")?.optLong("userId", 0L) ?: 0L,
+                    text = text,
+                    timeMs = time,
+                ))
+            }
+        }.sortedBy(MeloXPrivateMessage::timeMs)
+    }
+
+    suspend fun sendPrivateText(message: String, userId: Long) = withContext(Dispatchers.IO) {
+        ensureLoggedIn()
+        val text = message.trim()
+        if (text.isBlank()) throw IOException("请输入私信内容")
+        eapi(
+            "/api/msg/private/send",
+            JSONObject().put("type", "text").put("msg", text).put("userIds", "[$userId]"),
+            true,
+        )
+        Unit
+    }
+
+    private fun parseMessageContacts(values: JSONArray?): List<MeloXMessageContact> = buildList {
+        val source = values ?: JSONArray()
+        for (index in 0 until source.length()) parseMessageContact(source.optJSONObject(index))?.let(::add)
+    }
+
+    private fun parseMessageContact(value: JSONObject?): MeloXMessageContact? {
+        value ?: return null
+        val id = value.optLong("userId", 0L)
+        if (id <= 0L) return null
+        return MeloXMessageContact(
+            id = id,
+            name = value.optString("remarkName").ifBlank { value.optString("nickname") }.ifBlank { "网易云用户" },
+            avatarUrl = secure(value.optString("avatarUrl").takeIf(String::isNotBlank)),
+            signature = value.optString("signature"),
+        )
     }
 
     private fun parseListenTogetherRoom(value: JSONObject?): MeloXListenTogetherRoom? {

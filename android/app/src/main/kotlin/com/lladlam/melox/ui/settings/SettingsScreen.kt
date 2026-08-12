@@ -54,6 +54,10 @@ import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.audio.MusicQuality
 import com.lladlam.melox.core.audio.MusicQualityPreferences
 import com.lladlam.melox.core.download.MeloXDownloadStore
+import com.lladlam.melox.core.network.MeloXMessageContact
+import com.lladlam.melox.core.network.MeloXPrivateMessage
+import com.lladlam.melox.core.network.NeteaseMusicOperationsClient
+import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.playback.MeloXAutoMixFadeCurve
 import com.lladlam.melox.playback.MeloXAutoMixFallback
@@ -77,6 +81,7 @@ private enum class SettingsRoute(val title: String) {
     SkylineLyrics("全屏天际歌词"),
     FloatingLyrics("悬浮窗歌词"),
     ContentFeatures("功能模块"),
+    Messages("私信与站内分享"),
     Content("发现内容"),
     Storage("存储管理"),
     TabLayout("页面与标签栏"),
@@ -107,6 +112,7 @@ private val SettingsSections = listOf(
     )),
     SettingsSection("内容与存储", listOf(
         SettingsItem(SettingsRoute.ContentFeatures, "播客、云盘、最近播放等模块", "☷", "播客 广播 云盘 最近播放 下载"),
+        SettingsItem(SettingsRoute.Messages, "联系人、会话历史与文字私信", "✉", "私信 联系人 会话 分享 网易云"),
         SettingsItem(SettingsRoute.Content, "地区、歌单信息和发现内容", "▦", "华语 欧美 韩国 日本 播放量"),
         SettingsItem(SettingsRoute.Storage, "空间统计与缓存清理", "▰", "缓存 存储 清理 数据库"),
     )),
@@ -358,6 +364,7 @@ private fun SettingsDetailScreen(route: SettingsRoute, onBack: () -> Unit) {
             SettingsRoute.SkylineLyrics -> SkylineLyricsSettings(context)
             SettingsRoute.FloatingLyrics -> FloatingLyricsSettings(context)
             SettingsRoute.ContentFeatures -> ContentFeatureSettings(context)
+            SettingsRoute.Messages -> MessagesSettings(context)
             SettingsRoute.Content -> ContentSettings(context)
             SettingsRoute.Storage -> StorageSettings(context)
             SettingsRoute.TabLayout -> TabLayoutSettings(context)
@@ -903,6 +910,135 @@ private fun ContentFeatureSettings(context: android.content.Context) {
     SettingsInfoCard("下载", "已启用 · 更多菜单可下载，播放优先本地文件")
     Spacer(Modifier.height(10.dp))
     SettingsInfoCard("云盘", "已启用 · 音乐库可读取、搜索、播放和删除网易云云盘歌曲")
+}
+
+@Composable
+private fun MessagesSettings(context: android.content.Context) {
+    val ops = remember(context) {
+        NeteaseMusicOperationsClient(cookieProvider = { NeteaseSessionStore.readCookie(context) })
+    }
+    val account = remember(context) {
+        NeteaseSearchClient(cookieProvider = { NeteaseSessionStore.readCookie(context) })
+    }
+    val scope = rememberCoroutineScope()
+    var contacts by remember { mutableStateOf<List<MeloXMessageContact>>(emptyList()) }
+    var selected by remember { mutableStateOf<MeloXMessageContact?>(null) }
+    var messages by remember { mutableStateOf<List<MeloXPrivateMessage>>(emptyList()) }
+    var currentUserId by remember { mutableStateOf(0L) }
+    var draft by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var reload by remember { mutableStateOf(0) }
+
+    LaunchedEffect(selected?.id, reload) {
+        busy = true
+        error = null
+        runCatching {
+            val profile = account.accountProfile()
+            currentUserId = profile.userId
+            val contact = selected
+            if (contact == null) {
+                val recent = ops.privateMessageConversations()
+                val follows = ops.messageContacts(profile.userId)
+                contacts = (recent + follows).filter { it.id != profile.userId }.distinctBy(MeloXMessageContact::id)
+            } else {
+                messages = ops.privateMessageHistory(contact.id)
+            }
+        }.onFailure { error = it.message ?: "私信读取失败" }
+        busy = false
+    }
+
+    if (selected == null) {
+        Text("联系人与会话", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f))
+        Spacer(Modifier.height(8.dp))
+        if (busy) Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.size(10.dp))
+            Text("正在读取私信", color = MaterialTheme.colorScheme.onSurface.copy(alpha = .55f))
+        }
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp)) }
+        SettingsGlassGroup {
+            contacts.take(100).forEach { contact ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { selected = contact }.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AsyncImage(contact.avatarUrl, null, Modifier.size(42.dp).clip(CircleShape))
+                    Spacer(Modifier.size(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(contact.name, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        if (contact.signature.isNotBlank()) Text(contact.signature, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .45f))
+                    }
+                    Text("›", fontSize = 24.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .3f))
+                }
+            }
+        }
+        if (!busy && contacts.isEmpty() && error == null) SettingsInfoCard("暂无联系人", "关注网易云用户后，可在这里发起站内私信。")
+        return
+    }
+
+    val contact = selected!!
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        SettingsRoundButton("‹") { selected = null; messages = emptyList(); draft = "" }
+        Spacer(Modifier.size(12.dp))
+        AsyncImage(contact.avatarUrl, null, Modifier.size(38.dp).clip(CircleShape))
+        Spacer(Modifier.size(10.dp))
+        Text(contact.name, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.weight(1f))
+        Text("刷新", Modifier.clickable { reload++ }.padding(8.dp), color = MaterialTheme.colorScheme.primary)
+    }
+    Spacer(Modifier.height(14.dp))
+    if (busy && messages.isEmpty()) CircularProgressIndicator(Modifier.size(24.dp))
+    error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp)) }
+    messages.takeLast(60).forEach { message ->
+        val outgoing = message.fromUserId == currentUserId
+        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            if (outgoing) Spacer(Modifier.weight(.2f))
+            Text(
+                message.text,
+                modifier = Modifier.background(
+                    if (outgoing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground.copy(alpha = .08f),
+                    RoundedCornerShape(16.dp),
+                ).padding(horizontal = 12.dp, vertical = 9.dp).weight(.8f, fill = false),
+                color = if (outgoing) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onBackground,
+                fontSize = 14.sp,
+            )
+            if (!outgoing) Spacer(Modifier.weight(.2f))
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    Row(
+        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.onBackground.copy(alpha = .06f), RoundedCornerShape(22.dp)).padding(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BasicTextField(
+            value = draft,
+            onValueChange = { draft = it },
+            textStyle = androidx.compose.ui.text.TextStyle(color = MaterialTheme.colorScheme.onBackground, fontSize = 15.sp),
+            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+            decorationBox = { inner ->
+                Box {
+                    if (draft.isBlank()) Text("输入私信", color = MaterialTheme.colorScheme.onSurface.copy(alpha = .38f))
+                    inner()
+                }
+            },
+        )
+        Text(
+            if (busy) "…" else "发送",
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.clickable(enabled = !busy && draft.isNotBlank()) {
+                val text = draft.trim()
+                busy = true
+                scope.launch {
+                    runCatching { ops.sendPrivateText(text, contact.id) }
+                        .onSuccess { draft = ""; messages = ops.privateMessageHistory(contact.id) }
+                        .onFailure { error = it.message ?: "发送失败" }
+                    busy = false
+                }
+            }.padding(horizontal = 10.dp, vertical = 8.dp),
+        )
+    }
 }
 
 @Composable
