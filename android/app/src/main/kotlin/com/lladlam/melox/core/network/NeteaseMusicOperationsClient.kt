@@ -26,6 +26,19 @@ data class MeloXMusicComment(
 
 data class MeloXWikiSection(val title: String, val lines: List<String>)
 
+data class MeloXListenTogetherUser(val id: String, val name: String, val avatarUrl: String?)
+data class MeloXListenTogetherRoom(
+    val id: String,
+    val creatorId: String,
+    val users: List<MeloXListenTogetherUser>,
+)
+data class MeloXListenTogetherPlayback(
+    val songIds: List<Long>,
+    val targetSongId: Long?,
+    val progressMs: Long,
+    val isPlaying: Boolean,
+)
+
 /** Authenticated write/comment/wiki routes mirrored from upstream MeloX NeteaseAPI. */
 class NeteaseMusicOperationsClient(
     private val cookieProvider: () -> String,
@@ -155,6 +168,133 @@ class NeteaseMusicOperationsClient(
                 if (unique.isNotEmpty()) add(MeloXWikiSection(title, unique))
             }
         }
+    }
+
+    suspend fun createListenTogetherRoom(): MeloXListenTogetherRoom = withContext(Dispatchers.IO) {
+        ensureLoggedIn()
+        val response = eapi(
+            "/api/listen/together/room/create",
+            JSONObject().put("refer", "songplay_more"),
+            true,
+        )
+        parseListenTogetherRoom(response.optJSONObject("data")?.optJSONObject("roomInfo"))
+            ?: throw IOException("网易云没有返回有效的一起听房间")
+    }
+
+    suspend fun listenTogetherRoomStatus(): MeloXListenTogetherRoom? = withContext(Dispatchers.IO) {
+        ensureLoggedIn()
+        val response = eapi("/api/listen/together/status/get", JSONObject(), true)
+        parseListenTogetherRoom(response.optJSONObject("data")?.optJSONObject("roomInfo"))
+    }
+
+    suspend fun joinListenTogetherRoom(roomId: String, inviterId: String): MeloXListenTogetherRoom = withContext(Dispatchers.IO) {
+        ensureLoggedIn()
+        val check = eapi(
+            "/api/listen/together/room/check",
+            JSONObject().put("roomId", roomId),
+            true,
+        ).optJSONObject("data")
+        if (check?.optBoolean("canJoin", check.optBoolean("joinable", true)) == false) {
+            throw IOException(check.optString("message").ifBlank { "该一起听房间当前无法加入" })
+        }
+        val response = eapi(
+            "/api/listen/together/play/invitation/accept",
+            JSONObject().put("refer", "inbox_invite").put("roomId", roomId).put("inviterId", inviterId),
+            true,
+        )
+        parseListenTogetherRoom(response.optJSONObject("data")?.optJSONObject("roomInfo"))
+            ?: listenTogetherRoomStatus()
+            ?: throw IOException("加入成功，但未能读取房间信息")
+    }
+
+    suspend fun listenTogetherPlayback(roomId: String): MeloXListenTogetherPlayback = withContext(Dispatchers.IO) {
+        ensureLoggedIn()
+        val data = eapi(
+            "/api/listen/together/sync/playlist/get",
+            JSONObject().put("roomId", roomId),
+            true,
+        ).optJSONObject("data") ?: throw IOException("房间暂时没有播放数据")
+        val playlist = data.optJSONObject("playlist")
+        val display = playlist?.optJSONObject("displayList")?.optJSONArray("result")
+            ?: playlist?.optJSONArray("displayList") ?: JSONArray()
+        val ids = buildList {
+            for (index in 0 until display.length()) {
+                display.optString(index).toLongOrNull()?.takeIf { it > 0L }?.let(::add)
+            }
+        }
+        val command = data.optJSONObject("playCommand") ?: JSONObject()
+        MeloXListenTogetherPlayback(
+            songIds = ids,
+            targetSongId = sequenceOf("targetSongId", "songId").map { command.optString(it).toLongOrNull() }.firstOrNull { it != null && it > 0L },
+            progressMs = command.optLong("progress", 0L).coerceAtLeast(0L),
+            isPlaying = command.optString("playStatus", "PLAY").equals("PLAY", true),
+        )
+    }
+
+    suspend fun reportListenTogetherPlaylist(roomId: String, userId: Long, songIds: List<Long>, version: Int) =
+        withContext(Dispatchers.IO) {
+            ensureLoggedIn()
+            val ids = songIds.filter { it > 0L }.distinct()
+            val versionJson = JSONArray().put(JSONObject().put("userId", userId).put("version", version))
+            val playlist = JSONObject()
+                .put("commandType", "REPLACE")
+                .put("version", versionJson)
+                .put("anchorSongId", "")
+                .put("anchorPosition", -1)
+                .put("randomList", JSONArray(ids.map(Long::toString)))
+                .put("displayList", JSONArray(ids.map(Long::toString)))
+            eapi(
+                "/api/listen/together/sync/list/command/report",
+                JSONObject().put("roomId", roomId).put("playlistParam", playlist.toString()),
+                true,
+            )
+            Unit
+        }
+
+    suspend fun sendListenTogetherHeartbeat(
+        roomId: String,
+        songId: Long,
+        isPlaying: Boolean,
+        progressMs: Long,
+    ) = withContext(Dispatchers.IO) {
+        ensureLoggedIn()
+        eapi(
+            "/api/listen/together/heartbeat",
+            JSONObject().put("roomId", roomId).put("songId", songId)
+                .put("playStatus", if (isPlaying) "PLAY" else "PAUSE")
+                .put("progress", progressMs.coerceAtLeast(0L)),
+            true,
+        )
+        Unit
+    }
+
+    suspend fun endListenTogetherRoom(roomId: String) = withContext(Dispatchers.IO) {
+        ensureLoggedIn()
+        eapi("/api/listen/together/end/v2", JSONObject().put("roomId", roomId), true)
+        Unit
+    }
+
+    private fun parseListenTogetherRoom(value: JSONObject?): MeloXListenTogetherRoom? {
+        value ?: return null
+        val id = value.optString("roomId").ifBlank { value.optLong("roomId", 0L).takeIf { it > 0L }?.toString().orEmpty() }
+        if (id.isBlank()) return null
+        val users = value.optJSONArray("roomUsers") ?: JSONArray()
+        return MeloXListenTogetherRoom(
+            id = id,
+            creatorId = value.optString("creatorId").ifBlank { value.optLong("creatorId", 0L).takeIf { it > 0L }?.toString().orEmpty() },
+            users = buildList {
+                for (index in 0 until users.length()) {
+                    val entry = users.optJSONObject(index) ?: continue
+                    val profile = entry.optJSONObject("userInfo") ?: entry
+                    val userId = profile.optString("userId").ifBlank { profile.optLong("userId", 0L).toString() }
+                    add(MeloXListenTogetherUser(
+                        id = userId,
+                        name = profile.optString("nickname").ifBlank { "网易云用户" },
+                        avatarUrl = secure(profile.optString("avatarUrl").takeIf(String::isNotBlank)),
+                    ))
+                }
+            },
+        )
     }
 
     private companion object {

@@ -2,6 +2,7 @@ package com.lladlam.melox.ui.player
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -55,6 +57,7 @@ import com.lladlam.melox.core.library.NeteaseLibraryClient
 import com.lladlam.melox.core.library.NeteasePlaylistSummary
 import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.core.network.MeloXMusicComment
+import com.lladlam.melox.core.network.MeloXListenTogetherRoom
 import com.lladlam.melox.core.network.MeloXSearchKind
 import com.lladlam.melox.core.network.MeloXWikiSection
 import com.lladlam.melox.core.network.NeteaseMusicOperationsClient
@@ -62,6 +65,8 @@ import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -91,6 +96,8 @@ fun MeloXSongActionsOverlay(
     var writablePlaylists by remember(song.id, visible) { mutableStateOf<List<NeteasePlaylistSummary>>(emptyList()) }
     var comments by remember(song.id, visible) { mutableStateOf<List<MeloXMusicComment>>(emptyList()) }
     var wiki by remember(song.id, visible) { mutableStateOf<List<MeloXWikiSection>>(emptyList()) }
+    var listenRoom by remember(visible) { mutableStateOf<MeloXListenTogetherRoom?>(null) }
+    var invitationText by remember(visible) { mutableStateOf("") }
 
     LaunchedEffect(visible, song.id) {
         if (!visible) return@LaunchedEffect
@@ -98,6 +105,26 @@ fun MeloXSongActionsOverlay(
             val profile = account.accountProfile()
             val ids = withContext(Dispatchers.IO) { library.likedSongIdsBlocking(profile.userId) }
             liked = song.id in ids
+        }
+    }
+    LaunchedEffect(visible) {
+        if (!visible) return@LaunchedEffect
+        runCatching { ops.listenTogetherRoomStatus() }.onSuccess { listenRoom = it }
+    }
+    LaunchedEffect(page, listenRoom?.id, playbackState?.mediaId, playbackState?.isPlaying) {
+        val room = listenRoom ?: return@LaunchedEffect
+        val state = playbackState ?: return@LaunchedEffect
+        if (page != SongActionPage.ListenTogether) return@LaunchedEffect
+        while (isActive) {
+            runCatching {
+                ops.sendListenTogetherHeartbeat(
+                    roomId = room.id,
+                    songId = state.mediaId?.toLongOrNull() ?: song.id,
+                    isPlaying = state.isPlaying,
+                    progressMs = state.positionMs,
+                )
+            }
+            delay(5_000L)
         }
     }
 
@@ -225,8 +252,85 @@ fun MeloXSongActionsOverlay(
                             ActionItem("返回","‹"){page=SongActionPage.Main}
                         }
                         SongActionPage.ListenTogether -> {
-                            Text("上游 MeloX 的“一起听”包含房间同步协议。Android 当前先提供可用的邀请分享入口；房间级进度同步不会伪装成已完成。",color=Color.White.copy(alpha=.62f),fontSize=13.sp,modifier=Modifier.padding(6.dp,6.dp,6.dp,12.dp))
-                            ActionItem("分享当前歌曲邀请", "↗") { shareSong(context,song); onDismiss() }
+                            val room = listenRoom
+                            if (room == null) {
+                                Text("发起房间后会同步当前队列，并持续上报播放进度。也可以粘贴网易云一起听邀请链接加入。",color=Color.White.copy(alpha=.62f),fontSize=13.sp,modifier=Modifier.padding(6.dp,6.dp,6.dp,12.dp))
+                                ActionItem("发起一起听", "◎") {
+                                    if (!busy) {
+                                        busy = true; message = null
+                                        scope.launch {
+                                            runCatching {
+                                                val created = ops.createListenTogetherRoom()
+                                                val profile = account.accountProfile()
+                                                ops.reportListenTogetherPlaylist(created.id, profile.userId, queue.map { it.id }, 1)
+                                                created
+                                            }.onSuccess { listenRoom = it }
+                                                .onFailure { message = it.message ?: "创建房间失败" }
+                                            busy = false
+                                        }
+                                    }
+                                }
+                                BasicTextField(
+                                    value = invitationText,
+                                    onValueChange = { invitationText = it },
+                                    singleLine = true,
+                                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 14.sp),
+                                    decorationBox = { inner ->
+                                        Box(Modifier.fillMaxWidth().padding(horizontal=6.dp,vertical=6.dp).background(Color.White.copy(alpha=.08f),RoundedCornerShape(14.dp)).padding(horizontal=12.dp,vertical=11.dp)) {
+                                            if(invitationText.isBlank()) Text("粘贴一起听邀请链接",color=Color.White.copy(alpha=.38f),fontSize=14.sp)
+                                            inner()
+                                        }
+                                    },
+                                )
+                                ActionItem("加入邀请房间", "→") {
+                                    val parsed = parseListenTogetherInvitation(invitationText)
+                                    if (parsed == null) message = "邀请链接缺少 roomId 或 inviterId"
+                                    else if (!busy) {
+                                        busy = true; message = null
+                                        scope.launch {
+                                            runCatching { ops.joinListenTogetherRoom(parsed.first, parsed.second) }
+                                                .onSuccess { listenRoom = it }
+                                                .onFailure { message = it.message ?: "加入房间失败" }
+                                            busy = false
+                                        }
+                                    }
+                                }
+                            } else {
+                                Text("房间 ${room.id} · ${room.users.size.coerceAtLeast(1)} 位成员",color=Color.White.copy(alpha=.72f),fontSize=13.sp,modifier=Modifier.padding(6.dp,6.dp,6.dp,6.dp))
+                                room.users.forEach { member -> Text("• ${member.name}",color=Color.White.copy(alpha=.58f),fontSize=12.sp,modifier=Modifier.padding(horizontal=10.dp,vertical=2.dp)) }
+                                ActionItem("立即同步房间播放", "↻") {
+                                    if (!busy) {
+                                        busy = true; message = null
+                                        scope.launch {
+                                            runCatching {
+                                                val remote = ops.listenTogetherPlayback(room.id)
+                                                val ids = remote.songIds.ifEmpty { listOfNotNull(remote.targetSongId) }
+                                                val songs = withContext(Dispatchers.IO) { library.songDetailsBlocking(ids) }
+                                                val target = remote.targetSongId ?: songs.firstOrNull()?.id
+                                                if (songs.isNotEmpty() && target != null) {
+                                                    PlaybackCommands.playQueue(context, songs, target)
+                                                    delay(350L)
+                                                    playbackState?.seekTo(remote.progressMs)
+                                                }
+                                            }.onFailure { message = it.message ?: "同步播放失败" }
+                                            busy = false
+                                        }
+                                    }
+                                }
+                                ActionItem("分享房间邀请", "↗") { shareListenTogether(context, song.id, room) }
+                                ActionItem("结束/退出房间", "×") {
+                                    if (!busy) {
+                                        busy = true
+                                        scope.launch {
+                                            runCatching { ops.endListenTogetherRoom(room.id) }
+                                                .onSuccess { listenRoom = null }
+                                                .onFailure { message = it.message ?: "结束房间失败" }
+                                            busy = false
+                                        }
+                                    }
+                                }
+                            }
+                            if (busy) LoadingRow("正在连接一起听")
                             ActionItem("返回","‹"){page=SongActionPage.Main}
                         }
                     }
@@ -241,3 +345,5 @@ fun MeloXSongActionsOverlay(
 @Composable private fun ActionItem(title:String,symbol:String,onClick:()->Unit){Row(Modifier.fillMaxWidth().height(46.dp).clickable(onClick=onClick).padding(horizontal=6.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)){Box(Modifier.size(28.dp),contentAlignment=Alignment.Center){Text(symbol,color=Color.White,fontSize=18.sp,fontWeight=FontWeight.SemiBold)};Text(title,color=Color.White,fontSize=15.sp,fontWeight=FontWeight.Medium,maxLines=1,overflow=TextOverflow.Ellipsis);Spacer(Modifier.weight(1f))}}
 @Composable private fun LoadingRow(text:String){Row(Modifier.fillMaxWidth().padding(14.dp),verticalAlignment=Alignment.CenterVertically){CircularProgressIndicator(Modifier.size(20.dp),color=Color.White,strokeWidth=2.dp);Spacer(Modifier.size(10.dp));Text(text,color=Color.White.copy(alpha=.7f))}}
 private fun shareSong(context:Context,song:SearchSong){val url="https://music.163.com/song?id=${song.id}";runCatching{context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,"${song.name} - ${song.artists}\n$url"),"分享歌曲").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}}
+private fun parseListenTogetherInvitation(value:String):Pair<String,String>?=runCatching{val uri=Uri.parse(value.trim());val room=uri.getQueryParameter("roomId").orEmpty();val inviter=uri.getQueryParameter("inviterId").orEmpty();if(room.isBlank()||inviter.isBlank())null else room to inviter}.getOrNull()
+private fun shareListenTogether(context:Context,songId:Long,room:MeloXListenTogetherRoom){val inviter=room.creatorId.ifBlank{room.users.firstOrNull()?.id.orEmpty()};val url="https://st.music.163.com/listen-together/share/?songId=$songId&roomId=${Uri.encode(room.id)}&inviterId=${Uri.encode(inviter)}";runCatching{context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,url),"分享一起听邀请").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}}
