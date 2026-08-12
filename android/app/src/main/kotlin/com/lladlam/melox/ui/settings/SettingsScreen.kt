@@ -928,6 +928,10 @@ private fun LyricsSettings(context: android.content.Context) {
         MeloXLyricAnnotationDisplayMode.FocusedLine.name,
         MeloXLyricAnnotationDisplayMode.entries.map { it.name },
     ) { if (it == MeloXLyricAnnotationDisplayMode.FocusedLine.name) "仅当前播放行" else "全部歌词行" }
+    PreferenceFloatSlider(context, "罗马音大小", "lyrics_romanization_font_scale", .65f, .5f..8f / 10f, 5) { "${(it * 100).toInt()}%" }
+    PreferenceFloatSlider(context, "罗马音亮度", "lyrics_romanization_opacity", .9f, .4f..9f / 10f, 9) { "${(it * 100).toInt()}%" }
+    PreferenceFloatSlider(context, "翻译歌词大小", "lyrics_translation_font_scale", .65f, .5f..8f / 10f, 5) { "${(it * 100).toInt()}%" }
+    PreferenceFloatSlider(context, "翻译歌词亮度", "lyrics_translation_opacity", .9f, .4f..9f / 10f, 9) { "${(it * 100).toInt()}%" }
     LyricsStringChoiceSetting(
         context,
         "翻译显示范围",
@@ -967,18 +971,43 @@ private fun LyricsSettings(context: android.content.Context) {
         context, "抬升方式", "lyrics_lift_mode", MeloXLyricsGroupingMode.Character.name,
         MeloXLyricsGroupingMode.entries.map { it.name },
     ) { if (it == MeloXLyricsGroupingMode.Word.name) "按词抬升" else "按字抬升" }
+    PreferenceFloatSlider(context, "高光渐变宽度", "lyrics_highlight_gradient_width", .7f, .4f..3f, 25) { "%.1f 字宽".format(it) }
+    PreferenceFloatSlider(context, "渐变削减程度", "lyrics_highlight_gradient_reduction", .65f, 0f..1f, 19) { "${(it * 100).toInt()}%" }
     LyricsStringChoiceSetting(
         context, "长音识别方式", "lyrics_long_tone_detection", MeloXLyricsGroupingMode.Character.name,
         MeloXLyricsGroupingMode.entries.map { it.name },
     ) { if (it == MeloXLyricsGroupingMode.Word.name) "按词识别" else "按字识别" }
+    SettingsToggleRow(context, "逐字歌词光效", "lyrics_glow_enabled", true)
     SettingsToggleRow(context, "仅长音显示光晕", "lyrics_glow_long_tones_only", true)
     LyricsChoiceSetting(context, "长音判定时长", "lyrics_long_tone_threshold_ms", 950, listOf(300, 500, 700, 950, 1_200, 1_500)) { "${it / 1000f} 秒" }
     LyricsFloatChoiceSetting(context, "行间距", "lyrics_spacing_scale", 1f, listOf(.8f, 1f, 1.2f, 1.4f)) { "${(it * 100).toInt()}%" }
     LyricsFloatChoiceSetting(context, "远近模糊", "lyrics_blur_strength", 1f, listOf(0f, .6f, 1f, 1.4f)) { if (it == 0f) "关闭" else "${(it * 100).toInt()}%" }
+    PreferenceFloatSlider(context, "焦点垂直位置", "lyrics_focus_position", .25f, .05f..8f / 10f, 74) { "距顶部 ${(it * 100).toInt()}%" }
+    PreferenceFloatSlider(context, "默认逐句模糊加强", "lyrics_distance_blur_scale", 1.05f, 0f..1.5f, 29) { "${(it * 100).toInt()}%" }
+    PreferenceFloatSlider(context, "隐藏 UI 逐句模糊加强", "lyrics_hidden_blur_scale", .85f, 0f..1.5f, 29) { "${(it * 100).toInt()}%" }
+    PreferenceFloatSlider(context, "非焦点歌词变暗", "lyrics_dim_amount", 1f, 0f..1f, 9) { "${(it * 100).toInt()}%" }
     LyricsFloatChoiceSetting(context, "当前行放大", "lyrics_focus_scale", 1.02f, listOf(1f, 1.02f, 1.04f, 1.08f)) { "${(it * 100).toInt()}%" }
     LyricsFloatChoiceSetting(context, "未播放文字亮度", "lyrics_inactive_opacity", .3f, listOf(.2f, .3f, .45f, .6f)) { "${(it * 100).toInt()}%" }
     LyricsFloatChoiceSetting(context, "逐字光晕", "lyrics_glow_strength", 1f, listOf(0f, .6f, 1f, 1.4f)) { if (it == 0f) "关闭" else "${(it * 100).toInt()}%" }
     LyricsFloatChoiceSetting(context, "长音延展", "lyrics_long_tone_strength", 1f, listOf(0f, .6f, 1f, 1.4f)) { if (it == 0f) "关闭" else "${(it * 100).toInt()}%" }
+    LyricsChoiceSetting(context, "控制栏自动隐藏", "lyrics_interface_auto_hide_ms", 5_000, (3..15).map { it * 1_000 }) { "${it / 1_000} 秒" }
+    LyricsChoiceSetting(context, "滚动隐藏 UI 阈值", "lyrics_scroll_hide_threshold_dp", 200, listOf(40, 80, 120, 160, 200, 240)) { "$it dp" }
+
+    Text("动画与性能", modifier = Modifier.padding(top = 16.dp), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f))
+    PreferenceFloatSlider(context, "基础拖尾延迟", "lyrics_cascade_delay_ms", 21f, 0f..100f, 99) { "${it.toInt()} ms" }
+    PreferenceFloatSlider(context, "逐句拖尾增量", "lyrics_cascade_delay_increase_ms", 5f, 0f..100f, 99) { "${it.toInt()} ms/句" }
+    PreferenceFloatSlider(context, "后续歌词启动延迟", "lyrics_cascade_following_delay_ms", 30f, 0f..200f, 199) { "${it.toInt()} ms" }
+    PreferenceFloatSlider(context, "拖尾追赶节奏", "lyrics_cascade_catch_up_ratio", .97f, .5f..1f, 49) { "${(it * 100).toInt()}%" }
+    PreferenceFloatSlider(context, "追赶速度梯度", "lyrics_cascade_chase_gradient", .70f, 0f..1f, 99) { "${(it * 100).toInt()}%" }
+    PreferenceFloatSlider(context, "位移收束时长", "lyrics_cascade_duration_ms", 740f, 200f..1_200f, 99) { "%.2f 秒".format(it / 1_000f) }
+    PreferenceFloatSlider(context, "瞬移阈值", "lyrics_snap_threshold_ms", 260f, 50f..500f, 89) { "${it.toInt()} ms" }
+    SettingsToggleRow(context, "启用位移回弹", "lyrics_cascade_bounce_enabled", true)
+    PreferenceFloatSlider(context, "最大回弹弹性", "lyrics_cascade_bounce", .26f, 0f..8f / 10f, 79) { "${(it * 100).toInt()}%" }
+    PreferenceFloatSlider(context, "回弹强度梯度", "lyrics_cascade_bounce_gradient", .85f, 0f..1f, 99) { "${(it * 100).toInt()}%" }
+    SettingsToggleRow(context, "启用升格回弹", "lyrics_scale_bounce_enabled", true)
+    PreferenceFloatSlider(context, "升格回弹弹性", "lyrics_scale_bounce", .32f, 0f..5f / 10f, 49) { "${(it * 100).toInt()}%" }
+    LyricsChoiceSetting(context, "升格回弹时长", "lyrics_scale_bounce_duration_ms", 580, listOf(150, 250, 350, 450, 580, 700, 800)) { "${it}ms" }
+    LyricsChoiceSetting(context, "焦点颜色提前", "lyrics_focus_color_lead_ms", 0, listOf(-300, -200, -100, -50, 0, 50, 100, 200, 300)) { if (it == 0) "同步" else "${it}ms" }
 }
 
 @Composable
@@ -1073,6 +1102,23 @@ private fun SettingsFloatSlider(
         steps = steps,
         modifier = Modifier.fillMaxWidth(),
     )
+}
+
+@Composable
+private fun PreferenceFloatSlider(
+    context: android.content.Context,
+    title: String,
+    key: String,
+    default: Float,
+    range: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    label: (Float) -> String,
+) {
+    var value by remember(key) { mutableStateOf(MeloXSettingsPreferences.float(context, key, default)) }
+    SettingsFloatSlider(title, value, range, steps, label) {
+        value = it
+        MeloXSettingsPreferences.setFloat(context, key, it)
+    }
 }
 
 @Composable

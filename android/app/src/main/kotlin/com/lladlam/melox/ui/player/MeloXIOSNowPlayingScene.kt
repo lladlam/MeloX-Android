@@ -124,7 +124,7 @@ internal fun MeloXIOSNowPlayingScene(
     }
     LaunchedEffect(page, showsLyricsControls, lyricsControlsActivityGeneration) {
         if (page != MeloXNowPlayingPage.Lyrics || !showsLyricsControls) return@LaunchedEffect
-        delay(5_000L) // upstream defaultAppleMusicLyricsInterfaceAutoHideDelay
+        delay(MeloXSettingsRuntime.lyricInterfaceAutoHideDelayMs.toLong())
         showsLyricsControls = false
     }
 

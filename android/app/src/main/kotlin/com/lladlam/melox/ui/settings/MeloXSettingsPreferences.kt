@@ -90,6 +90,8 @@ object MeloXSettingsRuntime {
         internal set
     var lyricFontScale by mutableStateOf(1f)
         internal set
+    var lyricFocusPosition by mutableStateOf(.25f)
+        internal set
     var lyricFontWeight by mutableStateOf(MeloXLyricsFontWeight.Heavy)
         internal set
     var lyricLiftMode by mutableStateOf(MeloXLyricsGroupingMode.Character)
@@ -104,13 +106,65 @@ object MeloXSettingsRuntime {
         internal set
     var lyricBlurStrength by mutableStateOf(1f)
         internal set
+    var lyricDistanceBlurScale by mutableStateOf(1.05f)
+        internal set
+    var lyricHiddenInterfaceBlurScale by mutableStateOf(.85f)
+        internal set
+    var lyricDimAmount by mutableStateOf(1f)
+        internal set
     var lyricFocusScale by mutableStateOf(1.02f)
         internal set
     var lyricInactiveOpacity by mutableStateOf(.3f)
         internal set
     var lyricGlowStrength by mutableStateOf(1f)
         internal set
+    var lyricGlowEnabled by mutableStateOf(true)
+        internal set
     var lyricLongToneStrength by mutableStateOf(1f)
+        internal set
+    var lyricHighlightGradientWidth by mutableStateOf(.7f)
+        internal set
+    var lyricHighlightGradientReduction by mutableStateOf(.65f)
+        internal set
+    var lyricRomanizationFontScale by mutableStateOf(.65f)
+        internal set
+    var lyricRomanizationOpacity by mutableStateOf(.9f)
+        internal set
+    var lyricTranslationFontScale by mutableStateOf(.65f)
+        internal set
+    var lyricTranslationOpacity by mutableStateOf(.9f)
+        internal set
+    var lyricInterfaceAutoHideDelayMs by mutableStateOf(5_000)
+        internal set
+    var lyricScrollHideThresholdDp by mutableStateOf(200)
+        internal set
+    var lyricCascadeDelayMs by mutableStateOf(21f)
+        internal set
+    var lyricCascadeDelayIncreaseMs by mutableStateOf(5f)
+        internal set
+    var lyricCascadeFollowingDelayMs by mutableStateOf(30f)
+        internal set
+    var lyricCascadeCatchUpRatio by mutableStateOf(.97f)
+        internal set
+    var lyricCascadeChaseSpeedGradient by mutableStateOf(.70f)
+        internal set
+    var lyricCascadeDurationMs by mutableStateOf(740f)
+        internal set
+    var lyricSnapThresholdMs by mutableStateOf(260f)
+        internal set
+    var lyricCascadeBounceEnabled by mutableStateOf(true)
+        internal set
+    var lyricCascadeBounce by mutableStateOf(.26f)
+        internal set
+    var lyricCascadeBounceGradient by mutableStateOf(.85f)
+        internal set
+    var lyricScaleBounceEnabled by mutableStateOf(true)
+        internal set
+    var lyricScaleBounce by mutableStateOf(.32f)
+        internal set
+    var lyricScaleBounceDurationMs by mutableStateOf(580)
+        internal set
+    var lyricFocusColorLeadMs by mutableStateOf(0)
         internal set
     var lyricsStyle by mutableStateOf(MeloXLyricsStyle.AppleMusic)
         internal set
@@ -253,6 +307,7 @@ object MeloXSettingsRuntime {
         lyricTranslationDisplayMode = annotationMode(app, "lyrics_translation_display_mode")
         lyricFollowDelayMs = MeloXSettingsPreferences.int(app, "lyrics_follow_delay_ms", 3_000).coerceIn(1_000, 8_000)
         lyricFontScale = MeloXSettingsPreferences.float(app, "lyrics_font_scale", 1f).coerceIn(.8f, 1.25f)
+        lyricFocusPosition = MeloXSettingsPreferences.float(app, "lyrics_focus_position", .25f).coerceIn(.05f, .8f)
         lyricFontWeight = runCatching {
             MeloXLyricsFontWeight.valueOf(MeloXSettingsPreferences.string(app, "lyrics_font_weight", MeloXLyricsFontWeight.Heavy.name))
         }.getOrDefault(MeloXLyricsFontWeight.Heavy)
@@ -266,10 +321,36 @@ object MeloXSettingsRuntime {
         lyricLongToneThresholdMs = MeloXSettingsPreferences.int(app, "lyrics_long_tone_threshold_ms", 950).coerceIn(300, 1_500)
         lyricSpacingScale = MeloXSettingsPreferences.float(app, "lyrics_spacing_scale", 1f).coerceIn(.7f, 1.5f)
         lyricBlurStrength = MeloXSettingsPreferences.float(app, "lyrics_blur_strength", 1f).coerceIn(0f, 1.5f)
+        lyricDistanceBlurScale = MeloXSettingsPreferences.float(app, "lyrics_distance_blur_scale", 1.05f).coerceIn(0f, 1.5f)
+        lyricHiddenInterfaceBlurScale = MeloXSettingsPreferences.float(app, "lyrics_hidden_blur_scale", .85f).coerceIn(0f, 1.5f)
+        lyricDimAmount = MeloXSettingsPreferences.float(app, "lyrics_dim_amount", 1f).coerceIn(0f, 1f)
         lyricFocusScale = MeloXSettingsPreferences.float(app, "lyrics_focus_scale", 1.02f).coerceIn(1f, 1.08f)
         lyricInactiveOpacity = MeloXSettingsPreferences.float(app, "lyrics_inactive_opacity", .3f).coerceIn(.15f, .65f)
         lyricGlowStrength = MeloXSettingsPreferences.float(app, "lyrics_glow_strength", 1f).coerceIn(0f, 1.5f)
+        lyricGlowEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_glow_enabled", true)
         lyricLongToneStrength = MeloXSettingsPreferences.float(app, "lyrics_long_tone_strength", 1f).coerceIn(0f, 1.5f)
+        lyricHighlightGradientWidth = MeloXSettingsPreferences.float(app, "lyrics_highlight_gradient_width", .7f).coerceIn(.4f, 3f)
+        lyricHighlightGradientReduction = MeloXSettingsPreferences.float(app, "lyrics_highlight_gradient_reduction", .65f).coerceIn(0f, 1f)
+        lyricRomanizationFontScale = MeloXSettingsPreferences.float(app, "lyrics_romanization_font_scale", .65f).coerceIn(.5f, .8f)
+        lyricRomanizationOpacity = MeloXSettingsPreferences.float(app, "lyrics_romanization_opacity", .9f).coerceIn(.4f, .9f)
+        lyricTranslationFontScale = MeloXSettingsPreferences.float(app, "lyrics_translation_font_scale", .65f).coerceIn(.5f, .8f)
+        lyricTranslationOpacity = MeloXSettingsPreferences.float(app, "lyrics_translation_opacity", .9f).coerceIn(.4f, .9f)
+        lyricInterfaceAutoHideDelayMs = MeloXSettingsPreferences.int(app, "lyrics_interface_auto_hide_ms", 5_000).coerceIn(3_000, 15_000)
+        lyricScrollHideThresholdDp = MeloXSettingsPreferences.int(app, "lyrics_scroll_hide_threshold_dp", 200).coerceIn(40, 240)
+        lyricCascadeDelayMs = MeloXSettingsPreferences.float(app, "lyrics_cascade_delay_ms", 21f).coerceIn(0f, 100f)
+        lyricCascadeDelayIncreaseMs = MeloXSettingsPreferences.float(app, "lyrics_cascade_delay_increase_ms", 5f).coerceIn(0f, 100f)
+        lyricCascadeFollowingDelayMs = MeloXSettingsPreferences.float(app, "lyrics_cascade_following_delay_ms", 30f).coerceIn(0f, 200f)
+        lyricCascadeCatchUpRatio = MeloXSettingsPreferences.float(app, "lyrics_cascade_catch_up_ratio", .97f).coerceIn(.5f, 1f)
+        lyricCascadeChaseSpeedGradient = MeloXSettingsPreferences.float(app, "lyrics_cascade_chase_gradient", .70f).coerceIn(0f, 1f)
+        lyricCascadeDurationMs = MeloXSettingsPreferences.float(app, "lyrics_cascade_duration_ms", 740f).coerceIn(200f, 1_200f)
+        lyricSnapThresholdMs = MeloXSettingsPreferences.float(app, "lyrics_snap_threshold_ms", 260f).coerceIn(50f, 500f)
+        lyricCascadeBounceEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_cascade_bounce_enabled", true)
+        lyricCascadeBounce = MeloXSettingsPreferences.float(app, "lyrics_cascade_bounce", .26f).coerceIn(0f, .8f)
+        lyricCascadeBounceGradient = MeloXSettingsPreferences.float(app, "lyrics_cascade_bounce_gradient", .85f).coerceIn(0f, 1f)
+        lyricScaleBounceEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_scale_bounce_enabled", true)
+        lyricScaleBounce = MeloXSettingsPreferences.float(app, "lyrics_scale_bounce", .32f).coerceIn(0f, .5f)
+        lyricScaleBounceDurationMs = MeloXSettingsPreferences.int(app, "lyrics_scale_bounce_duration_ms", 580).coerceIn(150, 800)
+        lyricFocusColorLeadMs = MeloXSettingsPreferences.int(app, "lyrics_focus_color_lead_ms", 0).coerceIn(-300, 300)
         lyricsStyle = runCatching {
             MeloXLyricsStyle.valueOf(MeloXSettingsPreferences.string(app, "lyrics_style", MeloXLyricsStyle.AppleMusic.name))
         }.getOrDefault(MeloXLyricsStyle.AppleMusic)
@@ -398,6 +479,9 @@ object MeloXSettingsPreferences {
             "lyrics_auto_follow" -> MeloXSettingsRuntime.lyricAutoFollowEnabled = value
             "lyrics_reduce_motion" -> MeloXSettingsRuntime.lyricReduceMotion = value
             "lyrics_glow_long_tones_only" -> MeloXSettingsRuntime.lyricGlowLongTonesOnly = value
+            "lyrics_glow_enabled" -> MeloXSettingsRuntime.lyricGlowEnabled = value
+            "lyrics_cascade_bounce_enabled" -> MeloXSettingsRuntime.lyricCascadeBounceEnabled = value
+            "lyrics_scale_bounce_enabled" -> MeloXSettingsRuntime.lyricScaleBounceEnabled = value
             "lyrics_advance_word_by_word" -> MeloXSettingsRuntime.lyricAdvanceAppliesToWordByWord = value
             "lyrics_skyline_enabled" -> MeloXSettingsRuntime.skylineEnabled = value
             "lyrics_skyline_song_info" -> MeloXSettingsRuntime.skylineShowSongInfo = value
@@ -432,6 +516,10 @@ object MeloXSettingsPreferences {
             "lyrics_refresh_rate" -> MeloXSettingsRuntime.lyricRefreshRate =
                 value.takeIf { it in setOf(30, 60, 90, 120) } ?: 60
             "lyrics_long_tone_threshold_ms" -> MeloXSettingsRuntime.lyricLongToneThresholdMs = value.coerceIn(300, 1_500)
+            "lyrics_interface_auto_hide_ms" -> MeloXSettingsRuntime.lyricInterfaceAutoHideDelayMs = value.coerceIn(3_000, 15_000)
+            "lyrics_scroll_hide_threshold_dp" -> MeloXSettingsRuntime.lyricScrollHideThresholdDp = value.coerceIn(40, 240)
+            "lyrics_scale_bounce_duration_ms" -> MeloXSettingsRuntime.lyricScaleBounceDurationMs = value.coerceIn(150, 800)
+            "lyrics_focus_color_lead_ms" -> MeloXSettingsRuntime.lyricFocusColorLeadMs = value.coerceIn(-300, 300)
             "lyrics_skyline_ambient_lines" -> MeloXSettingsRuntime.skylineAmbientLines = value.coerceIn(0, 4)
             "lyrics_skyline_ambient_max_characters" -> MeloXSettingsRuntime.skylineAmbientMaximumCharacters = value.coerceIn(1, 4)
             "lyrics_skyline_ambient_max_visible" -> MeloXSettingsRuntime.skylineAmbientMaximumVisibleTexts = value.coerceIn(4, 24)
@@ -443,12 +531,32 @@ object MeloXSettingsPreferences {
         prefs(context).edit().putFloat(key, value).apply()
         when (key) {
             "lyrics_font_scale" -> MeloXSettingsRuntime.lyricFontScale = value.coerceIn(.8f, 1.25f)
+            "lyrics_focus_position" -> MeloXSettingsRuntime.lyricFocusPosition = value.coerceIn(.05f, .8f)
             "lyrics_spacing_scale" -> MeloXSettingsRuntime.lyricSpacingScale = value.coerceIn(.7f, 1.5f)
             "lyrics_blur_strength" -> MeloXSettingsRuntime.lyricBlurStrength = value.coerceIn(0f, 1.5f)
+            "lyrics_distance_blur_scale" -> MeloXSettingsRuntime.lyricDistanceBlurScale = value.coerceIn(0f, 1.5f)
+            "lyrics_hidden_blur_scale" -> MeloXSettingsRuntime.lyricHiddenInterfaceBlurScale = value.coerceIn(0f, 1.5f)
+            "lyrics_dim_amount" -> MeloXSettingsRuntime.lyricDimAmount = value.coerceIn(0f, 1f)
             "lyrics_focus_scale" -> MeloXSettingsRuntime.lyricFocusScale = value.coerceIn(1f, 1.08f)
             "lyrics_inactive_opacity" -> MeloXSettingsRuntime.lyricInactiveOpacity = value.coerceIn(.15f, .65f)
             "lyrics_glow_strength" -> MeloXSettingsRuntime.lyricGlowStrength = value.coerceIn(0f, 1.5f)
             "lyrics_long_tone_strength" -> MeloXSettingsRuntime.lyricLongToneStrength = value.coerceIn(0f, 1.5f)
+            "lyrics_highlight_gradient_width" -> MeloXSettingsRuntime.lyricHighlightGradientWidth = value.coerceIn(.4f, 3f)
+            "lyrics_highlight_gradient_reduction" -> MeloXSettingsRuntime.lyricHighlightGradientReduction = value.coerceIn(0f, 1f)
+            "lyrics_romanization_font_scale" -> MeloXSettingsRuntime.lyricRomanizationFontScale = value.coerceIn(.5f, .8f)
+            "lyrics_romanization_opacity" -> MeloXSettingsRuntime.lyricRomanizationOpacity = value.coerceIn(.4f, .9f)
+            "lyrics_translation_font_scale" -> MeloXSettingsRuntime.lyricTranslationFontScale = value.coerceIn(.5f, .8f)
+            "lyrics_translation_opacity" -> MeloXSettingsRuntime.lyricTranslationOpacity = value.coerceIn(.4f, .9f)
+            "lyrics_cascade_delay_ms" -> MeloXSettingsRuntime.lyricCascadeDelayMs = value.coerceIn(0f, 100f)
+            "lyrics_cascade_delay_increase_ms" -> MeloXSettingsRuntime.lyricCascadeDelayIncreaseMs = value.coerceIn(0f, 100f)
+            "lyrics_cascade_following_delay_ms" -> MeloXSettingsRuntime.lyricCascadeFollowingDelayMs = value.coerceIn(0f, 200f)
+            "lyrics_cascade_catch_up_ratio" -> MeloXSettingsRuntime.lyricCascadeCatchUpRatio = value.coerceIn(.5f, 1f)
+            "lyrics_cascade_chase_gradient" -> MeloXSettingsRuntime.lyricCascadeChaseSpeedGradient = value.coerceIn(0f, 1f)
+            "lyrics_cascade_duration_ms" -> MeloXSettingsRuntime.lyricCascadeDurationMs = value.coerceIn(200f, 1_200f)
+            "lyrics_snap_threshold_ms" -> MeloXSettingsRuntime.lyricSnapThresholdMs = value.coerceIn(50f, 500f)
+            "lyrics_cascade_bounce" -> MeloXSettingsRuntime.lyricCascadeBounce = value.coerceIn(0f, .8f)
+            "lyrics_cascade_bounce_gradient" -> MeloXSettingsRuntime.lyricCascadeBounceGradient = value.coerceIn(0f, 1f)
+            "lyrics_scale_bounce" -> MeloXSettingsRuntime.lyricScaleBounce = value.coerceIn(0f, .5f)
             "lyrics_skyline_current_font_size" -> MeloXSettingsRuntime.skylineCurrentFontSize = value.coerceIn(36f, 84f)
             "lyrics_skyline_current_max_scale" -> MeloXSettingsRuntime.skylineCurrentMaximumScale = value.coerceIn(1f, 1.2f)
             "lyrics_skyline_next_font_size" -> MeloXSettingsRuntime.skylineNextFontSize = value.coerceIn(14f, 44f)
