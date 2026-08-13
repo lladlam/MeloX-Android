@@ -2,6 +2,7 @@ package com.lladlam.melox.platform.xiaomi
 
 import android.app.Notification
 import android.content.Context
+import android.os.Build
 import android.provider.Settings
 import org.json.JSONObject
 
@@ -32,7 +33,8 @@ object HyperOsFocusBridge {
     }
 
     fun supportsSuperIsland(context: Context): Boolean =
-        protocol(context) == Protocol.HyperOs3
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 &&
+            protocol(context) == Protocol.HyperOs3
 
     /**
      * Compatibility path for the existing generic lyrics notification on HyperOS 1/2.
