@@ -35,7 +35,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -83,6 +82,8 @@ internal object MeloXLyriconRuntime {
             providerPackageName = app.packageName,
             playerPackageName = app.packageName,
         ).apply {
+            // The Lyricon 0.1.70 Provider docs recommend autoSync so the last cached
+            // song/player state is automatically restored after the central service reconnects.
             autoSync = true
             register()
             player.setPositionUpdateInterval(UPDATE_INTERVAL_MS.toInt())
@@ -96,6 +97,9 @@ internal object MeloXLyriconRuntime {
                 runCatching { future.get() }
                     .onSuccess {
                         controller = it
+                        // Publish immediately once Media3 is connected; the periodic loop then
+                        // keeps position/play state current without rebuilding lyrics every tick.
+                        publishCurrentState()
                         handler.post(updater)
                     }
                     .onFailure { error ->
@@ -159,7 +163,18 @@ internal object MeloXLyriconRuntime {
                             lyrics = document.toLyriconLines(),
                         ),
                     )
+                    // Follow the documented setSong -> setPosition -> playback/display-state order
+                    // so a reconnect or track switch cannot briefly render a stale timeline.
                     current?.currentPosition?.coerceAtLeast(0L)?.let(remote::setPosition)
+                    current?.let { remote.setPlaybackState(it.isPlaying) }
+                    appContext?.let { context ->
+                        remote.setDisplayTranslation(
+                            MeloXSettingsPreferences.boolean(context, "lyrics_translation", true),
+                        )
+                        remote.setDisplayRoma(
+                            MeloXSettingsPreferences.boolean(context, "lyrics_romanization", true),
+                        )
+                    }
                 }
                 lyricJob = null
             }
@@ -230,10 +245,11 @@ internal object MeloXLyriconRuntime {
         val originalTitle = extras?.getString(ORIGINAL_TITLE_KEY)
         val originalArtist = extras?.getString(ORIGINAL_ARTIST_KEY)
         if (originalTitle.isNullOrBlank() && originalArtist.isNullOrBlank()) return metadata
+        // System-lyric title hijacking stores the real title/artist in extras. Restore only those
+        // two fields: the album title is unrelated and must remain the original album metadata.
         return metadata.buildUpon()
             .setTitle(originalTitle?.takeIf(String::isNotBlank) ?: metadata.title)
             .setArtist(originalArtist?.takeIf(String::isNotBlank) ?: metadata.artist)
-            .setAlbumTitle(originalArtist?.takeIf(String::isNotBlank) ?: metadata.albumTitle)
             .build()
     }
 
@@ -285,6 +301,7 @@ internal object MeloXLyriconRuntime {
         lastPlaying = null
         lastTranslation = null
         lastRomanization = null
+        lastPositionDispatchMs = 0L
         registry = null
         downloads = null
         appContext = null
