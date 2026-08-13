@@ -66,6 +66,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("com.google.zxing:core:3.5.4")
     implementation("com.xzakota.hyper.notification:focus-api:1.4")
+    implementation("io.github.proify.lyricon:provider:0.1.70")
 
     testImplementation("junit:junit:4.13.2")
 
