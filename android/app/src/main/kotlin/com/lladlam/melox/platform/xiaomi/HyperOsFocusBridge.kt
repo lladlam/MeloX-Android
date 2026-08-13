@@ -8,6 +8,7 @@ import android.content.Context
 import android.provider.Settings
 import com.xzakota.hyper.notification.focus.FocusNotification
 import com.xzakota.hyper.notification.island.model.TextInfo
+import org.json.JSONObject
 
 /**
  * Xiaomi HyperOS Focus / Super Island integration boundary.
@@ -23,6 +24,7 @@ object HyperOsFocusBridge {
     const val MinimumRenderIntervalMs = 1_500L
 
     private const val FocusProtocolSetting = "notification_focus_protocol"
+    private const val LegacyFocusParamKey = "miui.focus.param"
     private const val DefaultAccent = 0xFF3482FF.toInt()
 
     enum class Protocol(val version: Int) {
@@ -42,6 +44,42 @@ object HyperOsFocusBridge {
 
     fun supportsSuperIsland(context: Context): Boolean =
         protocol(context) == Protocol.HyperOs3
+
+    /**
+     * Compatibility path for the existing generic lyrics notification on HyperOS 1/2.
+     * HyperOS 3 returns null here because the dedicated Focus V3 foreground service owns
+     * Super Island updates and must not be duplicated by the old ad-hoc payload.
+     */
+    fun playbackPayload(
+        context: Context,
+        lyric: String,
+        songTitle: String,
+        artist: String,
+        positionMs: Long,
+        durationMs: Long,
+        isPlaying: Boolean,
+    ): String? {
+        val protocol = protocol(context)
+        if (protocol == Protocol.Unsupported || protocol == Protocol.HyperOs3) return null
+        return JSONObject().apply {
+            put("protocolVersion", protocol.version)
+            put("scene", "music")
+            put("source", "MeloX")
+            put("title", lyric)
+            put("song", songTitle)
+            put("artist", artist)
+            put("position", positionMs.coerceAtLeast(0L))
+            put("duration", durationMs.coerceAtLeast(0L))
+            put("playing", isPlaying)
+        }.toString()
+    }
+
+    fun attachFocusParams(
+        notification: Notification,
+        islandParamsJson: String,
+    ): Notification = notification.apply {
+        extras.putString(LegacyFocusParamKey, islandParamsJson)
+    }
 
     fun ensureChannel(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
