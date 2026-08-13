@@ -84,7 +84,7 @@ class MeloXHyperOsIslandLyricService : Service() {
             stopSelf()
             return
         }
-        startAsForeground(HyperOsFocusBridge.warmNotification(this, contentIntent))
+        startAsForeground(HyperOsFocusV3NotificationFactory.warmNotification(this, contentIntent))
         connectController()
         handler.post(updater)
     }
@@ -95,7 +95,7 @@ class MeloXHyperOsIslandLyricService : Service() {
             return START_NOT_STICKY
         }
         if (!startedForeground) {
-            startAsForeground(HyperOsFocusBridge.warmNotification(this, contentIntent))
+            startAsForeground(HyperOsFocusV3NotificationFactory.warmNotification(this, contentIntent))
         }
         return START_STICKY
     }
@@ -136,14 +136,14 @@ class MeloXHyperOsIslandLyricService : Service() {
         val now = SystemClock.elapsedRealtime()
         if (index == lastPublishedIndex) return
         if (lastPublishedIndex != Int.MIN_VALUE &&
-            now - lastPublishedAt < HyperOsFocusBridge.MinimumRenderIntervalMs
+            now - lastPublishedAt < HyperOsFocusV3NotificationFactory.MinimumRenderIntervalMs
         ) return
 
         val line = document.lines[index].text.trim().ifBlank { return }
         val next = document.lines.getOrNull(index + 1)?.text.orEmpty()
         val metadata = item.mediaMetadata
         val duration = active.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: 0L
-        val notification = HyperOsFocusBridge.lyricNotification(
+        val notification = HyperOsFocusV3NotificationFactory.lyricNotification(
             context = this,
             contentIntent = contentIntent,
             lyric = line,
@@ -153,7 +153,7 @@ class MeloXHyperOsIslandLyricService : Service() {
             positionMs = active.currentPosition,
             durationMs = duration,
             isPlaying = active.isPlaying,
-        ) ?: return
+        )
 
         startAsForeground(notification)
         lastPublishedIndex = index
@@ -220,12 +220,12 @@ class MeloXHyperOsIslandLyricService : Service() {
     private fun startAsForeground(notification: android.app.Notification) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
-                HyperOsFocusBridge.NotificationId,
+                HyperOsFocusV3NotificationFactory.NotificationId,
                 notification,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
             )
         } else {
-            startForeground(HyperOsFocusBridge.NotificationId, notification)
+            startForeground(HyperOsFocusV3NotificationFactory.NotificationId, notification)
         }
         startedForeground = true
     }
