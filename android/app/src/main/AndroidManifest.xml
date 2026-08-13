@@ -47,6 +47,11 @@
                 android:resource="@xml/melox_file_paths" />
         </provider>
 
+        <provider
+            android:name=".platform.xiaomi.MeloXHyperOsIslandInitializerProvider"
+            android:authorities="${applicationId}.hyperos-island-init"
+            android:exported="false" />
+
         <service
             android:name=".playback.MeloXPlaybackService"
             android:exported="true"
@@ -64,6 +69,15 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Shows the currently playing lyric in a user-enabled overlay." />
+        </service>
+
+        <service
+            android:name=".platform.xiaomi.MeloXHyperOsIslandLyricService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Live lyric rendering for Xiaomi HyperOS Super Island." />
         </service>
     </application>
 </manifest>
