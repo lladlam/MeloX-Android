@@ -11,8 +11,8 @@ android {
         applicationId = "com.lladlam.melox.android"
         minSdk = 26
         targetSdk = 37
-        versionCode = 3
-        versionName = "0.3.0-Dev"
+        versionCode = 4
+        versionName = "0.3.1-Dev"
     }
 
     buildFeatures {
