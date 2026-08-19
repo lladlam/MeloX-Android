@@ -13,6 +13,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -100,6 +101,7 @@ import com.lladlam.melox.ui.glass.meloXLiquidTabSelection
 import com.lladlam.melox.ui.glass.publicdemo.PublicDampedDragAnimation
 import com.lladlam.melox.ui.player.MeloXIOSMiniPlayer
 import com.lladlam.melox.ui.player.MeloXIOSNowPlayingSharedHost
+import com.lladlam.melox.ui.player.MeloXPlayerTransitionDurationMillis
 import com.lladlam.melox.ui.player.playerAutomaticFractionSpec
 import com.lladlam.melox.ui.player.playerGestureSettleSpec
 import com.lladlam.melox.ui.player.rememberMeloXPlaybackUiState
@@ -462,7 +464,7 @@ fun MeloXApp(
 
             playerTransition.AnimatedVisibility(
                 visible = { value -> value },
-                enter = EnterTransition.None,
+                enter = fadeIn(tween(MeloXPlayerTransitionDurationMillis)),
                 exit = ExitTransition.None,
                 modifier = Modifier
                     .fillMaxSize()

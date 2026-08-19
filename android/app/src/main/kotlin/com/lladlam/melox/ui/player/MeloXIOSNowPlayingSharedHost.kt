@@ -280,7 +280,6 @@ fun MeloXIOSNowPlayingSharedHost(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer { alpha = if (expansionProgress < 0.01f) 0f else 1f }
                     .clip(RoundedCornerShape(cornerRadius))
                     .nestedScroll(alternatePageCollapseConnection)
                     .draggable(
