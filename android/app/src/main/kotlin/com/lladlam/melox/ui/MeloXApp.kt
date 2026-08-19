@@ -3,6 +3,7 @@ package com.lladlam.melox.ui
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -139,6 +140,7 @@ enum class AppTab(val title: String) {
 }
 
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun MeloXApp(
     openNowPlayingRequest: Int = 0,
@@ -451,6 +453,8 @@ fun MeloXApp(
                                 compactProgress = compactProgress,
                                 dynamicGlassEnabled = true,
                                 expansionProgress = expansionProgress,
+                                sharedTransitionScope = this@SharedTransitionLayout,
+                                animatedVisibilityScope = this,
                             )
                         }
                     },
@@ -497,6 +501,8 @@ fun MeloXApp(
                             )
                         },
                         expansionProgress = expansionProgress,
+                        sharedTransitionScope = this@SharedTransitionLayout,
+                        animatedVisibilityScope = this,
                     )
                 }
             }

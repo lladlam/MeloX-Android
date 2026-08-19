@@ -1,5 +1,11 @@
 package com.lladlam.melox.ui.player
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.sharedElement
+import androidx.compose.animation.sharedBounds
+import androidx.compose.animation.rememberSharedContentState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.infiniteRepeatable
@@ -44,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import com.kyant.shapes.Capsule
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun MeloXIOSMiniPlayer(
     state: MeloXPlaybackUiState,
@@ -51,6 +58,8 @@ fun MeloXIOSMiniPlayer(
     compactProgress: Float = 0f,
     dynamicGlassEnabled: Boolean = true,
     expansionProgress: Float = 0f,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     if (!state.hasMedia) return
 
@@ -133,14 +142,28 @@ fun MeloXIOSMiniPlayer(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                // Artwork fades out as expansion progresses — the full player's
-                // artwork (driven by manual lerp) takes over visually.
+                // Artwork — use sharedElement when scopes are available,
+                // otherwise fall back to manual alpha fade for reverse transition.
+                val artworkModifier = Modifier
+                    .size(artworkSize)
+                    .clip(RoundedCornerShape(artworkRadius))
+                    .then(
+                        if (sharedTransitionScope != null && animatedVisibilityScope != null) {
+                            with(sharedTransitionScope) {
+                                Modifier.sharedElement(
+                                    state = rememberSharedContentState(key = sharedArtworkKey()),
+                                    animatedScope = animatedVisibilityScope,
+                                    boundsTransform = MeloXPlayerLinearBoundsTransform,
+                                    renderInOverlayDuringTransition = true,
+                                )
+                            }
+                        } else {
+                            Modifier.graphicsLayer { alpha = 1f - smoothStep(expansionProgress, 0.0f, 0.35f) }
+                        }
+                    )
                 Artwork(
                     url = state.artworkUrl,
-                    modifier = Modifier
-                        .graphicsLayer { alpha = 1f - smoothStep(expansionProgress, 0.0f, 0.35f) }
-                        .size(artworkSize)
-                        .clip(RoundedCornerShape(artworkRadius)),
+                    modifier = artworkModifier,
                 )
 
                 Column(

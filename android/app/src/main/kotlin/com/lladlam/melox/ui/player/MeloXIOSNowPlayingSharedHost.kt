@@ -1,11 +1,18 @@
 package com.lladlam.melox.ui.player
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.rememberSharedContentState
+import androidx.compose.animation.sharedElement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -64,6 +71,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun MeloXIOSNowPlayingSharedHost(
     state: MeloXPlaybackUiState,
@@ -72,6 +80,8 @@ fun MeloXIOSNowPlayingSharedHost(
     onSeekCollapse: suspend (Float) -> Unit,
     onSettleCollapse: suspend (Boolean) -> Unit,
     expansionProgress: Float,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     // A track transition updates the content inside the existing player. It must
     // not recreate the page/gesture state or send the shared element back to its
@@ -381,6 +391,8 @@ fun MeloXIOSNowPlayingSharedHost(
                 page = page,
                 expansionProgress = expansionProgress,
                 hidden = showLandscapeSkyline,
+                sharedTransitionScope = sharedTransitionScope,
+                animatedVisibilityScope = animatedVisibilityScope,
             )
         }
 
@@ -400,12 +412,15 @@ fun MeloXIOSNowPlayingSharedHost(
     }
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun SharedArtworkDestination(
     state: MeloXPlaybackUiState,
     page: MeloXNowPlayingPage,
     expansionProgress: Float,
     hidden: Boolean = false,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
@@ -447,9 +462,7 @@ private fun SharedArtworkDestination(
     )
 
     val pageFrameProgress = if (isLandscape) 0f else headerProgress
-    val fullScreenScaleBlend = smoothStep(expansionProgress, 0.30f, 0.88f)
-    val effectiveScale = 1f +
-        (playbackScale - 1f) * fullScreenScaleBlend * (1f - pageFrameProgress)
+    val effectiveScale = playbackScale * (1f - pageFrameProgress * 0.55f)
 
     BoxWithConstraints(
         modifier = Modifier
@@ -483,45 +496,89 @@ private fun SharedArtworkDestination(
         val targetY = lerpDp(fullY, contentTop, pageFrameProgress)
         val targetRadius = 12.dp
 
-        // Manual artwork animation: lerp from mini player position to full
-        // player position, driven by expansionProgress.
-        val artworkBlend = smoothStep(expansionProgress, 0.02f, 0.55f)
-        // Mini player artwork: ~40dp, bottom-center of screen
-        val miniArtworkSizePx = with(LocalDensity.current) { 40.dp.toPx() }
-        val miniX = (maxWidth - 40.dp) / 2f
-        val miniY = maxHeight - 40.dp - 60.dp
-        val lerpedX = lerp(miniX, targetX, artworkBlend)
-        val lerpedY = lerp(miniY, targetY, artworkBlend)
-        val lerpedSize = lerpDp(40.dp, targetSize, artworkBlend)
-        val lerpedRadius = lerpDp(9.dp, targetRadius, artworkBlend)
+        // Use sharedElement when scopes are available for automatic position +
+        // size interpolation. Fall back to manual lerp during standalone use.
+        val useSharedElement = sharedTransitionScope != null && animatedVisibilityScope != null
 
-        Box(
-            modifier = Modifier
-                .offset(x = lerpedX, y = lerpedY)
-                .size(lerpedSize)
-                .graphicsLayer {
-                    alpha = if (hidden) 0f else 1f
-                    scaleX = effectiveScale
-                    scaleY = effectiveScale
-                },
-        ) {
-            Artwork(
-                url = state.artworkUrl,
+        if (useSharedElement) {
+            // sharedElement handles position, size, and corner radius
+            // interpolation between MiniPlayer and full-screen bounds.
+            Box(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .offset(x = targetX, y = targetY)
+                    .size(targetSize)
                     .graphicsLayer {
+                        alpha = if (hidden) 0f else 1f
+                    }
+                    .clip(RoundedCornerShape(targetRadius)),
+            ) {
+                with(sharedTransitionScope!!) {
+                    Artwork(
+                        url = state.artworkUrl,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .sharedElement(
+                                state = rememberSharedContentState(key = sharedArtworkKey()),
+                                animatedScope = animatedVisibilityScope!!,
+                                boundsTransform = MeloXPlayerLinearBoundsTransform,
+                                renderInOverlayDuringTransition = true,
+                                placeholderInTransitionSpec = {
+                                    fadeIn(spring(dampingRatio = 1f, stiffness = 200f)) togetherWith
+                                        fadeOut(spring(dampingRatio = 1f, stiffness = 200f))
+                                },
+                            )
+                            .graphicsLayer {
+                                scaleX = effectiveScale
+                                scaleY = effectiveScale
+                            }
+                            .shadow(
+                                elevation = shadowElevation * (1f - pageFrameProgress * 0.55f),
+                                shape = RoundedCornerShape(targetRadius),
+                                clip = false,
+                                ambientColor = Color.Black.copy(alpha = 0.28f),
+                                spotColor = Color.Black.copy(alpha = 0.28f),
+                            ),
+                    )
+                }
+            }
+        } else {
+            // Manual fallback: lerp from mini player position to full
+            // player position, driven by expansionProgress.
+            val artworkBlend = smoothStep(expansionProgress, 0.02f, 0.55f)
+            val miniX = (maxWidth - 40.dp) / 2f
+            val miniY = maxHeight - 40.dp - 60.dp
+            val lerpedX = lerp(miniX, targetX, artworkBlend)
+            val lerpedY = lerp(miniY, targetY, artworkBlend)
+            val lerpedSize = lerpDp(40.dp, targetSize, artworkBlend)
+
+            Box(
+                modifier = Modifier
+                    .offset(x = lerpedX, y = lerpedY)
+                    .size(lerpedSize)
+                    .graphicsLayer {
+                        alpha = if (hidden) 0f else 1f
                         scaleX = effectiveScale
                         scaleY = effectiveScale
-                    }
-                    .shadow(
-                        elevation = shadowElevation * (1f - pageFrameProgress * 0.55f),
-                        shape = RoundedCornerShape(targetRadius),
-                        clip = false,
-                        ambientColor = Color.Black.copy(alpha = 0.28f),
-                        spotColor = Color.Black.copy(alpha = 0.28f),
-                    )
-                    .clip(RoundedCornerShape(targetRadius)),
-            )
+                    },
+            ) {
+                Artwork(
+                    url = state.artworkUrl,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = effectiveScale
+                            scaleY = effectiveScale
+                        }
+                        .shadow(
+                            elevation = shadowElevation * (1f - pageFrameProgress * 0.55f),
+                            shape = RoundedCornerShape(targetRadius),
+                            clip = false,
+                            ambientColor = Color.Black.copy(alpha = 0.28f),
+                            spotColor = Color.Black.copy(alpha = 0.28f),
+                        )
+                        .clip(RoundedCornerShape(targetRadius)),
+                )
+            }
         }
     }
 }
