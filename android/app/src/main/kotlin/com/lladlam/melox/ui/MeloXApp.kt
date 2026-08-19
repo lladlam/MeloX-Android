@@ -6,7 +6,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.SeekableTransitionState
 import androidx.compose.animation.core.animateFloatAsState
@@ -140,7 +139,6 @@ enum class AppTab(val title: String) {
 }
 
 
-@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun MeloXApp(
     openNowPlayingRequest: Int = 0,
@@ -359,7 +357,6 @@ fun MeloXApp(
       )
       CompositionLocalProvider(LocalMeloXBackdrop provides pageBackdrop) {
         SharedTransitionLayout(modifier = Modifier.fillMaxSize()) {
-            val sharedScope = this
             val fullPlayerVisible = playbackState.hasMedia &&
                 (playerTransitionState.currentState || playerTransitionState.targetState)
             Scaffold(
@@ -454,8 +451,6 @@ fun MeloXApp(
                                 compactProgress = compactProgress,
                                 dynamicGlassEnabled = true,
                                 expansionProgress = expansionProgress,
-                                sharedTransitionScope = sharedScope,
-                                animatedVisibilityScope = this,
                             )
                         }
                     },
@@ -470,7 +465,6 @@ fun MeloXApp(
                     .fillMaxSize()
                     .zIndex(20f),
             ) {
-                val fullPlayerAnimatedVisibilityScope = this
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -503,8 +497,6 @@ fun MeloXApp(
                             )
                         },
                         expansionProgress = expansionProgress,
-                        sharedTransitionScope = sharedScope,
-                        animatedVisibilityScope = fullPlayerAnimatedVisibilityScope,
                     )
                 }
             }
