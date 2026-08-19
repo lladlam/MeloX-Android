@@ -1,16 +1,10 @@
 package com.lladlam.melox.ui.player
 
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -50,15 +44,12 @@ import androidx.compose.ui.unit.sp
 import com.kyant.shapes.Capsule
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 
-@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun MeloXIOSMiniPlayer(
     state: MeloXPlaybackUiState,
     onExpand: () -> Unit,
     compactProgress: Float = 0f,
     dynamicGlassEnabled: Boolean = true,
-    sharedTransitionScope: SharedTransitionScope? = null,
-    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     expansionProgress: Float = 0f,
 ) {
     if (!state.hasMedia) return
@@ -83,46 +74,13 @@ fun MeloXIOSMiniPlayer(
     val controlStageWidth = lerpDp(82.dp, 44.dp, smoothStep(compact, 0.08f, 0.84f))
     val artistHeight = lerpDp(15.dp, 0.dp, smoothStep(compact, 0.04f, 0.72f))
 
-    // The shared bounds itself is rendered in SharedTransitionScope's overlay.
-    // Lift source chrome into the same overlay so it is not abruptly covered by
-    // the growing container. Component-level alpha below keeps the fade visible
-    // even while the overlay owns the actual draw pass.
-    val chromeOverlayModifier =
-        if (sharedTransitionScope != null) {
-            with(sharedTransitionScope) {
-                Modifier.renderInSharedTransitionScopeOverlay(
-                    zIndexInOverlay = 2f,
-                )
-            }
-        } else {
-            Modifier
-        }
-
-    val sharedContainerModifier =
-        if (sharedTransitionScope != null && animatedVisibilityScope != null) {
-            with(sharedTransitionScope) {
-                Modifier.sharedBounds(
-                    sharedContentState = rememberSharedContentState(
-                        key = sharedPlayerContainerKey(),
-                    ),
-                    animatedVisibilityScope = animatedVisibilityScope,
-                    enter = EnterTransition.None,
-                    exit = ExitTransition.None,
-                    boundsTransform = MeloXPlayerLinearBoundsTransform,
-                    resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(),
-                )
-            }
-        } else {
-            Modifier
-        }
-
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 3.dp),
     ) {
         Box(
-            modifier = sharedContainerModifier
+            modifier = Modifier
                 .fillMaxWidth()
                 .height(50.dp),
         ) {
@@ -175,28 +133,11 @@ fun MeloXIOSMiniPlayer(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                val sharedArtworkModifier =
-                    if (sharedTransitionScope != null && animatedVisibilityScope != null) {
-                        with(sharedTransitionScope) {
-                            Modifier.sharedElement(
-                                sharedContentState = rememberSharedContentState(
-                                    key = sharedArtworkKey(),
-                                ),
-                                animatedVisibilityScope = animatedVisibilityScope,
-                                boundsTransform = MeloXPlayerLinearBoundsTransform,
-                                renderInOverlayDuringTransition = true,
-                                zIndexInOverlay = 4f,
-                            )
-                        }
-                    } else {
-                        Modifier
-                    }
-
                 // Artwork is the persistent identity element: resize it smoothly
                 // for compact Dock mode, but do not fade it during full expansion.
                 Artwork(
                     url = state.artworkUrl,
-                    modifier = sharedArtworkModifier
+                    modifier = Modifier
                         .size(artworkSize)
                         .clip(RoundedCornerShape(artworkRadius)),
                 )
@@ -204,7 +145,6 @@ fun MeloXIOSMiniPlayer(
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .then(chromeOverlayModifier)
                         .graphicsLayer { alpha = miniChromeAlpha },
                 ) {
                     Text(

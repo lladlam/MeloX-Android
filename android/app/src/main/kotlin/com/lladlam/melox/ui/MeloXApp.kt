@@ -357,7 +357,6 @@ fun MeloXApp(
       )
       CompositionLocalProvider(LocalMeloXBackdrop provides pageBackdrop) {
         SharedTransitionLayout(modifier = Modifier.fillMaxSize()) {
-            val sharedScope = this
             val fullPlayerVisible = playbackState.hasMedia &&
                 (playerTransitionState.currentState || playerTransitionState.targetState)
             Scaffold(
@@ -440,8 +439,7 @@ fun MeloXApp(
                     modifier = Modifier.align(Alignment.BottomCenter),
                     miniPlayer = { compactProgress ->
                         // Keep the mini player always composed so the
-                        // SharedTransitionScope always has a live source
-                        // for the reverse collapse transition.
+                        // reverse collapse transition has a visible source.
                         playerTransition.AnimatedVisibility(
                             visible = { true },
                             enter = EnterTransition.None,
@@ -452,8 +450,6 @@ fun MeloXApp(
                                 onExpand = openPlayer,
                                 compactProgress = compactProgress,
                                 dynamicGlassEnabled = true,
-                                sharedTransitionScope = sharedScope,
-                                animatedVisibilityScope = this,
                                 expansionProgress = expansionProgress,
                             )
                         }
@@ -469,7 +465,6 @@ fun MeloXApp(
                     .fillMaxSize()
                     .zIndex(20f),
             ) {
-                val fullPlayerAnimatedVisibilityScope = this
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -502,8 +497,6 @@ fun MeloXApp(
                             )
                         },
                         expansionProgress = expansionProgress,
-                        sharedTransitionScope = sharedScope,
-                        animatedVisibilityScope = fullPlayerAnimatedVisibilityScope,
                     )
                 }
             }

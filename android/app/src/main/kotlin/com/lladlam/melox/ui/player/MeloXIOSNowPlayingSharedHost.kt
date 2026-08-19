@@ -1,11 +1,6 @@
 package com.lladlam.melox.ui.player
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -44,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -54,6 +50,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.lladlam.melox.ui.glass.LocalMeloXBackdrop
@@ -67,7 +64,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun MeloXIOSNowPlayingSharedHost(
     state: MeloXPlaybackUiState,
@@ -76,8 +72,6 @@ fun MeloXIOSNowPlayingSharedHost(
     onSeekCollapse: suspend (Float) -> Unit,
     onSettleCollapse: suspend (Boolean) -> Unit,
     expansionProgress: Float,
-    sharedTransitionScope: SharedTransitionScope,
-    animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
     // A track transition updates the content inside the existing player. It must
     // not recreate the page/gesture state or send the shared element back to its
@@ -154,18 +148,10 @@ fun MeloXIOSNowPlayingSharedHost(
     val lyricsActive = page == MeloXNowPlayingPage.Lyrics && expansionProgress > 0.88f
     val glassSamplingActive = expansionProgress > 0.88f
 
-    val sharedContainerModifier = with(sharedTransitionScope) {
-        Modifier.sharedBounds(
-            sharedContentState = rememberSharedContentState(
-                key = sharedPlayerContainerKey(),
-            ),
-            animatedVisibilityScope = animatedVisibilityScope,
-            enter = EnterTransition.None,
-            exit = ExitTransition.None,
-            boundsTransform = MeloXPlayerLinearBoundsTransform,
-            resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(),
-        )
-    }
+    // Manual container animation: scale from bottom-center and slide up,
+    // replacing the previous sharedBounds approach which jumped instantly.
+    val containerScale = 0.15f + 0.85f * expansionProgress
+    val containerTranslationY = (1f - expansionProgress) * 0.86f // fraction of screen
 
     // NowPlaying owns the player-level Back handler. Child modal overlays are
     // composed later and temporarily disable this handler, so Back always unwinds
@@ -178,7 +164,8 @@ fun MeloXIOSNowPlayingSharedHost(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter,
     ) {
-        val dragRangePx = (constraints.maxHeight * 0.86f).coerceAtLeast(1f)
+        val boxMaxHeightPx = constraints.maxHeight.toFloat()
+        val dragRangePx = (boxMaxHeightPx * 0.86f).coerceAtLeast(1f)
 
         fun seekCollapseBy(delta: Float) {
             val old = gestureCollapseProgress
@@ -287,8 +274,15 @@ fun MeloXIOSNowPlayingSharedHost(
                 ),
         ) {
             Box(
-                modifier = sharedContainerModifier
+                modifier = Modifier
                     .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = containerScale
+                        scaleY = containerScale
+                        translationY = boxMaxHeightPx * containerTranslationY
+                        transformOrigin = TransformOrigin(0.5f, 1f)
+                        alpha = if (expansionProgress < 0.01f) 0f else 1f
+                    }
                     .clip(RoundedCornerShape(cornerRadius))
                     .nestedScroll(alternatePageCollapseConnection)
                     .draggable(
@@ -394,8 +388,6 @@ fun MeloXIOSNowPlayingSharedHost(
                 state = state,
                 page = page,
                 expansionProgress = expansionProgress,
-                sharedTransitionScope = sharedTransitionScope,
-                animatedVisibilityScope = animatedVisibilityScope,
                 hidden = showLandscapeSkyline,
             )
         }
@@ -416,14 +408,11 @@ fun MeloXIOSNowPlayingSharedHost(
     }
 }
 
-@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun SharedArtworkDestination(
     state: MeloXPlaybackUiState,
     page: MeloXNowPlayingPage,
     expansionProgress: Float,
-    sharedTransitionScope: SharedTransitionScope,
-    animatedVisibilityScope: AnimatedVisibilityScope,
     hidden: Boolean = false,
 ) {
     val configuration = LocalConfiguration.current
@@ -502,25 +491,29 @@ private fun SharedArtworkDestination(
         val targetY = lerpDp(fullY, contentTop, pageFrameProgress)
         val targetRadius = 12.dp
 
-        val artworkSharedState = with(sharedTransitionScope) {
-            rememberSharedContentState(key = sharedArtworkKey())
-        }
-        val sharedModifier = with(sharedTransitionScope) {
-            Modifier.sharedElement(
-                sharedContentState = artworkSharedState,
-                animatedVisibilityScope = animatedVisibilityScope,
-                boundsTransform = MeloXPlayerLinearBoundsTransform,
-                renderInOverlayDuringTransition = true,
-                zIndexInOverlay = 4f,
-            )
-        }
+        // Manual artwork lerp: position and size driven by expansionProgress.
+        // At expansionProgress=0, artwork sits at mini player position (bottom center).
+        // At expansionProgress=1, artwork is at full player calculated position.
+        val artworkBlend = smoothStep(expansionProgress, 0.05f, 0.65f)
+        val miniArtworkSize = 40.dp
+        val miniArtworkRadius = 9.dp
+        // Mini player is roughly at bottom-center of screen, offset by bottom chrome
+        val miniX = (maxWidth - miniArtworkSize) / 2f
+        val miniY = maxHeight - miniArtworkSize - 60.dp // approximate mini player center
+        val lerpedX = lerp(miniX, fullX, artworkBlend)
+        val lerpedY = lerp(miniY, fullY, artworkBlend)
+        val lerpedSize = lerpDp(miniArtworkSize, targetSize, artworkBlend)
+        val lerpedRadius = lerpDp(miniArtworkRadius, targetRadius, artworkBlend)
 
         Box(
             modifier = Modifier
-                .offset(x = targetX, y = targetY)
-                .size(targetSize)
-                .graphicsLayer { alpha = if (hidden) 0f else 1f }
-                .then(sharedModifier),
+                .offset(x = lerpedX, y = lerpedY)
+                .size(lerpedSize)
+                .graphicsLayer {
+                    alpha = if (hidden) 0f else 1f
+                    scaleX = effectiveScale
+                    scaleY = effectiveScale
+                },
         ) {
             Artwork(
                 url = state.artworkUrl,
