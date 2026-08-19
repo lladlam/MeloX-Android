@@ -128,9 +128,21 @@ class MeloXFloatingLyricsService : Service() {
 
     private fun updateText() {
         val player = controller ?: return
-        val document = lyrics ?: return
+        val document = lyrics
+        if (document == null) {
+            // No lyrics loaded: hide overlay
+            overlay?.visibility = View.INVISIBLE
+            return
+        }
         val advance = MeloXSettingsPreferences.int(this, "lyrics_advance_ms", 0).toLong()
-        val index = document.highlightedIndex(player.currentPosition + advance) ?: return
+        val index = document.highlightedIndex(player.currentPosition + advance)
+        if (index == null) {
+            // No highlighted line: hide overlay
+            overlay?.visibility = View.INVISIBLE
+            return
+        }
+        // Has lyrics: show overlay
+        overlay?.visibility = View.VISIBLE
         if (index == lastIndex) return
         lastIndex = index
         val line = document.lines.getOrNull(index)
@@ -210,6 +222,8 @@ class MeloXFloatingLyricsService : Service() {
         var startY = 0
         var touchX = 0f
         var touchY = 0f
+        val density = resources.displayMetrics.density
+        val snapThreshold = 40 * density
         view.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -222,6 +236,22 @@ class MeloXFloatingLyricsService : Service() {
                 MotionEvent.ACTION_MOVE -> {
                     params.x = startX + (event.rawX - touchX).toInt()
                     params.y = startY + (event.rawY - touchY).toInt()
+                    windowManager?.updateViewLayout(view, params)
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val dm = resources.displayMetrics
+                    val viewWidth = view.width
+                    val screenW = dm.widthPixels
+                    val screenH = dm.heightPixels
+                    // Edge snap: snap to nearest horizontal edge if within threshold
+                    if (params.x < snapThreshold) {
+                        params.x = (8 * density).toInt()
+                    } else if (params.x + viewWidth > screenW - snapThreshold) {
+                        params.x = screenW - viewWidth - (8 * density).toInt()
+                    }
+                    // Clamp vertical position
+                    params.y = params.y.coerceIn(0, screenH - view.height)
                     windowManager?.updateViewLayout(view, params)
                     true
                 }

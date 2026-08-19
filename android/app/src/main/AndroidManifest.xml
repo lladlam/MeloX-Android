@@ -20,6 +20,7 @@
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
 
     <application
+        android:name=".MeloXApplication"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="MeloX"
@@ -84,6 +85,17 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Shows the currently playing lyric in a user-enabled overlay." />
         </service>
+
+        <receiver
+            android:name=".widget.MeloXPlayerWidgetReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/melox_player_widget_info" />
+        </receiver>
 
         <meta-data android:name="lyricon_module" android:value="true" />
         <meta-data android:name="lyricon_module_author" android:value="lladlam" />

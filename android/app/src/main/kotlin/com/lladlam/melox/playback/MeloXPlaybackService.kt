@@ -27,7 +27,6 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.core.app.NotificationCompat
 import com.lladlam.melox.MainActivity
-import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.audio.MusicQualityPreferences
 import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.core.library.NeteaseLibraryClient
@@ -38,6 +37,7 @@ import com.lladlam.melox.platform.xiaomi.HyperOsFocusBridge
 import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
 import com.lladlam.melox.ui.settings.MeloXLyricsRenderingQuality
 import com.lladlam.melox.ui.settings.MeloXSystemLyricTitleMode
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -47,14 +47,22 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import javax.inject.Inject
+import javax.inject.Named
 
 @OptIn(UnstableApi::class)
+@AndroidEntryPoint
 class MeloXPlaybackService : MediaSessionService() {
+    @Inject lateinit var downloadStore: MeloXDownloadStore
+    @Inject lateinit var searchClient: NeteaseSearchClient
+    @Inject lateinit var libraryClient: NeteaseLibraryClient
+    @Inject lateinit var cookieProvider: () -> String
+    @Inject @Named("netease") lateinit var neteaseHttpClient: okhttp3.OkHttpClient
+
     private var player: ExoPlayer? = null
     private var incomingPlayer: ExoPlayer? = null
     private var mediaSession: MediaSession? = null
     private lateinit var mediaSourceFactory: DefaultMediaSourceFactory
-    private lateinit var downloadStore: MeloXDownloadStore
     private lateinit var playbackResolver: NeteasePlaybackResolver
     private lateinit var autoMixAnalyzer: MeloXAutoMixAudioAnalyzer
     private lateinit var equalizerController: MeloXEqualizerController
@@ -287,13 +295,12 @@ class MeloXPlaybackService : MediaSessionService() {
                     "Referer" to "https://music.163.com/",
                 ),
             )
-        downloadStore = MeloXDownloadStore.get(this)
+        // downloadStore, searchClient, libraryClient, cookieProvider are @Inject'd
         equalizerController = MeloXEqualizerController(this)
         playbackHistoryReporter = MeloXPlaybackHistoryReporter(this)
-        val cookieProvider = { NeteaseSessionStore.readCookie(this@MeloXPlaybackService) }
         playbackResolver = NeteasePlaybackResolver(
             cookieProvider = cookieProvider,
-            client = NeteaseSearchClient(cookieProvider = cookieProvider),
+            client = searchClient,
             localSourceProvider = downloadStore::localPlaybackUri,
         )
         autoMixAnalyzer = MeloXAutoMixAudioAnalyzer(this)
@@ -362,9 +369,8 @@ class MeloXPlaybackService : MediaSessionService() {
         }
         recommendationSeed = seed
         recommendationJob = serviceScope.launch {
-            val cookie = { NeteaseSessionStore.readCookie(this@MeloXPlaybackService) }
             val recommendations = withContext(Dispatchers.IO) {
-                runCatching { NeteaseLibraryClient(cookieProvider = cookie).similarSongsBlocking(seed, 30) }
+                runCatching { libraryClient.similarSongsBlocking(seed, 30) }
                     .getOrDefault(emptyList())
             }
             val existing = (0 until active.mediaItemCount).map { active.getMediaItemAt(it).mediaId }.toSet()
@@ -568,9 +574,7 @@ class MeloXPlaybackService : MediaSessionService() {
         systemLyricsJob = serviceScope.launch {
             val loaded = withContext(Dispatchers.IO) {
                 downloadStore.localLyrics(songId) ?: runCatching {
-                    NeteaseSearchClient(
-                        cookieProvider = { NeteaseSessionStore.readCookie(this@MeloXPlaybackService) },
-                    ).lyrics(songId)
+                    searchClient.lyrics(songId)
                 }.getOrNull()
             }
             if (systemLyricsSongId == songId) systemLyricsDocument = loaded

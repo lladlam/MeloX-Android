@@ -132,6 +132,8 @@ object MeloXSettingsRuntime {
         internal set
     var lyricLongToneStrength by mutableStateOf(1f)
         internal set
+    var lyricWordBounceEnabled by mutableStateOf(false)
+        internal set
     var lyricHighlightGradientWidth by mutableStateOf(.7f)
         internal set
     var lyricHighlightGradientReduction by mutableStateOf(.65f)
@@ -362,6 +364,7 @@ object MeloXSettingsRuntime {
         lyricGlowStrength = MeloXSettingsPreferences.float(app, "lyrics_glow_strength", 1f).coerceIn(0f, 1.5f)
         lyricGlowEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_glow_enabled", true)
         lyricLongToneStrength = MeloXSettingsPreferences.float(app, "lyrics_long_tone_strength", 1f).coerceIn(0f, 1.5f)
+        lyricWordBounceEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_word_bounce_enabled", false)
         lyricHighlightGradientWidth = MeloXSettingsPreferences.float(app, "lyrics_highlight_gradient_width", .7f).coerceIn(.4f, 3f)
         lyricHighlightGradientReduction = MeloXSettingsPreferences.float(app, "lyrics_highlight_gradient_reduction", .65f).coerceIn(0f, 1f)
         lyricRomanizationFontScale = MeloXSettingsPreferences.float(app, "lyrics_romanization_font_scale", .65f).coerceIn(.5f, .8f)
@@ -515,6 +518,7 @@ object MeloXSettingsPreferences {
             "lyrics_reduce_motion" -> MeloXSettingsRuntime.lyricReduceMotion = value
             "lyrics_glow_long_tones_only" -> MeloXSettingsRuntime.lyricGlowLongTonesOnly = value
             "lyrics_glow_enabled" -> MeloXSettingsRuntime.lyricGlowEnabled = value
+            "lyrics_word_bounce_enabled" -> MeloXSettingsRuntime.lyricWordBounceEnabled = value
             "lyrics_cascade_bounce_enabled" -> MeloXSettingsRuntime.lyricCascadeBounceEnabled = value
             "lyrics_scale_bounce_enabled" -> MeloXSettingsRuntime.lyricScaleBounceEnabled = value
             "lyrics_advance_word_by_word" -> MeloXSettingsRuntime.lyricAdvanceAppliesToWordByWord = value

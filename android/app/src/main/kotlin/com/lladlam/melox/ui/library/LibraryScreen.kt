@@ -108,6 +108,7 @@ import com.lladlam.melox.ui.glass.MeloXGlassButtonStyle
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import com.lladlam.melox.ui.glass.meloXLiquidTabSelection
 import com.lladlam.melox.ui.player.MeloXFlowingLightBackdrop
+import com.lladlam.melox.ui.player.MeloXFlowingLightGpuBackdrop
 import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
@@ -1312,7 +1313,7 @@ private fun MeloXPlaylistDetailScreen(
             .background(Color.Black),
     ) {
         // Keep the exact MeloX artwork-driven background renderer for every source.
-        MeloXFlowingLightBackdrop(
+        MeloXFlowingLightGpuBackdrop(
             artworkUrl = displayed.coverUrl,
             isPlaying = false,
             modifier = Modifier.fillMaxSize(),

@@ -990,6 +990,7 @@ private fun LyricsSettings(context: android.content.Context) {
     ) { if (it == MeloXLyricsGroupingMode.Word.name) "按词识别" else "按字识别" }
     SettingsToggleRow(context, "逐字歌词光效", "lyrics_glow_enabled", true)
     SettingsToggleRow(context, "仅长音显示光晕", "lyrics_glow_long_tones_only", true)
+    SettingsToggleRow(context, "歌词逐字弹跳", "lyrics_word_bounce_enabled", false)
     LyricsChoiceSetting(context, "长音判定时长", "lyrics_long_tone_threshold_ms", 950, listOf(300, 500, 700, 950, 1_200, 1_500)) { "${it / 1000f} 秒" }
     LyricsFloatChoiceSetting(context, "行间距", "lyrics_spacing_scale", 1f, listOf(.8f, 1f, 1.2f, 1.4f)) { "${(it * 100).toInt()}%" }
     LyricsFloatChoiceSetting(context, "远近模糊", "lyrics_blur_strength", 1f, listOf(0f, .5f, .8f, 1f)) { if (it == 0f) "关闭" else "${(it * 100).toInt()}%" }

@@ -6,6 +6,7 @@ import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -48,6 +49,8 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -207,9 +210,9 @@ internal fun MeloXEvaLyricsPanel(
             AnimatedContent(
                 targetState = state.index,
                 transitionSpec = {
-                    (slideInVertically(tween(520, easing = FastOutSlowInEasing)) { it / 3 } +
-                        fadeIn(tween(420, delayMillis = 80)) + scaleIn(tween(520), initialScale = .92f)) togetherWith
-                        (slideOutVertically(tween(360)) { -it / 4 } + fadeOut(tween(280)) + scaleOut(targetScale = 1.06f))
+                    (slideInVertically(spring(dampingRatio = 0.7f, stiffness = 300f)) { it / 3 } +
+                        fadeIn(spring(dampingRatio = 0.7f, stiffness = 300f)) + scaleIn(spring(dampingRatio = 0.7f, stiffness = 300f), initialScale = .92f)) togetherWith
+                        (slideOutVertically(spring(dampingRatio = 0.7f, stiffness = 300f)) { -it / 4 } + fadeOut(spring(dampingRatio = 0.7f, stiffness = 300f)) + scaleOut(spring(dampingRatio = 0.7f, stiffness = 300f), targetScale = 1.06f))
                 },
                 label = "eva-lyric-composition",
             ) { index ->
@@ -358,90 +361,184 @@ private fun TextPVBackground(
     phaseProvider: () -> Float,
     motionIntensity: Float,
 ) {
+    val staticStyles = setOf(
+        MeloXTextPVStyle.StaggeredText,
+        MeloXTextPVStyle.FlyMeToTheMoon,
+        MeloXTextPVStyle.KawaiiPixel,
+    )
     Canvas(Modifier.fillMaxSize()) {
         if (!size.width.isFinite() || !size.height.isFinite() || size.width <= 0f || size.height <= 0f) {
             return@Canvas
         }
-        val phase = phaseProvider()
-        when (style) {
-            MeloXTextPVStyle.BlueBold, MeloXTextPVStyle.BluePlane, MeloXTextPVStyle.Dynamic -> {
-                drawRect(Color(0xFF123A91).copy(alpha = .56f))
-                repeat(7) { index ->
-                    val x = size.width * ((index * .19f + phase * .12f * motionIntensity) % 1.15f - .08f)
-                    drawLine(Color.White.copy(alpha = .05f), Offset(x, 0f), Offset(x - size.height * .18f, size.height), 2f)
-                }
-                drawCircle(Color.White.copy(alpha = .08f), radius = size.minDimension * .28f, center = Offset(size.width * .78f, size.height * .22f), style = Stroke(3f))
+        val phase = if (style in staticStyles) 0f else phaseProvider()
+        if (style in staticStyles) {
+            drawTextPVStaticBackground(style)
+        } else {
+            drawTextPVBackground(style, phase, motionIntensity)
+        }
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTextPVStaticBackground(style: MeloXTextPVStyle) {
+    when (style) {
+        MeloXTextPVStyle.StaggeredText -> {
+            drawRect(Color.Black.copy(alpha = .14f))
+            drawScatteredText(0f, 0f, chars = listOf('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'K', 'M', 'N', 'P', 'R', 'S', 'T'), count = 12, minSize = 14f, maxSize = 38f, color = Color.White)
+        }
+        MeloXTextPVStyle.FlyMeToTheMoon -> {
+            drawRect(Color(0xFF080D24).copy(alpha = .74f))
+            repeat(18) { index -> drawCircle(Color.White.copy(alpha = .1f), 1.5f + index % 3, Offset(size.width * ((index * .173f) % 1f), size.height * ((index * .317f) % 1f))) }
+            drawCircle(Color(0xFFBFCBFF).copy(alpha = .16f), size.minDimension * .24f, Offset(size.width * .78f, size.height * .22f))
+        }
+        MeloXTextPVStyle.KawaiiPixel -> {
+            drawRect(Color(0xFFB8F1EA).copy(alpha = .52f))
+            val spacing = (size.minDimension / 14f).coerceAtLeast(8f)
+            val xCount = (size.width / spacing).toInt().coerceIn(0, 96) + 1
+            repeat(xCount) { index ->
+                val x = index * spacing
+                drawLine(Color(0xFFFF79AE).copy(alpha = .08f), Offset(x, 0f), Offset(x, size.height), 2f)
             }
-            MeloXTextPVStyle.KineticSplit, MeloXTextPVStyle.CrimeScene -> {
-                drawRect(Color(0xFFF0E6D5).copy(alpha = .72f))
-                drawLine(Color(0xFF8E1832).copy(alpha = .72f), Offset(-size.width * .1f, size.height * (.72f - phase * .12f * motionIntensity)), Offset(size.width * 1.1f, size.height * (.28f + phase * .12f * motionIntensity)), size.minDimension * .055f)
+            val yCount = (size.height / spacing).toInt().coerceIn(0, 160) + 1
+            repeat(yCount) { index ->
+                val y = index * spacing
+                drawLine(Color.White.copy(alpha = .09f), Offset(0f, y), Offset(size.width, y), 2f)
             }
-            MeloXTextPVStyle.Geometric -> {
-                drawRect(Color(0xFFF5C928).copy(alpha = .76f))
-                repeat(4) { index ->
-                    drawRect(Color.Black.copy(alpha = .06f + index * .018f), topLeft = Offset(size.width * (.08f + index * .07f), size.height * (.12f + index * .07f)), size = androidx.compose.ui.geometry.Size(size.minDimension * (.74f - index * .1f), size.minDimension * (.74f - index * .1f)), style = Stroke(3f))
-                }
+            drawScatteredShapes(0f, 0f, count = 10, minSize = 5f, maxSize = 18f, color = Color(0xFFFF79AE), alpha = 0.22f)
+        }
+        else -> {}
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTextPVBackground(
+    style: MeloXTextPVStyle,
+    phase: Float,
+    motionIntensity: Float,
+) {
+    when (style) {
+        MeloXTextPVStyle.BlueBold, MeloXTextPVStyle.BluePlane, MeloXTextPVStyle.Dynamic -> {
+            drawRect(Color(0xFF123A91).copy(alpha = .56f))
+            repeat(7) { index ->
+                val x = size.width * ((index * .19f + phase * .12f * motionIntensity) % 1.15f - .08f)
+                drawLine(Color.White.copy(alpha = .05f), Offset(x, 0f), Offset(x - size.height * .18f, size.height), 2f)
             }
-            MeloXTextPVStyle.CyberGrunge, MeloXTextPVStyle.RainCity, MeloXTextPVStyle.CyberpunkHUD,
-            MeloXTextPVStyle.SpiderWeb, MeloXTextPVStyle.Cyber -> {
-                drawRect(Color(0xFF061018).copy(alpha = .52f))
-                val spacing = (size.minDimension / 12f).coerceAtLeast(8f)
-                val xCount = (size.width / spacing).toInt().coerceIn(0, 96) + 3
-                repeat(xCount) { index ->
-                    val x = -spacing + phase * spacing * motionIntensity + index * spacing
-                    drawLine(Color(0xFF76E8FF).copy(alpha = .10f), Offset(x, 0f), Offset(x, size.height), 1f)
-                }
-                val yCount = (size.height / spacing).toInt().coerceIn(0, 160) + 3
-                repeat(yCount) { index ->
-                    val y = -spacing + phase * spacing * motionIntensity + index * spacing
-                    drawLine(Color(0xFFFF4B89).copy(alpha = .08f), Offset(0f, y), Offset(size.width, y), 1f)
-                }
-            }
-            MeloXTextPVStyle.EmotionCinema, MeloXTextPVStyle.CalmVillain, MeloXTextPVStyle.Haruhikage,
-            MeloXTextPVStyle.Minimal -> {
-                drawRect(Color(0xFF24334A).copy(alpha = .38f))
-                repeat(5) { index ->
-                    val y = size.height * (.18f + index * .15f)
-                    drawLine(Color(0xFF9CC8FF).copy(alpha = .05f), Offset(0f, y), Offset(size.width, y + sin(phase * 6.28f + index) * 24f * motionIntensity), 2f)
-                }
-            }
-            MeloXTextPVStyle.HystericNight -> {
-                drawRect(Color(0xFF180A25).copy(alpha = .58f))
-                repeat(10) { index ->
-                    val angle = index * PI.toFloat() / 5f + phase * .35f * motionIntensity
-                    val end = Offset(size.width / 2f + kotlin.math.cos(angle) * size.maxDimension, size.height / 2f + sin(angle) * size.maxDimension)
-                    drawLine(Color(0xFFE46CFF).copy(alpha = .055f), center, end, size.minDimension * .025f)
-                }
-            }
-            MeloXTextPVStyle.StaggeredText -> drawRect(Color.Black.copy(alpha = .14f))
-            MeloXTextPVStyle.GirlyClouds, MeloXTextPVStyle.SweetPink -> {
-                drawRect(Color(0xFFF3A9C3).copy(alpha = .55f))
-                repeat(7) { index ->
-                    val x = size.width * ((index * .22f + phase * .08f * motionIntensity) % 1.2f - .1f)
-                    drawLine(Color.White.copy(alpha = .11f), Offset(x, 0f), Offset(x - size.height * .25f, size.height), size.minDimension * .018f)
-                }
-                drawCircle(Color.White.copy(alpha = .12f), size.minDimension * .22f, Offset(size.width * .12f, size.height * .15f))
-            }
-            MeloXTextPVStyle.FlyMeToTheMoon -> {
-                drawRect(Color(0xFF080D24).copy(alpha = .74f))
-                repeat(18) { index -> drawCircle(Color.White.copy(alpha = .1f), 1.5f + index % 3, Offset(size.width * ((index * .173f) % 1f), size.height * ((index * .317f) % 1f))) }
-                drawCircle(Color(0xFFBFCBFF).copy(alpha = .16f), size.minDimension * .24f, Offset(size.width * .78f, size.height * .22f))
-            }
-            MeloXTextPVStyle.KawaiiPixel -> {
-                drawRect(Color(0xFFB8F1EA).copy(alpha = .52f))
-                val spacing = (size.minDimension / 14f).coerceAtLeast(8f)
-                val xCount = (size.width / spacing).toInt().coerceIn(0, 96) + 1
-                repeat(xCount) { index ->
-                    val x = index * spacing
-                    drawLine(Color(0xFFFF79AE).copy(alpha = .08f), Offset(x, 0f), Offset(x, size.height), 2f)
-                }
-                val yCount = (size.height / spacing).toInt().coerceIn(0, 160) + 1
-                repeat(yCount) { index ->
-                    val y = index * spacing
-                    drawLine(Color.White.copy(alpha = .09f), Offset(0f, y), Offset(size.width, y), 2f)
-                }
+            drawCircle(Color.White.copy(alpha = .08f), radius = size.minDimension * .28f, center = Offset(size.width * .78f, size.height * .22f), style = Stroke(3f))
+        }
+        MeloXTextPVStyle.KineticSplit, MeloXTextPVStyle.CrimeScene -> {
+            drawRect(Color(0xFFF0E6D5).copy(alpha = .72f))
+            drawLine(Color(0xFF8E1832).copy(alpha = .72f), Offset(-size.width * .1f, size.height * (.72f - phase * .12f * motionIntensity)), Offset(size.width * 1.1f, size.height * (.28f + phase * .12f * motionIntensity)), size.minDimension * .055f)
+        }
+        MeloXTextPVStyle.Geometric -> {
+            drawRect(Color(0xFFF5C928).copy(alpha = .76f))
+            repeat(4) { index ->
+                drawRect(Color.Black.copy(alpha = .06f + index * .018f), topLeft = Offset(size.width * (.08f + index * .07f), size.height * (.12f + index * .07f)), size = androidx.compose.ui.geometry.Size(size.minDimension * (.74f - index * .1f), size.minDimension * (.74f - index * .1f)), style = Stroke(3f))
             }
         }
+        MeloXTextPVStyle.CyberGrunge, MeloXTextPVStyle.RainCity, MeloXTextPVStyle.CyberpunkHUD,
+        MeloXTextPVStyle.SpiderWeb, MeloXTextPVStyle.Cyber -> {
+            drawRect(Color(0xFF061018).copy(alpha = .52f))
+            val spacing = (size.minDimension / 12f).coerceAtLeast(8f)
+            val xCount = (size.width / spacing).toInt().coerceIn(0, 96) + 3
+            repeat(xCount) { index ->
+                val x = -spacing + phase * spacing * motionIntensity + index * spacing
+                drawLine(Color(0xFF76E8FF).copy(alpha = .10f), Offset(x, 0f), Offset(x, size.height), 1f)
+            }
+            val yCount = (size.height / spacing).toInt().coerceIn(0, 160) + 3
+            repeat(yCount) { index ->
+                val y = -spacing + phase * spacing * motionIntensity + index * spacing
+                drawLine(Color(0xFFFF4B89).copy(alpha = .08f), Offset(0f, y), Offset(size.width, y), 1f)
+            }
+        }
+        MeloXTextPVStyle.EmotionCinema, MeloXTextPVStyle.CalmVillain, MeloXTextPVStyle.Haruhikage,
+        MeloXTextPVStyle.Minimal -> {
+            drawRect(Color(0xFF24334A).copy(alpha = .38f))
+            repeat(5) { index ->
+                val y = size.height * (.18f + index * .15f)
+                drawLine(Color(0xFF9CC8FF).copy(alpha = .05f), Offset(0f, y), Offset(size.width, y + sin(phase * 6.28f + index) * 24f * motionIntensity), 2f)
+            }
+            if (style != MeloXTextPVStyle.Minimal) {
+                drawScatteredText(phase, motionIntensity, chars = listOf('夜', '夢', '影', '光', '風', '星', '雨', '花', '月', '雪'), count = 8, minSize = 16f, maxSize = 42f, color = Color(0xFF9CC8FF))
+            }
+        }
+        MeloXTextPVStyle.HystericNight -> {
+            drawRect(Color(0xFF180A25).copy(alpha = .58f))
+            repeat(10) { index ->
+                val angle = index * PI.toFloat() / 5f + phase * .35f * motionIntensity
+                val end = Offset(size.width / 2f + kotlin.math.cos(angle) * size.maxDimension, size.height / 2f + sin(angle) * size.maxDimension)
+                drawLine(Color(0xFFE46CFF).copy(alpha = .055f), center, end, size.minDimension * .025f)
+            }
+        }
+        MeloXTextPVStyle.GirlyClouds, MeloXTextPVStyle.SweetPink -> {
+            drawRect(Color(0xFFF3A9C3).copy(alpha = .55f))
+            repeat(7) { index ->
+                val x = size.width * ((index * .22f + phase * .08f * motionIntensity) % 1.2f - .1f)
+                drawLine(Color.White.copy(alpha = .11f), Offset(x, 0f), Offset(x - size.height * .25f, size.height), size.minDimension * .018f)
+            }
+            drawCircle(Color.White.copy(alpha = .12f), size.minDimension * .22f, Offset(size.width * .12f, size.height * .15f))
+            drawScatteredShapes(phase, motionIntensity, count = 14, minSize = 6f, maxSize = 24f, color = Color.White, alpha = 0.18f)
+        }
+        else -> {}
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawScatteredShapes(
+    phase: Float,
+    motionIntensity: Float,
+    count: Int = 18,
+    minSize: Float = 4f,
+    maxSize: Float = 30f,
+    color: Color = Color.White,
+    alpha: Float = 0.3f,
+) {
+    for (index in 0 until count) {
+        val seed = index * 5
+        val side = minSize + ((seed * 7 + 13) % 100) / 100f * (maxSize - minSize)
+        val drift = sin(phase * 0.1f * motionIntensity + index.toFloat()) * 14f * motionIntensity
+        val cx = (((seed * 17 + 3) % 100) / 100f) * size.width + drift
+        val cy = (((seed * 31 + 7) % 100) / 100f) * size.height - drift * 0.55f
+        val shapeType = index % 3
+        when (shapeType) {
+            0 -> drawCircle(color.copy(alpha = alpha), side / 2f, Offset(cx, cy))
+            1 -> drawRect(color.copy(alpha = alpha), topLeft = Offset(cx - side / 2f, cy - side * 0.36f), size = androidx.compose.ui.geometry.Size(side, side * 0.72f))
+            2 -> {
+                val s = side / 2f
+                drawRect(color.copy(alpha = alpha), topLeft = Offset(cx - s, cy - s), size = androidx.compose.ui.geometry.Size(side, side))
+            }
+        }
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawScatteredText(
+    phase: Float,
+    motionIntensity: Float,
+    chars: List<Char>,
+    count: Int = 15,
+    minSize: Float = 20f,
+    maxSize: Float = 60f,
+    color: Color = Color.White,
+) {
+    if (chars.isEmpty()) return
+    val paint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        isFakeBoldText = true
+        textAlign = android.graphics.Paint.Align.CENTER
+    }
+    for (index in 0 until count) {
+        val seed = index * 3
+        val charIndex = ((seed * 11 + 5) % chars.size)
+        val opacity = (0.25f + ((seed * 7 + 13) % 100) / 100f * 0.5f
+            + sin(phase * (0.2f + ((seed * 13 + 17) % 100) / 100f * 0.4f)
+                + ((seed * 19 + 23) % 100) / 100f * 6.28f) * 0.12f).coerceIn(0f, 1f)
+        val fontSize = minSize + ((seed * 23 + 29) % 100) / 100f * (maxSize - minSize)
+        val cx = (((seed * 3 + 1) % 100) / 100f) * size.width
+        val cy = (((seed * 3 + 2) % 100) / 100f) * size.height
+        paint.color = color.copy(alpha = opacity).toArgb()
+        paint.textSize = fontSize
+        drawContext.canvas.nativeCanvas.drawText(
+            chars[charIndex].toString(),
+            cx,
+            cy,
+            paint,
+        )
     }
 }
 

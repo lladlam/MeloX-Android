@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MeloX</string>
+
+    <!-- Bottom Navigation -->
+    <string name="nav_home">ホーム</string>
+    <string name="nav_explore">発見</string>
+    <string name="nav_library">ライブラリ</string>
+    <string name="nav_settings">設定</string>
+
+    <!-- Common -->
+    <string name="search">検索</string>
+    <string name="search_settings">設定を検索</string>
+    <string name="back">戻る</string>
+    <string name="confirm">確認</string>
+    <string name="cancel">キャンセル</string>
+    <string name="save">保存</string>
+    <string name="delete">削除</string>
+    <string name="loading">読み込み中</string>
+    <string name="error">エラー</string>
+    <string name="retry">再試行</string>
+    <string name="no_results">結果が見つかりません</string>
+
+    <!-- Player -->
+    <string name="player_play">再生</string>
+    <string name="player_pause">一時停止</string>
+    <string name="player_previous">前へ</string>
+    <string name="player_next">次へ</string>
+    <string name="player_like">いいね</string>
+    <string name="player_queue">再生キュー</string>
+    <string name="player_lyrics">歌詞</string>
+
+    <!-- Library -->
+    <string name="library_songs">曲</string>
+    <string name="library_playlists">プレイリスト</string>
+    <string name="library_cloud">クラウド</string>
+    <string name="library_downloads">ダウンロード</string>
+    <string name="library_song_count">%d曲</string>
+
+    <!-- Settings -->
+    <string name="settings_title">設定</string>
+    <string name="settings_account">アカウント</string>
+    <string name="settings_logged_in">ログイン済み</string>
+    <string name="settings_login">NetEase Musicにログイン</string>
+    <string name="settings_logout">ログアウト</string>
+
+    <!-- Settings Sections -->
+    <string name="settings_section_app">アプリ</string>
+    <string name="settings_section_extensions">拡張機能</string>
+    <string name="settings_section_about">について</string>
+
+    <!-- Settings Items -->
+    <string name="settings_general">一般</string>
+    <string name="settings_general_desc">テーマ、起動動作、リンク処理</string>
+    <string name="settings_appearance">外観</string>
+    <string name="settings_appearance_desc">背景、カバーアニメーション、画面常時オン</string>
+    <string name="settings_content">コンテンツ</string>
+    <string name="settings_content_desc">地域、プレイリスト情報、ディスカバリー</string>
+    <string name="settings_playback">再生</string>
+    <string name="settings_playback_desc">音質、再生動作、自動ミックス</string>
+    <string name="settings_lyrics">歌詞</string>
+    <string name="settings_lyrics_desc">翻訳、ローマ字、一字一句、歌詞インタラクション</string>
+    <string name="settings_storage">ストレージ</string>
+    <string name="settings_storage_desc">容量統計、ダウンロード、キャッシュクリア</string>
+    <string name="settings_about">MeloXについて</string>
+    <string name="settings_about_desc">バージョン、プロジェクトページ、オープンソース情報</string>
+    <string name="settings_developer">開発者オプション</string>
+    <string name="settings_developer_desc">プレーヤー診断と移行ステータス</string>
+
+    <!-- Playback Settings -->
+    <string name="playback_quality">再生音質</string>
+    <string name="playback_remember_page">最後のプレーヤーページを記憶</string>
+    <string name="playback_previous_restart">5秒以上再生したら最初から再生</string>
+    <string name="playback_heart_mode">ログイン後にハートモードで開始</string>
+    <string name="playback_headphone_pause">ヘッドフォン切断時に一時停止</string>
+    <string name="playback_volume_control">音量スライダー制御</string>
+    <string name="playback_system_volume">システムメディア音量</string>
+    <string name="playback_independent_volume">プレーヤー独立音量</string>
+    <string name="playback_auto_mix">自動ミックス</string>
+    <string name="playback_auto_mix_desc">デュアルプレーヤープリロード、20msエンベロープ更新</string>
+    <string name="playback_equalizer">イコライザー</string>
+    <string name="playback_equalizer_desc">Android ネイティブマルチバンド DSP を使用</string>
+
+    <!-- Lyrics Settings -->
+    <string name="lyrics_translation">翻訳を表示</string>
+    <string name="lyrics_romanization">ローマ字を表示</string>
+    <string name="lyrics_word_by_word">一字一句歌詞（YRC）</string>
+    <string name="lyrics_pseudo_timing">LRCから一字一句タイミングを生成</string>
+    <string name="lyrics_tap_seek">歌詞をタップしてシーク</string>
+    <string name="lyrics_long_press_share">長押しで歌詞を共有</string>
+    <string name="lyrics_interlude_countdown">間奏カウントダウン</string>
+    <string name="lyrics_focus_scale">現在の行を拡大</string>
+    <string name="lyrics_blur_strength">距離ブラー</string>
+    <string name="lyrics_dim_amount">フォーカス外の歌詞を暗くする</string>
+    <string name="lyrics_glow_enabled">一字一句グローエフェクト</string>
+    <string name="lyrics_word_bounce">単語バウンドアニメーション</string>
+
+    <!-- Floating Lyrics -->
+    <string name="floating_lyrics">フローティング歌詞</string>
+    <string name="floating_lyrics_enable">フローティング歌詞を表示</string>
+    <string name="floating_lyrics_enable_desc">他のアプリ上に現在の歌詞を表示</string>
+    <string name="floating_lyrics_permission">オーバーレイ権限</string>
+    <string name="floating_lyrics_secondary">サブ歌詞コンテンツ</string>
+    <string name="floating_lyrics_font_size">プライマリフォントサイズ</string>
+    <string name="floating_lyrics_high_contrast">高コントラスト背景</string>
+    <string name="floating_lyrics_secondary_auto">自動（翻訳/ローマ字/次の行）</string>
+    <string name="floating_lyrics_secondary_translation">翻訳</string>
+    <string name="floating_lyrics_secondary_romanization">ローマ字</string>
+    <string name="floating_lyrics_secondary_next">次の行</string>
+    <string name="floating_lyrics_secondary_hidden">非表示</string>
+
+    <!-- Notification -->
+    <string name="notification_lyrics">システムメディア情報に歌詞を表示</string>
+    <string name="notification_standalone">独立歌詞通知</string>
+    <string name="notification_next_line">通知に次の行を表示</string>
+    <string name="notification_progress">通知に再生进度を表示</string>
+
+    <!-- Skyline -->
+    <string name="skyline_auto">横画面でスカイライン歌詞を自動有効化</string>
+    <string name="skyline_keep_awake">画面をオンに保つ</string>
+    <string name="skyline_show_info">カバーと曲情報を表示</string>
+
+    <!-- About -->
+    <string name="about_version">バージョン</string>
+    <string name="about_github">プロジェクトページ</string>
+    <string name="about_license">オープンソースライセンス</string>
+
+    <!-- Sleep Timer -->
+    <string name="sleep_timer">スリープタイマー</string>
+    <string name="sleep_timer_minutes">%d分後</string>
+    <string name="sleep_timer_cancel">タイマーをキャンセル</string>
+
+    <!-- Quality -->
+    <string name="quality_standard">標準</string>
+    <string name="quality_high">高品質</string>
+    <string name="quality_lossless">ロスレス</string>
+
+    <!-- Widget -->
+    <string name="widget_description">MeloX プレーヤーコントロール</string>
+    <string name="widget_not_playing">再生中ではありません</string>
+
+    <!-- Errors -->
+    <string name="error_no_lyrics">歌詞が見つかりません</string>
+    <string name="error_network">ネットワークエラー</string>
+    <string name="error_login">ログインに失敗しました</string>
+</resources>

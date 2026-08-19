@@ -72,6 +72,7 @@ internal fun MeloXLyricsArtworkBackdrop(
     artworkUrl: String?,
     isPlaying: Boolean,
     modifier: Modifier = Modifier,
+    visible: Boolean = true,
 ) {
     val quality = MeloXSettingsRuntime.lyricRenderingQuality
     val planeCount = if (quality == MeloXLyricsRenderingQuality.Low) 1 else 3
@@ -280,7 +281,7 @@ internal fun MeloXFlowingLightBackdrop(
     }
 }
 
-private fun lerpColor(from: Color, to: Color, amount: Float): Color = Color(
+internal fun lerpColor(from: Color, to: Color, amount: Float): Color = Color(
     red = from.red + (to.red - from.red) * amount,
     green = from.green + (to.green - from.green) * amount,
     blue = from.blue + (to.blue - from.blue) * amount,

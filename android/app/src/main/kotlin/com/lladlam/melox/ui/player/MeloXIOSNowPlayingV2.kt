@@ -108,9 +108,10 @@ fun MeloXIOSNowPlayingV2(
                 MeloXLyricsArtworkBackdrop(
                     artworkUrl = state.artworkUrl,
                     isPlaying = state.isPlaying,
+                    visible = drawBackdrop,
                 )
             } else if (MeloXSettingsRuntime.playerBackgroundMode == MeloXPlayerBackgroundMode.FlowingLight) {
-                MeloXFlowingLightBackdrop(artworkUrl = state.artworkUrl, isPlaying = state.isPlaying)
+                MeloXFlowingLightGpuBackdrop(artworkUrl = state.artworkUrl, isPlaying = state.isPlaying, visible = drawBackdrop)
             } else {
                 MeloXBlurredArtworkBackdrop(state.artworkUrl)
             }

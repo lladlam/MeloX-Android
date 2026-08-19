@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MeloX</string>
+
+    <!-- Bottom Navigation -->
+    <string name="nav_home">首页</string>
+    <string name="nav_explore">发现</string>
+    <string name="nav_library">音乐库</string>
+    <string name="nav_settings">设置</string>
+
+    <!-- Common -->
+    <string name="search">搜索</string>
+    <string name="search_settings">搜索设置</string>
+    <string name="back">返回</string>
+    <string name="confirm">确定</string>
+    <string name="cancel">取消</string>
+    <string name="save">保存</string>
+    <string name="delete">删除</string>
+    <string name="loading">加载中</string>
+    <string name="error">错误</string>
+    <string name="retry">重试</string>
+    <string name="no_results">没有找到结果</string>
+
+    <!-- Player -->
+    <string name="player_play">播放</string>
+    <string name="player_pause">暂停</string>
+    <string name="player_previous">上一首</string>
+    <string name="player_next">下一首</string>
+    <string name="player_like">喜欢</string>
+    <string name="player_queue">播放队列</string>
+    <string name="player_lyrics">歌词</string>
+
+    <!-- Library -->
+    <string name="library_songs">歌曲</string>
+    <string name="library_playlists">歌单</string>
+    <string name="library_cloud">云盘</string>
+    <string name="library_downloads">下载</string>
+    <string name="library_song_count">%d 首歌曲</string>
+
+    <!-- Settings -->
+    <string name="settings_title">设置</string>
+    <string name="settings_account">账号</string>
+    <string name="settings_logged_in">已登录</string>
+    <string name="settings_login">登录网易云音乐</string>
+    <string name="settings_logout">退出登录</string>
+
+    <!-- Settings Sections -->
+    <string name="settings_section_app">应用</string>
+    <string name="settings_section_extensions">扩展</string>
+    <string name="settings_section_about">关于</string>
+
+    <!-- Settings Items -->
+    <string name="settings_general">通用</string>
+    <string name="settings_general_desc">主题、启动行为与链接处理</string>
+    <string name="settings_appearance">外观</string>
+    <string name="settings_appearance_desc">背景、封面动画与屏幕常亮</string>
+    <string name="settings_content">内容</string>
+    <string name="settings_content_desc">地区、歌单信息和发现内容</string>
+    <string name="settings_playback">播放</string>
+    <string name="settings_playback_desc">音质、播放行为与自动混音</string>
+    <string name="settings_lyrics">歌词</string>
+    <string name="settings_lyrics_desc">翻译、罗马音、逐字与歌词交互</string>
+    <string name="settings_storage">存储管理</string>
+    <string name="settings_storage_desc">空间统计、下载与缓存清理</string>
+    <string name="settings_about">关于 MeloX</string>
+    <string name="settings_about_desc">版本、项目主页与开源信息</string>
+    <string name="settings_developer">开发者选项</string>
+    <string name="settings_developer_desc">播放器诊断与迁移状态</string>
+
+    <!-- Playback Settings -->
+    <string name="playback_quality">播放音质</string>
+    <string name="playback_remember_page">记住播放器上次页面</string>
+    <string name="playback_previous_restart">播放超过 5 秒时上一首先回到开头</string>
+    <string name="playback_heart_mode">登录后以心动模式开始播放</string>
+    <string name="playback_headphone_pause">耳机断开时暂停</string>
+    <string name="playback_volume_control">音量滑杆控制</string>
+    <string name="playback_system_volume">系统媒体音量</string>
+    <string name="playback_independent_volume">播放器独立音量</string>
+    <string name="playback_auto_mix">自动混音</string>
+    <string name="playback_auto_mix_desc">双播放器预载，20ms 包络更新</string>
+    <string name="playback_equalizer">均衡器</string>
+    <string name="playback_equalizer_desc">使用 Android 原生多频段 DSP</string>
+
+    <!-- Lyrics Settings -->
+    <string name="lyrics_translation">显示翻译</string>
+    <string name="lyrics_romanization">显示罗马音</string>
+    <string name="lyrics_word_by_word">逐字歌词（YRC）</string>
+    <string name="lyrics_pseudo_timing">普通 LRC 生成逐字时间</string>
+    <string name="lyrics_tap_seek">点击歌词跳转进度</string>
+    <string name="lyrics_long_press_share">长按歌词分享</string>
+    <string name="lyrics_interlude_countdown">间奏倒计时</string>
+    <string name="lyrics_focus_scale">当前行放大</string>
+    <string name="lyrics_blur_strength">远近模糊</string>
+    <string name="lyrics_dim_amount">非焦点歌词变暗</string>
+    <string name="lyrics_glow_enabled">逐字歌词光效</string>
+    <string name="lyrics_word_bounce">歌词逐字弹跳</string>
+
+    <!-- Floating Lyrics -->
+    <string name="floating_lyrics">悬浮窗歌词</string>
+    <string name="floating_lyrics_enable">显示悬浮歌词</string>
+    <string name="floating_lyrics_enable_desc">在其他应用上方显示当前歌词</string>
+    <string name="floating_lyrics_permission">悬浮窗权限</string>
+    <string name="floating_lyrics_secondary">副歌词内容</string>
+    <string name="floating_lyrics_font_size">主歌词字号</string>
+    <string name="floating_lyrics_high_contrast">高对比背景</string>
+    <string name="floating_lyrics_secondary_auto">自动（翻译/罗马音/下一句）</string>
+    <string name="floating_lyrics_secondary_translation">翻译</string>
+    <string name="floating_lyrics_secondary_romanization">罗马音</string>
+    <string name="floating_lyrics_secondary_next">下一句</string>
+    <string name="floating_lyrics_secondary_hidden">不显示</string>
+
+    <!-- Notification -->
+    <string name="notification_lyrics">系统媒体信息显示歌词</string>
+    <string name="notification_standalone">独立歌词通知</string>
+    <string name="notification_next_line">通知显示下一句</string>
+    <string name="notification_progress">通知显示播放进度</string>
+
+    <!-- Skyline -->
+    <string name="skyline_auto">横屏自动启用天际歌词</string>
+    <string name="skyline_keep_awake">屏幕常亮</string>
+    <string name="skyline_show_info">显示封面与歌曲信息</string>
+
+    <!-- About -->
+    <string name="about_version">版本</string>
+    <string name="about_github">项目主页</string>
+    <string name="about_license">开源许可</string>
+
+    <!-- Sleep Timer -->
+    <string name="sleep_timer">定时停止</string>
+    <string name="sleep_timer_minutes">%d 分钟后</string>
+    <string name="sleep_timer_cancel">取消定时</string>
+
+    <!-- Quality -->
+    <string name="quality_standard">标准</string>
+    <string name="quality_high">极高</string>
+    <string name="quality_lossless">无损</string>
+
+    <!-- Widget -->
+    <string name="widget_description">MeloX 播放器控制</string>
+    <string name="widget_not_playing">未在播放</string>
+
+    <!-- Errors -->
+    <string name="error_no_lyrics">没有找到歌词</string>
+    <string name="error_network">网络错误</string>
+    <string name="error_login">登录失败</string>
+</resources>
