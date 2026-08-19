@@ -357,6 +357,7 @@ fun MeloXApp(
       )
       CompositionLocalProvider(LocalMeloXBackdrop provides pageBackdrop) {
         SharedTransitionLayout(modifier = Modifier.fillMaxSize()) {
+            val sharedScope = this
             val fullPlayerVisible = playbackState.hasMedia &&
                 (playerTransitionState.currentState || playerTransitionState.targetState)
             Scaffold(
@@ -451,6 +452,8 @@ fun MeloXApp(
                                 compactProgress = compactProgress,
                                 dynamicGlassEnabled = true,
                                 expansionProgress = expansionProgress,
+                                sharedTransitionScope = sharedScope,
+                                animatedVisibilityScope = this,
                             )
                         }
                     },
@@ -465,6 +468,7 @@ fun MeloXApp(
                     .fillMaxSize()
                     .zIndex(20f),
             ) {
+                val fullPlayerAnimatedVisibilityScope = this
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -497,6 +501,8 @@ fun MeloXApp(
                             )
                         },
                         expansionProgress = expansionProgress,
+                        sharedTransitionScope = sharedScope,
+                        animatedVisibilityScope = fullPlayerAnimatedVisibilityScope,
                     )
                 }
             }

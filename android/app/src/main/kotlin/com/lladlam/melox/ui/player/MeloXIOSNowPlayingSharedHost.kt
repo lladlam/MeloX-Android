@@ -1,6 +1,9 @@
 package com.lladlam.melox.ui.player
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -64,6 +67,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun MeloXIOSNowPlayingSharedHost(
     state: MeloXPlaybackUiState,
@@ -72,6 +76,8 @@ fun MeloXIOSNowPlayingSharedHost(
     onSeekCollapse: suspend (Float) -> Unit,
     onSettleCollapse: suspend (Boolean) -> Unit,
     expansionProgress: Float,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
     // A track transition updates the content inside the existing player. It must
     // not recreate the page/gesture state or send the shared element back to its
@@ -388,6 +394,8 @@ fun MeloXIOSNowPlayingSharedHost(
                 state = state,
                 page = page,
                 expansionProgress = expansionProgress,
+                sharedTransitionScope = sharedTransitionScope,
+                animatedVisibilityScope = animatedVisibilityScope,
                 hidden = showLandscapeSkyline,
             )
         }
@@ -408,11 +416,14 @@ fun MeloXIOSNowPlayingSharedHost(
     }
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun SharedArtworkDestination(
     state: MeloXPlaybackUiState,
     page: MeloXNowPlayingPage,
     expansionProgress: Float,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope,
     hidden: Boolean = false,
 ) {
     val configuration = LocalConfiguration.current
@@ -491,29 +502,25 @@ private fun SharedArtworkDestination(
         val targetY = lerpDp(fullY, contentTop, pageFrameProgress)
         val targetRadius = 12.dp
 
-        // Manual artwork lerp: position and size driven by expansionProgress.
-        // At expansionProgress=0, artwork sits at mini player position (bottom center).
-        // At expansionProgress=1, artwork is at full player calculated position.
-        val artworkBlend = smoothStep(expansionProgress, 0.05f, 0.65f)
-        val miniArtworkSize = 40.dp
-        val miniArtworkRadius = 9.dp
-        // Mini player is roughly at bottom-center of screen, offset by bottom chrome
-        val miniX = (maxWidth - miniArtworkSize) / 2f
-        val miniY = maxHeight - miniArtworkSize - 60.dp // approximate mini player center
-        val lerpedX = lerp(miniX, fullX, artworkBlend)
-        val lerpedY = lerp(miniY, fullY, artworkBlend)
-        val lerpedSize = lerpDp(miniArtworkSize, targetSize, artworkBlend)
-        val lerpedRadius = lerpDp(miniArtworkRadius, targetRadius, artworkBlend)
+        val artworkSharedState = with(sharedTransitionScope) {
+            rememberSharedContentState(key = sharedArtworkKey())
+        }
+        val sharedModifier = with(sharedTransitionScope) {
+            Modifier.sharedElement(
+                sharedContentState = artworkSharedState,
+                animatedVisibilityScope = animatedVisibilityScope,
+                boundsTransform = MeloXPlayerLinearBoundsTransform,
+                renderInOverlayDuringTransition = true,
+                zIndexInOverlay = 4f,
+            )
+        }
 
         Box(
             modifier = Modifier
-                .offset(x = lerpedX, y = lerpedY)
-                .size(lerpedSize)
-                .graphicsLayer {
-                    alpha = if (hidden) 0f else 1f
-                    scaleX = effectiveScale
-                    scaleY = effectiveScale
-                },
+                .offset(x = targetX, y = targetY)
+                .size(targetSize)
+                .graphicsLayer { alpha = if (hidden) 0f else 1f }
+                .then(sharedModifier),
         ) {
             Artwork(
                 url = state.artworkUrl,

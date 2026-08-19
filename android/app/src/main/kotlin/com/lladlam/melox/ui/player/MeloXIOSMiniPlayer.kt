@@ -1,5 +1,8 @@
 package com.lladlam.melox.ui.player
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.infiniteRepeatable
@@ -44,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import com.kyant.shapes.Capsule
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun MeloXIOSMiniPlayer(
     state: MeloXPlaybackUiState,
@@ -51,6 +55,8 @@ fun MeloXIOSMiniPlayer(
     compactProgress: Float = 0f,
     dynamicGlassEnabled: Boolean = true,
     expansionProgress: Float = 0f,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     if (!state.hasMedia) return
 
@@ -133,11 +139,28 @@ fun MeloXIOSMiniPlayer(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                val sharedArtworkModifier =
+                    if (sharedTransitionScope != null && animatedVisibilityScope != null) {
+                        with(sharedTransitionScope) {
+                            Modifier.sharedElement(
+                                sharedContentState = rememberSharedContentState(
+                                    key = sharedArtworkKey(),
+                                ),
+                                animatedVisibilityScope = animatedVisibilityScope,
+                                boundsTransform = MeloXPlayerLinearBoundsTransform,
+                                renderInOverlayDuringTransition = true,
+                                zIndexInOverlay = 4f,
+                            )
+                        }
+                    } else {
+                        Modifier
+                    }
+
                 // Artwork is the persistent identity element: resize it smoothly
                 // for compact Dock mode, but do not fade it during full expansion.
                 Artwork(
                     url = state.artworkUrl,
-                    modifier = Modifier
+                    modifier = sharedArtworkModifier
                         .size(artworkSize)
                         .clip(RoundedCornerShape(artworkRadius)),
                 )
