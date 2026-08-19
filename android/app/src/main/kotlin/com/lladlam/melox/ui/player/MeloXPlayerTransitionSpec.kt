@@ -5,7 +5,7 @@ import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 
-internal const val MeloXPlayerTransitionDurationMillis = 400
+internal const val MeloXPlayerTransitionDurationMillis = 300
 
 internal val MeloXPlayerLinearBoundsTransform = BoundsTransform { _, _ ->
     tween(

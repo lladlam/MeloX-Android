@@ -42,7 +42,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -154,10 +153,9 @@ fun MeloXIOSNowPlayingSharedHost(
     val lyricsActive = page == MeloXNowPlayingPage.Lyrics && expansionProgress > 0.88f
     val glassSamplingActive = expansionProgress > 0.88f
 
-    // Manual container animation: scale from bottom-center and slide up,
-    // replacing the previous sharedBounds approach which jumped instantly.
-    val containerScale = 0.15f + 0.85f * expansionProgress
-    val containerTranslationY = (1f - expansionProgress) * 0.86f // fraction of screen
+    // Manual container animation: slide up from bottom with clip morph.
+    // The artwork uses sharedElement for its own position animation.
+    // Container just handles clip shape and content visibility.
 
     // NowPlaying owns the player-level Back handler. Child modal overlays are
     // composed later and temporarily disable this handler, so Back always unwinds
@@ -282,13 +280,7 @@ fun MeloXIOSNowPlayingSharedHost(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer {
-                        scaleX = containerScale
-                        scaleY = containerScale
-                        translationY = boxMaxHeightPx * containerTranslationY
-                        transformOrigin = TransformOrigin(0.5f, 1f)
-                        alpha = if (expansionProgress < 0.01f) 0f else 1f
-                    }
+                    .graphicsLayer { alpha = if (expansionProgress < 0.01f) 0f else 1f }
                     .clip(RoundedCornerShape(cornerRadius))
                     .nestedScroll(alternatePageCollapseConnection)
                     .draggable(
