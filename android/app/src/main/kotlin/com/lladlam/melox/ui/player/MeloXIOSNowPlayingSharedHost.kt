@@ -1,9 +1,6 @@
 package com.lladlam.melox.ui.player
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -67,7 +64,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun MeloXIOSNowPlayingSharedHost(
     state: MeloXPlaybackUiState,
@@ -76,8 +72,6 @@ fun MeloXIOSNowPlayingSharedHost(
     onSeekCollapse: suspend (Float) -> Unit,
     onSettleCollapse: suspend (Boolean) -> Unit,
     expansionProgress: Float,
-    sharedTransitionScope: SharedTransitionScope? = null,
-    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     // A track transition updates the content inside the existing player. It must
     // not recreate the page/gesture state or send the shared element back to its
@@ -387,8 +381,6 @@ fun MeloXIOSNowPlayingSharedHost(
                 page = page,
                 expansionProgress = expansionProgress,
                 hidden = showLandscapeSkyline,
-                sharedTransitionScope = sharedTransitionScope,
-                animatedVisibilityScope = animatedVisibilityScope,
             )
         }
 
@@ -408,15 +400,12 @@ fun MeloXIOSNowPlayingSharedHost(
     }
 }
 
-@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun SharedArtworkDestination(
     state: MeloXPlaybackUiState,
     page: MeloXNowPlayingPage,
     expansionProgress: Float,
     hidden: Boolean = false,
-    sharedTransitionScope: SharedTransitionScope? = null,
-    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
@@ -458,7 +447,7 @@ private fun SharedArtworkDestination(
     )
 
     val pageFrameProgress = if (isLandscape) 0f else headerProgress
-    val effectiveScale = playbackScale * (1f - pageFrameProgress * 0.55f)
+    val effectiveScale = playbackScale * (1f - pageFrameProgress * 0.30f)
 
     BoxWithConstraints(
         modifier = Modifier
@@ -487,92 +476,43 @@ private fun SharedArtworkDestination(
                 .coerceAtLeast(0.dp)
         }
 
-        val targetSize = lerpDp(fullArtworkSize, 72.dp, pageFrameProgress)
+        val targetSize = lerpDp(fullArtworkSize, 140.dp, pageFrameProgress)
         val targetX = lerpDp(fullX, 0.dp, pageFrameProgress)
         val targetY = lerpDp(fullY, contentTop, pageFrameProgress)
         val targetRadius = 12.dp
 
-        // Use sharedElement when scopes are available for automatic position +
-        // size interpolation. Fall back to manual lerp during standalone use.
-        val useSharedElement = sharedTransitionScope != null && animatedVisibilityScope != null
+        val artworkBlend = smoothStep(expansionProgress, 0.02f, 0.55f)
+        val miniX = (maxWidth - 40.dp) / 2f
+        val miniY = maxHeight - 40.dp - 60.dp
+        val lerpedX = lerp(miniX, targetX, artworkBlend)
+        val lerpedY = lerp(miniY, targetY, artworkBlend)
+        val lerpedSize = lerpDp(40.dp, targetSize, artworkBlend)
 
-        if (useSharedElement) {
-            // sharedElement handles position, size, and corner radius
-            // interpolation between MiniPlayer and full-screen bounds.
-            val scope = sharedTransitionScope!!
-            val animScope = animatedVisibilityScope!!
-            Box(
+        Box(
+            modifier = Modifier
+                .offset(x = lerpedX, y = lerpedY)
+                .size(lerpedSize)
+                .graphicsLayer {
+                    alpha = if (hidden) 0f else 1f
+                },
+        ) {
+            Artwork(
+                url = state.artworkUrl,
                 modifier = Modifier
-                    .offset(x = targetX, y = targetY)
-                    .size(targetSize)
+                    .fillMaxSize()
                     .graphicsLayer {
-                        alpha = if (hidden) 0f else 1f
-                    }
-                    .clip(RoundedCornerShape(targetRadius)),
-            ) {
-                with(scope) {
-                    Artwork(
-                        url = state.artworkUrl,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .sharedElement(
-                                sharedContentState = rememberSharedContentState(key = sharedArtworkKey()),
-                                animatedVisibilityScope = animScope,
-                                boundsTransform = MeloXPlayerLinearBoundsTransform,
-                                renderInOverlayDuringTransition = true,
-                            )
-                            .graphicsLayer {
-                                scaleX = effectiveScale
-                                scaleY = effectiveScale
-                            }
-                            .shadow(
-                                elevation = shadowElevation * (1f - pageFrameProgress * 0.55f),
-                                shape = RoundedCornerShape(targetRadius),
-                                clip = false,
-                                ambientColor = Color.Black.copy(alpha = 0.28f),
-                                spotColor = Color.Black.copy(alpha = 0.28f),
-                            ),
-                    )
-                }
-            }
-        } else {
-            // Manual fallback: lerp from mini player position to full
-            // player position, driven by expansionProgress.
-            val artworkBlend = smoothStep(expansionProgress, 0.02f, 0.55f)
-            val miniX = (maxWidth - 40.dp) / 2f
-            val miniY = maxHeight - 40.dp - 60.dp
-            val lerpedX = lerp(miniX, targetX, artworkBlend)
-            val lerpedY = lerp(miniY, targetY, artworkBlend)
-            val lerpedSize = lerpDp(40.dp, targetSize, artworkBlend)
-
-            Box(
-                modifier = Modifier
-                    .offset(x = lerpedX, y = lerpedY)
-                    .size(lerpedSize)
-                    .graphicsLayer {
-                        alpha = if (hidden) 0f else 1f
                         scaleX = effectiveScale
                         scaleY = effectiveScale
-                    },
-            ) {
-                Artwork(
-                    url = state.artworkUrl,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            scaleX = effectiveScale
-                            scaleY = effectiveScale
-                        }
-                        .shadow(
-                            elevation = shadowElevation * (1f - pageFrameProgress * 0.55f),
-                            shape = RoundedCornerShape(targetRadius),
-                            clip = false,
-                            ambientColor = Color.Black.copy(alpha = 0.28f),
-                            spotColor = Color.Black.copy(alpha = 0.28f),
-                        )
-                        .clip(RoundedCornerShape(targetRadius)),
-                )
-            }
+                    }
+                    .shadow(
+                        elevation = shadowElevation * (1f - pageFrameProgress * 0.55f),
+                        shape = RoundedCornerShape(targetRadius),
+                        clip = false,
+                        ambientColor = Color.Black.copy(alpha = 0.28f),
+                        spotColor = Color.Black.copy(alpha = 0.28f),
+                    )
+                    .clip(RoundedCornerShape(targetRadius)),
+            )
         }
     }
 }
