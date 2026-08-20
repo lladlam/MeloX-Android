@@ -9,10 +9,6 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.rememberSharedContentState
-import androidx.compose.animation.sharedElement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -503,6 +499,8 @@ private fun SharedArtworkDestination(
         if (useSharedElement) {
             // sharedElement handles position, size, and corner radius
             // interpolation between MiniPlayer and full-screen bounds.
+            val scope = sharedTransitionScope!!
+            val animScope = animatedVisibilityScope!!
             Box(
                 modifier = Modifier
                     .offset(x = targetX, y = targetY)
@@ -512,20 +510,16 @@ private fun SharedArtworkDestination(
                     }
                     .clip(RoundedCornerShape(targetRadius)),
             ) {
-                with(sharedTransitionScope!!) {
+                with(scope) {
                     Artwork(
                         url = state.artworkUrl,
                         modifier = Modifier
                             .fillMaxSize()
                             .sharedElement(
-                                state = rememberSharedContentState(key = sharedArtworkKey()),
-                                animatedScope = animatedVisibilityScope!!,
+                                sharedContentState = rememberSharedContentState(key = sharedArtworkKey()),
+                                animatedVisibilityScope = animScope,
                                 boundsTransform = MeloXPlayerLinearBoundsTransform,
                                 renderInOverlayDuringTransition = true,
-                                placeholderInTransitionSpec = {
-                                    fadeIn(spring(dampingRatio = 1f, stiffness = 200f)) togetherWith
-                                        fadeOut(spring(dampingRatio = 1f, stiffness = 200f))
-                                },
                             )
                             .graphicsLayer {
                                 scaleX = effectiveScale

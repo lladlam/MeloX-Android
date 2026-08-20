@@ -469,6 +469,8 @@ fun MeloXApp(
                     .fillMaxSize()
                     .zIndex(20f),
             ) {
+                // Capture AnimatedVisibilityScope before entering the Box
+                val fullPlayerAnimVisibility = this
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -502,7 +504,7 @@ fun MeloXApp(
                         },
                         expansionProgress = expansionProgress,
                         sharedTransitionScope = this@SharedTransitionLayout,
-                        animatedVisibilityScope = this,
+                        animatedVisibilityScope = fullPlayerAnimVisibility,
                     )
                 }
             }

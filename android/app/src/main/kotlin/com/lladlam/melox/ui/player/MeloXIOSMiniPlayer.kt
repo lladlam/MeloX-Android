@@ -3,9 +3,6 @@ package com.lladlam.melox.ui.player
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.sharedElement
-import androidx.compose.animation.sharedBounds
-import androidx.compose.animation.rememberSharedContentState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.infiniteRepeatable
@@ -151,8 +148,8 @@ fun MeloXIOSMiniPlayer(
                         if (sharedTransitionScope != null && animatedVisibilityScope != null) {
                             with(sharedTransitionScope) {
                                 Modifier.sharedElement(
-                                    state = rememberSharedContentState(key = sharedArtworkKey()),
-                                    animatedScope = animatedVisibilityScope,
+                                    sharedContentState = rememberSharedContentState(key = sharedArtworkKey()),
+                                    animatedVisibilityScope = animatedVisibilityScope,
                                     boundsTransform = MeloXPlayerLinearBoundsTransform,
                                     renderInOverlayDuringTransition = true,
                                 )
