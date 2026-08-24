@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.StatFs
 import android.provider.Settings as AndroidSettings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -42,6 +43,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.MaterialTheme
@@ -49,6 +51,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -79,12 +82,18 @@ import com.lladlam.melox.core.provider.bilibili.BilibiliPlaybackAssociationStore
 import com.lladlam.melox.core.music.provider.PlaybackAccountSlot
 import com.lladlam.melox.core.music.provider.PlaybackAccountStore
 import com.lladlam.melox.core.music.model.MusicSource
+import com.lladlam.melox.core.music.model.MusicPlaylistSummary
+import com.lladlam.melox.core.music.model.MusicResourceId
+import com.lladlam.melox.core.music.provider.MeloXMusicProviders
+import com.lladlam.melox.core.music.provider.UserLibraryCapability
+import com.lladlam.melox.core.library.NeteaseLibraryClient
 import com.lladlam.melox.core.provider.qqmusic.QQMusicSessionStore
 import com.lladlam.melox.core.provider.kugou.KugouSessionStore
 import com.lladlam.melox.ui.account.QQMusicLoginScreen
 import com.lladlam.melox.ui.account.KugouLoginScreen
 import com.lladlam.melox.ui.account.NeteaseLoginScreen
 import com.lladlam.melox.playback.ProviderPlaybackQualityRuntime
+import com.lladlam.melox.playback.MeloXAudioAnalysisRuntime
 import com.lladlam.melox.core.audio.MusicQuality
 import com.lladlam.melox.core.audio.MusicQualityPreferences
 import com.lladlam.melox.core.download.MeloXDownloadStore
@@ -92,6 +101,8 @@ import com.lladlam.melox.core.network.MeloXMessageContact
 import com.lladlam.melox.core.network.MeloXPrivateMessage
 import com.lladlam.melox.core.network.NeteaseMusicOperationsClient
 import com.lladlam.melox.core.network.NeteaseSearchClient
+import com.lladlam.melox.core.network.MeloXHttpClient
+import com.lladlam.melox.core.network.parseNeteaseListenTogetherInvitation
 import com.lladlam.melox.core.recommendation.LocalAnalysisStage
 import com.lladlam.melox.core.recommendation.LocalRecommendationEngine
 import com.lladlam.melox.core.recommendation.LocalRecommendationStore
@@ -108,6 +119,10 @@ import com.lladlam.melox.playback.MeloXAutoMixMode
 import com.lladlam.melox.playback.MeloXAutoMixSettings
 import com.lladlam.melox.playback.MeloXEqualizerController
 import com.lladlam.melox.playback.MeloXPlaybackModePreferences
+import com.lladlam.melox.playback.MeloXAudioAnalysisPreferences
+import com.lladlam.melox.playback.MeloXPlaybackService
+import com.lladlam.melox.playback.MeloXMediaCache
+import com.lladlam.melox.playback.MeloXListenTogetherCoordinator
 import com.lladlam.melox.platform.floating.MeloXFloatingLyricsService
 import com.lladlam.melox.platform.xiaomi.HyperOsFocusBridge
 import com.lladlam.melox.ui.MeloXBottomContentClearance
@@ -121,9 +136,11 @@ import com.lladlam.melox.ui.glass.MeloXTypography
 import com.lladlam.melox.ui.glass.MeloXIosGroupedList
 import com.lladlam.melox.ui.glass.MeloXIosListRow
 import com.lladlam.melox.ui.glass.MeloXIosTopBar
+import com.lladlam.melox.ui.glass.MeloXPinnedListPage
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import com.lladlam.melox.ui.glass.MeloXSymbolVariant
+import com.lladlam.melox.ui.glass.MeloXSystemColors
 import com.lladlam.melox.ui.glass.meloXContentSurface
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import kotlinx.coroutines.Dispatchers
@@ -142,6 +159,7 @@ private enum class SettingsRoute(val title: String) {
     ContentFeatures("功能模块"),
     Recognition("听歌识曲"),
     Messages("私信与站内分享"),
+    ListenTogether("一起听"),
     Content("内容"),
     Storage("存储管理"),
     TabLayout("页面与标签栏"),
@@ -174,6 +192,7 @@ private val SettingsSections = listOf(
         SettingsItem(SettingsRoute.ContentFeatures, "播客、云盘、最近播放等模块", "☷", "播客 广播 云盘 最近播放 下载"),
         SettingsItem(SettingsRoute.Recognition, "麦克风音频指纹与持续识别", "⌁", "听歌识曲 麦克风 指纹 Shazam 持续识别"),
         SettingsItem(SettingsRoute.Messages, "联系人、会话历史与文字私信", "✉", "私信 联系人 会话 分享 网易云"),
+        SettingsItem(SettingsRoute.ListenTogether, "创建、加入和管理网易云一起听房间", "◎", "一起听 房间 邀请 同步"),
         SettingsItem(SettingsRoute.TabLayout, "首页、标签栏与音乐库页面", "▥", "首页 标签栏 排序 推荐 歌单 历史"),
         SettingsItem(SettingsRoute.SystemPlayback, "通知、锁屏和系统媒体信息", "▣", "控制中心 通知 锁屏 Media3"),
         SettingsItem(SettingsRoute.SkylineLyrics, "横屏布局与动态背景歌词", "▱", "横屏 字号 背景歌词"),
@@ -227,7 +246,7 @@ fun SettingsScreen(
         exit = slideOutHorizontally(tween(260)) { it / 4 } + fadeOut(tween(180)),
     ) {
         route?.let { selectedRoute ->
-            SettingsDetailScreen(route = selectedRoute, source = source, onBack = { route = null })
+            SettingsDetailScreen(route = selectedRoute, source = source, session = session, onBack = { route = null })
         }
     }
     AnimatedVisibility(
@@ -393,40 +412,36 @@ private fun SettingsSectionCard(section: SettingsSection, onOpen: (SettingsRoute
 }
 
 @Composable
-private fun SettingsDetailScreen(route: SettingsRoute, source: MusicSource, onBack: () -> Unit) {
+private fun SettingsDetailScreen(route: SettingsRoute, source: MusicSource, session: NeteaseSessionStore, onBack: () -> Unit) {
     val context = LocalContext.current
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-            .padding(top = 18.dp, bottom = MeloXBottomContentClearance),
+    MeloXPinnedListPage(
+        title = route.title,
+        onNavigateBack = onBack,
+        bottomPadding = MeloXBottomContentClearance,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            SettingsRoundButton("‹", onBack)
-            Spacer(Modifier.size(14.dp))
-            Text(route.title, fontSize = 30.sp, fontWeight = FontWeight.Bold)
-        }
-        Spacer(Modifier.height(24.dp))
-        when (route) {
-            SettingsRoute.Playback -> PlaybackSettings(context)
-            SettingsRoute.PlayerAppearance -> PlayerAppearanceSettings(context)
-            SettingsRoute.Lyrics -> LyricsSettings(context)
-            SettingsRoute.SystemPlayback -> SystemPlaybackSettings(context)
-            SettingsRoute.SkylineLyrics -> SkylineLyricsSettings(context)
-            SettingsRoute.FloatingLyrics -> FloatingLyricsSettings(context)
-            SettingsRoute.ContentFeatures -> ContentFeatureSettings(context)
-            SettingsRoute.Recognition -> RecognitionSettings(context)
-            SettingsRoute.Messages -> MessagesSettings(context)
-            SettingsRoute.Content -> ContentSettings(context)
-            SettingsRoute.Storage -> StorageSettings(context)
-            SettingsRoute.TabLayout -> TabLayoutSettings(context)
-            SettingsRoute.General -> GeneralSettings(context)
-            SettingsRoute.About -> AboutSettings(context)
-            SettingsRoute.Privacy -> PrivacySettings(context)
-            SettingsRoute.Developer -> DeveloperSettings()
-            SettingsRoute.Experimental -> ExperimentalSettings(context, source)
+        item(key = "settings-detail:${route.name}") {
+            Column {
+                when (route) {
+                    SettingsRoute.Playback -> PlaybackSettings(context)
+                    SettingsRoute.PlayerAppearance -> PlayerAppearanceSettings(context)
+                    SettingsRoute.Lyrics -> LyricsSettings(context)
+                    SettingsRoute.SystemPlayback -> SystemPlaybackSettings(context)
+                    SettingsRoute.SkylineLyrics -> SkylineLyricsSettings(context)
+                    SettingsRoute.FloatingLyrics -> FloatingLyricsSettings(context)
+                    SettingsRoute.ContentFeatures -> ContentFeatureSettings(context)
+                    SettingsRoute.Recognition -> RecognitionSettings(context)
+                    SettingsRoute.Messages -> MessagesSettings(context)
+                    SettingsRoute.ListenTogether -> ListenTogetherSettings(context)
+                    SettingsRoute.Content -> ContentSettings(context)
+                    SettingsRoute.Storage -> StorageSettings(context)
+                    SettingsRoute.TabLayout -> TabLayoutSettings(context)
+                    SettingsRoute.General -> GeneralSettings(context)
+                    SettingsRoute.About -> AboutSettings(context)
+                    SettingsRoute.Privacy -> PrivacySettings(context)
+                    SettingsRoute.Developer -> DeveloperSettings()
+                    SettingsRoute.Experimental -> ExperimentalSettings(context, source, session)
+                }
+            }
         }
     }
 }
@@ -605,7 +620,7 @@ private fun SystemPlaybackSettings(context: android.content.Context) {
 }
 
 @Composable
-private fun ExperimentalSettings(context: android.content.Context, source: MusicSource) {
+private fun ExperimentalSettings(context: android.content.Context, source: MusicSource, session: NeteaseSessionStore) {
     var playbackEnabled by remember { mutableStateOf(PlaybackAccountStore.isEnabled(context)) }
     var showNeteaseLogin by remember { mutableStateOf(false) }
     var showQQLogin by remember { mutableStateOf(false) }
@@ -617,6 +632,161 @@ private fun ExperimentalSettings(context: android.content.Context, source: Music
         mutableStateOf(MeloXSettingsPreferences.boolean(context, "bilibili_lyric_audio_alignment", false))
     }
     var refreshRevision by remember { mutableIntStateOf(0) }
+    var persistentAnalysis by remember { mutableStateOf(MeloXAudioAnalysisPreferences.persistentEnabled(context)) }
+    var independentAnalysis by remember { mutableStateOf(MeloXAudioAnalysisPreferences.independentLineEnabled(context)) }
+    var showPersistentAnalysisConfirmation by remember { mutableStateOf(false) }
+    var showIndependentAnalysisConfirmation by remember { mutableStateOf(false) }
+    var showAnalysisPlaylistPicker by remember { mutableStateOf(false) }
+    var analysisPlaylists by remember(source) { mutableStateOf<List<MusicPlaylistSummary>>(emptyList()) }
+    var analysisPlaylistsLoading by remember(source) { mutableStateOf(false) }
+    val analysisProgress by MeloXAudioAnalysisRuntime.progress.collectAsState()
+
+    LaunchedEffect(showAnalysisPlaylistPicker, source, session.cookie, session.profile?.userId) {
+        if (!showAnalysisPlaylistPicker) return@LaunchedEffect
+        analysisPlaylistsLoading = true
+        analysisPlaylists = runCatching {
+            if (source == MusicSource.Netease) {
+                val userId = session.profile?.userId ?: 0L
+                if (userId <= 0L) emptyList() else {
+                    NeteaseLibraryClient(
+                        cookieProvider = { session.cookie },
+                    ).snapshot(userId).playlists.map { playlist ->
+                        MusicPlaylistSummary(
+                            id = MusicResourceId(MusicSource.Netease, playlist.id.toString()),
+                            title = playlist.name,
+                            artworkUrl = playlist.coverUrl,
+                            creatorName = playlist.creatorName,
+                            description = playlist.description,
+                            trackCount = playlist.trackCount,
+                            playCount = playlist.playCount,
+                        )
+                    }
+                }
+            } else {
+                val provider = MeloXMusicProviders.create(context.applicationContext).require(source)
+                (provider as? UserLibraryCapability)?.userPlaylists(page = 1, pageSize = 100)?.items.orEmpty()
+            }
+        }.getOrDefault(emptyList())
+        analysisPlaylistsLoading = false
+    }
+
+    SettingsGlassGroup {
+        SettingsExternalToggleRow(
+            title = "持久化音频分析缓存",
+            value = persistentAnalysis,
+            note = "保存 BPM、节拍、能量和边界信息，不保留分析用音频。",
+            grouped = true,
+        ) { enabled ->
+            if (enabled) showPersistentAnalysisConfirmation = true else {
+                persistentAnalysis = false
+                MeloXAudioAnalysisPreferences.setPersistentEnabled(context, false)
+            }
+        }
+    }
+    if (persistentAnalysis) {
+        Spacer(Modifier.height(10.dp))
+        if (analysisProgress.total > 0) {
+            val remaining = (analysisProgress.total - analysisProgress.completed).coerceAtLeast(0)
+            SettingsGlassGroup {
+                Text(
+                    if (analysisProgress.running) {
+                        "正在分析：已完成 ${analysisProgress.completed} 首，还剩 $remaining 首"
+                    } else {
+                        "分析完成：${analysisProgress.completed} 首，失败 ${analysisProgress.failed} 首"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                LinearProgressIndicator(
+                    progress = {
+                        if (analysisProgress.total == 0) 0f
+                        else analysisProgress.completed.toFloat() / analysisProgress.total
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+        SettingsActionButton("现在分析音频信息") { showAnalysisPlaylistPicker = true }
+        Spacer(Modifier.height(10.dp))
+        SettingsGlassGroup {
+            SettingsExternalToggleRow(
+                title = "使用独立线路分析音频",
+                value = independentAnalysis,
+                note = "新歌曲分析时优先获取标准音质，分析完成后删除临时音频。",
+                grouped = true,
+            ) { enabled ->
+                if (enabled) showIndependentAnalysisConfirmation = true else {
+                    independentAnalysis = false
+                    MeloXAudioAnalysisPreferences.setIndependentLineEnabled(context, false)
+                }
+            }
+        }
+    }
+    if (showPersistentAnalysisConfirmation) {
+        MeloXGlassDialog(visible = true, onDismiss = { showPersistentAnalysisConfirmation = false }) {
+            Text("打开后音频信息会缓存到本地，有助于更好的智能过渡，但是可能会占用部分空间，是否开启？")
+            Row(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SettingsActionButton("取消", Modifier.weight(1f)) { showPersistentAnalysisConfirmation = false }
+                SettingsActionButton("同意", Modifier.weight(1f)) {
+                    persistentAnalysis = true
+                    MeloXAudioAnalysisPreferences.setPersistentEnabled(context, true)
+                    showPersistentAnalysisConfirmation = false
+                }
+            }
+        }
+    }
+    if (showIndependentAnalysisConfirmation) {
+        MeloXGlassDialog(visible = true, onDismiss = { showIndependentAnalysisConfirmation = false }) {
+            Text("打开此功能后，新音频分析更快，但会消耗少量流量，是否打开？")
+            Row(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SettingsActionButton("取消", Modifier.weight(1f)) { showIndependentAnalysisConfirmation = false }
+                SettingsActionButton("同意", Modifier.weight(1f)) {
+                    independentAnalysis = true
+                    MeloXAudioAnalysisPreferences.setIndependentLineEnabled(context, true)
+                    showIndependentAnalysisConfirmation = false
+                }
+            }
+        }
+    }
+    if (showAnalysisPlaylistPicker) {
+        MeloXGlassDialog(visible = true, onDismiss = { showAnalysisPlaylistPicker = false }) {
+            Text("选择要分析的${source.displayName}歌单", style = MaterialTheme.typography.titleLarge)
+            if (analysisProgress.total > 0) {
+                val remaining = (analysisProgress.total - analysisProgress.completed).coerceAtLeast(0)
+                Text(
+                    if (analysisProgress.running) {
+                        "已分析 ${analysisProgress.completed} 首，还剩 $remaining 首"
+                    } else {
+                        "分析完成：${analysisProgress.completed} 首，失败 ${analysisProgress.failed} 首"
+                    },
+                    Modifier.padding(top = 10.dp),
+                )
+            }
+            if (analysisPlaylistsLoading) {
+                CircularProgressIndicator(Modifier.padding(24.dp))
+            } else if (analysisPlaylists.isEmpty()) {
+                Text("当前音乐源没有可用歌单。", Modifier.padding(top = 12.dp))
+            } else {
+                LazyColumn(Modifier.fillMaxWidth().height(420.dp)) {
+                    items(analysisPlaylists, key = { it.id.value }) { playlist ->
+                        MeloXIosListRow(
+                            title = playlist.title,
+                            subtitle = "${playlist.trackCount ?: 0} 首歌曲",
+                            onClick = {
+                                context.startService(
+                                    Intent(context, MeloXPlaybackService::class.java)
+                                        .setAction(MeloXPlaybackService.ACTION_ANALYZE_PLAYLIST)
+                                        .putExtra(MeloXPlaybackService.EXTRA_ANALYSIS_SOURCE, source.storageValue)
+                                        .putExtra(MeloXPlaybackService.EXTRA_ANALYSIS_PLAYLIST_ID, playlist.id.value),
+                                )
+                                showAnalysisPlaylistPicker = false
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
 
     if (source == MusicSource.Bilibili) {
         SettingsGlassGroup {
@@ -1742,18 +1912,174 @@ private fun ContentSettings(context: android.content.Context) {
 }
 
 @Composable
+private fun ListenTogetherSettings(context: android.content.Context) {
+    val app = context.applicationContext
+    val state by MeloXListenTogetherCoordinator.state(app).collectAsState()
+    val room = state.room
+    val scope = rememberCoroutineScope()
+    val ops = remember(app) {
+        NeteaseMusicOperationsClient(cookieProvider = { NeteaseSessionStore.readCookie(app) })
+    }
+    var invitation by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+
+    SettingsInfoCard("一起听会在后台持续同步播放、暂停、切歌、拖动进度和播放队列；离开此页面不会中断房间。")
+    Spacer(Modifier.height(12.dp))
+    if (room == null) {
+        SettingsActionButton("发起一起听") {
+            if (!busy) {
+                busy = true
+                message = null
+                scope.launch {
+                    runCatching { ops.createListenTogetherRoom() }
+                        .onSuccess { MeloXListenTogetherCoordinator.adoptRoom(app, it) }
+                        .onFailure { message = it.message ?: "创建房间失败" }
+                    busy = false
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        MeloXGlassTextField(
+            value = invitation,
+            onValueChange = { invitation = it },
+            placeholder = { Text("粘贴一起听邀请链接", color = MaterialTheme.colorScheme.onSurface.copy(alpha = .4f)) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(10.dp))
+        SettingsActionButton("加入邀请房间") {
+            val parsed = parseNeteaseListenTogetherInvitation(invitation)
+            if (parsed == null) {
+                message = "邀请链接缺少房间或邀请人信息"
+            } else if (!busy) {
+                busy = true
+                message = null
+                scope.launch {
+                    runCatching { ops.joinListenTogetherRoom(parsed.roomId, parsed.inviterId) }
+                        .onSuccess { MeloXListenTogetherCoordinator.adoptRoom(app, it) }
+                        .onFailure { message = it.message ?: "加入房间失败" }
+                    busy = false
+                }
+            }
+        }
+    } else {
+        SettingsGlassGroup {
+            MeloXIosListRow("房间", detail = room.id, showTopSeparator = false)
+            MeloXIosListRow("成员", detail = "${room.users.size.coerceAtLeast(1)} 人")
+            room.users.forEach { user -> MeloXIosListRow(user.name) }
+            MeloXIosListRow(
+                "连接状态",
+                detail = when (state.phase) {
+                    MeloXListenTogetherCoordinator.Phase.Connected -> "已同步"
+                    MeloXListenTogetherCoordinator.Phase.Reconnecting -> "重连中"
+                    MeloXListenTogetherCoordinator.Phase.Idle -> "恢复中"
+                },
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        SettingsActionButton("分享房间邀请") {
+            val inviter = room.users.firstOrNull()?.id ?: room.creatorId
+            val url = "https://music.163.com/listen-together/share/?roomId=${room.id}&inviterId=$inviter"
+            context.startActivity(
+                Intent.createChooser(
+                    Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, url),
+                    "分享一起听邀请",
+                ),
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        SettingsDangerButton("结束或退出房间") {
+            if (!busy) {
+                busy = true
+                scope.launch {
+                    runCatching { ops.endListenTogetherRoom(room.id) }
+                        .onSuccess { MeloXListenTogetherCoordinator.clearRoom(app) }
+                        .onFailure { message = it.message ?: "退出房间失败" }
+                    busy = false
+                }
+            }
+        }
+    }
+    if (busy) {
+        Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.Center) {
+            CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+        }
+    }
+    (message ?: state.lastError)?.let {
+        Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+    }
+}
+
+@Composable
 private fun StorageSettings(context: android.content.Context) {
-    var cacheSize by remember { mutableStateOf("计算中…") }
+    var usage by remember { mutableStateOf(MeloXStorageUsage()) }
+    var loading by remember { mutableStateOf(true) }
     var maintenanceMessage by remember { mutableStateOf<String?>(null) }
+    var confirmation by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val downloads = remember(context) { MeloXDownloadStore.get(context) }
     suspend fun refresh() {
-        val bytes = withContext(Dispatchers.IO) { context.cacheDir.walkTopDown().filter { it.isFile }.sumOf { it.length() } }
-        cacheSize = formatBytes(bytes)
+        loading = true
+        usage = withContext(Dispatchers.IO) {
+            val stats = StatFs(context.filesDir.path)
+            MeloXStorageUsage(
+                downloads = downloads.totalByteCount,
+                networkCache = listOf("melox_http", "image_cache", "coil3_disk_cache")
+                    .sumOf { context.cacheDir.resolve(it).treeByteCount() },
+                playbackCache = context.cacheDir.resolve("melox_media").treeByteCount(),
+                temporary = context.cacheDir.resolve("automix_analysis").treeByteCount(),
+                localData = listOf(
+                    context.filesDir.resolve("automix_analysis_index.json"),
+                    context.filesDir.resolve("netease_library_cache"),
+                ).sumOf { it.treeByteCount() },
+                deviceTotal = stats.totalBytes,
+                deviceAvailable = stats.availableBytes,
+            )
+        }
+        loading = false
     }
     LaunchedEffect(Unit) { refresh() }
 
     var autoCache by remember { mutableStateOf(MeloXSettingsPreferences.boolean(context, "downloads_auto_cache", false)) }
+
+    val deviceUsed = (usage.deviceTotal - usage.deviceAvailable).coerceAtLeast(0L)
+    val deviceFraction = if (usage.deviceTotal > 0L) deviceUsed.toFloat() / usage.deviceTotal else 0f
+    Box(Modifier.fillMaxWidth().meloXContentSurface(MeloXShapes.largeCard).padding(20.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            MeloXSymbolIcon(MeloXSymbol.Storage, Modifier.size(30.dp), MaterialTheme.colorScheme.onSurface)
+            Text("MeloX 管理的内容", color = MaterialTheme.colorScheme.onSurface.copy(alpha = .55f))
+            Text(if (loading) "计算中…" else formatBytes(usage.managed), fontSize = 34.sp, fontWeight = FontWeight.Bold)
+            LinearProgressIndicator(
+                progress = { deviceFraction.coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape),
+            )
+            Text(
+                "设备已使用 ${formatBytes(deviceUsed)} · 可用 ${formatBytes(usage.deviceAvailable)}",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .50f),
+            )
+            Text("可重新生成的缓存：${formatBytes(usage.reclaimable)}", fontSize = 12.sp)
+        }
+    }
+    Spacer(Modifier.height(18.dp))
+    Text("存储项目", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f))
+    Spacer(Modifier.height(8.dp))
+    SettingsGlassGroup {
+        StorageUsageRow(MeloXSymbol.Download, "下载与自动缓存", usage.downloads, false)
+        StorageUsageRow(MeloXSymbol.Apps, "网络与图片缓存", usage.networkCache, true)
+        StorageUsageRow(MeloXSymbol.AutoMix, "播放缓存", usage.playbackCache, true)
+        StorageUsageRow(MeloXSymbol.RadioWaves, "临时分析文件", usage.temporary, true)
+        StorageUsageRow(MeloXSymbol.Storage, "本地数据与分析索引", usage.localData, true)
+    }
+    Spacer(Modifier.height(18.dp))
+    Text("缓存清理", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f))
+    Spacer(Modifier.height(8.dp))
+    SettingsGlassGroup {
+        StorageActionRow(MeloXSymbol.Trash, "清理所有可重建缓存", false) { confirmation = "all_cache" }
+        StorageActionRow(MeloXSymbol.Apps, "清理网络与图片缓存", true) { confirmation = "network_cache" }
+        StorageActionRow(MeloXSymbol.AutoMix, "清理播放缓存", true) { confirmation = "playback_cache" }
+    }
+    Spacer(Modifier.height(18.dp))
 
     SettingsGlassGroup {
         SettingsToggleRow(context, "下载歌词", "download_lyrics", true, "下载歌曲时同时保存歌词；默认开启，可在此关闭。封面始终随歌曲保存。", grouped = true)
@@ -1814,13 +2140,77 @@ private fun StorageSettings(context: android.content.Context) {
     }
     Spacer(Modifier.height(10.dp))
     SettingsActionButton("清理临时缓存") {
-        scope.launch {
-            withContext(Dispatchers.IO) { context.cacheDir.listFiles()?.forEach { it.deleteRecursively() } }
-            context.getSharedPreferences("melox_cache_stats", android.content.Context.MODE_PRIVATE).edit().clear().apply()
-            maintenanceMessage = "临时缓存与缓存统计已重置"
-            refresh()
+        confirmation = "temporary"
+    }
+    confirmation?.let { action ->
+        val (title, message) = when (action) {
+            "all_cache" -> "清理所有可重建缓存？" to "将清除网络缓存和播放缓存，不会影响收藏、账号数据或已下载歌曲。"
+            "network_cache" -> "清理网络与图片缓存？" to "网络响应和封面会在下次使用时重新获取。"
+            "playback_cache" -> "清理播放缓存？" to "已缓存的流媒体音频会被移除，之后播放时会重新获取。"
+            else -> "清理临时分析文件？" to "将移除当前未使用的临时分析文件，不会删除持久化分析索引。"
+        }
+        MeloXGlassDialog(visible = true, onDismiss = { confirmation = null }) {
+            Text(title, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(message, Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f))
+            Row(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SettingsActionButton("取消", Modifier.weight(1f)) { confirmation = null }
+                SettingsActionButton("清理", Modifier.weight(1f)) {
+                    confirmation = null
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            when (action) {
+                                "all_cache" -> { MeloXHttpClient.clearCache(); MeloXMediaCache.clear(context) }
+                                "network_cache" -> MeloXHttpClient.clearCache()
+                                "playback_cache" -> MeloXMediaCache.clear(context)
+                                else -> context.cacheDir.resolve("automix_analysis").deleteRecursively()
+                            }
+                        }
+                        maintenanceMessage = "清理完成"
+                        refresh()
+                    }
+                }
+            }
         }
     }
+}
+
+private data class MeloXStorageUsage(
+    val downloads: Long = 0L,
+    val networkCache: Long = 0L,
+    val playbackCache: Long = 0L,
+    val temporary: Long = 0L,
+    val localData: Long = 0L,
+    val deviceTotal: Long = 0L,
+    val deviceAvailable: Long = 0L,
+) {
+    val managed: Long get() = downloads + networkCache + playbackCache + temporary + localData
+    val reclaimable: Long get() = networkCache + playbackCache + temporary
+}
+
+@Composable
+private fun StorageUsageRow(symbol: MeloXSymbol, title: String, bytes: Long, showSeparator: Boolean) {
+    MeloXIosListRow(
+        title = title,
+        detail = formatBytes(bytes),
+        leading = { MeloXSymbolIcon(symbol, Modifier.size(22.dp), MeloXSystemColors.Red) },
+        showTopSeparator = showSeparator,
+    )
+}
+
+@Composable
+private fun StorageActionRow(symbol: MeloXSymbol, title: String, showSeparator: Boolean, onClick: () -> Unit) {
+    MeloXIosListRow(
+        title = title,
+        leading = { MeloXSymbolIcon(symbol, Modifier.size(22.dp), MeloXSystemColors.Red) },
+        onClick = onClick,
+        showTopSeparator = showSeparator,
+    )
+}
+
+private fun java.io.File.treeByteCount(): Long = when {
+    isFile -> length()
+    isDirectory -> listFiles()?.sumOf { it.treeByteCount() } ?: 0L
+    else -> 0L
 }
 
 private fun formatBytes(bytes: Long): String = when {
@@ -1916,6 +2306,7 @@ private fun TabLayoutSettings(context: android.content.Context) {
 @Composable
 private fun GeneralSettings(context: android.content.Context) {
     var theme by remember { mutableStateOf(MeloXSettingsRuntime.themeMode) }
+    var swipeFullAction by remember { mutableStateOf(MeloXSettingsRuntime.swipeFullAction) }
     SettingsGlassGroup {
         MeloXSettingsDropdown(
             title = "主题",
@@ -1942,6 +2333,19 @@ private fun GeneralSettings(context: android.content.Context) {
             grouped = true,
         )
         SettingsToggleRow(context, "记住上次标签页", "general_remember_tab", true, grouped = true)
+        MeloXSettingsDropdown(
+            title = "歌曲右滑满滑操作",
+            selected = swipeFullAction,
+            items = listOf(
+                MeloXSwipeFullAction.PlayNext to "下一首播放",
+                MeloXSwipeFullAction.AddToQueue to "添加到队列",
+            ),
+            onSelected = {
+                swipeFullAction = it
+                MeloXSettingsPreferences.setString(context, "general_swipe_full_action", it.name)
+            },
+            grouped = true,
+        )
         SettingsToggleRow(context, "识别剪贴板中的网易云链接", "general_clipboard_links", true, "每次回到前台只读取一次；识别歌曲或歌单后会先询问是否打开。", grouped = true)
         SettingsToggleRow(context, "触感", "general_haptic_feedback", true, grouped = true)
     }

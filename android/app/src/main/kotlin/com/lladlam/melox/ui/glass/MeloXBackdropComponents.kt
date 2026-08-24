@@ -115,11 +115,6 @@ fun Modifier.meloXGlassSurface(
             else -> tint.copy(alpha = maxOf(tint.alpha, tintAlphaFloor) * alphaScale)
         }
         return background(stableSurface, shape)
-            .border(
-                0.75.dp,
-                MaterialTheme.colorScheme.onSurface.copy(alpha = if (dark) 0.12f else 0.10f),
-                shape,
-            )
     }
     return this
         .drawBackdrop(
@@ -232,11 +227,6 @@ fun Modifier.meloXContentSurface(
         surfaceColor
     }
     return background(color, shape)
-        .border(
-            width = 0.75.dp,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
-            shape = shape,
-        )
 }
 
 /** Official LiquidBottomTabs-style outer panel. */
@@ -254,11 +244,6 @@ fun Modifier.meloXLiquidBottomBar(
         // controls look charcoal instead of iOS's subtle neutral fill.
         val stableSurface = surfaceColor.compositeOver(MaterialTheme.colorScheme.background)
         return background(stableSurface, shape)
-            .border(
-                0.75.dp,
-                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
-                shape,
-            )
     }
     val dark = isMeloXDarkTheme()
     return drawBackdrop(
@@ -309,7 +294,6 @@ fun Modifier.meloXLiquidTabSelection(
     val backdrop = LocalMeloXBackdrop.current
     if (backdrop == null) {
         return background(tint.copy(alpha = maxOf(tint.alpha, 0.36f)), shape)
-            .border(0.5.dp, Color.White.copy(alpha = 0.58f), shape)
     }
     // Official LiquidBottomTabs records the panel into a second Backdrop and
     // samples the combined page + panel scene for the moving selection.

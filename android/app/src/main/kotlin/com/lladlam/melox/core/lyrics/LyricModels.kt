@@ -12,6 +12,22 @@ data class LyricSyllable(
 /** Authored word timing and LRC-inferred display durations must not be conflated. */
 enum class LyricTimingKind { Precise, LineSynchronized }
 
+enum class LyricHighlightStrategy {
+    /**
+     * The active line is the one whose start time has passed. This matches most
+     * line-level renderers and is the historical default.
+     */
+    LineStart,
+
+    /**
+     * The active line only changes once its first authored syllable has started.
+     * Providers that return a lead-in marker before the first word (common in
+     * YRC/QRC/TTML) therefore keep the previous line highlighted until the vocal
+     * actually begins.
+     */
+    FirstSyllableOrLineStart,
+}
+
 data class LyricAgent(
     val id: String,
     val name: String,
@@ -55,7 +71,7 @@ data class LyricsDocument(
     /** Whether line-timed lyrics may be expanded into synthetic per-grapheme timing. */
     val pseudoTimingAllowed: Boolean = true,
 ) {
-    fun highlightedIndex(positionMs: Long): Int? {
+    fun highlightedIndex(positionMs: Long, strategy: LyricHighlightStrategy = LyricHighlightStrategy.LineStart): Int? {
         if (lines.isEmpty()) return null
         var low = 0
         var high = lines.size
@@ -67,7 +83,13 @@ data class LyricsDocument(
                 high = mid
             }
         }
-        return (low - 1).takeIf { it >= 0 }
+        val index = (low - 1).takeIf { it >= 0 } ?: return null
+        if (strategy != LyricHighlightStrategy.FirstSyllableOrLineStart || index == 0) return index
+        val line = lines[index]
+        val firstSyllable = line.syllables.firstOrNull()
+            ?: line.romanizationSyllables.firstOrNull()
+        val vocalStart = firstSyllable?.startTimeMs?.takeIf { it >= 0L } ?: line.timeMs
+        return if (positionMs >= vocalStart) index else (index - 1).coerceAtLeast(0)
     }
 }
 

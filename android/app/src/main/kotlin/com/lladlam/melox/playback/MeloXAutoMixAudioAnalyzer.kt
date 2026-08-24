@@ -96,6 +96,7 @@ object MeloXAutoMixDiagnostics {
  * track, works for local/content/HTTP sources, and caches by song + source URI.
  */
 class MeloXAutoMixAudioAnalyzer(private val context: Context) {
+    private val persistentStore = MeloXAudioAnalysisStore(context)
     private val cacheLock = Any()
     private val cache = object : LinkedHashMap<String, MeloXAutoMixTrackAnalysis>(MAX_CACHE_ENTRIES, .75f, true) {
         override fun removeEldestEntry(
@@ -107,9 +108,21 @@ class MeloXAutoMixAudioAnalyzer(private val context: Context) {
     // preventing unrelated visual analysis from spawning an unbounded decoder set.
     private val decodePermits = Semaphore(2)
 
-    suspend fun analyze(songId: Long, uri: Uri): MeloXAutoMixTrackAnalysis =
+    suspend fun analyze(
+        songId: Long,
+        uri: Uri,
+        windowStartMs: Long = 0L,
+        windowDurationMs: Long = Long.MAX_VALUE,
+    ): MeloXAutoMixTrackAnalysis =
         withContext(Dispatchers.IO) {
-            val key = "$songId|$uri"
+            val key = "$songId|$uri|$windowStartMs|$windowDurationMs"
+            val persistentKey = "$ANALYSIS_VERSION|$songId|$windowStartMs|$windowDurationMs"
+            if (MeloXAudioAnalysisPreferences.persistentEnabled(context)) {
+                persistentStore.get(persistentKey)?.let {
+                    MeloXAutoMixDiagnostics.cacheHit(songId, cacheSize())
+                    return@withContext it
+                }
+            }
             cached(key)?.let {
                 MeloXAutoMixDiagnostics.cacheHit(songId, cacheSize())
                 return@withContext it
@@ -120,7 +133,12 @@ class MeloXAutoMixAudioAnalyzer(private val context: Context) {
             MeloXAutoMixDiagnostics.started(songId)
             try {
                 val result = decodePermits.withPermit {
-                    cached(key) ?: decode(uri).also { putCached(key, it) }
+                    cached(key) ?: decode(uri, windowStartMs, windowDurationMs).also {
+                        putCached(key, it)
+                        if (MeloXAudioAnalysisPreferences.persistentEnabled(context)) {
+                            persistentStore.put(persistentKey, it)
+                        }
+                    }
                 }
                 pending.complete(Result.success(result))
                 MeloXAutoMixDiagnostics.completed(songId, result.bpm, cacheSize())
@@ -133,6 +151,12 @@ class MeloXAutoMixAudioAnalyzer(private val context: Context) {
                 inFlight.remove(key, pending)
             }
         }
+
+    fun hasPersistentAnalysis(songId: Long): Boolean {
+        if (!MeloXAudioAnalysisPreferences.persistentEnabled(context)) return false
+        return persistentStore.get("$ANALYSIS_VERSION|$songId|0|30000") != null &&
+            persistentStore.get("$ANALYSIS_VERSION|$songId|-30000|30000") != null
+    }
 
     fun clear() {
         synchronized(cacheLock) { cache.clear() }
@@ -148,7 +172,11 @@ class MeloXAutoMixAudioAnalyzer(private val context: Context) {
         synchronized(cacheLock) { cache[key] = analysis }
     }
 
-    private suspend fun decode(uri: Uri): MeloXAutoMixTrackAnalysis {
+    private suspend fun decode(
+        uri: Uri,
+        requestedStartMs: Long,
+        requestedDurationMs: Long,
+    ): MeloXAutoMixTrackAnalysis {
         val threadId = Process.myTid()
         val previousPriority = Process.getThreadPriority(threadId)
         Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
@@ -173,6 +201,26 @@ class MeloXAutoMixAudioAnalyzer(private val context: Context) {
             } ?: error("AutoMix: source has no audio track")
             extractor.selectTrack(track)
             val inputFormat = extractor.getTrackFormat(track)
+            val sourceDurationMs = if (inputFormat.containsKey(MediaFormat.KEY_DURATION)) {
+                inputFormat.getLong(MediaFormat.KEY_DURATION)
+            } else {
+                0L
+            }
+                .coerceAtLeast(0L) / 1_000L
+            val requestedAbsoluteStartMs = if (requestedStartMs < 0L) {
+                sourceDurationMs + requestedStartMs
+            } else {
+                requestedStartMs
+            }
+            val startMs = requestedAbsoluteStartMs.coerceIn(0L, sourceDurationMs)
+            val endMs = if (requestedDurationMs == Long.MAX_VALUE) {
+                sourceDurationMs
+            } else {
+                (startMs + requestedDurationMs).coerceAtMost(sourceDurationMs.takeIf { it > 0L } ?: Long.MAX_VALUE)
+            }
+            if (startMs > 0L) {
+                extractor.seekTo(startMs * 1_000L, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+            }
             val mime = inputFormat.getString(MediaFormat.KEY_MIME)
                 ?: error("AutoMix: audio MIME is unavailable")
             val decoder = MediaCodec.createDecoderByType(mime)
@@ -180,7 +228,7 @@ class MeloXAutoMixAudioAnalyzer(private val context: Context) {
             decoder.configure(inputFormat, null, null, 0)
             decoder.start()
 
-            val accumulator = FeatureAccumulator()
+            val accumulator = FeatureAccumulator(timelineOffsetMs = startMs)
             val info = MediaCodec.BufferInfo()
             var inputEnded = false
             var outputEnded = false
@@ -202,6 +250,15 @@ class MeloXAutoMixAudioAnalyzer(private val context: Context) {
                                 0,
                                 0,
                                 0,
+                                MediaCodec.BUFFER_FLAG_END_OF_STREAM,
+                            )
+                            inputEnded = true
+                        } else if (endMs > 0L && extractor.sampleTime >= endMs * 1_000L) {
+                            decoder.queueInputBuffer(
+                                inputIndex,
+                                0,
+                                0,
+                                extractor.sampleTime,
                                 MediaCodec.BUFFER_FLAG_END_OF_STREAM,
                             )
                             inputEnded = true
@@ -256,7 +313,7 @@ class MeloXAutoMixAudioAnalyzer(private val context: Context) {
     private fun MediaFormat.intOr(key: String, fallback: Int): Int =
         if (containsKey(key)) getInteger(key) else fallback
 
-    private class FeatureAccumulator {
+    private class FeatureAccumulator(private val timelineOffsetMs: Long) {
         private val window = FloatArray(FFT_SIZE)
         private var windowCount = 0
         private var sourcePhase = 0
@@ -330,7 +387,8 @@ class MeloXAutoMixAudioAnalyzer(private val context: Context) {
             val energy = sqrt(squareSum / FFT_SIZE).toFloat()
             val flux = (novelty / (magnitudes.sum().coerceAtLeast(1e-6f))).toFloat()
             val onset = max(energy - previousEnergy, 0f) * 0.62f + flux * 0.38f
-            val frameTimeMs = ((emittedSamples - FFT_SIZE).coerceAtLeast(0L) * 1_000L) / TARGET_SAMPLE_RATE
+                val frameTimeMs = timelineOffsetMs +
+                    ((emittedSamples - FFT_SIZE).coerceAtLeast(0L) * 1_000L) / TARGET_SAMPLE_RATE
             rawFrames += RawFrame(
                 timeMs = frameTimeMs,
                 energy = energy,
@@ -402,32 +460,49 @@ class MeloXAutoMixAudioAnalyzer(private val context: Context) {
         private const val MIN_ANALYSIS_FRAMES = 32
         private const val AUDIBLE_THRESHOLD = .035f
         private const val MAX_CACHE_ENTRIES = 4
+        private const val ANALYSIS_VERSION = "v2"
 
         private fun estimateTempo(frames: List<MeloXAutoMixFrame>): TempoEstimate {
-            val signal = frames.map { (it.onset * .72f + it.novelty * .18f + it.energy * .10f).toDouble() }
+            val signal = frames.map { (it.onset * .80f + it.novelty * .20f).toDouble() }
             val frameRate = TARGET_SAMPLE_RATE.toDouble() / HOP_SIZE
+            val estimate = estimateTempoSignal(signal, frameRate)
+            return TempoEstimate(estimate.first, estimate.second)
+        }
+
+        internal fun estimateTempoSignal(signal: List<Double>, frameRate: Double): Pair<Double, Double> {
+            if (signal.size < MIN_ANALYSIS_FRAMES) return 120.0 to 0.0
+            val mean = signal.average()
+            val centered = signal.map { it - mean }
             val minLag = (frameRate * 60.0 / 190.0).toInt().coerceAtLeast(2)
-            val maxLag = (frameRate * 60.0 / 65.0).toInt().coerceAtMost(signal.size / 2)
+            val maxLag = (frameRate * 60.0 / 65.0).toInt().coerceAtMost(centered.size / 2)
+            if (maxLag < minLag) return 120.0 to 0.0
             val scores = ArrayList<Pair<Int, Double>>()
             for (lag in minLag..maxLag) {
                 var score = 0.0
-                var weight = 0.0
-                for (index in lag until signal.size) {
-                    val activity = max(signal[index], signal[index - lag])
-                    score += signal[index] * signal[index - lag] * (0.35 + activity * .65)
-                    weight += activity
+                var currentEnergy = 0.0
+                var delayedEnergy = 0.0
+                for (index in lag until centered.size) {
+                    val current = centered[index]
+                    val delayed = centered[index - lag]
+                    score += current * delayed
+                    currentEnergy += current * current
+                    delayedEnergy += delayed * delayed
                 }
-                scores += lag to if (weight > 0) score / weight else 0.0
+                val normalization = kotlin.math.sqrt(currentEnergy * delayedEnergy)
+                scores += lag to if (normalization > 1e-12) score / normalization else 0.0
             }
             val ranked = scores.sortedByDescending { it.second }
-            val best = ranked.firstOrNull() ?: return TempoEstimate(120.0, 0.0)
-            val second = ranked.firstOrNull { abs(it.first - best.first) > 1 }?.second ?: 0.0
+            val best = ranked.firstOrNull() ?: return 120.0 to 0.0
             var bpm = 60.0 * frameRate / best.first
             while (bpm < 80.0) bpm *= 2.0
             while (bpm > 170.0) bpm /= 2.0
-            val contrast = if (best.second > 0) ((best.second - second) / best.second).coerceIn(0.0, 1.0) else 0.0
-            val activity = signal.count { it > .22 }.toDouble() / signal.size.coerceAtLeast(1)
-            return TempoEstimate(bpm, (contrast * .62 + min(activity * 2.4, 1.0) * .38).coerceIn(0.0, 1.0))
+            val background = scores.map(Pair<Int, Double>::second).sorted().let { it[it.size / 2] }
+            val peak = best.second.coerceIn(0.0, 1.0)
+            val prominence = if (peak > background) {
+                ((peak - background) / (1.0 - background).coerceAtLeast(1e-6)).coerceIn(0.0, 1.0)
+            } else 0.0
+            val confidence = (peak * .70 + prominence * .30).coerceIn(0.0, 1.0)
+            return bpm to confidence
         }
 
         private fun beatTimeline(frames: List<MeloXAutoMixFrame>, bpm: Double): LongArray {

@@ -1,5 +1,6 @@
 package com.lladlam.melox.core.audio
 
+import android.util.Log
 import com.lladlam.melox.core.account.NeteaseSessionStore
 import java.io.IOException
 import java.net.URLEncoder
@@ -91,6 +92,10 @@ class NeteaseQualityClient(
                 ) ?: candidate
 
                 MusicQualityRuntime.recordActual(songId, actual)
+                Log.i(
+                    TAG,
+                    "Playback quality resolved: song=$songId requested=${requestedQuality.apiLevel} candidate=${candidate.apiLevel} actual=${actual.apiLevel} bitrate=${source.optInt("br")}",
+                )
                 return NeteasePlaybackSource(
                     url = secureUrl(rawUrl),
                     bitrate = source.optInt("br").takeIf { it > 0 },
@@ -110,12 +115,17 @@ class NeteaseQualityClient(
         }
 
         MusicQualityRuntime.recordActual(songId, MusicQuality.Standard)
+        Log.w(TAG, "Playback quality fallback: song=$songId requested=${requestedQuality.apiLevel} actual=standard authenticated=false")
         return NeteasePlaybackSource(
             url = "https://music.163.com/song/media/outer/url?id=$songId",
             bitrate = null,
             format = "mp3",
             quality = MusicQuality.Standard,
         )
+    }
+
+    private companion object {
+        const val TAG = "MeloXQuality"
     }
 
     fun downloadSourceBlocking(

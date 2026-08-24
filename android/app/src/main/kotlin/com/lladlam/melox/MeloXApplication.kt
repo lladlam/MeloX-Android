@@ -6,11 +6,14 @@ import android.os.Bundle
 import android.content.ComponentCallbacks2
 import android.content.res.Configuration
 import com.lladlam.melox.core.network.MeloXHttpClient
+import com.lladlam.melox.core.audio.MusicQualityPreferences
+import com.lladlam.melox.core.audio.MusicQualityRuntime
 import com.lladlam.melox.ui.player.ArtworkDynamicPaletteProvider
 
 class MeloXApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        MusicQualityRuntime.selected = MusicQualityPreferences.read(this)
         MeloXHttpClient.initialize(this)
         registerActivityLifecycleCallbacks(MeloXAppVisibility)
         registerComponentCallbacks(MeloXMemoryCallbacks)

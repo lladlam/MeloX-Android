@@ -1,5 +1,6 @@
 package com.lladlam.melox.playback
 
+import androidx.media3.common.Player
 import android.content.Context
 import kotlin.math.PI
 import kotlin.math.cos
@@ -8,6 +9,49 @@ import kotlin.math.sin
 enum class MeloXAutoMixMode { Smart, Fixed }
 enum class MeloXAutoMixFadeCurve { EqualPower, Smooth, Linear }
 enum class MeloXAutoMixFallback { Crossfade, ShortCrossfade, Normal }
+
+internal enum class MeloXAutoMixTransportAction {
+    Allow,
+    PauseAndCancel,
+    CancelThenAllow,
+    ContinueOnIncoming,
+}
+
+internal object MeloXAutoMixTransportPolicy {
+    fun action(
+        command: Int,
+        hasPreparedMix: Boolean,
+        transitionStarted: Boolean,
+        playWhenReady: Boolean,
+    ): MeloXAutoMixTransportAction {
+        if (!hasPreparedMix) return MeloXAutoMixTransportAction.Allow
+        return when (command) {
+            Player.COMMAND_PLAY_PAUSE -> if (playWhenReady) {
+                MeloXAutoMixTransportAction.PauseAndCancel
+            } else {
+                MeloXAutoMixTransportAction.Allow
+            }
+
+            Player.COMMAND_STOP -> MeloXAutoMixTransportAction.PauseAndCancel
+
+            Player.COMMAND_SEEK_TO_NEXT,
+            Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+            -> if (transitionStarted) {
+                MeloXAutoMixTransportAction.ContinueOnIncoming
+            } else {
+                MeloXAutoMixTransportAction.CancelThenAllow
+            }
+
+            Player.COMMAND_SEEK_TO_PREVIOUS,
+            Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+            Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
+            Player.COMMAND_SEEK_TO_MEDIA_ITEM,
+            -> MeloXAutoMixTransportAction.CancelThenAllow
+
+            else -> MeloXAutoMixTransportAction.Allow
+        }
+    }
+}
 
 data class MeloXAutoMixSettings(
     val mode: MeloXAutoMixMode = MeloXAutoMixMode.Smart,
@@ -119,11 +163,15 @@ object MeloXAutoMixPlanner {
     }
 
     private fun fallbackCrossfade(requestedMs: Long, tailCutBars: Int, remainingMs: Long): MeloXAutoMixPlan {
+        // The tail cut is only applied when the song is long enough to host a
+        // full requested crossfade before it. With aggressive defaults a 4-bar
+        // tail cut can consume the whole ending, leaving nothing to crossfade.
         val tailCutMs = tailCutBars.coerceAtLeast(0) * 4 * 500L
-        val available = remainingMs - tailCutMs
+        val usableTailCutMs = tailCutMs.coerceAtMost((remainingMs - requestedMs).coerceAtLeast(0L))
+        val available = remainingMs - usableTailCutMs
         val duration = minOf(requestedMs, available)
         return if (duration >= MIN_DURATION_MS) {
-            MeloXAutoMixPlan(durationMs = duration, incomingStartMs = 0L, outgoingEndOffsetMs = tailCutMs)
+            MeloXAutoMixPlan(durationMs = duration, incomingStartMs = 0L, outgoingEndOffsetMs = usableTailCutMs)
         } else {
             MeloXAutoMixPlan(0L, 0L)
         }

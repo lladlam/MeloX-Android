@@ -22,5 +22,10 @@ object MeloXMediaCache {
         ).also { cache = it }
     }
 
+    fun clear(context: Context) {
+        val active = get(context)
+        active.keys.toList().forEach(active::removeResource)
+    }
+
     private const val MEDIA_CACHE_BYTES = 512L * 1024L * 1024L
 }

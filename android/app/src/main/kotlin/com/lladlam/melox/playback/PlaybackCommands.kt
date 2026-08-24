@@ -70,6 +70,7 @@ object PlaybackCommands {
         val appContext = context.applicationContext
         val quality = MusicQualityPreferences.read(appContext)
         MusicQualityRuntime.selected = quality
+        MusicQualityRuntime.clear()
         val token = SessionToken(
             appContext,
             ComponentName(appContext, MeloXPlaybackService::class.java),

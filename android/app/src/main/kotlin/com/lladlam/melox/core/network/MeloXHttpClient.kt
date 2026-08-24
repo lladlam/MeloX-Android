@@ -26,5 +26,9 @@ object MeloXHttpClient {
         }
     }
 
+    fun clearCache() {
+        client.cache?.evictAll()
+    }
+
     private const val HTTP_CACHE_BYTES = 64L * 1024L * 1024L
 }

@@ -1,11 +1,83 @@
 package com.lladlam.melox.playback
 
+import androidx.media3.common.Player
 import kotlin.math.sqrt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MeloXAutoMixTest {
+    @Test
+    fun periodicOnsetsProduceConfidentTempo() {
+        val frameRate = 21.533203125
+        val signal = List(640) { index ->
+            when (index % 11) {
+                0 -> 1.0
+                1, 10 -> 0.45
+                else -> 0.03
+            }
+        }
+
+        val (bpm, confidence) = MeloXAutoMixAudioAnalyzer.estimateTempoSignal(signal, frameRate)
+
+        assertTrue(bpm in 110.0..125.0)
+        assertTrue("confidence=$confidence", confidence > .42)
+    }
+
+    @Test
+    fun nonPeriodicActivityDoesNotGainConfidenceFromDensityAlone() {
+        val frameRate = 21.533203125
+        var state = 0x12345678
+        val signal = List(640) {
+            state = state * 1103515245 + 12345
+            ((state ushr 8) and 0xffff) / 65535.0
+        }
+
+        val (_, confidence) = MeloXAutoMixAudioAnalyzer.estimateTempoSignal(signal, frameRate)
+
+        assertTrue("confidence=$confidence", confidence < .42)
+    }
+
+    @Test
+    fun transportCommandsHaveDistinctTransitionBehavior() {
+        assertEquals(
+            MeloXAutoMixTransportAction.PauseAndCancel,
+            transportAction(Player.COMMAND_PLAY_PAUSE),
+        )
+        assertEquals(
+            MeloXAutoMixTransportAction.CancelThenAllow,
+            transportAction(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM),
+        )
+        assertEquals(
+            MeloXAutoMixTransportAction.CancelThenAllow,
+            transportAction(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM),
+        )
+        assertEquals(
+            MeloXAutoMixTransportAction.ContinueOnIncoming,
+            transportAction(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM),
+        )
+    }
+
+    @Test
+    fun nextBeforeTransitionStartsCancelsPreparedDeckAndUsesNormalSkip() {
+        assertEquals(
+            MeloXAutoMixTransportAction.CancelThenAllow,
+            MeloXAutoMixTransportPolicy.action(
+                command = Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+                hasPreparedMix = true,
+                transitionStarted = false,
+                playWhenReady = true,
+            ),
+        )
+    }
+
+    private fun transportAction(command: Int) = MeloXAutoMixTransportPolicy.action(
+        command = command,
+        hasPreparedMix = true,
+        transitionStarted = true,
+        playWhenReady = true,
+    )
+
     @Test
     fun equalPowerEnvelopeKeepsMidpointPowerConstant() {
         val gains = MeloXAutoMixEnvelope.gains(.5, MeloXAutoMixFadeCurve.EqualPower)

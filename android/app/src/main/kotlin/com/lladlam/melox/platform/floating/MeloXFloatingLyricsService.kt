@@ -26,6 +26,7 @@ import com.lladlam.melox.MainActivity
 import com.lladlam.melox.R
 import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.download.MeloXDownloadStore
+import com.lladlam.melox.core.lyrics.LyricTimelineProcessor
 import com.lladlam.melox.core.lyrics.LyricsDocument
 import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.playback.MeloXPlaybackService
@@ -54,17 +55,33 @@ class MeloXFloatingLyricsService : Service() {
     private var lyricsSongId: Long? = null
     private var lyricsJob: Job? = null
     private var lastIndex = Int.MIN_VALUE
+    private var anchorPositionMs = 0L
+    private var anchorUptimeMs = 0L
 
     private val listener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
             loadLyrics(mediaItem?.mediaId?.toLongOrNull())
         }
+
+        override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+            anchorPositionMs = newPosition.positionMs
+            anchorUptimeMs = android.os.SystemClock.uptimeMillis()
+            handler.removeCallbacks(ticker)
+            handler.post(ticker)
+        }
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            controller?.currentPosition?.let { anchorPositionMs = it }
+            anchorUptimeMs = android.os.SystemClock.uptimeMillis()
+            handler.removeCallbacks(ticker)
+            handler.post(ticker)
+        }
     }
 
     private val ticker = object : Runnable {
         override fun run() {
-            updateText()
-            handler.postDelayed(this, 80L)
+            val wait = updateText()
+            handler.postDelayed(this, wait)
         }
     }
 
@@ -123,38 +140,53 @@ class MeloXFloatingLyricsService : Service() {
                         ).lyrics(songId)
                     }.getOrNull()
             }
-            if (lyricsSongId == songId) lyrics = document
+            if (lyricsSongId == songId) lyrics = document?.let(LyricTimelineProcessor::process)
         }
     }
 
-    private fun updateText() {
-        val player = controller ?: return
-        val document = lyrics ?: return
+    private fun updateText(): Long {
+        val player = controller ?: return 250L
+        val document = lyrics ?: return 250L
         val advance = MeloXSettingsPreferences.int(this, "lyrics_advance_ms", 0).toLong()
-        val index = document.highlightedIndex(player.currentPosition + advance) ?: return
-        if (index == lastIndex) return
-        lastIndex = index
-        val line = document.lines.getOrNull(index)
-        primaryText?.text = line?.text.orEmpty()
-        val mode = runCatching {
-            MeloXSecondaryLyricMode.valueOf(
-                MeloXSettingsPreferences.string(this, "floating_lyrics_secondary_mode", MeloXSecondaryLyricMode.Auto.name),
-            )
-        }.getOrDefault(MeloXSecondaryLyricMode.Auto)
-        val translation = line?.translation.orEmpty()
-        val romanization = line?.romanization.orEmpty()
-        val nextLine = document.lines.getOrNull(index + 1)?.text.orEmpty()
-        secondaryText?.text = when (mode) {
-            MeloXSecondaryLyricMode.Translation -> translation
-            MeloXSecondaryLyricMode.Romanization -> romanization
-            MeloXSecondaryLyricMode.NextLine -> nextLine
-            MeloXSecondaryLyricMode.Hidden -> ""
-            MeloXSecondaryLyricMode.Auto -> when {
-                MeloXSettingsPreferences.boolean(this, "lyrics_translation", true) && translation.isNotBlank() -> translation
-                MeloXSettingsPreferences.boolean(this, "lyrics_romanization", true) && romanization.isNotBlank() -> romanization
-                else -> nextLine
+        if (player.isPlaying) {
+            anchorPositionMs = player.currentPosition
+            anchorUptimeMs = android.os.SystemClock.uptimeMillis()
+        }
+        val position = if (player.isPlaying) {
+            anchorPositionMs + (android.os.SystemClock.uptimeMillis() - anchorUptimeMs)
+        } else {
+            player.currentPosition
+        } + advance
+        val safePosition = position.coerceAtLeast(0L)
+        val index = document.highlightedIndex(safePosition) ?: return 250L
+        if (index != lastIndex) {
+            lastIndex = index
+            val line = document.lines.getOrNull(index)
+            primaryText?.text = line?.text.orEmpty()
+            val mode = runCatching {
+                MeloXSecondaryLyricMode.valueOf(
+                    MeloXSettingsPreferences.string(this, "floating_lyrics_secondary_mode", MeloXSecondaryLyricMode.Auto.name),
+                )
+            }.getOrDefault(MeloXSecondaryLyricMode.Auto)
+            val translation = line?.translation.orEmpty()
+            val romanization = line?.romanization.orEmpty()
+            val nextLineText = document.lines.getOrNull(index + 1)?.text.orEmpty()
+            secondaryText?.text = when (mode) {
+                MeloXSecondaryLyricMode.Translation -> translation
+                MeloXSecondaryLyricMode.Romanization -> romanization
+                MeloXSecondaryLyricMode.NextLine -> nextLineText
+                MeloXSecondaryLyricMode.Hidden -> ""
+                MeloXSecondaryLyricMode.Auto -> when {
+                    MeloXSettingsPreferences.boolean(this, "lyrics_translation", true) && translation.isNotBlank() -> translation
+                    MeloXSettingsPreferences.boolean(this, "lyrics_romanization", true) && romanization.isNotBlank() -> romanization
+                    else -> nextLineText
+                }
             }
         }
+        val nextLine = document.lines.getOrNull(index + 1)
+        val nextEvent = nextLine?.timeMs
+            ?: LyricTimelineProcessor.nextEventTimeMs(document, safePosition)
+        return nextEvent?.minus(safePosition)?.coerceIn(16L, 500L) ?: 250L
     }
 
     private fun createOverlay() {

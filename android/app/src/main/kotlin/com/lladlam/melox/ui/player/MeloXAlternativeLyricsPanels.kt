@@ -1,5 +1,6 @@
 package com.lladlam.melox.ui.player
 
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -35,7 +36,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lladlam.melox.core.lyrics.LyricLine
 import com.lladlam.melox.core.lyrics.LyricsDocument
+import com.lladlam.melox.core.lyrics.LyricTimelineProcessor
 import com.lladlam.melox.core.lyrics.withPseudoTiming
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.settings.MeloXTextPVStyle
@@ -103,20 +104,18 @@ private fun rememberAlternativeLyrics(
             if (next != index) index = next
             return@LaunchedEffect
         }
-        var anchorFrameNanos = 0L
-        var lastCheckNanos = 0L
+        val anchorRealtimeMs = SystemClock.elapsedRealtime()
         while (isActive) {
-            val frameNanos = withFrameNanos { it }
-            if (anchorFrameNanos == 0L) anchorFrameNanos = frameNanos
-            if (lastCheckNanos != 0L && frameNanos - lastCheckNanos < 33_000_000L) continue
-            lastCheckNanos = frameNanos
-            val elapsedMs = (frameNanos - anchorFrameNanos) / 1_000_000L
-            val position = (anchorPosition + elapsedMs).coerceAtMost(
+            val position = (anchorPosition + SystemClock.elapsedRealtime() - anchorRealtimeMs).coerceAtMost(
                 state.durationMs.takeIf { it > 0L } ?: Long.MAX_VALUE,
             )
             val next = activeDocument.highlightedIndex(position + advanceMs)
                 ?.coerceIn(0, lines.lastIndex) ?: index
             if (next != index) index = next
+            val nextEvent = lines.getOrNull(next + 1)?.timeMs
+                ?: LyricTimelineProcessor.nextEventTimeMs(activeDocument, position + advanceMs)
+            val waitMs = (nextEvent?.minus(position + advanceMs) ?: 250L).coerceIn(16L, 500L)
+            kotlinx.coroutines.delay(waitMs)
         }
     }
     return AlternativeLyricsState(lines, index, loading, error)
@@ -178,20 +177,18 @@ private fun rememberTextPVLyrics(
             return@LaunchedEffect
         }
 
-        var anchorFrameNanos = 0L
-        var lastCheckNanos = 0L
+        val anchorRealtimeMs = SystemClock.elapsedRealtime()
         while (isActive) {
-            val frameNanos = withFrameNanos { it }
-            if (anchorFrameNanos == 0L) anchorFrameNanos = frameNanos
-            if (lastCheckNanos != 0L && frameNanos - lastCheckNanos < 33_000_000L) continue
-            lastCheckNanos = frameNanos
-            val elapsedMs = (frameNanos - anchorFrameNanos) / 1_000_000L
-            val position = (anchorPosition + elapsedMs).coerceAtMost(
+            val position = (anchorPosition + SystemClock.elapsedRealtime() - anchorRealtimeMs).coerceAtMost(
                 state.durationMs.takeIf { it > 0L } ?: Long.MAX_VALUE,
             )
             val nextIndex = activeDocument.highlightedIndex(position + advanceMs)
                 ?.coerceIn(0, lines.lastIndex) ?: index
             if (nextIndex != index) index = nextIndex
+            val nextEvent = lines.getOrNull(nextIndex + 1)?.timeMs
+                ?: LyricTimelineProcessor.nextEventTimeMs(activeDocument, position + advanceMs)
+            val waitMs = (nextEvent?.minus(position + advanceMs) ?: 250L).coerceIn(16L, 500L)
+            kotlinx.coroutines.delay(waitMs)
         }
     }
 

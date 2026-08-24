@@ -8,6 +8,7 @@ import androidx.compose.ui.text.font.FontWeight
 import com.lladlam.melox.playback.MeloXPlaybackModePreferences
 
 enum class MeloXThemeMode { System, Light, Dark }
+enum class MeloXSwipeFullAction { PlayNext, AddToQueue }
 enum class MeloXLyricAnnotationDisplayMode { FocusedLine, AllLines }
 enum class MeloXLyricsStyle { AppleMusic, Eva, TextPV }
 enum class MeloXLyricsRenderingQuality { Low, Balanced, High }
@@ -316,6 +317,8 @@ object MeloXSettingsRuntime {
         internal set
     var hapticFeedbackEnabled by mutableStateOf(true)
         internal set
+    var swipeFullAction by mutableStateOf(MeloXSwipeFullAction.PlayNext)
+        internal set
     var previousRestartsAfterFiveSeconds by mutableStateOf(true)
         internal set
     var startsHeartModeOnLaunch by mutableStateOf(false)
@@ -544,6 +547,11 @@ object MeloXSettingsRuntime {
         showHighQualityPlaylists = MeloXSettingsPreferences.boolean(app, "content_high_quality_playlist", true)
         clipboardLinksEnabled = MeloXSettingsPreferences.boolean(app, "general_clipboard_links", true)
         hapticFeedbackEnabled = MeloXSettingsPreferences.boolean(app, "general_haptic_feedback", true)
+        swipeFullAction = runCatching {
+            MeloXSwipeFullAction.valueOf(
+                MeloXSettingsPreferences.string(app, "general_swipe_full_action", MeloXSwipeFullAction.PlayNext.name),
+            )
+        }.getOrDefault(MeloXSwipeFullAction.PlayNext)
         previousRestartsAfterFiveSeconds = MeloXSettingsPreferences.boolean(app, "playback_previous_restarts", true)
         startsHeartModeOnLaunch = MeloXSettingsPreferences.boolean(app, "playback_heart_mode_on_launch", false)
         volumeControlMode = runCatching {
@@ -755,6 +763,9 @@ object MeloXSettingsPreferences {
                 .filter { it in setOf("QuickActions", "Playlists", "NewSongs") }.distinct()
                 .let { order -> (order + listOf("QuickActions", "Playlists", "NewSongs")).distinct() }
             "general_default_tab" -> MeloXSettingsRuntime.defaultTab = value
+            "general_swipe_full_action" -> MeloXSettingsRuntime.swipeFullAction = runCatching {
+                MeloXSwipeFullAction.valueOf(value)
+            }.getOrDefault(MeloXSwipeFullAction.PlayNext)
             "library_default_page" -> MeloXSettingsRuntime.defaultLibraryPage = value
             "lyrics_romanization_display_mode" -> MeloXSettingsRuntime.lyricRomanizationDisplayMode = runCatching {
                 MeloXLyricAnnotationDisplayMode.valueOf(value)

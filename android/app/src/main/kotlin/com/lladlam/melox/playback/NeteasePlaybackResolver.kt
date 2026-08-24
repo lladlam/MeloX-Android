@@ -95,10 +95,11 @@ class NeteasePlaybackResolver(
         val key = ResolveKey(songId, requestedQuality, currentCookieHeader)
 
         val resolved = resolveSongUri(songId, requestedQuality)
+        val cacheKey = playbackCacheKey(songId, requestedQuality, currentCookieHeader)
 
         return dataSpec.buildUpon()
             .setUri(resolved)
-            .setKey(dataSpec.key ?: uri.toString())
+            .setKey(cacheKey)
             .build()
     }
 
@@ -146,6 +147,10 @@ class NeteasePlaybackResolver(
         private const val SONG_HOST = "song"
         private const val QUALITY_QUERY = "quality"
         private const val MAX_RESOLVED_URIS = 96
+        private const val PLAYBACK_CACHE_VERSION = 2
+
+        private fun playbackCacheKey(songId: Long, quality: MusicQuality, cookieHeader: String): String =
+            "netease:v$PLAYBACK_CACHE_VERSION:$songId:${quality.apiLevel}:${cookieHeader.hashCode().toUInt().toString(16)}"
 
         fun uriForSong(
             songId: Long,

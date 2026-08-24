@@ -6,6 +6,7 @@ import android.util.Log
 import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.core.lyrics.LyricsDocument
+import com.lladlam.melox.core.lyrics.LyricTimelineProcessor
 import com.lladlam.melox.core.lyrics.AmlldbLyricsClient
 import com.lladlam.melox.core.lyrics.BoundLyricSource
 import com.lladlam.melox.core.lyrics.LyricBinding
@@ -50,7 +51,7 @@ import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
  */
 internal object MeloXProviderLyricsLoader {
     private const val MaxCachedDocuments = 24
-    private const val AutomaticSelectionCacheVersion = 3
+    private const val AutomaticSelectionCacheVersion = 4
     private val workerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lock = Any()
     private val inFlight = mutableMapOf<String, Deferred<LyricsDocument>>()
@@ -158,7 +159,7 @@ internal object MeloXProviderLyricsLoader {
         val deferred = synchronized(lock) {
             cache[cacheKey]?.let { return it }
             inFlight[cacheKey] ?: workerScope.async {
-                loadDocument(appContext, snapshot).also { document ->
+                LyricTimelineProcessor.process(loadDocument(appContext, snapshot)).also { document ->
                     if (document.lines.isNotEmpty()) remember(cacheKey, document)
                 }
             }.also { inFlight[cacheKey] = it }

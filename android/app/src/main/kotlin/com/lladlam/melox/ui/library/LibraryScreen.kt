@@ -113,6 +113,9 @@ import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.ui.MeloXBottomContentClearance
 import com.lladlam.melox.ui.glass.meloXLiquidBottomBar
 import com.lladlam.melox.ui.glass.MeloXActionIcon
+import com.lladlam.melox.ui.glass.MeloXSwipeAction
+import com.lladlam.melox.ui.glass.MeloXSwipeActionRow
+import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXShapes
 import com.lladlam.melox.ui.glass.MeloXTypography
 import com.lladlam.melox.ui.glass.meloXContentSurface
@@ -124,6 +127,7 @@ import com.lladlam.melox.ui.glass.meloXLiquidTabSelection
 import com.lladlam.melox.ui.player.MeloXFlowingLightBackdrop
 import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
+import com.lladlam.melox.ui.settings.MeloXSwipeFullAction
 import com.lladlam.melox.ui.layout.rememberMeloXWindowInfo
 import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
 import com.lladlam.melox.ui.theme.isMeloXDarkTheme
@@ -348,6 +352,14 @@ fun LibraryScreen(
                     sharedTransitionScope = sharedScope,
                     animatedVisibilityScope = playlistTransitionVisibilityScope,
                     onModalVisibilityChanged = onModalVisibilityChanged,
+                    onSongLikeChanged = { song, liked ->
+                        val current = snapshot ?: return@MeloXPlaylistDetailScreen
+                        val updated = current.withSongLiked(song, liked)
+                        snapshot = updated
+                        session.profile?.userId?.let { userId ->
+                            scope.launch { cache.saveSnapshot(userId, updated) }
+                        }
+                    },
                 )
             } else {
                 Column(
@@ -1383,6 +1395,7 @@ private fun MeloXPlaylistDetailScreen(
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onModalVisibilityChanged: (Boolean) -> Unit,
+    onSongLikeChanged: (SearchSong, Boolean) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     val detailWindow = rememberMeloXWindowInfo()
@@ -1487,6 +1500,9 @@ private fun MeloXPlaylistDetailScreen(
 
     val displayed = detail?.summary ?: initialPlaylist
     val songs = detail?.songs.orEmpty()
+    val ownedPlaylistId = displayed.id.takeIf {
+        displayed.creatorUserId != null && displayed.creatorUserId == currentUserId
+    }
 
     LaunchedEffect(displayed.coverUrl) {
         palette = MeloXDetailPaletteProvider.paletteFor(displayed.coverUrl)
@@ -1677,6 +1693,32 @@ private fun MeloXPlaylistDetailScreen(
                                 )
                             },
                             onMore = { selectedTrackAction = song },
+                            onPlayNext = { PlaybackCommands.playNext(context, song) },
+                            onPlayLast = { PlaybackCommands.addToQueue(context, song) },
+                            endAction = if (isProviderPlaylist) null else if (ownedPlaylistId != null) {
+                                MeloXSwipeAction("从歌单移除", MeloXSymbol.Trash, Color(0xFFFF3B30)) {
+                                    scope.launch {
+                                        runCatching { operationsClient.removeSongFromPlaylist(song.id, ownedPlaylistId) }
+                                            .onSuccess { refreshPlaylist() }
+                                            .onFailure { errorMessage = it.message ?: "移除歌曲失败" }
+                                    }
+                                }
+                            } else {
+                                MeloXSwipeAction("添加到资料库", MeloXSymbol.Heart, Color(0xFFFF3B30)) {
+                                    scope.launch {
+                                        runCatching { operationsClient.setSongLiked(song.id, true) }
+                                            .onSuccess {
+                                                currentUserId?.let { userId ->
+                                                    cache.loadSnapshot(userId)?.let { cached ->
+                                                        cache.saveSnapshot(userId, cached.withSongLiked(song, true))
+                                                    }
+                                                }
+                                                onSongLikeChanged(song, true)
+                                            }
+                                            .onFailure { errorMessage = it.message ?: "添加到资料库失败" }
+                                    }
+                                }
+                            },
                         )
                         if (song.id != filteredSongs.lastOrNull()?.id) {
                             HorizontalDivider(
@@ -1720,9 +1762,7 @@ private fun MeloXPlaylistDetailScreen(
                         name = displayed.name,
                         artworkUrl = displayed.coverUrl,
                     ),
-                    sourceOwnedPlaylistId = displayed.id.takeIf {
-                        displayed.creatorUserId != null && displayed.creatorUserId == currentUserId
-                    },
+                    sourceOwnedPlaylistId = ownedPlaylistId,
                     onSourcePlaylistChanged = {
                         selectedTrackAction = null
                         scope.launch { refreshPlaylist() }
@@ -1732,6 +1772,15 @@ private fun MeloXPlaylistDetailScreen(
         }
     }
 }
+
+private fun NeteaseLibrarySnapshot.withSongLiked(song: SearchSong, liked: Boolean): NeteaseLibrarySnapshot =
+    copy(
+        likedSongs = if (liked) {
+            listOf(song) + likedSongs.filterNot { it.id == song.id }
+        } else {
+            likedSongs.filterNot { it.id == song.id }
+        },
+    )
 
 @Composable
 private fun MeloXPlaylistToolbar(
@@ -2020,56 +2069,48 @@ private fun MeloXPlaylistTrackRow(
     showMore: Boolean = true,
     onClick: () -> Unit,
     onMore: () -> Unit,
+    onPlayNext: () -> Unit,
+    onPlayLast: () -> Unit,
+    endAction: MeloXSwipeAction?,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 20.dp, end = 8.dp, top = 11.dp, bottom = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    MeloXSwipeActionRow(
+        startActions = listOf(
+            MeloXSwipeAction("下一首播放", MeloXSymbol.Next, Color(0xFF8E5AF7), onPlayNext),
+            MeloXSwipeAction("稍后播放", MeloXSymbol.Queue, Color(0xFFFF9F0A), onPlayLast),
+        ),
+        endActions = listOfNotNull(endAction),
+        startFullSwipeActionIndex = if (MeloXSettingsRuntime.swipeFullAction == MeloXSwipeFullAction.AddToQueue) 1 else 0,
+        onClick = onClick,
+        onLongClick = if (showMore) onMore else null,
     ) {
         Row(
             modifier = Modifier
-                .weight(1f)
-                .clickable(onClick = onClick),
+                .fillMaxWidth()
+                .padding(start = 20.dp, end = 20.dp, top = 11.dp, bottom = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Text(
-                text = "${index + 1}",
-                modifier = Modifier.width(40.dp),
-                color = foreground.copy(alpha = 0.48f),
-                fontSize = 20.sp,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-            )
-            Text(
-                text = song.name,
+            Row(
                 modifier = Modifier.weight(1f),
-                color = foreground,
-                fontSize = 17.sp,
-                lineHeight = 22.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        if (showMore) {
-            Box(
-                modifier = Modifier
-                    .size(width = 42.dp, height = 44.dp)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onMore,
-                    ),
-                contentAlignment = Alignment.Center,
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    "•••",
+                    text = "${index + 1}",
+                    modifier = Modifier.width(40.dp),
+                    color = foreground.copy(alpha = 0.48f),
+                    fontSize = 20.sp,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                )
+                Text(
+                    text = song.name,
+                    modifier = Modifier.weight(1f),
                     color = foreground,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.5.sp,
+                    fontSize = 17.sp,
+                    lineHeight = 22.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
