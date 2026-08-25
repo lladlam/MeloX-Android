@@ -72,6 +72,7 @@ import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.playback.MeloXPlaybackModePreferences
 import com.lladlam.melox.playback.MeloXPlaybackModeRuntime
 import com.lladlam.melox.playback.PlaybackCommands
+import com.lladlam.melox.playback.PlaybackTrackIdentity
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.settings.MeloXVolumeControlMode
 import com.lladlam.melox.ui.glass.MeloXSymbol
@@ -94,13 +95,14 @@ data class MeloXQueueEntry(
     val title: String,
     val artist: String,
     val artworkUrl: String?,
+    val durationMs: Long = 0L,
     val origin: MeloXQueueOrigin = MeloXQueueOrigin.Base,
 )
 
 @Stable
 class MeloXPlaybackUiState internal constructor(private val appContext: Context) {
     private var controller: MediaController? = null
-    private val downloadStore = MeloXDownloadStore.get(appContext)
+    private val downloadStore by lazy(LazyThreadSafetyMode.NONE) { MeloXDownloadStore.get(appContext) }
     private val sleepTimerHandler = Handler(Looper.getMainLooper())
     private var pendingMediaClearRunnable: Runnable? = null
     private var recordedMediaId: String? = null
@@ -313,6 +315,9 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
                     ?: metadata.artist?.toString().orEmpty(),
                 artworkUrl = item.mediaId.toLongOrNull()?.let(downloadStore::localArtworkUri)?.toString()
                     ?: metadata.artworkUri?.toString(),
+                durationMs = com.lladlam.melox.playback.normalizedQueueDurationMs(
+                    metadata.extras?.getLong(PlaybackTrackIdentity.DurationMsExtra, 0L),
+                ),
                 origin = if (metadata.extras?.getString(PlaybackCommands.QUEUE_ORIGIN_KEY) == PlaybackCommands.QUEUE_ORIGIN_MANUAL) {
                     MeloXQueueOrigin.Manual
                 } else {
@@ -472,11 +477,15 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
 }
 
 @Composable
-fun rememberMeloXPlaybackUiState(transitionActive: Boolean = false): MeloXPlaybackUiState {
+fun rememberMeloXPlaybackUiState(
+    transitionActive: Boolean = false,
+    connectionEnabled: Boolean = true,
+): MeloXPlaybackUiState {
     val context = LocalContext.current.applicationContext
     val state = remember(context) { MeloXPlaybackUiState(context) }
 
-    DisposableEffect(context) {
+    DisposableEffect(context, connectionEnabled) {
+        if (!connectionEnabled) return@DisposableEffect onDispose {}
         val token = SessionToken(
             context,
             ComponentName(context, MeloXPlaybackService::class.java),
@@ -1015,14 +1024,15 @@ private fun MeloXPageButton(
 internal fun Artwork(
     url: String?,
     modifier: Modifier,
+    model: Any? = url,
 ) {
     Box(
         modifier = modifier.background(Color.White.copy(alpha = 0.07f)),
         contentAlignment = Alignment.Center,
     ) {
-        if (!url.isNullOrBlank()) {
+        if (model != null && (model !is String || model.isNotBlank())) {
             AsyncImage(
-                model = url,
+                model = model,
                 contentDescription = "专辑封面",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,

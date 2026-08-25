@@ -4,6 +4,21 @@ plugins {
     id("androidx.baselineprofile")
 }
 
+fun String.asKotlinStringLiteral(): String = buildString {
+    append('"')
+    this@asKotlinStringLiteral.forEach { character ->
+        when (character) {
+            '\\' -> append("\\\\")
+            '"' -> append("\\\"")
+            '\n' -> append("\\n")
+            '\r' -> append("\\r")
+            '\t' -> append("\\t")
+            else -> append(character)
+        }
+    }
+    append('"')
+}
+
 android {
     namespace = "com.lladlam.melox"
     compileSdk = 37
@@ -12,8 +27,13 @@ android {
         applicationId = "com.lladlam.melox.android"
         minSdk = 26
         targetSdk = 37
-        versionCode = 11
-        versionName = "0.4.3-Dev"
+        versionCode = 12
+        versionName = "0.4.4-Beta"
+        buildConfigField(
+            "String",
+            "SPOTIFY_CLIENT_ID",
+            providers.gradleProperty("meloxSpotifyClientId").orNull.orEmpty().asKotlinStringLiteral(),
+        )
     }
 
     // Release credentials are supplied from the command line or CI secrets;
@@ -106,6 +126,7 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-compose:3.5.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.5.0")
     implementation("com.squareup.okhttp3:okhttp:5.3.0")
+    implementation("com.squareup.okhttp3:okhttp-dnsoverhttps:5.3.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("com.google.zxing:core:3.5.4")
 

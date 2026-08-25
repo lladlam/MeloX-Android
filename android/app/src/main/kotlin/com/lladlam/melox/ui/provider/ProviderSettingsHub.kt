@@ -35,6 +35,7 @@ import com.lladlam.melox.ui.account.KugouLoginScreen
 import com.lladlam.melox.ui.account.QQMusicLoginScreen
 import com.lladlam.melox.ui.account.AppleMusicLoginScreen
 import com.lladlam.melox.ui.account.BilibiliLoginScreen
+import com.lladlam.melox.ui.account.SpotifyLoginScreen
 import com.lladlam.melox.ui.glass.meloXContentSurface
 import com.lladlam.melox.ui.glass.MeloXGlassDialog
 import com.lladlam.melox.ui.glass.MeloXGlassButton
@@ -81,6 +82,7 @@ fun ProviderSettingsHub(
     var showKugouLogin by remember(currentSource) { mutableStateOf(false) }
     var showAppleMusicLogin by remember(currentSource) { mutableStateOf(false) }
     var showBilibiliLogin by remember(currentSource) { mutableStateOf(false) }
+    var showSpotifyLogin by remember(currentSource) { mutableStateOf(false) }
     var loginRevision by remember(currentSource) { mutableStateOf(0) }
     var pendingAccountAction by remember { mutableStateOf<PendingProviderAccountAction?>(null) }
 
@@ -128,6 +130,13 @@ fun ProviderSettingsHub(
         BilibiliLoginScreen(
             onDismiss = { showBilibiliLogin = false },
             onLoggedIn = { showBilibiliLogin = false; loginRevision++ },
+        )
+        return
+    }
+    if (showSpotifyLogin && currentSource == MusicSource.Spotify) {
+        SpotifyLoginScreen(
+            onDismiss = { showSpotifyLogin = false },
+            onLoggedIn = { showSpotifyLogin = false; loginRevision++ },
         )
         return
     }
@@ -207,6 +216,7 @@ fun ProviderSettingsHub(
                                     MusicSource.Kugou -> showKugouLogin = true
                                     MusicSource.AppleMusic -> showAppleMusicLogin = true
                                     MusicSource.Bilibili -> showBilibiliLogin = true
+                                    MusicSource.Spotify -> showSpotifyLogin = true
                                 }
                             }
                         },
@@ -222,6 +232,7 @@ fun ProviderSettingsHub(
                                 MusicSource.Kugou -> "保留 MID / GUID，只清除用户登录态后重新扫码"
                                 MusicSource.AppleMusic -> "重新配置 Developer Token / Music User Token"
                                 MusicSource.Bilibili -> "清除当前 Bilibili 登录态后重新登录"
+                                MusicSource.Spotify -> "清除 OAuth token 后重新在浏览器授权"
                             },
                             onClick = {
                                 showServiceDialog = false
@@ -339,6 +350,7 @@ fun ProviderSettingsHub(
                                 MusicSource.Kugou -> showKugouLogin = true
                                 MusicSource.AppleMusic -> showAppleMusicLogin = true
                                 MusicSource.Bilibili -> showBilibiliLogin = true
+                                MusicSource.Spotify -> showSpotifyLogin = true
                             }
                         }
                     },

@@ -74,6 +74,7 @@ import com.lladlam.melox.core.music.provider.UnifiedMusicService
 import com.lladlam.melox.core.network.MeloXSearchKind
 import com.lladlam.melox.core.network.MeloXSearchMediaItem
 import com.lladlam.melox.core.network.NeteaseSearchClient
+import com.lladlam.melox.core.network.NeteaseMusicOperationsClient
 import com.lladlam.melox.core.network.NeteaseUniversalSearchClient
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.playback.ProviderPlaybackCommands
@@ -92,10 +93,15 @@ import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSearchBackMorphIcon
 import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import com.lladlam.melox.ui.glass.MeloXSystemColors
+import com.lladlam.melox.ui.glass.MeloXSwipeAction
+import com.lladlam.melox.ui.glass.MeloXSwipeActionRow
 import com.lladlam.melox.ui.podcast.MeloXPodcastScreen
 import com.lladlam.melox.ui.library.MeloXUnifiedPlaylistDetailScreen
+import com.lladlam.melox.ui.library.MeloXUnifiedProviderAlbumDetailScreen
 import com.lladlam.melox.core.music.provider.MeloXLegacyUiBridge
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
+import com.lladlam.melox.ui.settings.MeloXSwipeFullAction
+import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
 import com.lladlam.melox.ui.layout.rememberMeloXWindowInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -184,6 +190,7 @@ fun SearchScreen(source: MusicSource = MusicSource.Netease) {
     val songClient = remember(appContext) { NeteaseSearchClient(cookieProvider = { NeteaseSessionStore.readCookie(appContext) }) }
     val universal = remember(appContext) { NeteaseUniversalSearchClient(cookieProvider = { NeteaseSessionStore.readCookie(appContext) }) }
     val library = remember(appContext) { NeteaseLibraryClient({ NeteaseSessionStore.readCookie(appContext) }) }
+    val operations = remember(appContext) { NeteaseMusicOperationsClient(cookieProvider = { NeteaseSessionStore.readCookie(appContext) }) }
     val providerRegistry = remember(appContext) { MeloXMusicProviders.create(appContext) }
     val currentProvider = remember(source, providerRegistry) { providerRegistry.require(source) }
     val providerSongSearch = currentProvider as? SearchCapability
@@ -227,6 +234,7 @@ fun SearchScreen(source: MusicSource = MusicSource.Netease) {
     var podcastDiscovery by remember(source) { mutableStateOf(false) }
     var loading by remember(source) { mutableStateOf(false) }
     var error by remember(source) { mutableStateOf<String?>(null) }
+    var selectedActionSong by remember(source) { mutableStateOf<SearchSong?>(null) }
     val launchRequest = MeloXSearchLaunchBus.request
 
     LaunchedEffect(source, availableKinds) {
@@ -493,9 +501,17 @@ fun SearchScreen(source: MusicSource = MusicSource.Netease) {
                         )
                     },
                 )
-                kind == MeloXSearchKind.Songs -> SearchSongResults(songs) { song ->
-                    PlaybackCommands.playQueue(context, songs, song.id)
-                }
+                kind == MeloXSearchKind.Songs -> SearchSongResults(
+                    values = songs,
+                    onPlay = { song -> PlaybackCommands.playQueue(context, songs, song.id) },
+                    onMore = { selectedActionSong = it },
+                    onLike = { song ->
+                        scope.launch {
+                            runCatching { operations.setSongLiked(song.id, true) }
+                                .onFailure { error = it.message ?: "添加到资料库失败" }
+                        }
+                    },
+                )
                 source != MusicSource.Netease && kind == MeloXSearchKind.Playlists -> ProviderSearchMediaResults(
                     values = providerPlaylists.map { ProviderSearchDestination.Playlist(it) },
                     onOpen = { selectedDetail = SearchDetailDestination.Provider(it) },
@@ -517,6 +533,14 @@ fun SearchScreen(source: MusicSource = MusicSource.Netease) {
                 }
             }
         }
+    }
+    selectedActionSong?.let { song ->
+        MeloXSongActionsOverlay(
+            song = song,
+            queue = songs,
+            visible = true,
+            onDismiss = { selectedActionSong = null },
+        )
     }
 }
 
@@ -731,25 +755,13 @@ private fun ProviderSearchSongResults(
             item { SearchEmptyInline("没有找到歌曲") }
         } else {
             items(values, key = { "provider:${it.id.source.storageValue}:${it.id.value}" }) { track ->
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { onPlay(track) }
-                        .padding(horizontal = 12.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    AsyncImage(track.artworkUrl, null, contentScale = ContentScale.Crop, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)))
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 17.sp, fontWeight = FontWeight.Medium)
-                        val metadata = buildList {
-                            add(track.artistText)
-                            track.album?.name?.takeIf(String::isNotBlank)?.let(::add)
-                            if (showSource) add(track.id.source.displayName)
-                        }.joinToString(" · ")
-                        Text(metadata, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .5f))
-                    }
-                }
+                SearchSwipeSongRow(
+                    song = MeloXLegacyUiBridge.track(track),
+                    onPlay = { onPlay(track) },
+                    onMore = null,
+                    endAction = null,
+                    sourceLabel = track.id.source.displayName.takeIf { showSource },
+                )
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = .08f))
             }
         }
@@ -795,25 +807,65 @@ private fun ProviderSearchMediaResults(
 }
 
 @Composable
-private fun SearchSongResults(values: List<SearchSong>, onPlay: (SearchSong) -> Unit) {
+private fun SearchSongResults(
+    values: List<SearchSong>,
+    onPlay: (SearchSong) -> Unit,
+    onMore: (SearchSong) -> Unit,
+    onLike: (SearchSong) -> Unit,
+) {
     if (values.isEmpty()) { SearchEmpty("没有找到歌曲"); return }
     LazyColumn(contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = MeloXBottomContentClearance)) {
         items(values, key = { it.id }) { song ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable { onPlay(song) }
-                    .padding(horizontal = 12.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                AsyncImage(song.artworkUrl, null, contentScale = ContentScale.Crop, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)))
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(song.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 17.sp, fontWeight = FontWeight.Medium)
-                    Text("${song.artists}${song.album.takeIf(String::isNotBlank)?.let { " · $it" }.orEmpty()}", maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .5f))
-                }
-            }
+            SearchSwipeSongRow(
+                song = song,
+                onPlay = { onPlay(song) },
+                onMore = { onMore(song) },
+                endAction = MeloXSwipeAction("添加到资料库", MeloXSymbol.Heart, Color(0xFFFF3B30)) { onLike(song) },
+            )
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = .08f))
+        }
+    }
+}
+
+@Composable
+private fun SearchSwipeSongRow(
+    song: SearchSong,
+    onPlay: () -> Unit,
+    onMore: (() -> Unit)?,
+    endAction: MeloXSwipeAction?,
+    sourceLabel: String? = null,
+) {
+    val context = LocalContext.current
+    MeloXSwipeActionRow(
+        startActions = listOf(
+            MeloXSwipeAction("下一首播放", MeloXSymbol.Next, Color(0xFF8E5AF7)) { PlaybackCommands.playNext(context, song) },
+            MeloXSwipeAction("稍后播放", MeloXSymbol.Queue, Color(0xFFFF9F0A)) { PlaybackCommands.addToQueue(context, song) },
+        ),
+        endActions = listOfNotNull(endAction),
+        startFullSwipeActionIndex = if (MeloXSettingsRuntime.swipeFullAction == MeloXSwipeFullAction.AddToQueue) 1 else 0,
+        onClick = onPlay,
+        onLongClick = onMore,
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AsyncImage(song.artworkUrl, null, contentScale = ContentScale.Crop, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(song.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    buildList {
+                        add(song.artists)
+                        song.album.takeIf(String::isNotBlank)?.let(::add)
+                        sourceLabel?.let(::add)
+                    }.joinToString(" · "),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .5f),
+                )
+            }
         }
     }
 }
@@ -903,13 +955,21 @@ private fun SearchCollectionDetail(
                 MeloXUnifiedPlaylistDetailScreen(MeloXLegacyUiBridge.playlist(value.value), onBack)
                 return
             }
+            if (value is ProviderSearchDestination.Album) {
+                MeloXUnifiedProviderAlbumDetailScreen(value.value, onBack)
+                return
+            }
         }
     }
     val context = LocalContext.current
+    val appContext = context.applicationContext
+    val scope = rememberCoroutineScope()
+    val operations = remember(appContext) { NeteaseMusicOperationsClient(cookieProvider = { NeteaseSessionStore.readCookie(appContext) }) }
     var songs by remember(destination.key) { mutableStateOf<List<SearchSong>>(emptyList()) }
     var providerTracks by remember(destination.key) { mutableStateOf<List<MusicTrack>>(emptyList()) }
     var loading by remember(destination.key) { mutableStateOf(true) }
     var error by remember(destination.key) { mutableStateOf<String?>(null) }
+    var selectedActionSong by remember(destination.key) { mutableStateOf<SearchSong?>(null) }
 
     LaunchedEffect(destination.key) {
         loading = true
@@ -1007,30 +1067,37 @@ private fun SearchCollectionDetail(
                 loading -> item { Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
                 error != null -> item { Text(error.orEmpty(), color = MaterialTheme.colorScheme.error) }
                 providerTracks.isNotEmpty() -> items(providerTracks, key = { "detail:${it.id.source.storageValue}:${it.id.value}" }) { track ->
-                    Row(
-                        Modifier.fillMaxWidth().clickable { ProviderPlaybackCommands.playQueue(context, providerTracks, track.id) }.padding(vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        AsyncImage(track.artworkUrl, null, contentScale = ContentScale.Crop, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(7.dp)))
-                        Spacer(Modifier.width(11.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(track.artistText, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .5f))
-                        }
-                    }
+                    SearchSwipeSongRow(
+                        song = MeloXLegacyUiBridge.track(track),
+                        onPlay = { ProviderPlaybackCommands.playQueue(context, providerTracks, track.id) },
+                        onMore = null,
+                        endAction = null,
+                        sourceLabel = track.id.source.displayName,
+                    )
                 }
                 else -> items(songs, key = { it.id }) { song ->
-                    Row(Modifier.fillMaxWidth().clickable { PlaybackCommands.playQueue(context, songs, song.id) }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        AsyncImage(song.artworkUrl, null, contentScale = ContentScale.Crop, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(7.dp)))
-                        Spacer(Modifier.width(11.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(song.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(song.artists, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .5f))
-                        }
-                    }
+                    SearchSwipeSongRow(
+                        song = song,
+                        onPlay = { PlaybackCommands.playQueue(context, songs, song.id) },
+                        onMore = { selectedActionSong = song },
+                        endAction = MeloXSwipeAction("添加到资料库", MeloXSymbol.Heart, Color(0xFFFF3B30)) {
+                            scope.launch {
+                                runCatching { operations.setSongLiked(song.id, true) }
+                                    .onFailure { error = it.message ?: "添加到资料库失败" }
+                            }
+                        },
+                    )
                 }
             }
         }
+    }
+    selectedActionSong?.let { song ->
+        MeloXSongActionsOverlay(
+            song = song,
+            queue = songs,
+            visible = true,
+            onDismiss = { selectedActionSong = null },
+        )
     }
 }
 

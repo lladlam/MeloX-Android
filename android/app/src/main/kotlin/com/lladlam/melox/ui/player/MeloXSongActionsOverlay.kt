@@ -69,6 +69,7 @@ import com.lladlam.melox.core.network.MeloXMusicComment
 import com.lladlam.melox.core.network.MeloXSearchKind
 import com.lladlam.melox.core.network.MeloXUserPlayRecord
 import com.lladlam.melox.core.network.MeloXUserPlayRecordPeriod
+import com.lladlam.melox.ui.song.MeloXSongWikiActivity
 import com.lladlam.melox.core.network.MeloXWikiSection
 import com.lladlam.melox.core.network.NeteaseMusicOperationsClient
 import com.lladlam.melox.core.network.NeteaseSearchClient
@@ -325,7 +326,10 @@ fun MeloXSongActionsOverlay(
                                     },
                                     MeloXMoreAction("查看评论", MeloXSymbol.Comment) { page = SongActionPage.Comments; scope.launch { loadComments(false) } },
                                     MeloXMoreAction("我的听歌排行", MeloXSymbol.Clock) { page = SongActionPage.ListeningRank; scope.launch { loadPlayRecords(MeloXUserPlayRecordPeriod.Week) } },
-                                    MeloXMoreAction("歌曲百科", MeloXSymbol.Book) { page = SongActionPage.Wiki; scope.launch { loadWiki() } },
+                                    MeloXMoreAction("歌曲百科", MeloXSymbol.Book) {
+                                        MeloXSongWikiActivity.launch(context, song)
+                                        onDismiss()
+                                    },
                                 )
                                 sourceOwnedPlaylistId?.let { playlistId ->
                                     ActionItem("从当前歌单移除", "−") {

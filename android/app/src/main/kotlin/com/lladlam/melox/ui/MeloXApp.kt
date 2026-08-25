@@ -1,5 +1,6 @@
 package com.lladlam.melox.ui
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import androidx.annotation.StringRes
@@ -51,6 +52,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -96,6 +98,15 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.shapes.Capsule
 import com.lladlam.melox.ui.library.LibraryScreen
+import com.lladlam.melox.ui.legal.MELOX_LEGAL_VERSION
+import com.lladlam.melox.ui.legal.MeloXFirstLaunchLegalConsent
+import com.lladlam.melox.ui.legal.MeloXCloudControlConsentDialog
+import com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigConsent
+import com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigSource
+import com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigRuntime
+import com.lladlam.melox.core.remoteconfig.MeloXRemoteNotice
+import com.lladlam.melox.core.remoteconfig.MeloXRemoteNoticeStore
+import com.lladlam.melox.ui.legal.MeloXRemoteNoticeDialog
 import com.lladlam.melox.ui.messages.MessagesScreen
 import com.lladlam.melox.ui.podcast.MeloXPodcastScreen
 import com.lladlam.melox.ui.cloud.MeloXCloudMusicScreen
@@ -133,12 +144,9 @@ import com.lladlam.melox.core.network.NeteaseClipboardLink
 import com.lladlam.melox.core.network.NeteaseClipboardTarget
 import com.lladlam.melox.core.library.NeteaseLibraryClient
 import com.lladlam.melox.core.update.MeloXRelease
-import com.lladlam.melox.core.update.MeloXUpdateDownloadSource
 import com.lladlam.melox.core.update.MeloXUpdateClient
 import com.lladlam.melox.playback.PlaybackCommands
-import com.lladlam.melox.playback.ProviderPlaybackRuntime
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
@@ -162,18 +170,22 @@ fun MeloXApp(
     openNowPlayingRequest: Int = 0,
     clipboardLinkRequest: String? = null,
     onClipboardLinkConsumed: () -> Unit = {},
+    playbackConnectionEnabled: Boolean = true,
 ) {
-    val context = LocalContext.current.applicationContext
+    val hostContext = LocalContext.current
+    val context = hostContext.applicationContext
     var selectedSource by remember {
         mutableStateOf(MusicProviderSelectionStore.selectedSource(context))
     }
-    val initialTab = runCatching {
-        AppTab.valueOf(
-            if (MeloXSettingsRuntime.rememberLastTab) {
-                MeloXSettingsPreferences.string(context, "general_last_tab", MeloXSettingsRuntime.defaultTab)
-            } else MeloXSettingsRuntime.defaultTab,
-        )
-    }.getOrDefault(AppTab.Home)
+    val initialTab = remember(context) {
+        runCatching {
+            AppTab.valueOf(
+                if (MeloXSettingsRuntime.rememberLastTab) {
+                    MeloXSettingsPreferences.string(context, "general_last_tab", MeloXSettingsRuntime.defaultTab)
+                } else MeloXSettingsRuntime.defaultTab,
+            )
+        }.getOrDefault(AppTab.Home)
+    }
     var selectedTab by remember { mutableStateOf(initialTab) }
     var settingsRouteRequest by remember { mutableStateOf<String?>(null) }
     var messagesVisible by remember { mutableStateOf(false) }
@@ -192,8 +204,21 @@ fun MeloXApp(
         mutableStateOf(if (MeloXSettingsPreferences.boolean(context, "onboarding_completed", false)) -1 else 0)
     }
     var availableUpdate by remember { mutableStateOf<MeloXRelease?>(null) }
+    val remoteConfigStatus by MeloXRemoteConfigRuntime.status.collectAsState()
+    var pendingRemoteNotice by remember { mutableStateOf<MeloXRemoteNotice?>(null) }
+    var cloudControlChoicePending by remember {
+        mutableStateOf(!MeloXRemoteConfigConsent.choiceMade(context))
+    }
+    LaunchedEffect(remoteConfigStatus, cloudControlChoicePending) {
+        pendingRemoteNotice = remoteConfigStatus.config.notice?.takeIf {
+            !cloudControlChoicePending &&
+                MeloXRemoteConfigConsent.enabled(context) &&
+                remoteConfigStatus.source == MeloXRemoteConfigSource.VerifiedRemote &&
+                MeloXRemoteNoticeStore.shouldShow(context, it)
+        }
+    }
     var heartModeLaunchAttempted by remember { mutableStateOf(false) }
-    val playbackState = rememberMeloXPlaybackUiState()
+    val playbackState = rememberMeloXPlaybackUiState(connectionEnabled = playbackConnectionEnabled)
     val playerTransitionState = remember { SeekableTransitionState(false) }
     val playerTransition = rememberTransition(
         transitionState = playerTransitionState,
@@ -233,19 +258,15 @@ fun MeloXApp(
     val pageBackdrop = rememberLayerBackdrop()
     val bottomChromeBackdrop = rememberLayerBackdrop()
 
-    LaunchedEffect(Unit) {
-        // Provider registry creation touches every configured music backend.
-        // Defer it until after the first app frame instead of extending the
-        // Android splash/blank-window interval on a cold process start.
-        delay(250L)
-        ProviderPlaybackRuntime.initialize(context)
+    LaunchedEffect(playbackConnectionEnabled) {
+        if (!playbackConnectionEnabled) return@LaunchedEffect
         if (MeloXSettingsPreferences.boolean(context, "update_auto_check", true)) {
             val now = System.currentTimeMillis()
             val last = MeloXSettingsPreferences.string(context, "update_last_check_ms", "0").toLongOrNull() ?: 0L
             if (now - last >= 24L * 60L * 60L * 1000L) {
-                MeloXSettingsPreferences.setString(context, "update_last_check_ms", now.toString())
-                val client = MeloXUpdateClient()
+                val client = MeloXUpdateClient(context)
                 runCatching { client.latestStableRelease() }.getOrNull()?.let { release ->
+                    MeloXSettingsPreferences.setString(context, "update_last_check_ms", now.toString())
                     if (client.isNewer(release.version, BuildConfig.VERSION_NAME)) availableUpdate = release
                 }
             }
@@ -309,8 +330,8 @@ fun MeloXApp(
         }
     }
 
-    LaunchedEffect(neteaseSession.cookie) {
-        if (neteaseSession.isLoggedIn) {
+    LaunchedEffect(neteaseSession.cookie, playbackConnectionEnabled) {
+        if (playbackConnectionEnabled && neteaseSession.isLoggedIn) {
             neteaseSession.refreshProfile()
         }
     }
@@ -321,8 +342,10 @@ fun MeloXApp(
         onboardingPage,
         MeloXSettingsRuntime.startsHeartModeOnLaunch,
         playbackState.hasMedia,
+        playbackConnectionEnabled,
     ) {
-        if (selectedSource != MusicSource.Netease || heartModeLaunchAttempted || onboardingPage >= 0 || playbackState.hasMedia ||
+        if (!playbackConnectionEnabled || selectedSource != MusicSource.Netease || heartModeLaunchAttempted ||
+            onboardingPage >= 0 || playbackState.hasMedia ||
             !MeloXSettingsRuntime.startsHeartModeOnLaunch || !neteaseSession.isLoggedIn
         ) return@LaunchedEffect
         heartModeLaunchAttempted = true
@@ -640,36 +663,58 @@ fun MeloXApp(
             )
         }
         if (onboardingPage >= 0) {
-            MeloXAppDialog(
-                title = if (onboardingPage == 0) "欢迎使用 MeloX" else "连接音乐服务",
-                message = if (onboardingPage == 0) {
-                    "用 MeloX 的原生 Android 体验发现和播放音乐。MeloX 是非官方开源项目，与所支持的音乐平台及其关联公司不存在隶属、合作或授权关系。"
-                } else {
-                    "默认使用网易云音乐；你可以稍后在设置中切换 QQ音乐或酷狗音乐。各平台登录态只保存在本机。"
-                },
-                dismissLabel = if (onboardingPage == 0) "项目与许可" else "稍后再说",
-                confirmLabel = if (onboardingPage == 0) "继续" else "登录网易云音乐",
-                onDismiss = {
-                    if (onboardingPage == 0) {
-                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lladlam/MeloX-Android"))) }
-                    } else {
+            if (onboardingPage == 0) {
+                MeloXFirstLaunchLegalConsent(
+                    onAgree = {
+                        MeloXSettingsPreferences.setString(context, "legal_consent_version", MELOX_LEGAL_VERSION)
+                        MeloXSettingsPreferences.setLong(context, "legal_consent_at", System.currentTimeMillis())
+                        onboardingPage = 1
+                    },
+                    onDecline = { (hostContext as? Activity)?.finish() },
+                    onOpenProject = {
+                        runCatching {
+                            hostContext.startActivity(
+                                Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lladlam/MeloX-Android")),
+                            )
+                        }
+                    },
+                )
+            } else {
+                MeloXAppDialog(
+                    title = "连接音乐服务",
+                    message = "默认使用网易云音乐；你可以稍后在设置中切换 QQ音乐或酷狗音乐。各平台登录态只保存在本机。",
+                    dismissLabel = "稍后再说",
+                    confirmLabel = "登录网易云音乐",
+                    onDismiss = {
                         MeloXSettingsPreferences.setBoolean(context, "onboarding_completed", true)
                         onboardingPage = -1
-                    }
-                },
-                onConfirm = {
-                    if (onboardingPage == 0) {
-                        onboardingPage = 1
-                    } else {
+                    },
+                    onConfirm = {
                         MeloXSettingsPreferences.setBoolean(context, "onboarding_completed", true)
                         onboardingPage = -1
                         loginReturnTab = AppTab.Settings
                         showNeteaseLogin = true
-                    }
+                    },
+                )
+            }
+        }
+        if (onboardingPage < 0 && cloudControlChoicePending) {
+            MeloXCloudControlConsentDialog(
+                onReject = {
+                    MeloXRemoteConfigConsent.reject(context)
+                    playerScope.launch { MeloXRemoteConfigRuntime.clearCache(context) }
+                    cloudControlChoicePending = false
+                },
+                onAccept = {
+                    MeloXRemoteConfigConsent.accept(context)
+                    MeloXRemoteConfigRuntime.initializeAndRefresh(context, BuildConfig.VERSION_CODE, force = true)
+                    cloudControlChoicePending = false
                 },
             )
         }
-        availableUpdate?.takeIf { onboardingPage < 0 }?.let { release ->
+        availableUpdate?.takeIf {
+            onboardingPage < 0 && !cloudControlChoicePending && pendingRemoteNotice == null
+        }?.let { release ->
             MeloXAppDialog(
                 title = "发现 MeloX ${release.version}",
                 message = release.name + release.notes.takeIf(String::isNotBlank)?.let { "\n\n${it.take(500)}" }.orEmpty(),
@@ -678,17 +723,23 @@ fun MeloXApp(
                 onDismiss = { availableUpdate = null },
                 onConfirm = {
                     availableUpdate = null
-                    val source = runCatching {
-                        MeloXUpdateDownloadSource.valueOf(
-                            MeloXSettingsPreferences.string(context, "update_download_source", MeloXUpdateDownloadSource.Auto.name),
-                        )
-                    }.getOrDefault(MeloXUpdateDownloadSource.Auto)
                     playerScope.launch {
-                        val target = runCatching { MeloXUpdateClient().downloadUrl(release, source) }.getOrNull()
+                        val target = runCatching { MeloXUpdateClient(context).downloadUrl(release) }.getOrNull()
                             ?: release.pageUrl
                         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target))) }
                     }
                 },
+            )
+        }
+        pendingRemoteNotice?.takeIf {
+            onboardingPage < 0 && !cloudControlChoicePending
+        }?.let { notice ->
+            LaunchedEffect(notice.id, notice.frequency) {
+                MeloXRemoteNoticeStore.markShown(context, notice)
+            }
+            MeloXRemoteNoticeDialog(
+                notice = notice,
+                onAcknowledge = { pendingRemoteNotice = null },
             )
         }
         if (BuildConfig.DEBUG && MeloXSettingsRuntime.performanceOverlayEnabled) {

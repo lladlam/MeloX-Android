@@ -108,17 +108,30 @@ object MusicQualityPreferences {
  * the actual quality after MeloX-style fallback instead of the requested label.
  */
 object MusicQualityRuntime {
+    private data class QualityRecord(
+        val requested: MusicQuality,
+        val actual: MusicQuality,
+    )
+
     @Volatile
     var selected: MusicQuality = MusicQuality.Standard
 
-    private val actualBySong = ConcurrentHashMap<Long, MusicQuality>()
+    private val actualBySong = ConcurrentHashMap<Long, QualityRecord>()
 
-    fun recordActual(songId: Long, quality: MusicQuality) {
-        actualBySong[songId] = quality
+    fun recordActual(songId: Long, requested: MusicQuality, actual: MusicQuality) {
+        // Background analysis can resolve the same song at Standard while the
+        // foreground decoder keeps playing Hi-Res. Never let that secondary
+        // request replace the quality reported for the user's active selection.
+        if (requested == selected) {
+            actualBySong[songId] = QualityRecord(requested, actual)
+        }
     }
 
     fun actualFor(songId: Long?): MusicQuality? =
-        songId?.let(actualBySong::get)
+        songId
+            ?.let(actualBySong::get)
+            ?.takeIf { it.requested == selected }
+            ?.actual
 
     fun clear(songId: Long? = null) {
         if (songId == null) actualBySong.clear() else actualBySong.remove(songId)

@@ -200,7 +200,9 @@ fun MeloXHomeScreen(
 private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
     val context = LocalContext.current.applicationContext
     val cache = remember(context) { NeteaseLibraryCache(context) }
-    val client = remember(context) { NeteaseLibraryClient({ NeteaseSessionStore.readCookie(context) }) }
+    val client by remember(context) {
+        lazy { NeteaseLibraryClient({ NeteaseSessionStore.readCookie(context) }) }
+    }
     val scope = rememberCoroutineScope()
     val session = rememberNeteaseSessionStore()
     var content by remember { mutableStateOf<NeteaseHomeContent?>(null) }
@@ -208,8 +210,8 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var selectedCollection by remember { mutableStateOf<DiscoveryCollection?>(null) }
     var activeAction by remember { mutableStateOf<String?>(null) }
-    var localRecommendations by remember { mutableStateOf(LocalRecommendationStore.readRecommendations(context)) }
-    var localCandidates by remember { mutableStateOf(LocalRecommendationStore.readCandidateTracks(context)) }
+    var localRecommendations by remember { mutableStateOf(emptyList<com.lladlam.melox.core.recommendation.LocalRecommendationItem>()) }
+    var localCandidates by remember { mutableStateOf(emptyList<MusicTrack>()) }
     val homeCacheKey = "${session.cookie.hashCode()}_${MeloXSettingsRuntime.musicArea}_${MeloXSettingsRuntime.podcastsEnabled}"
 
     selectedCollection?.let { collection ->
@@ -223,12 +225,14 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
             refreshing = true
             runCatching {
                 if (session.isLoggedIn && session.profile == null) session.refreshProfile(force = true)
-                client.homeContent(
-                    area = MeloXSettingsRuntime.musicArea,
-                    userId = session.profile?.userId,
-                    podcastsEnabled = MeloXSettingsRuntime.podcastsEnabled,
-                    refresh = forceServer,
-                )
+                withContext(Dispatchers.IO) {
+                    client.homeContent(
+                        area = MeloXSettingsRuntime.musicArea,
+                        userId = session.profile?.userId,
+                        podcastsEnabled = MeloXSettingsRuntime.podcastsEnabled,
+                        refresh = forceServer,
+                    )
+                }
             }.onSuccess {
                 content = it
                 cache.saveHomeContent(homeCacheKey, it)
@@ -239,8 +243,12 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
     }
 
     LaunchedEffect(homeCacheKey) {
-        localRecommendations = LocalRecommendationStore.readRecommendations(context)
-        localCandidates = LocalRecommendationStore.readCandidateTracks(context)
+        val localData = withContext(Dispatchers.IO) {
+            LocalRecommendationStore.readRecommendations(context) to
+                LocalRecommendationStore.readCandidateTracks(context)
+        }
+        localRecommendations = localData.first
+        localCandidates = localData.second
         content = cache.loadHomeContent(homeCacheKey)
         if (session.isLoggedIn) session.refreshProfile()
         if (NeteaseLibraryCache.beginHomeColdStartRefresh(homeCacheKey)) refresh(false)
@@ -461,7 +469,6 @@ private fun MeloXHomeLayout(
     onCollection: (DiscoveryCollection) -> Unit,
 ) {
     val context = LocalContext.current.applicationContext
-    val window = rememberMeloXWindowInfo()
     PullToRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) {
         if (blocks == null) {
             EmptyOrLoading(refreshing, error)
@@ -469,16 +476,14 @@ private fun MeloXHomeLayout(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .statusBarsPadding()
-                    .widthIn(max = window.maxContentWidth)
-                    .align(Alignment.TopCenter),
-                contentPadding = PaddingValues(start = window.gutter, end = window.gutter, top = 18.dp, bottom = 146.dp),
+                    .statusBarsPadding(),
+                contentPadding = PaddingValues(top = 18.dp, bottom = 146.dp),
                 verticalArrangement = Arrangement.spacedBy(22.dp),
             ) {
                 item {
                     MeloXIosTopBar(
                         title = stringResource(R.string.tab_home),
-                        contentPadding = PaddingValues(horizontal = 0.dp),
+                        contentPadding = PaddingValues(horizontal = 20.dp),
                         actions = {
                             account?.let { HomeAccountButton(it) }
                         },
@@ -487,6 +492,7 @@ private fun MeloXHomeLayout(
                 item {
                     Text(
                         text = stringResource(R.string.home_greeting),
+                        modifier = Modifier.padding(horizontal = 20.dp),
                         style = MeloXTypography.headline,
                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.58f),
                     )
@@ -495,15 +501,18 @@ private fun MeloXHomeLayout(
                     when (block) {
                         HomeBlock.QuickActions -> item { HomeQuickActions(source, activeAction, onQuickAction) }
                         is HomeBlock.Collections -> {
-                            item { SectionTitle(block.title, block.trailing) }
+                            item { SectionTitle(block.title, block.trailing, Modifier.padding(horizontal = 20.dp)) }
                             item { CollectionRow(block.values, onCollection) }
                         }
                         is HomeBlock.Tracks -> {
-                            item { SectionTitle(block.title, block.trailing) }
+                            item { SectionTitle(block.title, block.trailing, Modifier.padding(horizontal = 20.dp)) }
                             item { ThreeLineSongCarousel(block.values) { track -> playDiscoveryQueue(context, block.values, track) } }
                         }
                         is HomeBlock.Podcasts -> item {
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 20.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
                                 items(block.values, key = { "podcast-${it.programId ?: it.id}" }) { podcast ->
                                     Column(
                                         Modifier.width(150.dp).clickable {
@@ -531,9 +540,9 @@ private fun MeloXHomeLayout(
                     }
                 }
                 if (blocks.isEmpty() && error == null) {
-                    item { Text("${source.displayName} 当前没有返回可展示内容", color = MaterialTheme.colorScheme.onBackground.copy(alpha = .5f)) }
+                    item { Text("${source.displayName} 当前没有返回可展示内容", Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.onBackground.copy(alpha = .5f)) }
                 }
-                error?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) } }
+                error?.let { message -> item { Text(message, Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.error, fontSize = 13.sp) } }
             }
         }
     }
@@ -606,7 +615,10 @@ private fun HomeQuickActions(source: MusicSource, active: String?, perform: (Str
             add(Action("云盘", "个人音乐", "打开网易云音乐云盘", MeloXSymbol.Storage, listOf(Color(0xFF64748B), Color(0xFF6366F1))))
         }
     }
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
         items(actions, key = { it.title }) { action ->
             Column(
                 Modifier
@@ -829,8 +841,8 @@ private fun LargeTitle(text: String, modifier: Modifier = Modifier) = Text(
 )
 
 @Composable
-private fun SectionTitle(title: String, trailing: String) = Row(
-    Modifier.fillMaxWidth(),
+private fun SectionTitle(title: String, trailing: String, modifier: Modifier = Modifier) = Row(
+    modifier.fillMaxWidth(),
     horizontalArrangement = Arrangement.SpaceBetween,
 ) {
     Text(title, style = MeloXTypography.title2)
@@ -839,7 +851,10 @@ private fun SectionTitle(title: String, trailing: String) = Row(
 
 @Composable
 private fun CollectionRow(values: List<DiscoveryCollection>, onSelect: (DiscoveryCollection) -> Unit) {
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
         itemsIndexed(values, key = { _, value -> value.key }) { index, collection ->
             CollectionCard(collection, Modifier.width(if (index == 0) 246.dp else 174.dp)) { onSelect(collection) }
         }
@@ -849,7 +864,10 @@ private fun CollectionRow(values: List<DiscoveryCollection>, onSelect: (Discover
 @Composable
 private fun ThreeLineSongCarousel(values: List<DiscoveryTrack>, onSelect: (DiscoveryTrack) -> Unit) {
     val window = rememberMeloXWindowInfo()
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
         items(values.chunked(3), key = { group -> group.joinToString("-") { it.key } }) { group ->
             Column(
                 modifier = Modifier.width(if (window.supportsTwoPane) 390.dp else 320.dp),

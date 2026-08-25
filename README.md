@@ -19,13 +19,13 @@
 
 > MeloX Android 是非官方开源项目，与网易云音乐、小米、Apple 及其关联公司不存在隶属、合作或授权关系。
 
-## 当前版本：0.4.3-Dev
+## 当前版本：0.4.4-Beta
 
-`0.4.3-Dev` 集中改进 AutoMix、歌词动画、播放音质与歌单交互：增加持久化音频分析和媒体预取，修复交叉淡化期间暂停、切歌与进度跳转；重构多行重叠歌词的时间线、弹性级联和长音动态；完善实际音质状态及网易云缓存隔离；歌单歌曲支持长按菜单和双向彩色胶囊滑动操作，并更新应用图标。
+`0.4.4-Beta` 集中完善多音乐源、云端兼容配置、无尽播放与 Mei 风格页面：增加 Spotify、手机号登录和跨平台完整音源回退；引入用户授权、签名验证和防回滚的音乐源云控；专辑、歌手、个人中心、歌曲百科和播客页面统一迁移并适配深色模式；主页改为全宽贯通布局，搜索歌曲支持双向滑动操作，AMLL 歌词与队尾推荐预取更加稳定。
 
-- 下载与完整更新日志：[GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.4.3-Dev)
+- 下载与完整更新日志：[GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.4.4-Beta)
 - 详细版本记录：[CHANGELOG.md](CHANGELOG.md)
-- 本次版本说明：[0.4.3-Dev Release Notes](docs/releases/0.4.3-Dev.md)
+- 本次版本说明：[0.4.4-Beta Release Notes](docs/releases/0.4.4-Beta.md)
 
 ## 项目说明
 
@@ -207,7 +207,7 @@ DF:CC:A9:86:5B:87:A4:02:D3:41:98:5A:48:EB:13:2B:D8:67:9D:FA:6D:9D:50:2F:36:5D:D1
 可使用 Android SDK Build Tools 验证：
 
 ```bash
-apksigner verify --verbose --print-certs MeloX-Android-0.4.3-Dev.apk
+apksigner verify --verbose --print-certs MeloX-Android-0.4.4-Beta.apk
 ```
 
 ## 项目结构
@@ -252,6 +252,12 @@ MeloX Android 的主体代码来自 MeloX 的 Android 迁移工作，同时直�
 Android 版直接依赖 [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) 的 `backdrop` 组件；`MeloXBackdropComponents.kt` 基于其官方 `LiquidButton` 与 `LiquidBottomTabs` 示例适配，在保留 MeloX iOS 尺寸和布局的前提下提供折射、模糊、按压高光与底栏选中透镜。
 
 当前玻璃效果仍属于实验性实现，视觉与兼容性会继续调整。
+
+### API 与 UI 参考项目
+
+- [NEORUAA/MeiloX](https://github.com/NEORUAA/MeiloX) — 一个基于 Mei 的仿 Apple Music 网易云音乐客户端，为 MeloX Android 提供 UI 参考。
+- [thlucas1/SpotifyWebApiPython](https://github.com/thlucas1/SpotifyWebApiPython) — Spotify Web API Python 客户端，为 Spotify API 接入提供参考。
+- [bromothymolb/bilibili-api-zoku](https://github.com/bromothymolb/bilibili-api-zoku) — Bilibili API 调用与常用功能整合项目，为 Bilibili API 接入提供参考。
 
 ### 上游 MeloX 的参考来源
 

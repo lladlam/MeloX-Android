@@ -19,7 +19,11 @@ object ProviderPlaybackQualityRuntime {
         requested: AudioQualityTier,
         actual: AudioQualityTier,
     ) {
-        actualByTrack[PlaybackTrackIdentity.encode(id)] = QualityRecord(requested, actual)
+        // Independent background analysis resolves Standard for the same stable
+        // media identity. Preserve the foreground result selected by the user.
+        if (requested == MusicQualityRuntime.selected.toCommonTier()) {
+            actualByTrack[PlaybackTrackIdentity.encode(id)] = QualityRecord(requested, actual)
+        }
     }
 
     fun actualFor(id: MusicResourceId?): AudioQualityTier? {

@@ -4,6 +4,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -24,6 +25,8 @@ private val LightColors = lightColorScheme(
     onPrimary = Color.White,
     onBackground = Color(0xFF17171A),
     onSurface = Color(0xFF17171A),
+    surfaceVariant = Color(0xFFE9E9EE),
+    onSurfaceVariant = Color(0xFF5D5D66),
 )
 
 private val DarkColors = darkColorScheme(
@@ -34,6 +37,8 @@ private val DarkColors = darkColorScheme(
     onPrimary = Color.White,
     onBackground = Color(0xFFF5F5F7),
     onSurface = Color(0xFFF5F5F7),
+    surfaceVariant = Color(0xFF252529),
+    onSurfaceVariant = Color(0xFFB8B8C0),
 )
 
 // SF Pro cannot be redistributed in an Android app. Use Android's licensed
@@ -81,8 +86,13 @@ fun MeloXTheme(
         colorScheme = if (darkTheme) DarkColors else LightColors,
         typography = MeloXTypography,
         shapes = MeloXShapes,
-        content = content,
-    )
+    ) {
+        Surface(
+            color = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground,
+            content = content,
+        )
+    }
 }
 
 /**

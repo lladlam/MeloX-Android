@@ -13,6 +13,7 @@ object PlaybackTrackIdentity {
     private const val Prefix = "melox:"
     const val SourceExtra = "melox.provider.source"
     const val ResourceIdExtra = "melox.provider.resource_id"
+    const val DurationMsExtra = "melox.track.duration_ms"
 
     fun encode(id: MusicResourceId): String =
         "$Prefix${id.source.storageValue}:${Uri.encode(id.value)}"

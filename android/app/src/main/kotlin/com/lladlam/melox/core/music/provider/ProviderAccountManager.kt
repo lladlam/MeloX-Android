@@ -7,6 +7,7 @@ import com.lladlam.melox.core.provider.applemusic.AppleMusicSessionStore
 import com.lladlam.melox.core.provider.kugou.KugouSessionStore
 import com.lladlam.melox.core.provider.qqmusic.QQMusicSessionStore
 import com.lladlam.melox.core.provider.bilibili.BilibiliSessionStore
+import com.lladlam.melox.core.provider.spotify.SpotifySessionStore
 
 /**
  * Small provider-neutral account facade used by settings/experience UI.
@@ -65,6 +66,9 @@ class ProviderAccountManager(
         MusicSource.Bilibili -> BilibiliSessionStore.read(appContext).let { session ->
             AccountState(source, session.isLoggedIn, session.userId.takeIf(String::isNotBlank))
         }
+        MusicSource.Spotify -> SpotifySessionStore.read(appContext).let { session ->
+            AccountState(source, session.isLoggedIn, session.accountId.takeIf(String::isNotBlank))
+        }
     }
 
     fun allStates(): List<AccountState> = MusicSource.entries.map(::state)
@@ -83,6 +87,7 @@ class ProviderAccountManager(
             MusicSource.Kugou -> KugouSessionStore.clearLogin(appContext)
             MusicSource.AppleMusic -> AppleMusicSessionStore.clear(appContext)
             MusicSource.Bilibili -> BilibiliSessionStore.clear(appContext, clearWebCookies = true)
+            MusicSource.Spotify -> SpotifySessionStore.clear(appContext)
         }
     }
 

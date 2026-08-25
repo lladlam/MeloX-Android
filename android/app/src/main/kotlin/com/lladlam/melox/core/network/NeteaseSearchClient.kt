@@ -106,6 +106,7 @@ class NeteaseSearchClient(
                         artists = artists.ifBlank { "未知歌手" },
                         album = album,
                         artworkUrl = artwork,
+                        durationMs = neteaseSearchDurationMs(song),
                     ),
                 )
             }
@@ -396,3 +397,6 @@ class NeteaseSearchClient(
     private fun ByteArray.toHexUppercase(): String =
         joinToString("") { byte -> "%02X".format(byte) }
 }
+
+internal fun neteaseSearchDurationMs(song: JSONObject): Long =
+    song.optLong("dt", song.optLong("duration", 0L)).coerceAtLeast(0L)

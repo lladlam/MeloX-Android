@@ -347,6 +347,7 @@ object MeloXSettingsRuntime {
         defaultTab = MeloXSettingsPreferences.string(app, "general_default_tab", "Home")
         rememberLibraryPage = MeloXSettingsPreferences.boolean(app, "library_remember_page", true)
         defaultLibraryPage = MeloXSettingsPreferences.string(app, "library_default_page", "Songs")
+        clipboardLinksEnabled = MeloXSettingsPreferences.boolean(app, "general_clipboard_links", true)
     }
 
     fun initialize(context: Context, force: Boolean = false) {

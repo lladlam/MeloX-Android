@@ -32,6 +32,8 @@ object ProviderPlaybackCommands {
         if (tracks.isEmpty()) return
         val appContext = context.applicationContext
         if (tracks.all { it.id.source == MusicSource.AppleMusic }) {
+            // MusicKit playback bypasses Media3, so Media3-backed lyrics remain
+            // unavailable for this hidden source until the backend is unified.
             val session = AppleMusicSessionStore.read(appContext)
             val startIndex = tracks.indexOfFirst { it.id == selectedTrackId }.coerceAtLeast(0)
             if (AppleMusicSdkBridge.playCatalogQueue(
@@ -102,6 +104,7 @@ object ProviderPlaybackCommands {
             putBoolean(PlaybackCommands.HEART_MODE_KEY, false)
             putString(PlaybackTrackIdentity.SourceExtra, id.source.storageValue)
             putString(PlaybackTrackIdentity.ResourceIdExtra, id.value)
+            putLong(PlaybackTrackIdentity.DurationMsExtra, normalizedQueueDurationMs(durationMs))
         }
         val metadata = MediaMetadata.Builder()
             .setTitle(title)
@@ -122,7 +125,13 @@ object ProviderPlaybackCommands {
             .setMediaId(neteaseId?.toString() ?: PlaybackTrackIdentity.encode(id))
             .setUri(
                 if (neteaseId != null) {
-                    NeteasePlaybackResolver.uriForSong(neteaseId, neteaseQuality)
+                    NeteasePlaybackResolver.uriForSong(
+                        songId = neteaseId,
+                        quality = neteaseQuality,
+                        title = title,
+                        artist = artistText,
+                        durationMs = durationMs,
+                    )
                 } else {
                     ProviderPlaybackResolver.uriForTrack(this, qualityTier)
                 },
@@ -141,3 +150,5 @@ internal fun MusicQuality.toCommonTier(): AudioQualityTier = when (this) {
     MusicQuality.ImmersiveSurround -> AudioQualityTier.Immersive
     MusicQuality.UltraClearMaster -> AudioQualityTier.Master
 }
+
+internal fun normalizedQueueDurationMs(durationMs: Long?): Long = durationMs?.coerceAtLeast(0L) ?: 0L

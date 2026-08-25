@@ -16,10 +16,9 @@ import org.junit.Test
 
 class MeloXAutomaticLyricsSelectionTest {
     @Test
-    fun qqPriorityWinsEvenWhenLowerSourcesHaveMoreAnnotations() {
+    fun nearQualityUsesSourcePriorityAsStableTieBreak() {
         val qq = document("QQ", wordSynced = true)
-        val netease = document("网易", wordSynced = true, translation = "translation")
-        val current = document("当前", wordSynced = true, translation = "translation")
+        val netease = document("网易", wordSynced = true)
 
         assertEquals(
             qq,
@@ -27,7 +26,22 @@ class MeloXAutomaticLyricsSelectionTest {
                 listOf(
                     AutoLyricCandidate(0, qq),
                     AutoLyricCandidate(1, netease),
-                    AutoLyricCandidate(2, current),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun availableAmlLAlwaysWinsBeforeFallbackSources() {
+        val shortAmlL = document("AMLL", wordSynced = true)
+        val completeQrc = documentWithLines("QRC", lineCount = 12, translation = "翻译", romanization = "roma")
+
+        assertEquals(
+            shortAmlL,
+            selectAutomaticLyrics(
+                listOf(
+                    AutoLyricCandidate(0, shortAmlL),
+                    AutoLyricCandidate(1, completeQrc),
                 ),
             ),
         )
@@ -51,7 +65,7 @@ class MeloXAutomaticLyricsSelectionTest {
     }
 
     @Test
-    fun nonWordSyncedAmlLFallsBackToWordSyncedQq() {
+    fun lineSyncedAmlLStillWinsBeforeQqFallback() {
         val selected = selectAutomaticLyrics(
             listOf(
                 AutoLyricCandidate(0, document("AMLL 行级", wordSynced = false, translation = "translation")),
@@ -59,7 +73,7 @@ class MeloXAutomaticLyricsSelectionTest {
                 AutoLyricCandidate(2, document("网易 逐字", wordSynced = true)),
             ),
         )
-        assertEquals(document("QQ 逐字", wordSynced = true), selected)
+        assertEquals(document("AMLL 行级", wordSynced = false, translation = "translation"), selected)
     }
 
     @Test
@@ -114,6 +128,75 @@ class MeloXAutomaticLyricsSelectionTest {
         assertEquals(binding, selected?.binding)
     }
 
+    @Test
+    fun allSixSourcesRouteWithoutDuplicatingCurrentProvider() {
+        MusicSource.entries.forEach { source ->
+            val routes = automaticLyricSourcesFor(source)
+            assertEquals(LyricAutoSource.AmlL, routes.first())
+            assertEquals(routes.distinct(), routes)
+            when (source) {
+                MusicSource.QQMusic -> {
+                    assertTrue(LyricAutoSource.Current in routes)
+                    assertFalse(LyricAutoSource.QQMusic in routes)
+                }
+                MusicSource.Netease -> {
+                    assertTrue(LyricAutoSource.Current in routes)
+                    assertFalse(LyricAutoSource.Netease in routes)
+                }
+                MusicSource.Kugou -> {
+                    assertTrue(LyricAutoSource.Current in routes)
+                    assertFalse(LyricAutoSource.Kugou in routes)
+                }
+                else -> assertEquals(5, routes.size)
+            }
+        }
+    }
+
+    @Test
+    fun automaticCacheSeparatesUnknownKnownDurationAndMetadata() {
+        val id = MusicResourceId(MusicSource.Spotify, "track")
+        val unknown = lyricCacheKey(id, "Title", "Artist", 0L, automaticSelection = true)
+        val known = lyricCacheKey(id, "Title", "Artist", 180_000L, automaticSelection = true)
+        val changedMetadata = lyricCacheKey(id, "Other", "Artist", 180_000L, automaticSelection = true)
+
+        assertFalse(unknown == known)
+        assertFalse(known == changedMetadata)
+    }
+
+    @Test
+    fun automaticCacheRoundsMinorDurationCorrections() {
+        val id = MusicResourceId(MusicSource.Spotify, "track")
+        assertEquals(
+            lyricCacheKey(id, "Title", "Artist", 180_100L, automaticSelection = true),
+            lyricCacheKey(id, "Title", "Artist", 180_400L, automaticSelection = true),
+        )
+    }
+
+    @Test
+    fun unknownDurationCanMatchExactTitleAndArtistForAmlLDiscovery() {
+        assertTrue(isSafeCrossProviderLyricMatch("SCARED LONELY", "virtual: girl", 0L, track("SCARED LONELY", "virtual girl", 180_000L)))
+        assertFalse(isSafeCrossProviderLyricMatch("SCARED LONELY", "virtual: girl", 0L, track("SCARED LONELY", "other artist", 180_000L)))
+    }
+
+    @Test
+    fun bilibiliAlignmentOnlyControlsReplacementAssociationSideEffect() {
+        val alignmentDisabled = bilibiliLyricLoadPolicy(
+            automaticSelection = true,
+            alignmentEnabled = false,
+            durationMs = 180_000L,
+        )
+        assertTrue(alignmentDisabled.loadMatchedLyrics)
+        assertFalse(alignmentDisabled.saveReplacementAssociation)
+
+        val unknownDuration = bilibiliLyricLoadPolicy(
+            automaticSelection = true,
+            alignmentEnabled = true,
+            durationMs = 0L,
+        )
+        assertFalse(unknownDuration.loadMatchedLyrics)
+        assertFalse(unknownDuration.saveReplacementAssociation)
+    }
+
     private fun document(text: String, wordSynced: Boolean, translation: String? = null): LyricsDocument =
         LyricsDocument(
             listOf(
@@ -126,6 +209,24 @@ class MeloXAutomaticLyricsSelectionTest {
                 ),
             ),
         )
+
+    private fun documentWithLines(
+        text: String,
+        lineCount: Int,
+        translation: String? = null,
+        romanization: String? = null,
+    ): LyricsDocument = LyricsDocument(
+        List(lineCount) { index ->
+            LyricLine(
+                timeMs = index * 1_000L,
+                durationMs = 1_000,
+                text = "$text $index",
+                syllables = listOf(LyricSyllable(text, index * 1_000L, (index + 1) * 1_000L)),
+                translation = translation,
+                romanization = romanization,
+            )
+        },
+    )
 
     private fun track(title: String, artist: String, durationMs: Long) = MusicTrack(
         id = MusicResourceId(MusicSource.QQMusic, title),

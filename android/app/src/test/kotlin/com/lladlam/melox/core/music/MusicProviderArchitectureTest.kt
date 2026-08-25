@@ -9,6 +9,8 @@ import com.lladlam.melox.core.music.provider.AlbumCapability
 import com.lladlam.melox.core.music.provider.ArtistCapability
 import com.lladlam.melox.core.music.provider.CatalogSearchCapability
 import com.lladlam.melox.core.music.provider.MusicCapability
+import com.lladlam.melox.core.music.provider.MusicProvider
+import com.lladlam.melox.core.music.provider.MusicProviderRegistry
 import com.lladlam.melox.core.provider.kugou.KugouProvider
 import com.lladlam.melox.core.provider.kugou.KugouSession
 import com.lladlam.melox.core.provider.qqmusic.QQMusicProvider
@@ -76,5 +78,17 @@ class MusicProviderArchitectureTest {
             assertTrue(MusicCapability.Albums in provider.capabilities)
             assertTrue(MusicCapability.Artists in provider.capabilities)
         }
+    }
+
+    @Test
+    fun spotifySourceRoundTripsAndCanBeRegistered() {
+        assertEquals(MusicSource.Spotify, MusicSource.fromStorageValue("spotify"))
+        val spotify = object : MusicProvider {
+            override val source = MusicSource.Spotify
+            override val displayName = source.displayName
+            override val capabilities = setOf(MusicCapability.Search, MusicCapability.Playback)
+        }
+        val registry = MusicProviderRegistry(listOf(spotify))
+        assertEquals(spotify, registry.require(MusicSource.Spotify))
     }
 }

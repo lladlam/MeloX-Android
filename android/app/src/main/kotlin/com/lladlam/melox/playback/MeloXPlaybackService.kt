@@ -36,6 +36,7 @@ import com.lladlam.melox.core.audio.MusicQualityPreferences
 import com.lladlam.melox.core.audio.MusicQuality
 import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.core.library.NeteaseLibraryClient
+import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.core.network.MeloXNetworkAvailability
 import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.core.lyrics.LyricTimelineProcessor
@@ -45,6 +46,7 @@ import com.lladlam.melox.core.music.model.MusicPage
 import com.lladlam.melox.core.music.model.MusicPlaylistSummary
 import com.lladlam.melox.core.music.model.MusicResourceId
 import com.lladlam.melox.core.music.model.MusicSource
+import com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigPolicy
 import com.lladlam.melox.core.music.provider.MeloXMusicProviders
 import com.lladlam.melox.core.music.provider.PlaylistCapability
 import com.lladlam.melox.core.music.provider.UserLibraryCapability
@@ -84,7 +86,9 @@ class MeloXPlaybackService : MediaSessionService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val handler = Handler(Looper.getMainLooper())
     private var recommendationJob: Job? = null
-    private var recommendationSeed: Long? = null
+    private var recommendationSeed: String? = null
+    private var recommendationRetrySeed: String? = null
+    private var recommendationRetryAfterRealtimeMs = 0L
     private var systemLyricsJob: Job? = null
     private var systemLyricsSongId: Long? = null
     private var systemLyricsDocument: LyricsDocument? = null
@@ -155,12 +159,14 @@ class MeloXPlaybackService : MediaSessionService() {
                     if (!skipToNextDownloaded(active)) active.pause()
                     return
                 }
-                ensureAutoplayRecommendations(forceAdvance = true)
+                ensureAutoplayRecommendations()
             }
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             recommendationSeed = null
+            recommendationRetrySeed = null
+            recommendationRetryAfterRealtimeMs = 0L
             autoMixRetrySourceId = null
             autoMixRetryAfterRealtimeMs = 0L
             val transitionedId = mediaItem?.mediaId?.toLongOrNull(); val previousHistoryId = historySongId
@@ -169,11 +175,21 @@ class MeloXPlaybackService : MediaSessionService() {
             MeloXAudioReactiveRuntime.select(mediaItem?.mediaId)
             mediaItem?.let(downloadStore::recordPlayback)
             mediaItem?.let(::scheduleBackgroundAnalysis)
-            if (transitionedId != systemLyricsSongId) resetSystemLyrics(mediaItem)
             val active = player
+            if (transitionedId != systemLyricsSongId) {
+                active?.let(::restoreSystemLyricsMetadata)
+                resetSystemLyrics(mediaItem)
+            }
             if (active != null) {
                 applyLocalArtworkMetadata(active)
                 prefetchFollowing(active)
+                if (
+                    MeloXPlaybackModePreferences.autoplay(this@MeloXPlaybackService) &&
+                    active.currentMediaItemIndex >= active.mediaItemCount - 1 &&
+                    MeloXNetworkAvailability.isOnline(this@MeloXPlaybackService)
+                ) {
+                    ensureAutoplayRecommendations()
+                }
                 if (!MeloXNetworkAvailability.isOnline(this@MeloXPlaybackService)) {
                     val id = active.currentMediaItem?.mediaId?.toLongOrNull()
                     if (id != null && !downloadStore.contains(id)) {
@@ -347,11 +363,37 @@ class MeloXPlaybackService : MediaSessionService() {
         downloadStore = MeloXDownloadStore.get(this)
         equalizerController = MeloXEqualizerController(this)
         playbackHistoryReporter = MeloXPlaybackHistoryReporter(this)
+        ProviderPlaybackRuntime.initialize(this)
+        val crossProviderFallback = CrossProviderPlaybackFallbackResolver(
+            enabledProvider = {
+                CrossProviderPlaybackPreferences.enabled(this@MeloXPlaybackService) &&
+                    MeloXRemoteConfigPolicy.capabilityEnabled(
+                        this@MeloXPlaybackService,
+                        "cross_provider_fallback",
+                    )
+            },
+            registryProvider = ProviderPlaybackRuntime::registryOrNull,
+            cacheIdentityProvider = {
+                CrossProviderPlaybackFallbackResolver.EligibleSources
+                    .sortedBy(MusicSource::storageValue)
+                    .joinToString("|") { source ->
+                        "${source.storageValue}:${ProviderPlaybackRuntime.authKey(source)}"
+                    }
+            },
+            eventLogger = { message -> Log.i(TAG, "Cross-provider fallback: $message") },
+            fallbackConfigProvider = {
+                MeloXRemoteConfigPolicy.activeConfig(this@MeloXPlaybackService).fallback
+            },
+        )
         val cookieProvider = { com.lladlam.melox.core.music.provider.PlaybackAccountStore.neteaseCookie(this@MeloXPlaybackService) }
         playbackResolver = NeteasePlaybackResolver(
             cookieProvider = cookieProvider,
             client = NeteaseSearchClient(cookieProvider = cookieProvider),
             localSourceProvider = downloadStore::localPlaybackUri,
+            crossProviderFallback = crossProviderFallback,
+            providerPlaybackEnabled = { source ->
+                MeloXRemoteConfigPolicy.providerPlaybackEnabled(this@MeloXPlaybackService, source)
+            },
         )
         autoMixAnalyzer = MeloXAutoMixAudioAnalyzer(this)
         val upstream = DefaultDataSource.Factory(this, httpFactory)
@@ -535,52 +577,126 @@ class MeloXPlaybackService : MediaSessionService() {
             AUTOPLAY_PRELOAD_MS
         }
         if (remaining <= preloadMs && MeloXNetworkAvailability.isOnline(this)) {
-            ensureAutoplayRecommendations(forceAdvance = false)
+            ensureAutoplayRecommendations()
         }
     }
 
-    private fun ensureAutoplayRecommendations(forceAdvance: Boolean) {
+    private fun ensureAutoplayRecommendations() {
         if (!MeloXNetworkAvailability.isOnline(this)) return
         if (!MeloXPlaybackModePreferences.autoplay(this)) return
         val active = player ?: return
-        val seed = active.currentMediaItem?.mediaId?.toLongOrNull() ?: return
+        val item = active.currentMediaItem ?: return
+        val seed = item.mediaId
+        resumeEndedAutoplayIfReady(active)
         if (recommendationJob?.isActive == true || recommendationSeed == seed) {
-            if (forceAdvance && active.playbackState == Player.STATE_ENDED && active.hasNextMediaItem()) {
-                active.seekToNextMediaItem()
-                active.play()
-            }
             return
         }
+        val now = SystemClock.elapsedRealtime()
+        if (recommendationRetrySeed == seed && now < recommendationRetryAfterRealtimeMs) return
+        if (recommendationRetrySeed == seed) {
+            recommendationRetrySeed = null
+            recommendationRetryAfterRealtimeMs = 0L
+        }
+        val metadata = item.mediaMetadata
+        val seedSnapshot = AutoplaySeedSnapshot(
+            queueIdentity = seed,
+            neteaseId = PlaybackTrackIdentity.neteaseNumericId(item),
+            title = metadata.extras?.getString(SYSTEM_ORIGINAL_TITLE_KEY)
+                ?.takeIf(String::isNotBlank)
+                ?: metadata.title?.toString().orEmpty(),
+            artist = metadata.extras?.getString(SYSTEM_ORIGINAL_ARTIST_KEY)
+                ?.takeIf(String::isNotBlank)
+                ?: metadata.artist?.toString().orEmpty(),
+            durationMs = metadata.extras?.getLong(PlaybackTrackIdentity.DurationMsExtra, 0L)
+                ?.takeIf { it > 0L }
+                ?: active.duration.takeIf { it != C.TIME_UNSET && it > 0L }
+                ?: 0L,
+        )
         recommendationSeed = seed
         recommendationJob = serviceScope.launch {
             val cookie = { NeteaseSessionStore.readCookie(this@MeloXPlaybackService) }
-            val recommendations = withContext(Dispatchers.IO) {
-                runCatching { NeteaseLibraryClient(cookieProvider = cookie).similarSongsBlocking(seed, 30) }
-                    .getOrDefault(emptyList())
+            val result = runCatching {
+                val neteaseSeed = seedSnapshot.neteaseId ?: findNeteaseAutoplaySeed(seedSnapshot, cookie)
+                    ?: error("未找到可用于无尽播放的网易云匹配歌曲")
+                withContext(Dispatchers.IO) {
+                    NeteaseLibraryClient(cookieProvider = cookie).similarSongsBlocking(neteaseSeed, 30)
+                }
             }
-            val existing = (0 until active.mediaItemCount).map { active.getMediaItemAt(it).mediaId }.toSet()
-            val quality = MusicQualityPreferences.read(this@MeloXPlaybackService)
-            recommendations
-                .filterNot { it.id.toString() in existing }
-                .take(20)
-                .forEach { song ->
+            var recommendationsCommitted = false
+            try {
+                if (
+                    player !== active ||
+                    !MeloXPlaybackModePreferences.autoplay(this@MeloXPlaybackService) ||
+                    active.currentMediaItem?.mediaId != seedSnapshot.queueIdentity
+                ) return@launch
+                val recommendations = result.getOrElse { error ->
+                    Log.w(TAG, "Autoplay recommendations failed for ${seedSnapshot.queueIdentity}", error)
+                    emptyList()
+                }
+                val existing = (0 until active.mediaItemCount).map { active.getMediaItemAt(it).mediaId }.toSet()
+                val quality = MusicQualityPreferences.read(this@MeloXPlaybackService)
+                val additions = recommendations
+                    .filterNot { it.id.toString() in existing }
+                    .take(20)
+                additions.forEach { song ->
                     active.addMediaItem(
-                        PlaybackCommands.mediaItemFor(
-                            song,
-                            quality,
-                            PlaybackCommands.QUEUE_ORIGIN_BASE,
-                        ),
+                        PlaybackCommands.mediaItemFor(song, quality, PlaybackCommands.QUEUE_ORIGIN_BASE),
                     )
                 }
-            PlaybackCommands.prioritizeManualQueue(active)
-            if (forceAdvance && active.playbackState == Player.STATE_ENDED && active.hasNextMediaItem()) {
-                active.seekToNextMediaItem()
-                active.prepare()
-                active.play()
+                if (additions.isNotEmpty()) {
+                    recommendationsCommitted = true
+                    recommendationRetrySeed = null
+                    recommendationRetryAfterRealtimeMs = 0L
+                    PlaybackCommands.prioritizeManualQueue(active)
+                    resumeEndedAutoplayIfReady(active)
+                } else {
+                    recommendationSeed = null
+                    recommendationRetrySeed = seedSnapshot.queueIdentity
+                    recommendationRetryAfterRealtimeMs = SystemClock.elapsedRealtime() + AUTOPLAY_RETRY_MS
+                    Log.w(TAG, "Autoplay returned no new tracks for ${seedSnapshot.queueIdentity}; retry scheduled")
+                }
+            } finally {
+                if (!recommendationsCommitted && recommendationSeed == seedSnapshot.queueIdentity) {
+                    recommendationSeed = null
+                }
+                recommendationJob = null
             }
-            recommendationJob = null
         }
     }
+
+    private suspend fun findNeteaseAutoplaySeed(
+        snapshot: AutoplaySeedSnapshot,
+        cookie: () -> String,
+    ): Long? {
+        if (snapshot.title.isBlank()) return null
+        val client = NeteaseSearchClient(cookieProvider = cookie)
+        val candidates = coroutineScope {
+            listOf(snapshot.title, "${snapshot.title} ${snapshot.artist}".trim())
+                .distinct()
+                .map { query ->
+                    async { runCatching { client.searchSongs(query, limit = 20) }.getOrDefault(emptyList()) }
+                }
+                .awaitAll()
+                .flatten()
+                .distinctBy(SearchSong::id)
+        }
+        return selectNeteaseAutoplaySeed(snapshot.title, snapshot.artist, snapshot.durationMs, candidates)
+    }
+
+    private fun resumeEndedAutoplayIfReady(active: ExoPlayer) {
+        if (!shouldResumeEndedAutoplay(active.playbackState, active.hasNextMediaItem())) return
+        active.seekToNextMediaItem()
+        active.prepare()
+        active.play()
+    }
+
+    private data class AutoplaySeedSnapshot(
+        val queueIdentity: String,
+        val neteaseId: Long?,
+        val title: String,
+        val artist: String,
+        val durationMs: Long,
+    )
 
     private fun maybeRunAutoMix(active: ExoPlayer) {
         val enabled = MeloXPlaybackModePreferences.autoMix(this)
@@ -751,7 +867,14 @@ class MeloXPlaybackService : MediaSessionService() {
         val currentItem = active.currentMediaItem ?: return
         val metadataEnabled = MeloXSettingsRuntime.systemLyricsEnabled
         val notificationEnabled = MeloXSettingsRuntime.lyricNotificationsEnabled
-        val songId = currentItem.mediaId.toLongOrNull() ?: return
+        val songId = currentItem.mediaId.toLongOrNull()?.takeIf { it > 0L }
+        if (shouldClearLegacySystemLyrics(currentItem.mediaId)) {
+            restoreSystemLyricsMetadata(active)
+            resetSystemLyrics(null)
+            getSystemService(NotificationManager::class.java).cancel(LYRICS_NOTIFICATION_ID)
+            return
+        }
+        songId ?: return
         if (!metadataEnabled && !notificationEnabled) {
             restoreSystemLyricsMetadata(active)
             (getSystemService(NotificationManager::class.java)).cancel(LYRICS_NOTIFICATION_ID)
@@ -841,10 +964,18 @@ class MeloXPlaybackService : MediaSessionService() {
 
     private fun restoreSystemLyricsMetadata(active: ExoPlayer) {
         val original = systemLyricsOriginalMetadata ?: return
-        val index = active.currentMediaItemIndex
-        if (index !in 0 until active.mediaItemCount) return
+        val currentIndex = active.currentMediaItemIndex
+        val index = currentIndex.takeIf { candidate ->
+            candidate in 0 until active.mediaItemCount &&
+                active.getMediaItemAt(candidate).mediaMetadata.extras?.containsKey(SYSTEM_ORIGINAL_TITLE_KEY) == true
+        } ?: systemLyricsSongId?.let { songId ->
+            (0 until active.mediaItemCount).firstOrNull { candidate ->
+                val item = active.getMediaItemAt(candidate)
+                item.mediaId.toLongOrNull() == songId &&
+                    item.mediaMetadata.extras?.containsKey(SYSTEM_ORIGINAL_TITLE_KEY) == true
+            }
+        } ?: return
         val current = active.getMediaItemAt(index)
-        if (current.mediaMetadata.extras?.containsKey(SYSTEM_ORIGINAL_TITLE_KEY) != true) return
         updatingSystemLyricsMetadata = true
         active.replaceMediaItem(index, current.buildUpon().setMediaMetadata(original).build())
         handler.post { updatingSystemLyricsMetadata = false }
@@ -1267,7 +1398,8 @@ class MeloXPlaybackService : MediaSessionService() {
         const val EXTRA_ANALYSIS_SOURCE = "analysis_source"
         const val EXTRA_ANALYSIS_PLAYLIST_ID = "analysis_playlist_id"
         const val TAG = "MeloXPlayback"
-        const val AUTOPLAY_PRELOAD_MS = 15_000L
+        const val AUTOPLAY_PRELOAD_MS = 60_000L
+        const val AUTOPLAY_RETRY_MS = 15_000L
         const val PREFETCH_TRACK_COUNT = 3
         const val PLAYBACK_MAINTENANCE_INTERVAL_MS = 1_000L
         const val AUTOMIX_ENVELOPE_INTERVAL_MS = 20L
@@ -1285,3 +1417,44 @@ class MeloXPlaybackService : MediaSessionService() {
         const val LYRICS_NOTIFICATION_ID = 1702
     }
 }
+
+internal fun shouldClearLegacySystemLyrics(mediaId: String?): Boolean =
+    mediaId?.toLongOrNull()?.takeIf { it > 0L } == null
+
+internal fun shouldResumeEndedAutoplay(playbackState: Int, hasNextMediaItem: Boolean): Boolean =
+    playbackState == Player.STATE_ENDED && hasNextMediaItem
+
+internal fun selectNeteaseAutoplaySeed(
+    title: String,
+    artist: String,
+    durationMs: Long,
+    candidates: List<SearchSong>,
+): Long? {
+    val titleKey = normalizeAutoplayMetadata(title)
+    val artistKeys = autoplayArtistKeys(artist)
+    return candidates.asSequence()
+        .filter { normalizeAutoplayMetadata(it.name) == titleKey }
+        .filter { candidate ->
+            val candidateArtists = autoplayArtistKeys(candidate.artists)
+            artistKeys.isEmpty() || candidateArtists.any(artistKeys::contains)
+        }
+        .filter { candidate ->
+            durationMs <= 0L || candidate.durationMs > 0L &&
+                kotlin.math.abs(durationMs - candidate.durationMs) <= 3_000L
+        }
+        .maxByOrNull { candidate ->
+            val candidateArtists = autoplayArtistKeys(candidate.artists)
+            (if (candidateArtists == artistKeys) 100 else 50) -
+                (if (durationMs > 0L) kotlin.math.abs(durationMs - candidate.durationMs) / 1_000L else 0L).toInt()
+        }
+        ?.id
+}
+
+private fun normalizeAutoplayMetadata(value: String): String = value.lowercase()
+    .replace(Regex("[^\\p{L}\\p{N}]"), "")
+
+private fun autoplayArtistKeys(value: String): Set<String> = value
+    .split(Regex("\\s*(?:/|、|,|，|&|;|；)\\s*"))
+    .map(::normalizeAutoplayMetadata)
+    .filter(String::isNotBlank)
+    .toSet()

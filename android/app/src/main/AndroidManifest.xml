@@ -39,7 +39,22 @@
         </activity>
 
         <activity android:name=".ui.account.MeloXAccountActivity" android:exported="false" />
+        <activity
+            android:name=".ui.account.SpotifyCallbackActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:noHistory="true">
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="com.lladlam.melox.android"
+                    android:host="spotify-callback" />
+            </intent-filter>
+        </activity>
         <activity android:name=".ui.collection.MeloXCollectionDetailActivity" android:exported="false" />
+        <activity android:name=".ui.song.MeloXSongWikiActivity" android:exported="false" />
         <activity android:name=".ui.player.MeloXListenTogetherInviteActivity" android:exported="false" />
         <activity android:name=".ui.sharing.MeloXNeteaseResourceShareActivity" android:exported="true">
             <intent-filter>

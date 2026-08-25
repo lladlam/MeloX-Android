@@ -69,6 +69,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -93,6 +94,7 @@ import com.lladlam.melox.ui.account.QQMusicLoginScreen
 import com.lladlam.melox.ui.account.KugouLoginScreen
 import com.lladlam.melox.ui.account.NeteaseLoginScreen
 import com.lladlam.melox.playback.ProviderPlaybackQualityRuntime
+import com.lladlam.melox.playback.CrossProviderPlaybackPreferences
 import com.lladlam.melox.playback.MeloXAudioAnalysisRuntime
 import com.lladlam.melox.core.audio.MusicQuality
 import com.lladlam.melox.core.audio.MusicQualityPreferences
@@ -102,6 +104,8 @@ import com.lladlam.melox.core.network.MeloXPrivateMessage
 import com.lladlam.melox.core.network.NeteaseMusicOperationsClient
 import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.core.network.MeloXHttpClient
+import com.lladlam.melox.core.network.MeloXGitHubRouting
+import com.lladlam.melox.core.network.MeloXGitHubSource
 import com.lladlam.melox.core.network.parseNeteaseListenTogetherInvitation
 import com.lladlam.melox.core.recommendation.LocalAnalysisStage
 import com.lladlam.melox.core.recommendation.LocalRecommendationEngine
@@ -109,7 +113,6 @@ import com.lladlam.melox.core.recommendation.LocalRecommendationStore
 import com.lladlam.melox.core.recognition.SongRecognitionClient
 import com.lladlam.melox.core.recognition.SongRecognitionResult
 import com.lladlam.melox.core.update.MeloXRelease
-import com.lladlam.melox.core.update.MeloXUpdateDownloadSource
 import com.lladlam.melox.core.update.MeloXUpdateClient
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.playback.MeloXAutoMixFadeCurve
@@ -143,6 +146,16 @@ import com.lladlam.melox.ui.glass.MeloXSymbolVariant
 import com.lladlam.melox.ui.glass.MeloXSystemColors
 import com.lladlam.melox.ui.glass.meloXContentSurface
 import com.lladlam.melox.ui.glass.meloXLiquidButton
+import com.lladlam.melox.ui.legal.MELOX_LEGAL_VERSION
+import com.lladlam.melox.ui.legal.MeloXLegalDocument
+import com.lladlam.melox.ui.legal.MeloXLegalDocumentDialog
+import com.lladlam.melox.ui.legal.MeloXLegalLinks
+import com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigRuntime
+import com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigSource
+import com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigConsent
+import com.lladlam.melox.ui.legal.MeloXCloudControlConsentDialog
+import java.text.DateFormat
+import java.util.Date
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
@@ -164,7 +177,9 @@ private enum class SettingsRoute(val title: String) {
     Storage("存储管理"),
     TabLayout("页面与标签栏"),
     General("通用"),
+    RemoteConfig("远程兼容性配置"),
     About("关于 MeloX"),
+    Legal("隐私政策与免责声明"),
     Privacy("隐私与本地算法"),
     Developer("开发者选项"),
     Experimental("测试功能尝鲜"),
@@ -199,7 +214,9 @@ private val SettingsSections = listOf(
         SettingsItem(SettingsRoute.FloatingLyrics, "Android 悬浮歌词能力与权限", "▤", "画中画 悬浮窗 其他应用"),
     )),
     SettingsSection("关于", listOf(
+        SettingsItem(SettingsRoute.RemoteConfig, "签名配置状态、平台熔断声明与本地缓存", "⌁", "远程 配置 云控 签名 熔断 兼容 GitHub"),
         SettingsItem(SettingsRoute.About, "版本、项目主页与开源信息", "ⓘ", "GitHub 更新 开源 许可"),
+        SettingsItem(SettingsRoute.Legal, "查看隐私政策、免责声明与同意版本", "▤", "隐私 政策 免责声明 法律 条款 数据"),
         SettingsItem(SettingsRoute.Developer, "播放器诊断与迁移状态", "⌘", "BeatNet 节拍 调试 日志"),
         SettingsItem(SettingsRoute.Experimental, "预览尚未稳定的新功能", "✦", "实验 测试 歌词 强绑定"),
     )),
@@ -436,13 +453,131 @@ private fun SettingsDetailScreen(route: SettingsRoute, source: MusicSource, sess
                     SettingsRoute.Storage -> StorageSettings(context)
                     SettingsRoute.TabLayout -> TabLayoutSettings(context)
                     SettingsRoute.General -> GeneralSettings(context)
+                    SettingsRoute.RemoteConfig -> RemoteConfigSettings()
                     SettingsRoute.About -> AboutSettings(context)
+                    SettingsRoute.Legal -> LegalSettings(context)
                     SettingsRoute.Privacy -> PrivacySettings(context)
                     SettingsRoute.Developer -> DeveloperSettings()
                     SettingsRoute.Experimental -> ExperimentalSettings(context, source, session)
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LegalSettings(context: android.content.Context) {
+    var selectedDocument by remember { mutableStateOf<MeloXLegalDocument?>(null) }
+    var cloudControlEnabled by remember { mutableStateOf(MeloXRemoteConfigConsent.enabled(context)) }
+    var showCloudControlConsent by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val consentVersion = remember {
+        MeloXSettingsPreferences.string(context, "legal_consent_version")
+    }
+
+    SettingsGlassGroup {
+        Column(Modifier.padding(16.dp)) {
+            Text("法律与隐私文件", fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                text = "当前文本版本：$MELOX_LEGAL_VERSION",
+                modifier = Modifier.padding(top = 7.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f),
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+            )
+            Text(
+                text = if (consentVersion.isBlank()) {
+                    "此安装记录中没有首次启动同意版本；你仍可在此完整查看文件。"
+                } else {
+                    "已同意版本：$consentVersion"
+                },
+                modifier = Modifier.padding(top = 3.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .52f),
+                fontSize = 12.sp,
+                lineHeight = 18.sp,
+            )
+        }
+    }
+    Spacer(Modifier.height(10.dp))
+    MeloXIosGroupedList(surfaceColor = MaterialTheme.colorScheme.surface) {
+        MeloXIosListRow(
+            title = "隐私政策",
+            leading = {
+                MeloXSymbolIcon(
+                    MeloXSymbol.Info,
+                    Modifier.size(24.dp),
+                    MeloXSystemColors.Blue,
+                )
+            },
+            onClick = { selectedDocument = MeloXLegalDocument.PrivacyPolicy },
+            showTopSeparator = false,
+        )
+        MeloXIosListRow(
+            title = "免责声明与使用须知",
+            leading = {
+                MeloXSymbolIcon(
+                    MeloXSymbol.Book,
+                    Modifier.size(24.dp),
+                    MeloXSystemColors.Blue,
+                )
+            },
+            onClick = { selectedDocument = MeloXLegalDocument.Disclaimer },
+            showTopSeparator = true,
+        )
+        MeloXIosListRow(
+            title = "云控隐私协议",
+            leading = {
+                MeloXSymbolIcon(
+                    MeloXSymbol.Info,
+                    Modifier.size(24.dp),
+                    MeloXSystemColors.Blue,
+                )
+            },
+            onClick = { selectedDocument = MeloXLegalDocument.CloudControlPrivacy },
+            showTopSeparator = true,
+        )
+    }
+    Spacer(Modifier.height(10.dp))
+    SettingsGlassGroup {
+        SettingsExternalToggleRow(
+            title = "允许远程兼容性配置",
+            value = cloudControlEnabled,
+            note = "启用后每次应用进入前台检查，并在持续使用期间每两小时检查一次；关闭后停止请求和应用远程配置。",
+            grouped = true,
+        ) { requested ->
+            if (requested) {
+                showCloudControlConsent = true
+            } else {
+                MeloXRemoteConfigConsent.reject(context)
+                cloudControlEnabled = false
+                scope.launch { MeloXRemoteConfigRuntime.clearCache(context) }
+            }
+        }
+    }
+    Text(
+        "仅用于控制音乐源及其下属功能。启用后每次应用进入前台检查，并在前台持续运行期间每两小时检查一次。",
+        modifier = Modifier.padding(horizontal = 6.dp, vertical = 7.dp),
+        fontSize = 12.sp,
+        lineHeight = 17.sp,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .5f),
+    )
+
+    selectedDocument?.let { document ->
+        MeloXLegalDocumentDialog(
+            document = document,
+            onDismiss = { selectedDocument = null },
+        )
+    }
+    if (showCloudControlConsent) {
+        MeloXCloudControlConsentDialog(
+            onReject = { showCloudControlConsent = false },
+            onAccept = {
+                MeloXRemoteConfigConsent.accept(context)
+                MeloXRemoteConfigRuntime.initializeAndRefresh(context, BuildConfig.VERSION_CODE, force = true)
+                cloudControlEnabled = true
+                showCloudControlConsent = false
+            },
+        )
     }
 }
 
@@ -1898,6 +2033,10 @@ private fun MessagesSettings(context: android.content.Context) {
 @Composable
 private fun ContentSettings(context: android.content.Context) {
     var area by remember { mutableStateOf(MeloXSettingsRuntime.musicArea) }
+    var crossProviderFallback by remember {
+        mutableStateOf(CrossProviderPlaybackPreferences.enabled(context))
+    }
+    var showCrossProviderFallbackNotice by remember { mutableStateOf(false) }
     SettingsGlassGroup {
         MeloXSettingsDropdown(
             title = "新碟与发现地区",
@@ -1908,6 +2047,69 @@ private fun ContentSettings(context: android.content.Context) {
         )
         SettingsToggleRow(context, "发现页显示精品歌单", "content_high_quality_playlist", true, grouped = true)
         SettingsToggleRow(context, "显示歌单播放量", "content_playlist_play_count", true, grouped = true)
+        SettingsExternalToggleRow(
+            title = "不可用资源从其他平台获取",
+            value = crossProviderFallback,
+            grouped = true,
+        ) { enabled ->
+            if (enabled) {
+                showCrossProviderFallbackNotice = true
+            } else {
+                crossProviderFallback = false
+                CrossProviderPlaybackPreferences.setEnabled(context, false)
+            }
+        }
+    }
+    if (crossProviderFallback) {
+        Spacer(Modifier.height(10.dp))
+        SettingsInfoCard(
+            "仅当网易云明确未返回可播放音频时，才会严格匹配 QQ音乐、酷狗音乐或 Bilibili 的完整音源。",
+        )
+    }
+    if (showCrossProviderFallbackNotice) {
+        MeloXGlassDialog(
+            visible = true,
+            onDismiss = { showCrossProviderFallbackNotice = false },
+        ) {
+            Text("启用跨平台资源匹配？", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = "仅当网易云明确无法返回完整可播放音频时，MeloX 才会将当前曲目的标题、歌手和时长发送给 QQ音乐、酷狗音乐和 Bilibili 的搜索接口。",
+                modifier = Modifier.padding(top = 10.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .72f),
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+            )
+            Text(
+                text = "只有标题与主艺人一致、且时长在严格范围内的完整音源才会播放。MeloX 不使用试听片段，也不会绕过付费、地区、版权、DRM 或账号权限限制。实际平台、歌曲版本和音质可能与原条目不同；收藏、歌单身份和歌词仍保留原网易云条目。",
+                modifier = Modifier.padding(top = 8.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .72f),
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+            )
+            Text(
+                text = "播放行为同时受实际音源平台的服务条款和隐私政策约束，你可以随时关闭此功能。",
+                modifier = Modifier.padding(top = 8.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .56f),
+                fontSize = 12.sp,
+                lineHeight = 18.sp,
+            )
+            MeloXLegalLinks(modifier = Modifier.padding(top = 6.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                SettingsActionButton("取消", Modifier.weight(1f)) {
+                    showCrossProviderFallbackNotice = false
+                }
+                SettingsActionButton("了解并启用", Modifier.weight(1f)) {
+                    crossProviderFallback = true
+                    CrossProviderPlaybackPreferences.setEnabled(context, true)
+                    showCrossProviderFallbackNotice = false
+                }
+            }
+        }
     }
 }
 
@@ -2472,19 +2674,98 @@ private fun RecognitionSettings(context: android.content.Context) {
 }
 
 @Composable
+private fun RemoteConfigSettings() {
+    val context = LocalContext.current.applicationContext
+    val status by MeloXRemoteConfigRuntime.status.collectAsState()
+    val scope = rememberCoroutineScope()
+    val githubRouting = remember { MeloXGitHubRouting(context) }
+    val consentEnabled = MeloXRemoteConfigConsent.enabled(context)
+    val source = if (!consentEnabled) {
+        "云控已拒绝或关闭"
+    } else when (status.source) {
+        MeloXRemoteConfigSource.BuiltIn -> "内置安全默认值"
+        MeloXRemoteConfigSource.VerifiedRemote -> "已验证远程配置"
+        MeloXRemoteConfigSource.VersionInapplicable -> "远程配置不适用于当前版本"
+    }
+    SettingsGlassGroup {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(source, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "签名配置仅控制已披露的音乐源登录、播放和跨平台回退能力。本地选择始终优先；授权后每次应用进入前台检查，并在前台持续运行期间每两小时检查一次。",
+                modifier = Modifier.padding(top = 7.dp),
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f),
+            )
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    SettingsGlassGroup {
+        RemoteConfigStatusLine("配置版本", status.config.configVersion.toString())
+        RemoteConfigStatusLine(
+            "访问源",
+            githubRouting.effectiveRoute()?.takeIf { githubRouting.selectedSource() == MeloXGitHubSource.Auto }
+                ?.let { "${it.source.label}（${it.latencyMs}ms）" }
+                ?: githubRouting.selectedSource().label,
+        )
+        RemoteConfigStatusLine("签名密钥", status.keyId ?: "内置")
+        RemoteConfigStatusLine("最近检查", formatRemoteConfigTime(status.lastCheckedAtEpochMs))
+        RemoteConfigStatusLine("最近更新", formatRemoteConfigTime(status.lastUpdatedAtEpochMs))
+        RemoteConfigStatusLine(
+            "声明熔断",
+            status.config.disabledCapabilities.takeIf(Set<String>::isNotEmpty)?.joinToString("、") ?: "无",
+        )
+        RemoteConfigStatusLine("回退顺序", status.config.fallback.order.joinToString(" → "))
+        RemoteConfigStatusLine("回退超时", "${status.config.fallback.timeoutMs} ms")
+    }
+    status.error?.let { error ->
+        Spacer(Modifier.height(12.dp))
+        SettingsInfoCard("最近检查失败：$error\n已继续使用上一次有效配置或内置默认值。")
+    }
+    Spacer(Modifier.height(12.dp))
+    SettingsActionButton(
+        when {
+            !consentEnabled -> "请先在隐私协议中启用云控"
+            status.refreshing -> "正在检查…"
+            else -> "手动检查配置"
+        },
+    ) {
+        if (consentEnabled && !status.refreshing) {
+            scope.launch { MeloXRemoteConfigRuntime.refresh(force = true) }
+        }
+    }
+    Spacer(Modifier.height(10.dp))
+    SettingsDangerButton("清除缓存并恢复内置配置") {
+        scope.launch { MeloXRemoteConfigRuntime.clearCache(context) }
+    }
+}
+
+@Composable
+private fun RemoteConfigStatusLine(title: String, value: String) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f))
+        Text(value, modifier = Modifier.weight(1.4f), textAlign = TextAlign.End, fontSize = 13.sp)
+    }
+}
+
+private fun formatRemoteConfigTime(value: Long): String = if (value <= 0L) {
+    "尚未"
+} else {
+    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(value))
+}
+
+@Composable
 private fun AboutSettings(context: android.content.Context) {
-    val updateClient = remember { MeloXUpdateClient() }
+    val githubRouting = remember { MeloXGitHubRouting(context) }
+    val updateClient = remember { MeloXUpdateClient(context, routing = githubRouting) }
     val scope = rememberCoroutineScope()
     var checking by remember { mutableStateOf(false) }
     var release by remember { mutableStateOf<MeloXRelease?>(null) }
     var updateStatus by remember { mutableStateOf<String?>(null) }
-    var downloadSource by remember {
-        mutableStateOf(runCatching {
-            MeloXUpdateDownloadSource.valueOf(
-                MeloXSettingsPreferences.string(context, "update_download_source", MeloXUpdateDownloadSource.Auto.name),
-            )
-        }.getOrDefault(MeloXUpdateDownloadSource.Auto))
-    }
+    var downloadSource by remember { mutableStateOf(githubRouting.selectedSource()) }
     SettingsGlassGroup {
         Column(Modifier.padding(18.dp)) {
             Text("MeloX Android", fontSize = 22.sp, fontWeight = FontWeight.Bold)
@@ -2497,20 +2778,24 @@ private fun AboutSettings(context: android.content.Context) {
     SettingsToggleRow(context, "自动检查更新", "update_auto_check", true, "应用启动后检查 GitHub 正式版本；不会自动下载安装。")
     Spacer(Modifier.height(10.dp))
     MeloXSettingsDropdown(
-        title = "更新下载源",
+        title = "GitHub 访问源",
         selected = downloadSource,
         items = listOf(
-            MeloXUpdateDownloadSource.Auto to "自动（CDN 优先）",
-            MeloXUpdateDownloadSource.GitHub to "GitHub Release",
-            MeloXUpdateDownloadSource.JsDelivr to "jsDelivr CDN",
+            MeloXGitHubSource.Auto to "自动选择",
+            MeloXGitHubSource.GitHubDoh to "GitHub DoH",
+            MeloXGitHubSource.GhFast to "GhFast",
+            MeloXGitHubSource.GhProxy to "GhProxy",
+            MeloXGitHubSource.GhProxyOrg to "GhProxy.org（备用）",
         ),
         onSelected = {
             downloadSource = it
-            MeloXSettingsPreferences.setString(context, "update_download_source", it.name)
+            githubRouting.selectSource(it)
         },
     )
     Text(
-        "jsDelivr 只能下载 Git 标签仓库树中的 APK。发布时需将同名 APK 放入 releases/ 目录；不可用时自动模式会回退 GitHub。",
+        githubRouting.effectiveRoute()?.takeIf { downloadSource == MeloXGitHubSource.Auto }?.let {
+            "自动测速当前选择 ${it.source.label}（${it.latencyMs}ms）；更新检查、APK 下载与已授权的签名配置共用此源。"
+        } ?: "自动模式会并行测速 GitHub DoH、GhFast、GhProxy 与 GhProxy.org，并选择当前最快的可用源。",
         modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
         fontSize = 12.sp,
         lineHeight = 17.sp,
@@ -2519,7 +2804,7 @@ private fun AboutSettings(context: android.content.Context) {
     SettingsActionButton(if (checking) "正在检查…" else "检查更新") {
         if (!checking) scope.launch {
             checking = true
-            runCatching { updateClient.latestStableRelease() }
+            runCatching { updateClient.latestStableRelease(forceSourceBenchmark = true) }
                 .onSuccess {
                     release = it
                     updateStatus = if (updateClient.isNewer(it.version, BuildConfig.VERSION_NAME)) {
@@ -2540,10 +2825,8 @@ private fun AboutSettings(context: android.content.Context) {
         Spacer(Modifier.height(10.dp))
         SettingsActionButton(if (available.apkUrl != null) "下载 ${available.version} APK" else "打开 ${available.version} 发布页") {
             scope.launch {
-                val target = runCatching { updateClient.downloadUrl(available, downloadSource) }.getOrNull()
-                    ?: if (downloadSource == MeloXUpdateDownloadSource.JsDelivr) null else available.pageUrl
-                if (target == null) updateStatus = "该版本未在 Git 标签的 releases/ 目录提供 APK，jsDelivr 下载不可用"
-                else runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target))) }
+                val target = runCatching { updateClient.downloadUrl(available) }.getOrNull() ?: available.pageUrl
+                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target))) }
                     .onFailure { updateStatus = it.message ?: "无法打开下载链接" }
             }
         }
@@ -2569,6 +2852,9 @@ private fun AboutSettings(context: android.content.Context) {
                     "neteasecloudmusicapienhanced/api-enhanced：听歌识曲与音频指纹运行时\n" +
                     "DanteAlighieri13210914/pv-tool：文字 PV 原始实现（Non-Commercial License）\n" +
                     "mjhydri/BeatNet：自动混音节拍/重拍/速度分析（CC BY 4.0）\n" +
+                    "NEORUAA/MeiloX：基于 Mei 的仿 Apple Music 网易云音乐客户端，提供 UI 参考\n" +
+                    "thlucas1/SpotifyWebApiPython：Spotify Web API 客户端，提供 Spotify API 参考\n" +
+                    "bromothymolb/bilibili-api-zoku：Bilibili API 调用整合项目，提供 Bilibili API 参考\n" +
                     "Kyant0 AndroidLiquidGlass / Backdrop：Android 液态玻璃渲染基础",
                 modifier = Modifier.padding(top = 10.dp),
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f),
@@ -2588,6 +2874,14 @@ private fun AboutSettings(context: android.content.Context) {
     Spacer(Modifier.height(10.dp))
     SettingsActionButton("查看上游项目与许可") {
         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/youshen2/MeloX/blob/main/MeloX/Features/Legal/ProjectLicensesView.swift"))) }
+    }
+    Spacer(Modifier.height(10.dp))
+    SettingsActionButton("加入QQ群") {
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://qm.qq.com/q/wbhFQxj7mo"))) }
+    }
+    Spacer(Modifier.height(10.dp))
+    SettingsActionButton("赞助我") {
+        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://ifdian.net/a/lladlam"))) }
     }
 }
 

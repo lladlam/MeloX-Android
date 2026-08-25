@@ -1,20 +1,17 @@
 package com.lladlam.melox.ui.podcast
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -34,11 +31,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -48,70 +46,57 @@ import com.lladlam.melox.core.network.MeloXPodcastCategory
 import com.lladlam.melox.core.network.MeloXPodcastProgram
 import com.lladlam.melox.core.network.NeteaseUniversalSearchClient
 import com.lladlam.melox.playback.PlaybackCommands
-import com.lladlam.melox.ui.glass.MeloXActionIcon
-import com.lladlam.melox.ui.glass.MeloXIosTopBar
+import com.lladlam.melox.ui.MeloXBottomContentClearance
+import com.lladlam.melox.ui.glass.MeloXGlassButton
+import com.lladlam.melox.ui.glass.MeloXGlassButtonStyle
+import com.lladlam.melox.ui.glass.MeloXGlassCard
+import com.lladlam.melox.ui.glass.MeloXPinnedListPage
 import com.lladlam.melox.ui.glass.MeloXShapes
-import com.lladlam.melox.ui.glass.meloXContentSurface
-import java.text.DateFormat
-import java.util.Date
+import com.lladlam.melox.ui.glass.MeloXSymbol
+import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
-private val PodcastAccent = Color(0xFFFF3147)
-
-/** Upstream PodcastHome/Category/Detail/ProgramDetail navigation in one retained Compose subtree. */
 @Composable
 fun MeloXPodcastScreen(
     modifier: Modifier = Modifier,
     subscriptionsOnly: Boolean = false,
+    initialPodcastId: Long? = null,
+    onExit: (() -> Unit)? = null,
+    bottomPadding: Dp = MeloXBottomContentClearance,
 ) {
     val context = LocalContext.current.applicationContext
     val client = remember(context) {
-        NeteaseUniversalSearchClient(
-            cookieProvider = { NeteaseSessionStore.readCookie(context) },
-        )
+        NeteaseUniversalSearchClient(cookieProvider = { NeteaseSessionStore.readCookie(context) })
     }
-    var category by remember { mutableStateOf<MeloXPodcastCategory?>(null) }
-    var podcast by remember { mutableStateOf<MeloXPodcast?>(null) }
-    var program by remember { mutableStateOf<MeloXPodcastProgram?>(null) }
+    var selectedPodcast by remember(initialPodcastId) {
+        mutableStateOf(initialPodcastId?.let { MeloXPodcast(id = it, name = "播客") })
+    }
     var subscriptionGeneration by remember { mutableIntStateOf(0) }
 
-    BackHandler(enabled = program != null || podcast != null || category != null) {
-        when {
-            program != null -> program = null
-            podcast != null -> podcast = null
-            else -> category = null
-        }
+    BackHandler(enabled = selectedPodcast != null) {
+        if (initialPodcastId != null) onExit?.invoke() else selectedPodcast = null
     }
 
     Box(modifier.fillMaxSize()) {
-        when {
-            program != null -> PodcastProgramDetail(
-                program = requireNotNull(program),
-                onBack = { program = null },
-            )
-            podcast != null -> PodcastDetail(
-                initialPodcast = requireNotNull(podcast),
+        selectedPodcast?.let { podcast ->
+            PodcastDetail(
+                initialPodcast = podcast,
                 client = client,
-                onBack = { podcast = null },
-                onProgram = { program = it },
-                onSubscriptionChanged = { subscriptionGeneration += 1 },
+                bottomPadding = bottomPadding,
+                onBack = {
+                    if (initialPodcastId != null) onExit?.invoke() else selectedPodcast = null
+                },
+                onSubscriptionChanged = { subscriptionGeneration++ },
             )
-            category != null -> PodcastCategory(
-                category = requireNotNull(category),
-                client = client,
-                onBack = { category = null },
-                onPodcast = { podcast = it },
-            )
-            else -> PodcastHome(
-                client = client,
-                subscriptionsOnly = subscriptionsOnly,
-                reloadToken = subscriptionGeneration,
-                onCategory = { category = it },
-                onPodcast = { podcast = it },
-            )
-        }
+        } ?: PodcastHome(
+            client = client,
+            subscriptionsOnly = subscriptionsOnly,
+            reloadToken = subscriptionGeneration,
+            bottomPadding = bottomPadding,
+            onPodcast = { selectedPodcast = it },
+        )
     }
 }
 
@@ -120,144 +105,196 @@ private fun PodcastHome(
     client: NeteaseUniversalSearchClient,
     subscriptionsOnly: Boolean,
     reloadToken: Int,
-    onCategory: (MeloXPodcastCategory) -> Unit,
+    bottomPadding: Dp,
     onPodcast: (MeloXPodcast) -> Unit,
 ) {
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
-    var recommended by remember { mutableStateOf<List<MeloXPodcast>>(emptyList()) }
-    var categories by remember { mutableStateOf<List<MeloXPodcastCategory>>(emptyList()) }
-    var subscriptions by remember { mutableStateOf<List<MeloXPodcast>>(emptyList()) }
-    var loading by remember { mutableStateOf(false) }
+    var payload by remember { mutableStateOf(PodcastHomePayload()) }
+    var selectedCategory by remember { mutableStateOf<MeloXPodcastCategory?>(null) }
+    var categoryPodcasts by remember { mutableStateOf<List<MeloXPodcast>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var categoryLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var manualReload by remember { mutableIntStateOf(0) }
 
-    suspend fun load() {
+    suspend fun loadHome() {
         loading = true
         error = null
         runCatching {
             coroutineScope {
-                val subscribed = async { runCatching {
-                    if (NeteaseSessionStore.containsMusicU(NeteaseSessionStore.readCookie(context))) {
-                        client.subscribedPodcasts(limit = 50).values
-                    } else emptyList()
-                } }
-                val featured = async { runCatching { if (subscriptionsOnly) emptyList() else client.featuredPodcasts() } }
-                val personalized = async { runCatching { if (subscriptionsOnly) emptyList() else client.personalizedPodcasts(12) } }
-                val loadedCategories = async { runCatching { if (subscriptionsOnly) emptyList() else client.podcastCategories() } }
-                val subscribedResult = subscribed.await()
-                val featuredResult = featured.await()
-                val personalizedResult = personalized.await()
-                val categoriesResult = loadedCategories.await()
-                val failures = listOf(subscribedResult, featuredResult, personalizedResult, categoriesResult)
-                    .mapNotNull { it.exceptionOrNull() }
-                if (failures.isNotEmpty() && failures.size == 4) throw failures.first()
-                HomePayload(
-                    recommended = (featuredResult.getOrDefault(emptyList()) + personalizedResult.getOrDefault(emptyList()))
-                        .distinctBy(MeloXPodcast::id),
-                    categories = categoriesResult.getOrDefault(emptyList()),
-                    subscriptions = subscribedResult.getOrDefault(emptyList()),
-                )
+                if (subscriptionsOnly) {
+                    val loggedIn = NeteaseSessionStore.containsMusicU(NeteaseSessionStore.readCookie(context))
+                    PodcastHomePayload(
+                        subscriptions = if (loggedIn) client.subscribedPodcasts(limit = 100).values else emptyList(),
+                    )
+                } else {
+                    val featured = async { client.featuredPodcasts() }
+                    val personalized = async { client.personalizedPodcasts(12) }
+                    val categories = async { client.podcastCategories() }
+                    PodcastHomePayload(
+                        featured = featured.await(),
+                        personalized = personalized.await(),
+                        categories = categories.await(),
+                    )
+                }
             }
-        }.onSuccess {
-            recommended = it.recommended
-            categories = it.categories
-            subscriptions = it.subscriptions
-        }.onFailure { error = it.message ?: "播客加载失败" }
+        }.onSuccess { payload = it }
+            .onFailure { error = it.message ?: "播客加载失败" }
         loading = false
     }
 
-    LaunchedEffect(reloadToken, manualReload, subscriptionsOnly) { load() }
+    LaunchedEffect(reloadToken, manualReload, subscriptionsOnly) { loadHome() }
+    LaunchedEffect(selectedCategory?.id) {
+        val category = selectedCategory ?: run {
+            categoryPodcasts = emptyList()
+            return@LaunchedEffect
+        }
+        categoryLoading = true
+        runCatching { client.podcastsByCategory(category.id, offset = 0, limit = 30).values }
+            .onSuccess { loaded -> if (selectedCategory?.id == category.id) categoryPodcasts = loaded }
+            .onFailure { error = it.message ?: "分类加载失败" }
+        categoryLoading = false
+    }
 
     PullToRefreshBox(
         isRefreshing = loading,
-        onRefresh = { scope.launch { manualReload += 1 } },
+        onRefresh = { manualReload++ },
         modifier = Modifier.fillMaxSize(),
     ) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 146.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
-        ) {
-            item {
-                MeloXIosTopBar(title = if (subscriptionsOnly) "订阅播客" else "播客")
-            }
-            if (subscriptions.isNotEmpty()) {
-                item { PodcastSectionTitle("我的订阅", "${subscriptions.size} 个") }
-                item { PodcastStrip(subscriptions, onPodcast) }
-            } else if (subscriptionsOnly && !loading) {
-                item { PodcastEmpty(error ?: "还没有订阅播客") }
-            }
-            if (!subscriptionsOnly && recommended.isNotEmpty()) {
-                item { PodcastSectionTitle("精选播客", "为你推荐") }
-                item { PodcastStrip(recommended, onPodcast) }
-            }
-            if (!subscriptionsOnly && categories.isNotEmpty()) {
-                item { PodcastSectionTitle("浏览分类", "${categories.size} 类") }
-                items(categories.chunked(2)) { row ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        row.forEach { value -> PodcastCategoryTile(value, Modifier.weight(1f)) { onCategory(value) } }
-                        if (row.size == 1) Spacer(Modifier.weight(1f))
+        when {
+            loading && payload.isEmpty -> PodcastLoadingState()
+            error != null && payload.isEmpty -> PodcastErrorState(error.orEmpty()) { scope.launch { manualReload++ } }
+            else -> LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 22.dp, bottom = bottomPadding + 20.dp),
+                verticalArrangement = Arrangement.spacedBy(22.dp),
+            ) {
+                item(key = "title") {
+                    Text(
+                        if (subscriptionsOnly) "订阅播客" else "播客",
+                        modifier = Modifier.padding(horizontal = 20.dp),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontSize = 34.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                if (!subscriptionsOnly && payload.categories.isNotEmpty()) {
+                    item(key = "categories") {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            item(key = "all") {
+                                PodcastCategoryButton("为你推荐", selectedCategory == null) { selectedCategory = null }
+                            }
+                            items(payload.categories, key = MeloXPodcastCategory::id) { category ->
+                                PodcastCategoryButton(category.name, selectedCategory?.id == category.id) {
+                                    selectedCategory = category
+                                }
+                            }
+                        }
                     }
                 }
-            }
-            if (!loading && recommended.isEmpty() && categories.isEmpty() && subscriptions.isEmpty() && !subscriptionsOnly) {
-                item { PodcastEmpty(error ?: "暂无播客推荐") }
+
+                if (subscriptionsOnly) {
+                    if (payload.subscriptions.isNotEmpty()) {
+                        item(key = "subscriptions") {
+                            PodcastSection("我的订阅", payload.subscriptions, onPodcast)
+                        }
+                    } else if (!loading) {
+                        item(key = "empty-subscriptions") {
+                            PodcastEmptyState(
+                                if (NeteaseSessionStore.containsMusicU(NeteaseSessionStore.readCookie(context))) {
+                                    "还没有订阅播客"
+                                } else {
+                                    "登录网易云音乐后查看订阅播客"
+                                },
+                            )
+                        }
+                    }
+                } else {
+                    item(key = "primary-section") {
+                        when {
+                            categoryLoading -> PodcastLoadingInline()
+                            selectedCategory != null -> PodcastSection("${selectedCategory?.name.orEmpty()}播客", categoryPodcasts, onPodcast)
+                            else -> PodcastSection("为你推荐", payload.personalized, onPodcast)
+                        }
+                    }
+                    if (payload.featured.isNotEmpty()) {
+                        item(key = "featured") { PodcastSection("精选播客", payload.featured, onPodcast) }
+                    }
+                }
             }
         }
     }
 }
 
-private data class HomePayload(
-    val recommended: List<MeloXPodcast>,
-    val categories: List<MeloXPodcastCategory>,
-    val subscriptions: List<MeloXPodcast>,
-)
+private data class PodcastHomePayload(
+    val featured: List<MeloXPodcast> = emptyList(),
+    val personalized: List<MeloXPodcast> = emptyList(),
+    val categories: List<MeloXPodcastCategory> = emptyList(),
+    val subscriptions: List<MeloXPodcast> = emptyList(),
+) {
+    val isEmpty: Boolean
+        get() = featured.isEmpty() && personalized.isEmpty() && categories.isEmpty() && subscriptions.isEmpty()
+}
 
 @Composable
-private fun PodcastCategory(
-    category: MeloXPodcastCategory,
-    client: NeteaseUniversalSearchClient,
-    onBack: () -> Unit,
-    onPodcast: (MeloXPodcast) -> Unit,
-) {
-    var values by remember(category.id) { mutableStateOf<List<MeloXPodcast>>(emptyList()) }
-    var loading by remember(category.id) { mutableStateOf(false) }
-    var hasMore by remember(category.id) { mutableStateOf(false) }
-    var total by remember(category.id) { mutableIntStateOf(0) }
-    var error by remember(category.id) { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
+private fun PodcastCategoryButton(title: String, selected: Boolean, onClick: () -> Unit) {
+    MeloXGlassButton(
+        onClick = onClick,
+        modifier = Modifier.height(44.dp),
+        style = if (selected) MeloXGlassButtonStyle.BorderedProminent else MeloXGlassButtonStyle.Bordered,
+        shape = MeloXShapes.capsule,
+        contentPadding = PaddingValues(horizontal = 15.dp, vertical = 9.dp),
+    ) { Text(title, maxLines = 1) }
+}
 
-    suspend fun load(reset: Boolean) {
-        if (loading) return
-        loading = true
-        val offset = if (reset) 0 else values.size
-        runCatching { client.podcastsByCategory(category.id, offset, 30) }
-            .onSuccess { page ->
-                values = if (reset) page.values else (values + page.values).distinctBy(MeloXPodcast::id)
-                hasMore = page.hasMore
-                total = page.totalCount
-                error = null
-            }
-            .onFailure { error = it.message ?: "分类加载失败" }
-        loading = false
-    }
-    LaunchedEffect(category.id) { load(true) }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 146.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        item { PodcastBackHeader(category.name, onBack) }
-        if (total > 0) item { Text("$total 个播客", color = MaterialTheme.colorScheme.onBackground.copy(alpha = .48f), fontSize = 12.sp) }
-        items(values, key = { it.id }) { PodcastListRow(it) { onPodcast(it) } }
-        item {
-            when {
-                loading -> PodcastLoading()
-                error != null -> PodcastRetry(error.orEmpty()) { scope.launch { load(values.isEmpty()) } }
-                hasMore -> PodcastRetry("继续加载") { scope.launch { load(false) } }
-                values.isEmpty() -> PodcastEmpty("暂无播客")
+@Composable
+private fun PodcastSection(title: String, podcasts: List<MeloXPodcast>, onPodcast: (MeloXPodcast) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            title,
+            modifier = Modifier.padding(horizontal = 20.dp),
+            color = MaterialTheme.colorScheme.onBackground,
+            fontSize = 23.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        if (podcasts.isEmpty()) {
+            PodcastEmptyState("暂无播客")
+        } else {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                items(podcasts, key = MeloXPodcast::id) { podcast ->
+                    MeloXGlassCard(
+                        modifier = Modifier.size(width = 176.dp, height = 244.dp),
+                        onClick = { onPodcast(podcast) },
+                    ) {
+                        AsyncImage(
+                            model = podcast.artworkUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(18.dp)),
+                        )
+                        Text(
+                            podcast.name,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            podcast.recommendation ?: podcast.host?.nickname.orEmpty(),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         }
     }
@@ -267,199 +304,172 @@ private fun PodcastCategory(
 private fun PodcastDetail(
     initialPodcast: MeloXPodcast,
     client: NeteaseUniversalSearchClient,
+    bottomPadding: Dp,
     onBack: () -> Unit,
-    onProgram: (MeloXPodcastProgram) -> Unit,
     onSubscriptionChanged: () -> Unit,
 ) {
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     var podcast by remember(initialPodcast.id) { mutableStateOf(initialPodcast) }
     var programs by remember(initialPodcast.id) { mutableStateOf<List<MeloXPodcastProgram>>(emptyList()) }
-    var ascending by remember(initialPodcast.id) { mutableStateOf(false) }
-    var loading by remember(initialPodcast.id) { mutableStateOf(false) }
-    var hasMore by remember(initialPodcast.id) { mutableStateOf(false) }
+    var loading by remember(initialPodcast.id) { mutableStateOf(true) }
     var subscribing by remember(initialPodcast.id) { mutableStateOf(false) }
     var error by remember(initialPodcast.id) { mutableStateOf<String?>(null) }
+    var reloadKey by remember(initialPodcast.id) { mutableIntStateOf(0) }
 
-    suspend fun load(reset: Boolean) {
-        if (loading) return
+    LaunchedEffect(initialPodcast.id, reloadKey) {
         loading = true
-        val offset = if (reset) 0 else programs.size
+        error = null
         runCatching {
             coroutineScope {
-                val detail = async { if (reset) client.podcastDetail(podcast.id) else null }
-                val page = async { client.podcastPrograms(podcast.id, offset, 30, ascending) }
-                detail.await() to page.await()
+                val detail = async { client.podcastDetail(initialPodcast.id) }
+                val episodes = async { client.podcastPrograms(initialPodcast.id, offset = 0, limit = 100, ascending = false) }
+                detail.await() to episodes.await().values
             }
-        }.onSuccess { (detail, page) ->
-            detail?.let { podcast = it }
-            programs = if (reset) page.values else (programs + page.values).distinctBy(MeloXPodcastProgram::id)
-            hasMore = page.hasMore
-            error = null
+        }.onSuccess { (loadedPodcast, loadedPrograms) ->
+            loadedPodcast?.let { podcast = it }
+            programs = loadedPrograms
         }.onFailure { error = it.message ?: "节目加载失败" }
         loading = false
     }
-    LaunchedEffect(initialPodcast.id, ascending) { load(true) }
-    val songs = programs.mapNotNull(MeloXPodcastProgram::playbackSong)
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 146.dp),
+    MeloXPinnedListPage(
+        title = podcast.name,
+        subtitle = podcast.host?.nickname,
+        onNavigateBack = onBack,
+        bottomPadding = bottomPadding,
         verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        item { PodcastBackHeader("播客", onBack) }
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                AsyncImage(podcast.artworkUrl, null, contentScale = ContentScale.Crop, modifier = Modifier.size(150.dp).clip(RoundedCornerShape(22.dp)))
-                Column(Modifier.weight(1f)) {
-                    Text(podcast.name, fontSize = 21.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold, maxLines = 4, overflow = TextOverflow.Ellipsis)
-                    Text(podcast.host?.nickname ?: podcast.category.orEmpty(), color = MaterialTheme.colorScheme.onBackground.copy(alpha = .52f), fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
-                    Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PodcastPill("▶ 播放") { songs.firstOrNull()?.let { PlaybackCommands.playQueue(context, songs, it.id) } }
-                        PodcastPill(if (podcast.subscribed) "已订阅" else "订阅", enabled = !subscribing) {
-                            if (!NeteaseSessionStore.containsMusicU(NeteaseSessionStore.readCookie(context))) {
-                                error = "请先登录网易云音乐后再订阅播客"
-                            } else scope.launch {
-                                subscribing = true
-                                val desired = !podcast.subscribed
-                                runCatching { client.setPodcastSubscribed(podcast.id, desired) }
-                                    .onSuccess { podcast = podcast.copy(subscribed = desired); onSubscriptionChanged() }
-                                    .onFailure { error = it.message ?: "订阅更新失败" }
-                                subscribing = false
-                            }
+        actions = {
+            MeloXGlassButton(
+                onClick = {
+                    if (!NeteaseSessionStore.containsMusicU(NeteaseSessionStore.readCookie(context))) {
+                        error = "请先登录网易云音乐后再订阅播客"
+                    } else if (!subscribing) {
+                        val desired = !podcast.subscribed
+                        subscribing = true
+                        scope.launch {
+                            runCatching { client.setPodcastSubscribed(podcast.id, desired) }
+                                .onSuccess {
+                                    podcast = podcast.copy(subscribed = desired)
+                                    onSubscriptionChanged()
+                                }
+                                .onFailure { error = it.message ?: "订阅更新失败" }
+                            subscribing = false
                         }
+                    }
+                },
+                enabled = !subscribing,
+                style = if (podcast.subscribed) MeloXGlassButtonStyle.BorderedProminent else MeloXGlassButtonStyle.Bordered,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            ) { Text(if (podcast.subscribed) "已订阅" else "订阅", maxLines = 1) }
+        },
+    ) {
+        item(key = "podcast-hero") {
+            MeloXGlassCard(Modifier.fillMaxWidth()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    AsyncImage(
+                        model = podcast.artworkUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(112.dp).clip(RoundedCornerShape(22.dp)),
+                    )
+                    Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                        Text(
+                            podcast.host?.nickname ?: podcast.category.orEmpty(),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            podcast.description.orEmpty(),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 5,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
             }
         }
-        podcast.description?.takeIf(String::isNotBlank)?.let { description ->
-            item { Text(description, color = MaterialTheme.colorScheme.onBackground.copy(alpha = .58f), fontSize = 13.sp, lineHeight = 19.sp) }
-        }
-        item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("节目", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                Text(if (ascending) "最早优先" else "最新优先", color = PodcastAccent, modifier = Modifier.clickable { ascending = !ascending }.padding(8.dp), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+
+        if (loading) item(key = "loading") { PodcastLoadingInline() }
+        error?.let { message ->
+            item(key = "error") {
+                MeloXGlassCard(Modifier.fillMaxWidth()) {
+                    Text(message, color = MaterialTheme.colorScheme.error)
+                    MeloXGlassButton(
+                        onClick = { reloadKey++ },
+                        modifier = Modifier.fillMaxWidth(),
+                        style = MeloXGlassButtonStyle.BorderedProminent,
+                    ) { Text("重试") }
+                }
             }
         }
-        items(programs, key = { it.id }) { value -> PodcastProgramRow(value, onProgram) }
-        item {
-            when {
-                loading -> PodcastLoading()
-                error != null -> PodcastRetry(error.orEmpty()) { scope.launch { load(programs.isEmpty()) } }
-                hasMore -> PodcastRetry("加载更多节目") { scope.launch { load(false) } }
-                programs.isEmpty() -> PodcastEmpty("暂无节目")
-            }
-        }
-    }
-}
-
-@Composable
-private fun PodcastProgramDetail(program: MeloXPodcastProgram, onBack: () -> Unit) {
-    val context = LocalContext.current.applicationContext
-    val song = program.playbackSong
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 146.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        item { Box(Modifier.fillMaxWidth()) { PodcastBackHeader("节目", onBack) } }
-        item { AsyncImage(program.artworkUrl, null, contentScale = ContentScale.Crop, modifier = Modifier.size(210.dp).clip(RoundedCornerShape(22.dp))) }
-        item { Text(program.name, fontSize = 25.sp, lineHeight = 31.sp, fontWeight = FontWeight.Bold) }
-        item { Text(program.host?.nickname ?: program.radioName, color = MaterialTheme.colorScheme.onBackground.copy(alpha = .52f)) }
-        item { PodcastPill("▶ 播放节目", enabled = song != null) { song?.let { PlaybackCommands.playQueue(context, listOf(it), it.id) } } }
-        item {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.onBackground.copy(alpha = .055f)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                PodcastInfo("来自", program.radioName)
-                program.createTimeMs?.let { PodcastInfo("发布日期", DateFormat.getDateInstance().format(Date(it))) }
-                if (program.durationMs > 0L) PodcastInfo("时长", formatDuration(program.durationMs))
-                if (program.listenerCount > 0L) PodcastInfo("播放", compactCount(program.listenerCount))
-                if (program.likedCount > 0L) PodcastInfo("点赞", compactCount(program.likedCount))
-                if (program.commentCount > 0L) PodcastInfo("评论", compactCount(program.commentCount))
-            }
-        }
-        program.description?.takeIf(String::isNotBlank)?.let { item { Text(it, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onBackground.copy(alpha = .62f), lineHeight = 21.sp) } }
-    }
-}
-
-@Composable private fun PodcastSectionTitle(title: String, trailing: String) = Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(title, fontSize = 23.sp, fontWeight = FontWeight.Bold); Text(trailing, color = MaterialTheme.colorScheme.onBackground.copy(alpha = .42f), fontSize = 12.sp) }
-
-@Composable
-private fun PodcastStrip(values: List<MeloXPodcast>, onPodcast: (MeloXPodcast) -> Unit) {
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        items(values, key = { it.id }) { value ->
-            Column(Modifier.width(152.dp).clickable { onPodcast(value) }) {
-                AsyncImage(value.artworkUrl, null, contentScale = ContentScale.Crop, modifier = Modifier.size(152.dp).clip(RoundedCornerShape(18.dp)))
-                Text(value.name, maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 7.dp))
-                Text(value.recommendation ?: value.host?.nickname.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onBackground.copy(alpha = .45f), fontSize = 11.sp)
+        if (!loading && programs.isEmpty() && error == null) item(key = "empty") { PodcastEmptyState("暂无节目") }
+        programs.forEach { program ->
+            item(key = "program-${program.id}") {
+                PodcastProgramRow(program) {
+                    val songs = programs.mapNotNull(MeloXPodcastProgram::playbackSong)
+                    program.playbackSong?.let { selected ->
+                        PlaybackCommands.playQueue(context, songs, selected.id)
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun PodcastCategoryTile(value: MeloXPodcastCategory, modifier: Modifier, onClick: () -> Unit) {
-    Row(
-        modifier
-            .height(72.dp)
-            .meloXContentSurface(
-                shape = MeloXShapes.card,
-                surfaceColor = MaterialTheme.colorScheme.onBackground.copy(alpha = .035f),
+private fun PodcastProgramRow(program: MeloXPodcastProgram, onClick: () -> Unit) {
+    MeloXGlassCard(Modifier.fillMaxWidth(), onClick = onClick) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AsyncImage(
+                model = program.artworkUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(64.dp).clip(RoundedCornerShape(14.dp)),
             )
-            .clickable(onClick = onClick)
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        AsyncImage(value.artworkUrl, null, contentScale = ContentScale.Crop, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(13.dp)))
-        Text(value.name, Modifier.padding(start = 10.dp), maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                Text(
+                    program.name,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    if (program.durationMs > 0L) "${program.durationMs / 60_000L} 分钟" else "时长未知",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            MeloXSymbolIcon(MeloXSymbol.Play, Modifier.size(22.dp), MaterialTheme.colorScheme.onSurface)
+        }
     }
 }
 
 @Composable
-private fun PodcastListRow(value: MeloXPodcast, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().height(74.dp).clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(value.artworkUrl, null, contentScale = ContentScale.Crop, modifier = Modifier.size(60.dp).clip(RoundedCornerShape(14.dp)))
-        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-            Text(value.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-            Text(value.host?.nickname ?: value.category.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onBackground.copy(alpha = .48f), fontSize = 12.sp)
+private fun PodcastLoadingState() {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+}
+
+@Composable
+private fun PodcastLoadingInline() {
+    Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+}
+
+@Composable
+private fun PodcastErrorState(message: String, onRetry: () -> Unit) {
+    Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(message, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+            MeloXGlassButton(onRetry, style = MeloXGlassButtonStyle.BorderedProminent) { Text("重试") }
         }
-        MeloXActionIcon("›", Modifier.size(18.dp), MaterialTheme.colorScheme.onBackground.copy(alpha = .4f))
     }
 }
 
 @Composable
-private fun PodcastProgramRow(value: MeloXPodcastProgram, onClick: (MeloXPodcastProgram) -> Unit) {
-    Row(Modifier.fillMaxWidth().height(76.dp).clickable { onClick(value) }, verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(value.artworkUrl, null, contentScale = ContentScale.Crop, modifier = Modifier.size(58.dp).clip(RoundedCornerShape(13.dp)))
-        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-            Text(value.name, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, lineHeight = 19.sp)
-            Text(formatDuration(value.durationMs), color = MaterialTheme.colorScheme.onBackground.copy(alpha = .45f), fontSize = 11.sp)
-        }
-        MeloXActionIcon("›", Modifier.size(18.dp), MaterialTheme.colorScheme.onBackground.copy(alpha = .4f))
+private fun PodcastEmptyState(message: String) {
+    Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+        Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
     }
-}
-
-@Composable private fun PodcastBackHeader(title: String, onBack: () -> Unit) = Row(Modifier.fillMaxWidth().height(58.dp), verticalAlignment = Alignment.CenterVertically) { Box(Modifier.size(40.dp).clickable(onClick = onBack), contentAlignment = Alignment.Center) { MeloXActionIcon("‹", Modifier.size(22.dp), MaterialTheme.colorScheme.onBackground) }; Text(title, Modifier.padding(start = 6.dp), fontSize = 27.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-
-@Composable private fun PodcastPill(text: String, enabled: Boolean = true, onClick: () -> Unit) = Text(text, color = if (enabled) Color.White else Color.White.copy(alpha = .45f), fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.clip(RoundedCornerShape(20.dp)).background(PodcastAccent.copy(alpha = if (enabled) 1f else .4f)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp))
-
-@Composable private fun PodcastInfo(label: String, value: String) = Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(label, color = MaterialTheme.colorScheme.onBackground.copy(alpha = .48f)); Text(value, fontWeight = FontWeight.Medium) }
-
-@Composable private fun PodcastLoading() = Box(Modifier.fillMaxWidth().height(100.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = PodcastAccent) }
-
-@Composable private fun PodcastEmpty(message: String) = Box(Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) { Text(message, color = MaterialTheme.colorScheme.onBackground.copy(alpha = .48f)) }
-
-@Composable private fun PodcastRetry(message: String, onClick: () -> Unit) = Text(message, color = PodcastAccent, fontWeight = FontWeight.SemiBold, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 20.dp))
-
-private fun formatDuration(durationMs: Long): String {
-    if (durationMs <= 0L) return "--:--"
-    val seconds = durationMs / 1_000L
-    return if (seconds >= 3_600L) "%d:%02d:%02d".format(seconds / 3_600L, seconds / 60L % 60L, seconds % 60L)
-    else "%d:%02d".format(seconds / 60L, seconds % 60L)
-}
-
-private fun compactCount(value: Long): String = when {
-    value >= 100_000_000L -> "%.1f亿".format(value / 100_000_000.0)
-    value >= 10_000L -> "%.1f万".format(value / 10_000.0)
-    else -> value.toString()
 }

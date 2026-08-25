@@ -11,6 +11,7 @@ import com.lladlam.melox.core.provider.kugou.KugouSessionStore
 import com.lladlam.melox.core.provider.qqmusic.QQMusicSessionStore
 import com.lladlam.melox.core.provider.bilibili.BilibiliSessionStore
 import com.lladlam.melox.core.provider.bilibili.BilibiliPlaybackAssociationStore
+import com.lladlam.melox.core.provider.spotify.SpotifySessionStore
 import java.security.MessageDigest
 
 /**
@@ -49,6 +50,9 @@ object ProviderPlaybackRuntime {
             }
             MusicSource.Bilibili -> BilibiliSessionStore.read(context).cookie + "|" +
                 BilibiliPlaybackAssociationStore.revision(context)
+            MusicSource.Spotify -> SpotifySessionStore.read(context).let { session ->
+                listOf(session.accountId, session.expiresAtEpochMs).joinToString("|")
+            }
         }
         return MessageDigest.getInstance("SHA-256").digest(credential.toByteArray())
             .joinToString("") { "%02x".format(it) }

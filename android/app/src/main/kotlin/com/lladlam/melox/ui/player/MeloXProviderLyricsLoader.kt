@@ -49,9 +49,11 @@ import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
  * is already animating. Apple Music / EVA / TextPV / Skyline all receive the same
  * stable [LyricsDocument] instance for one media identity.
  */
+private const val AutomaticSelectionCacheVersion = 6
+
 internal object MeloXProviderLyricsLoader {
     private const val MaxCachedDocuments = 24
-    private const val AutomaticSelectionCacheVersion = 4
+    private const val TotalLoadTimeoutMs = 45_000L
     private val workerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lock = Any()
     private val inFlight = mutableMapOf<String, Deferred<LyricsDocument>>()
@@ -83,15 +85,15 @@ internal object MeloXProviderLyricsLoader {
         val binding = if (auto && MeloXSettingsRuntime.lyricStrongBindingEnabled) {
             LyricBindingStore.read(appContext, resourceId)
         } else null
-        val cacheKey = buildString {
-            append(if (auto) "auto-v$AutomaticSelectionCacheVersion" else "provider")
-            append(':').append(resourceId.source.storageValue).append(':').append(resourceId.value)
-            if (resourceId.source == MusicSource.Bilibili) {
-                append(":alignment:").append(bilibiliAlignment)
-                append(":duration-known:").append(state.durationMs > 0L)
-            }
-            binding?.let { append(":bound:").append(it.stableKey()) }
-        }
+        val cacheKey = lyricCacheKey(
+            resourceId = resourceId,
+            title = state.title,
+            artist = state.artist,
+            durationMs = state.durationMs,
+            automaticSelection = auto,
+            bilibiliAlignment = bilibiliAlignment,
+            binding = binding,
+        )
         cached(cacheKey)?.let { return it }
 
         // Snapshot Compose/player state before handing work to the IO scope. This
@@ -119,17 +121,16 @@ internal object MeloXProviderLyricsLoader {
             .take(count.coerceIn(0, 4))
             .mapNotNull { entry ->
                 val resourceId = PlaybackTrackIdentity.decode(entry.mediaId) ?: return@mapNotNull null
-                // Bilibili alignment depends on the active decoder duration and
-                // can issue several catalog requests. Preloading future videos
-                // both lacks that duration and quickly triggers provider rate limits.
-                if (resourceId.source == MusicSource.Bilibili) return@mapNotNull null
+                // Bilibili matching can issue several catalog requests. Do not
+                // preload it without the active decoder duration.
+                if (resourceId.source == MusicSource.Bilibili && entry.durationMs <= 0L) return@mapNotNull null
                 LyricTrackSnapshot(
                     resourceId = resourceId,
                     title = entry.title,
                     artist = entry.artist,
                     album = "",
                     artworkUrl = entry.artworkUrl,
-                    durationMs = 0L,
+                    durationMs = entry.durationMs,
                     automaticSelection = automaticSelection,
                     bilibiliAlignment = resourceId.source == MusicSource.Bilibili && bilibiliAlignment,
                     binding = if (automaticSelection && MeloXSettingsRuntime.lyricStrongBindingEnabled) {
@@ -162,14 +163,21 @@ internal object MeloXProviderLyricsLoader {
                 LyricTimelineProcessor.process(loadDocument(appContext, snapshot)).also { document ->
                     if (document.lines.isNotEmpty()) remember(cacheKey, document)
                 }
-            }.also { inFlight[cacheKey] = it }
+            }.also { created ->
+                inFlight[cacheKey] = created
+                created.invokeOnCompletion {
+                    synchronized(lock) {
+                        if (inFlight[cacheKey] === created) inFlight.remove(cacheKey)
+                    }
+                }
+            }
         }
-        return try {
-            deferred.await()
-        } finally {
-            if (deferred.isCompleted) synchronized(lock) {
+        return withTimeoutOrNull(TotalLoadTimeoutMs) { deferred.await() } ?: run {
+            synchronized(lock) {
                 if (inFlight[cacheKey] === deferred) inFlight.remove(cacheKey)
             }
+            Log.w("MeloXLyricsAuto", "Lyrics load timed out for $cacheKey")
+            LyricsDocument(emptyList())
         }
     }
 
@@ -178,8 +186,13 @@ internal object MeloXProviderLyricsLoader {
         snapshot: LyricTrackSnapshot,
     ): LyricsDocument {
         if (snapshot.resourceId.source == MusicSource.Bilibili) {
-            if (!snapshot.bilibiliAlignment) return LyricsDocument(emptyList())
-            return loadBilibiliAligned(appContext, snapshot)
+            val policy = bilibiliLyricLoadPolicy(
+                automaticSelection = snapshot.automaticSelection,
+                alignmentEnabled = snapshot.bilibiliAlignment,
+                durationMs = snapshot.durationMs,
+            )
+            if (policy.loadMatchedLyrics) return loadBilibiliMatched(appContext, snapshot)
+            if (snapshot.automaticSelection) return LyricsDocument(emptyList())
         }
         if (snapshot.automaticSelection) {
             snapshot.binding?.let { binding ->
@@ -194,7 +207,7 @@ internal object MeloXProviderLyricsLoader {
         return loadCurrentProvider(appContext, snapshot)
     }
 
-    private suspend fun loadBilibiliAligned(
+    private suspend fun loadBilibiliMatched(
         appContext: Context,
         snapshot: LyricTrackSnapshot,
     ): LyricsDocument = coroutineScope {
@@ -240,10 +253,11 @@ internal object MeloXProviderLyricsLoader {
         }
         val qq = qqResult.await()
         val amll = amllResult.await()
-        val primary = amll?.takeIf { it.document.lines.size > 1 }
-            ?: qq?.takeIf { it.document.lines.size > 1 }
-            ?: amll
-            ?: qq
+        val primaryResults = listOfNotNull(amll, qq)
+        val primaryDocument = selectAutomaticLyrics(
+            primaryResults.mapIndexed { priority, result -> AutoLyricCandidate(priority, result.document) },
+        )
+        val primary = primaryResults.firstOrNull { it.document === primaryDocument || it.document == primaryDocument }
         Log.i(
             "MeloXBilibiliLyrics",
             "primary=${primary?.source ?: "none"} lines=${primary?.document?.lines?.size ?: 0}",
@@ -297,7 +311,10 @@ internal object MeloXProviderLyricsLoader {
             qq,
             netease,
         ).distinctBy(BilibiliLyricSourceResult::source)
-        val selectedLyrics = BilibiliLyricAlignment.bestLyrics(results.ifEmpty { listOf(primary) })
+        val selectedLyrics = selectAutomaticLyrics(
+            results.ifEmpty { listOf(primary) }
+                .mapIndexed { priority, result -> AutoLyricCandidate(priority, result.document) },
+        ) ?: LyricsDocument(emptyList())
         val consensusDuration = BilibiliLyricAlignment.consensus(results)
         Log.i(
             "MeloXBilibiliLyrics",
@@ -308,6 +325,11 @@ internal object MeloXProviderLyricsLoader {
                 "audio=${snapshot.durationMs} selectedLines=${selectedLyrics.lines.size}",
         )
         if (consensusDuration != null &&
+            bilibiliLyricLoadPolicy(
+                snapshot.automaticSelection,
+                snapshot.bilibiliAlignment,
+                snapshot.durationMs,
+            ).saveReplacementAssociation &&
             BilibiliLyricAlignment.audioClearlyMismatches(snapshot.durationMs, consensusDuration)
         ) {
             val original = BilibiliProvider.parseIdentity(snapshot.resourceId.value)
@@ -380,20 +402,33 @@ internal object MeloXProviderLyricsLoader {
         appContext: Context,
         snapshot: LyricTrackSnapshot,
     ): LyricsDocument = coroutineScope {
-        val orderedSources = listOf(
-            LyricAutoSource.AmlL,
-            LyricAutoSource.QQMusic,
-            LyricAutoSource.Netease,
-            LyricAutoSource.Current,
+        val orderedSources = automaticLyricSourcesFor(snapshot.resourceId.source)
+        val amlStartedAt = SystemClock.elapsedRealtime()
+        val aml = withTimeoutOrNull(12_000L) {
+            loadMatchedSource(appContext, snapshot, LyricAutoSource.AmlL)
+        } ?: ResolvedLyrics.Empty
+        Log.d(
+            "MeloXLyricsAuto",
+            "source=${LyricAutoSource.AmlL} elapsed=${SystemClock.elapsedRealtime() - amlStartedAt}ms " +
+                "lines=${aml.document.lines.size} wordLines=${aml.document.lines.count { it.syllables.isNotEmpty() }}",
         )
-        val candidates = orderedSources.mapIndexed { priority, source ->
+        if (aml.document.lines.isNotEmpty()) {
+            if (MeloXSettingsRuntime.lyricStrongBindingEnabled) {
+                aml.binding?.let { LyricBindingStore.write(appContext, snapshot.resourceId, it) }
+            }
+            return@coroutineScope aml.document
+        }
+
+        val candidates = orderedSources.drop(1).mapIndexed { index, source ->
             async {
+                val priority = index + 1
                 val startedAt = SystemClock.elapsedRealtime()
                 val timeoutMs = when (source) {
                     LyricAutoSource.QQMusic -> 30_000L
-                    LyricAutoSource.AmlL -> 12_000L
+                    LyricAutoSource.Kugou -> 20_000L
                     LyricAutoSource.Netease,
                     LyricAutoSource.Current -> 15_000L
+                    LyricAutoSource.AmlL -> error("AMLL must be resolved before fallback sources")
                 }
                 val resolved = withTimeoutOrNull(timeoutMs) {
                     loadMatchedSource(appContext, snapshot, source)
@@ -420,7 +455,7 @@ internal object MeloXProviderLyricsLoader {
             }
             selected.document
         } else {
-            loadCurrentProvider(appContext, snapshot)
+            LyricsDocument(emptyList())
         }
     }
 
@@ -449,8 +484,8 @@ internal object MeloXProviderLyricsLoader {
         }
         val musicSource = when (source) {
             LyricAutoSource.QQMusic -> MusicSource.QQMusic
+            LyricAutoSource.Kugou -> MusicSource.Kugou
             LyricAutoSource.Netease -> MusicSource.Netease
-            else -> return ResolvedLyrics.Empty
         }
         if (musicSource == snapshot.resourceId.source) {
             val document = loadCurrentProvider(appContext, snapshot)
@@ -569,7 +604,9 @@ internal object MeloXProviderLyricsLoader {
         val candidateArtist = normalizeLyricMatchText(candidate.artistText)
         return 100 +
             (if (artist.isNotBlank() && (candidateArtist.contains(artist) || artist.contains(candidateArtist))) 25 else 0) -
-            ((candidate.durationMs?.let { kotlin.math.abs(snapshot.durationMs - it) } ?: 0L) / 1_000L).toInt()
+            (if (snapshot.durationMs > 0L) {
+                (candidate.durationMs?.let { kotlin.math.abs(snapshot.durationMs - it) } ?: 0L) / 1_000L
+            } else 0L).toInt()
     }
 
     private data class LyricTrackSnapshot(
@@ -583,12 +620,15 @@ internal object MeloXProviderLyricsLoader {
         val bilibiliAlignment: Boolean,
         val binding: LyricBinding?,
     ) {
-        fun cacheKey(): String =
-            "${if (automaticSelection) "auto-v$AutomaticSelectionCacheVersion" else "provider"}:${resourceId.source.storageValue}:${resourceId.value}" +
-                (if (resourceId.source == MusicSource.Bilibili) {
-                    ":alignment:$bilibiliAlignment:duration-known:${durationMs > 0L}"
-                } else "") +
-                binding?.let { ":bound:${it.stableKey()}" }.orEmpty()
+        fun cacheKey(): String = lyricCacheKey(
+            resourceId = resourceId,
+            title = title,
+            artist = artist,
+            durationMs = durationMs,
+            automaticSelection = automaticSelection,
+            bilibiliAlignment = bilibiliAlignment,
+            binding = binding,
+        )
     }
 
     private data class ResolvedLyrics(val document: LyricsDocument, val binding: LyricBinding?) {
@@ -598,23 +638,38 @@ internal object MeloXProviderLyricsLoader {
 
 internal data class AutoLyricCandidate(val priority: Int, val document: LyricsDocument, val binding: LyricBinding? = null)
 
-private enum class LyricAutoSource { AmlL, QQMusic, Netease, Current }
+internal enum class LyricAutoSource { AmlL, QQMusic, Netease, Kugou, Current }
+
+internal fun automaticLyricSourcesFor(source: MusicSource): List<LyricAutoSource> = when (source) {
+    MusicSource.QQMusic -> listOf(LyricAutoSource.AmlL, LyricAutoSource.Current, LyricAutoSource.Netease, LyricAutoSource.Kugou)
+    MusicSource.Netease -> listOf(LyricAutoSource.AmlL, LyricAutoSource.QQMusic, LyricAutoSource.Kugou, LyricAutoSource.Current)
+    MusicSource.Kugou -> listOf(LyricAutoSource.AmlL, LyricAutoSource.QQMusic, LyricAutoSource.Netease, LyricAutoSource.Current)
+    else -> listOf(LyricAutoSource.AmlL, LyricAutoSource.QQMusic, LyricAutoSource.Netease, LyricAutoSource.Kugou, LyricAutoSource.Current)
+}
 
 internal fun selectAutomaticLyrics(candidates: List<AutoLyricCandidate>): LyricsDocument? =
     selectAutomaticLyricCandidate(candidates)?.document
 
-internal fun selectAutomaticLyricCandidate(candidates: List<AutoLyricCandidate>): AutoLyricCandidate? =
-    candidates
-        .filter { it.document.lines.isNotEmpty() && hasWordTiming(it.document) }
+internal fun selectAutomaticLyricCandidate(candidates: List<AutoLyricCandidate>): AutoLyricCandidate? {
+    candidates.firstOrNull { it.priority == 0 && it.document.lines.isNotEmpty() }?.let { return it }
+    return selectBestQualityCandidate(
+        candidates.filter { it.document.lines.isNotEmpty() && hasWordTiming(it.document) }
+            .ifEmpty { candidates.filter { it.document.lines.isNotEmpty() } },
+    )
+}
+
+private fun selectBestQualityCandidate(candidates: List<AutoLyricCandidate>): AutoLyricCandidate? {
+    val bestScore = candidates.maxOfOrNull { lyricQualityScore(it.document) } ?: return null
+    val nearQualityWindow = maxOf(10, bestScore / 20)
+    return candidates
+        .filter { bestScore - lyricQualityScore(it.document) <= nearQualityWindow }
         .minByOrNull(AutoLyricCandidate::priority)
-        ?: candidates
-            .filter { it.document.lines.isNotEmpty() }
-            .minByOrNull(AutoLyricCandidate::priority)
+}
 
 private fun hasWordTiming(document: LyricsDocument): Boolean =
     document.lines.any { line -> line.syllables.isNotEmpty() }
 
-private fun lyricQualityScore(document: LyricsDocument): Int =
+internal fun lyricQualityScore(document: LyricsDocument): Int =
     document.lines.count { it.syllables.isNotEmpty() } * 100 +
         document.lines.count { !it.translation.isNullOrBlank() } * 10 +
         document.lines.count { !it.romanization.isNullOrBlank() } * 5 +
@@ -656,9 +711,11 @@ internal fun isSafeCrossProviderLyricMatch(
     if (target.baseTitle.isBlank() || target.baseTitle != other.baseTitle) return false
     if (target.version != other.version) return false
     if (target.version != LyricTrackVersion.Original && target.versionLabel != other.versionLabel) return false
-    val candidateDuration = candidate.durationMs ?: return false
-    val toleranceMs = if (target.version == LyricTrackVersion.Original) 2_000L else 1_000L
-    if (kotlin.math.abs(targetDurationMs - candidateDuration) > toleranceMs) return false
+    if (targetDurationMs > 0L) {
+        val candidateDuration = candidate.durationMs ?: return false
+        val toleranceMs = if (target.version == LyricTrackVersion.Original) 2_000L else 1_000L
+        if (kotlin.math.abs(targetDurationMs - candidateDuration) > toleranceMs) return false
+    }
     val targetArtistKey = normalizeLyricMatchText(targetArtist.substringBefore(" /"))
     val candidateArtistKey = normalizeLyricMatchText(candidate.artistText)
     return targetArtistKey.isBlank() || candidateArtistKey.contains(targetArtistKey) || targetArtistKey.contains(candidateArtistKey)
@@ -666,3 +723,39 @@ internal fun isSafeCrossProviderLyricMatch(
 
 internal fun normalizeLyricMatchText(value: String): String = value.lowercase()
     .replace(Regex("[^\\p{L}\\p{N}]"), "")
+
+internal fun lyricCacheKey(
+    resourceId: MusicResourceId,
+    title: String,
+    artist: String,
+    durationMs: Long,
+    automaticSelection: Boolean,
+    bilibiliAlignment: Boolean = false,
+    binding: LyricBinding? = null,
+): String = buildString {
+    append(if (automaticSelection) "auto-v$AutomaticSelectionCacheVersion" else "provider")
+    append(':').append(resourceId.source.storageValue).append(':').append(resourceId.value)
+    if (automaticSelection) {
+        append(":title:").append(normalizeLyricMatchText(title))
+        append(":artist:").append(normalizeLyricMatchText(artist))
+        append(":duration:").append(
+            durationMs.takeIf { it > 0L }?.let { ((it + 500L) / 1_000L) * 1_000L } ?: "unknown",
+        )
+    }
+    if (resourceId.source == MusicSource.Bilibili) append(":alignment:").append(bilibiliAlignment)
+    binding?.let { append(":bound:").append(it.stableKey()) }
+}
+
+internal data class BilibiliLyricLoadPolicy(
+    val loadMatchedLyrics: Boolean,
+    val saveReplacementAssociation: Boolean,
+)
+
+internal fun bilibiliLyricLoadPolicy(
+    automaticSelection: Boolean,
+    alignmentEnabled: Boolean,
+    durationMs: Long,
+): BilibiliLyricLoadPolicy = BilibiliLyricLoadPolicy(
+    loadMatchedLyrics = automaticSelection && durationMs > 0L,
+    saveReplacementAssociation = automaticSelection && alignmentEnabled && durationMs > 0L,
+)

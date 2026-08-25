@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -64,6 +66,10 @@ fun MeloXPinnedListPage(
     bottomPadding: Dp,
     modifier: Modifier = Modifier,
     listState: LazyListState = rememberLazyListState(),
+    subtitle: String? = null,
+    horizontalPadding: Dp = 20.dp,
+    verticalArrangement: Arrangement.Vertical = Arrangement.spacedBy(10.dp),
+    actions: (@Composable RowScope.() -> Unit)? = null,
     content: LazyListScope.() -> Unit,
 ) {
     val collapseDistancePx = with(LocalDensity.current) { 56.dp.toPx() }
@@ -84,12 +90,12 @@ fun MeloXPinnedListPage(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
-                    start = 20.dp,
+                    start = horizontalPadding,
                     top = toolbarHeight + 12.dp,
-                    end = 20.dp,
+                    end = horizontalPadding,
                     bottom = bottomPadding,
                 ),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = verticalArrangement,
             ) {
                 item(key = "large-title:$title") {
                     Text(
@@ -137,7 +143,7 @@ fun MeloXPinnedListPage(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 MeloXGlassIconButton(MeloXSymbol.ChevronLeft, onNavigateBack, contentDescription = "返回")
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         title,
                         modifier = Modifier.graphicsLayer {
@@ -152,8 +158,22 @@ fun MeloXPinnedListPage(
                         overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onBackground,
                     )
+                    subtitle?.takeIf(String::isNotBlank)?.let {
+                        Text(
+                            it,
+                            modifier = Modifier.graphicsLayer { alpha = collapseProgress },
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = .56f),
+                        )
+                    }
                 }
-                Spacer(Modifier.height(44.dp).padding(horizontal = 22.dp))
+                if (actions == null) {
+                    Spacer(Modifier.size(44.dp))
+                } else {
+                    Row(content = actions)
+                }
             }
         }
     }

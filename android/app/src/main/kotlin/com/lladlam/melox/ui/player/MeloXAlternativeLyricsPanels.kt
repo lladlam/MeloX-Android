@@ -70,15 +70,21 @@ private fun rememberAlternativeLyrics(
 ): AlternativeLyricsState {
     val context = LocalContext.current.applicationContext
     val mediaId = state.mediaId
-    var document by remember(mediaId) { mutableStateOf<LyricsDocument?>(null) }
-    var loading by remember(mediaId) { mutableStateOf(false) }
-    var error by remember(mediaId) { mutableStateOf<String?>(null) }
-    LaunchedEffect(active, mediaId, state.title, state.artist, state.album, state.durationMs) {
-        if (!active || mediaId.isNullOrBlank() || document != null) return@LaunchedEffect
+    val automaticLyricSelectionEnabled = MeloXSettingsRuntime.automaticLyricSelectionEnabled
+    var document by remember(mediaId, automaticLyricSelectionEnabled) { mutableStateOf<LyricsDocument?>(null) }
+    var loading by remember(mediaId, automaticLyricSelectionEnabled) { mutableStateOf(false) }
+    var error by remember(mediaId, automaticLyricSelectionEnabled) { mutableStateOf<String?>(null) }
+    var loadedRequestKey by remember(mediaId, automaticLyricSelectionEnabled) { mutableStateOf<String?>(null) }
+    val requestKey = lyricUiRequestKey(state, automaticLyricSelectionEnabled)
+    LaunchedEffect(active, mediaId, state.title, state.artist, state.album, state.durationMs, automaticLyricSelectionEnabled) {
+        if (!active || mediaId.isNullOrBlank() || loadedRequestKey == requestKey) return@LaunchedEffect
         loading = true
         error = null
         runCatching { MeloXProviderLyricsLoader.load(context, state) }
-            .onSuccess { document = it }
+            .onSuccess {
+                document = it
+                loadedRequestKey = requestKey
+            }
             .onFailure { error = it.message ?: "歌词加载失败" }
         loading = false
     }
@@ -135,16 +141,22 @@ private fun rememberTextPVLyrics(
 ): TextPVLyricsState {
     val context = LocalContext.current.applicationContext
     val mediaId = state.mediaId
-    var document by remember(mediaId) { mutableStateOf<LyricsDocument?>(null) }
-    var loading by remember(mediaId) { mutableStateOf(false) }
-    var error by remember(mediaId) { mutableStateOf<String?>(null) }
+    val automaticLyricSelectionEnabled = MeloXSettingsRuntime.automaticLyricSelectionEnabled
+    var document by remember(mediaId, automaticLyricSelectionEnabled) { mutableStateOf<LyricsDocument?>(null) }
+    var loading by remember(mediaId, automaticLyricSelectionEnabled) { mutableStateOf(false) }
+    var error by remember(mediaId, automaticLyricSelectionEnabled) { mutableStateOf<String?>(null) }
+    var loadedRequestKey by remember(mediaId, automaticLyricSelectionEnabled) { mutableStateOf<String?>(null) }
+    val requestKey = lyricUiRequestKey(state, automaticLyricSelectionEnabled)
 
-    LaunchedEffect(active, mediaId, state.title, state.artist, state.album, state.durationMs) {
-        if (!active || mediaId.isNullOrBlank() || document != null) return@LaunchedEffect
+    LaunchedEffect(active, mediaId, state.title, state.artist, state.album, state.durationMs, automaticLyricSelectionEnabled) {
+        if (!active || mediaId.isNullOrBlank() || loadedRequestKey == requestKey) return@LaunchedEffect
         loading = true
         error = null
         runCatching { MeloXProviderLyricsLoader.load(context, state) }
-            .onSuccess { document = it }
+            .onSuccess {
+                document = it
+                loadedRequestKey = requestKey
+            }
             .onFailure { error = it.message ?: "歌词加载失败" }
         loading = false
     }
@@ -201,6 +213,15 @@ private data class TextPVLyricsState(
     val loading: Boolean,
     val error: String?,
 )
+
+internal fun lyricUiRequestKey(state: MeloXPlaybackUiState, automaticSelection: Boolean): String = buildString {
+    append(state.mediaId)
+    append(':').append(normalizeLyricMatchText(state.title))
+    append(':').append(normalizeLyricMatchText(state.artist))
+    append(':').append(normalizeLyricMatchText(state.album))
+    append(':').append(state.durationMs.takeIf { it > 0L }?.let { ((it + 500L) / 1_000L) * 1_000L } ?: 0L)
+    append(':').append(automaticSelection)
+}
 
 @Composable
 internal fun MeloXEvaLyricsPanel(

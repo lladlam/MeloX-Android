@@ -447,6 +447,7 @@ private fun shareProviderSong(
         MusicSource.Bilibili -> identity.value.substringBefore(':').takeIf(String::isNotBlank)?.let {
             "https://www.bilibili.com/video/$it"
         }
+        MusicSource.Spotify -> "https://open.spotify.com/track/${identity.value}"
     }
     val text = buildString {
         append(state.title.ifBlank { "正在播放" })

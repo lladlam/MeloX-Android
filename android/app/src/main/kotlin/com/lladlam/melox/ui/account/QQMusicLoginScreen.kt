@@ -30,7 +30,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,10 +42,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.lladlam.melox.core.provider.qqmusic.QQMusicApiClient
+import com.lladlam.melox.core.provider.qqmusic.QQMusicPhoneAuthClient
+import com.lladlam.melox.core.provider.qqmusic.QQMusicSecurityChallengeException
 import com.lladlam.melox.core.provider.qqmusic.QQMusicSessionStore
 import com.lladlam.melox.core.music.provider.PlaybackAccountSlot
+import com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigPolicy
 import com.lladlam.melox.ui.glass.meloXLiquidButton
+import com.lladlam.melox.ui.legal.MeloXLegalLinks
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private const val QQ_MUSIC_LOGIN_URL = "https://y.qq.com/"
 private const val COOKIE_POLL_INTERVAL_MS = 500L
@@ -58,14 +65,33 @@ fun QQMusicLoginScreen(
     targetSlot: PlaybackAccountSlot = PlaybackAccountSlot.Main,
 ) {
     val context = LocalContext.current.applicationContext
+    val phoneAuthClient = remember { QQMusicPhoneAuthClient() }
+    val scope = rememberCoroutineScope()
+    var pendingPhone by rememberSaveable { mutableStateOf("") }
+    var resumeAtCodeStep by rememberSaveable { mutableStateOf(false) }
+    var useWebLogin by remember {
+        mutableStateOf(!MeloXRemoteConfigPolicy.capabilityEnabled(context, "qq_phone_login"))
+    }
+    var webLoginUrl by remember { mutableStateOf(QQ_MUSIC_LOGIN_URL) }
+    var securityChallengeActive by remember { mutableStateOf(false) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var pageLoading by remember { mutableStateOf(true) }
     var verifying by remember { mutableStateOf(false) }
+    var securityRetrying by remember { mutableStateOf(false) }
     var verificationError by remember { mutableStateOf<String?>(null) }
 
-    BackHandler {
+    BackHandler(enabled = useWebLogin) {
+        if (securityChallengeActive) {
+            webView?.stopLoading()
+            webView?.destroy()
+            webView = null
+            securityChallengeActive = false
+            webLoginUrl = QQ_MUSIC_LOGIN_URL
+            useWebLogin = false
+            return@BackHandler
+        }
         val view = webView
-        if (view?.canGoBack() == true) view.goBack() else onDismiss()
+        if (view?.canGoBack() == true) view.goBack() else useWebLogin = false
     }
 
     LaunchedEffect(webView) {
@@ -87,7 +113,7 @@ fun QQMusicLoginScreen(
                 stablePolls = if (candidate.isBlank()) 0 else 1
             }
 
-            if (session.isLoggedIn && stablePolls >= COOKIE_STABLE_POLLS_BEFORE_VERIFY && !verifying) {
+            if (!securityChallengeActive && session.isLoggedIn && stablePolls >= COOKIE_STABLE_POLLS_BEFORE_VERIFY && !verifying) {
                 val fingerprint = "${session.uin}:${session.musicKey}"
                 val now = SystemClock.elapsedRealtime()
                 val shouldAttempt =
@@ -127,7 +153,60 @@ fun QQMusicLoginScreen(
         }
     }
 
-    Column(
+    if (!useWebLogin) {
+        MeloXPhoneCodeLoginScreen(
+            serviceName = "QQ音乐",
+            brandColor = Color(0xFF20C573),
+            description = "使用手机号登录 QQ音乐，访问你的收藏与歌单。",
+            onClose = onDismiss,
+            onSendCode = { countryCode, phone ->
+                try {
+                    phoneAuthClient.sendCode(countryCode, phone)
+                    Result.success(Unit)
+                } catch (challenge: QQMusicSecurityChallengeException) {
+                    webLoginUrl = challenge.securityUrl
+                    securityChallengeActive = true
+                    useWebLogin = true
+                    Result.failure(challenge)
+                } catch (error: Exception) {
+                    Result.failure(error)
+                }
+            },
+            onSubmitCode = { countryCode, phone, code ->
+                try {
+                    val cookie = phoneAuthClient.login(countryCode, phone, code)
+                    val parsedSession = QQMusicSessionStore.parse(cookie)
+                    QQMusicApiClient(sessionProvider = { parsedSession }).accountProfile()
+                    QQMusicSessionStore.write(
+                        context,
+                        cookie,
+                        playback = targetSlot == PlaybackAccountSlot.Playback,
+                    )
+                    onLoggedIn()
+                    Result.success(Unit)
+                } catch (challenge: QQMusicSecurityChallengeException) {
+                    webLoginUrl = challenge.securityUrl
+                    securityChallengeActive = true
+                    useWebLogin = true
+                    Result.failure(challenge)
+                } catch (error: Exception) {
+                    Result.failure(error)
+                }
+            },
+            onWebLogin = {
+                webLoginUrl = QQ_MUSIC_LOGIN_URL
+                securityChallengeActive = false
+                useWebLogin = true
+            },
+            webFallbackEmphasis = true,
+            initialPhone = pendingPhone,
+            startAtCodeStep = resumeAtCodeStep,
+            onPhoneChanged = {
+                pendingPhone = it
+                resumeAtCodeStep = false
+            },
+        )
+    } else Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
@@ -141,7 +220,7 @@ fun QQMusicLoginScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "取消",
+                text = if (securityChallengeActive) "返回" else "取消",
                 modifier = Modifier
                     .clip(RoundedCornerShape(18.dp))
                     .meloXLiquidButton(
@@ -151,20 +230,51 @@ fun QQMusicLoginScreen(
                         lensRadius = 7.dp,
                         refractionHeight = 11.dp,
                     )
-                    .clickable(onClick = onDismiss)
+                    .clickable {
+                        if (securityChallengeActive) {
+                            webView?.stopLoading()
+                            webView?.destroy()
+                            webView = null
+                            securityChallengeActive = false
+                            webLoginUrl = QQ_MUSIC_LOGIN_URL
+                            useWebLogin = false
+                        } else onDismiss()
+                    }
                     .padding(8.dp),
                 color = Color(0xFFFF3147),
                 fontSize = 16.sp,
             )
             Text(
-                text = "登录 QQ音乐",
+                text = if (securityChallengeActive) "QQ音乐安全验证" else "登录 QQ音乐",
                 fontSize = 17.sp,
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
-                text = "取消",
-                modifier = Modifier.padding(8.dp),
-                color = Color.Transparent,
+                text = if (securityChallengeActive) "验证完成" else "取消",
+                modifier = Modifier
+                    .clip(RoundedCornerShape(18.dp))
+                    .clickable(enabled = securityChallengeActive && !securityRetrying) {
+                        scope.launch {
+                            securityRetrying = true
+                            verificationError = null
+                            runCatching {
+                                phoneAuthClient.sendCode("86", pendingPhone.filter(Char::isDigit))
+                            }.onSuccess {
+                                webView?.stopLoading()
+                                webView?.destroy()
+                                webView = null
+                                securityChallengeActive = false
+                                webLoginUrl = QQ_MUSIC_LOGIN_URL
+                                resumeAtCodeStep = true
+                                useWebLogin = false
+                            }.onFailure { error ->
+                                verificationError = error.message ?: "安全验证尚未生效，请稍后重试"
+                            }
+                            securityRetrying = false
+                        }
+                    }
+                    .padding(8.dp),
+                color = if (securityChallengeActive) Color(0xFF20C573) else Color.Transparent,
                 fontSize = 16.sp,
             )
         }
@@ -213,12 +323,12 @@ fun QQMusicLoginScreen(
                                 super.onPageFinished(view, url)
                             }
                         }
-                        loadUrl(QQ_MUSIC_LOGIN_URL)
+                        loadUrl(webLoginUrl)
                     }
                 },
             )
 
-            if (verifying) {
+            if (verifying || securityRetrying) {
                 Row(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
@@ -233,7 +343,7 @@ fun QQMusicLoginScreen(
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                     Text(
-                        text = "正在验证 QQ音乐登录状态…",
+                        text = if (securityRetrying) "正在重新发送验证码…" else "正在验证 QQ音乐登录状态…",
                         color = MaterialTheme.colorScheme.onSurface,
                         fontSize = 13.sp,
                     )
@@ -256,6 +366,10 @@ fun QQMusicLoginScreen(
                 )
             }
         }
+        MeloXLegalLinks(
+            modifier = Modifier.padding(vertical = 6.dp),
+            tint = Color(0xFF20C573),
+        )
     }
 }
 

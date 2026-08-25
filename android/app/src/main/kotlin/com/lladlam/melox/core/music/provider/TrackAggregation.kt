@@ -86,6 +86,9 @@ object TrackAggregation {
             com.lladlam.melox.core.music.model.MusicSource.Kugou -> 2
             com.lladlam.melox.core.music.model.MusicSource.AppleMusic -> 4
             com.lladlam.melox.core.music.model.MusicSource.Bilibili -> 1
+            // Spotify is playable only after a strict cross-provider match. A
+            // native playable result must remain the aggregation recommendation.
+            com.lladlam.melox.core.music.model.MusicSource.Spotify -> -1
         }
         return AggregatedTrackCandidate(track, identity, version, quality, sourceBonus, identity + version + quality + sourceBonus, "版本 ${key.version} · ${track.id.source.displayName}")
     }

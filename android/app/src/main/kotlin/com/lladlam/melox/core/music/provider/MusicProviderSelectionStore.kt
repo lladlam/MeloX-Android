@@ -1,6 +1,7 @@
 package com.lladlam.melox.core.music.provider
 
 import android.content.Context
+import com.lladlam.melox.BuildConfig
 import com.lladlam.melox.core.music.model.MusicSource
 
 /**
@@ -16,16 +17,18 @@ object MusicProviderSelectionStore {
     private const val KeyAutomaticFallback = "automatic_source_fallback"
     private const val KeyUnifiedSources = "unified_sources"
 
-    /** Apple Music remains an internal integration, but is not exposed until
-     * the official credentials/DRM SDK are available. */
+    /** Providers that need build-time credentials remain internal until configured. */
     fun visibleSources(): List<MusicSource> =
-        MusicSource.entries.filterNot { it == MusicSource.AppleMusic }
+        MusicSource.entries.filter { source ->
+            source != MusicSource.AppleMusic &&
+                (source != MusicSource.Spotify || BuildConfig.SPOTIFY_CLIENT_ID.isNotBlank())
+        }
 
     fun selectedSource(context: Context): MusicSource {
         val preferences = context.applicationContext
             .getSharedPreferences(PreferencesName, Context.MODE_PRIVATE)
         return MusicSource.fromStorageValue(preferences.getString(KeySelectedSource, null))
-            .takeUnless { it == MusicSource.AppleMusic }
+            .takeIf { it in visibleSources() }
             ?: MusicSource.Netease
     }
 
@@ -80,8 +83,7 @@ object MusicProviderSelectionStore {
         val parsed = raw?.mapNotNullTo(linkedSetOf()) { value ->
             visibleSources().firstOrNull { it.storageValue == value }
         }.orEmpty()
-        return parsed.filterTo(linkedSetOf()) { it != MusicSource.AppleMusic }
-            .ifEmpty { linkedSetOf(selectedSource(context)) }
+        return parsed.ifEmpty { linkedSetOf(selectedSource(context)) }
     }
 
     fun setUnifiedSources(context: Context, sources: Set<MusicSource>) {

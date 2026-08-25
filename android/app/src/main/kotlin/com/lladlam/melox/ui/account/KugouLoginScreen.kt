@@ -45,6 +45,7 @@ import com.lladlam.melox.core.provider.kugou.KugouQrLoginState
 import com.lladlam.melox.core.provider.kugou.KugouSessionStore
 import com.lladlam.melox.core.music.provider.PlaybackAccountSlot
 import com.lladlam.melox.ui.glass.meloXLiquidButton
+import com.lladlam.melox.ui.legal.MeloXLegalLinks
 import kotlinx.coroutines.delay
 
 @Composable
@@ -140,7 +141,8 @@ fun KugouLoginScreen(
 
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
+                .weight(1f)
                 .padding(horizontal = 28.dp),
             contentAlignment = Alignment.Center,
         ) {
@@ -206,6 +208,10 @@ fun KugouLoginScreen(
                 }
             }
         }
+        MeloXLegalLinks(
+            modifier = Modifier.padding(vertical = 6.dp),
+            tint = Color(0xFF16A9FF),
+        )
     }
 }
 

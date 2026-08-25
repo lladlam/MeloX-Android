@@ -25,7 +25,21 @@ internal class NeteaseAuthenticatedEapi(
         authenticated: Boolean = true,
         domain: String = "https://interface.music.163.com",
         cookieOs: String? = null,
-    ): JSONObject {
+    ): JSONObject = postWithResponseCookies(uri, data, authenticated, domain, cookieOs).let { response ->
+        if (response.httpCode !in 200..299) throw IOException("网易云请求失败：HTTP ${response.httpCode}")
+        val result = response.body
+        val code = result.optInt("code", 200)
+        if (code !in 200..299) throw IOException(result.optString("message").ifBlank { result.optString("msg") }.ifBlank { "请求失败（$code）" })
+        result
+    }
+
+    fun postWithResponseCookies(
+        uri: String,
+        data: JSONObject = JSONObject(),
+        authenticated: Boolean = true,
+        domain: String = "https://interface.music.163.com",
+        cookieOs: String? = null,
+    ): NeteaseEapiResponse {
         val cookie = cookieProvider()
         if (authenticated && !NeteaseSessionStore.containsMusicU(cookie)) throw IOException("请先登录网易云音乐")
         val now = System.currentTimeMillis()
@@ -43,16 +57,23 @@ internal class NeteaseAuthenticatedEapi(
             .url("${domain.trimEnd('/')}${uri.replace("/api/", "/eapi/")}")
             .header("Accept", "*/*")
             .header("User-Agent", if (cookieOs == "osx") "NeteaseMusic 3.0.18 (Macintosh; Intel Mac OS X 14_5)" else if (authenticated) "NeteaseMusic 9.0.90/5038 (iPhone; iOS 16.2; zh_CN)" else "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148")
-        if (authenticated) requestBuilder.header("Cookie", encodedCookie(header))
+        if (authenticated) {
+            requestBuilder.header("Cookie", encodedCookie(header))
+        } else if (cookie.isNotBlank()) {
+            requestBuilder.header("Cookie", NeteaseSessionStore.normalizeCookie(cookie))
+        }
         val request = requestBuilder.post(FormBody.Builder().add("params", params).build()).build()
         httpClient.newCall(request).execute().use { response ->
             val body = response.body.string()
-            if (!response.isSuccessful) throw IOException("网易云请求失败：HTTP ${response.code}")
-            if (body.isBlank()) throw IOException("网易云返回了空响应")
-            val result = JSONObject(body)
-            val code = result.optInt("code", response.code)
-            if (code !in 200..299) throw IOException(result.optString("message").ifBlank { result.optString("msg") }.ifBlank { "请求失败（$code）" })
-            return result
+            if (body.isBlank()) {
+                if (!response.isSuccessful) throw IOException("网易云请求失败：HTTP ${response.code}")
+                throw IOException("网易云返回了空响应")
+            }
+            return NeteaseEapiResponse(
+                body = JSONObject(body),
+                setCookieHeaders = response.headers.values("Set-Cookie"),
+                httpCode = response.code,
+            )
         }
     }
 
@@ -71,3 +92,9 @@ internal class NeteaseAuthenticatedEapi(
     private fun aes(data: ByteArray, key: ByteArray) = Cipher.getInstance("AES/ECB/PKCS5Padding").run { init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES")); doFinal(data) }
     private fun ByteArray.toHex() = joinToString("") { "%02X".format(it) }
 }
+
+internal data class NeteaseEapiResponse(
+    val body: JSONObject,
+    val setCookieHeaders: List<String>,
+    val httpCode: Int,
+)

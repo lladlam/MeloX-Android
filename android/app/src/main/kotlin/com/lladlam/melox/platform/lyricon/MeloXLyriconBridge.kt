@@ -86,36 +86,47 @@ object MeloXLyriconBridge {
     ) {
         if (syncJob?.isActive == true) return
         syncJob = scope.launch {
-            var observedMediaId: String? = null
+            var observedReloadKey: LyriconReloadKey? = null
             var initialized = false
 
             while (isActive) {
                 state.refresh()
                 val mediaId = state.mediaId
-                if (!initialized || mediaId != observedMediaId) {
+                val reloadKey = lyriconReloadKey(
+                    mediaId = mediaId,
+                    title = state.title,
+                    artist = state.artist,
+                    durationMs = state.durationMs,
+                    automaticSelection = MeloXSettingsRuntime.automaticLyricSelectionEnabled,
+                )
+                if (!initialized || reloadKey != observedReloadKey) {
                     initialized = true
-                    observedMediaId = mediaId
+                    observedReloadKey = reloadKey
                     lyricLoadJob?.cancel()
 
                     if (mediaId == null) {
                         lyriconProvider.player.setSong(null)
                     } else {
-                        val requestedMediaId = mediaId
-                        val title = state.title
-                        val artist = state.artist
-                        val durationMs = state.durationMs
+                        val requestedKey = requireNotNull(reloadKey)
                         lyricLoadJob = scope.launch {
                             val document = runCatching {
                                 MeloXProviderLyricsLoader.load(context, state)
                             }.getOrElse { LyricsDocument(emptyList()) }
-                            if (state.mediaId != requestedMediaId) return@launch
+                            if (lyriconReloadKey(
+                                    mediaId = state.mediaId,
+                                    title = state.title,
+                                    artist = state.artist,
+                                    durationMs = state.durationMs,
+                                    automaticSelection = MeloXSettingsRuntime.automaticLyricSelectionEnabled,
+                                ) != requestedKey
+                            ) return@launch
 
                             lyriconProvider.player.setSong(
                                 document.toLyriconSong(
-                                    mediaId = requestedMediaId,
-                                    title = title,
-                                    artist = artist,
-                                    durationMs = durationMs,
+                                    mediaId = requestedKey.mediaId,
+                                    title = requestedKey.title,
+                                    artist = requestedKey.artist,
+                                    durationMs = requestedKey.durationMs,
                                 ),
                             )
                             lyriconProvider.player.setDisplayTranslation(
@@ -126,7 +137,7 @@ object MeloXLyriconBridge {
                             )
                             lyriconProvider.player.setPlaybackState(state.isPlaying)
                             lyriconProvider.player.setPosition(
-                                lyriconPosition(context, requestedMediaId, state.positionMs),
+                                lyriconPosition(context, requestedKey.mediaId, state.positionMs),
                             )
                         }
                     }
@@ -144,9 +155,7 @@ object MeloXLyriconBridge {
         val offset = if (identity?.source == MusicSource.Bilibili) {
             BilibiliLyricOffsetStore.read(context, identity.value)
         } else 0
-        val advance = if (identity?.source == MusicSource.Bilibili) {
-            MeloXSettingsRuntime.lyricAdvanceMs + offset
-        } else 0
+        val advance = MeloXSettingsRuntime.lyricAdvanceMs + offset
         return (positionMs + advance).coerceAtLeast(0L)
     }
 
@@ -202,3 +211,30 @@ object MeloXLyriconBridge {
             )
         }?.takeIf { it.isNotEmpty() }
 }
+
+internal data class LyriconReloadKey(
+    val mediaId: String,
+    val title: String,
+    val artist: String,
+    val durationMs: Long,
+    val automaticSelection: Boolean,
+)
+
+internal fun lyriconReloadKey(
+    mediaId: String?,
+    title: String,
+    artist: String,
+    durationMs: Long,
+    automaticSelection: Boolean,
+): LyriconReloadKey? = mediaId?.let {
+    LyriconReloadKey(
+        mediaId = it,
+        title = title,
+        artist = artist,
+        durationMs = stableLyriconDurationMs(durationMs),
+        automaticSelection = automaticSelection,
+    )
+}
+
+internal fun stableLyriconDurationMs(durationMs: Long): Long =
+    durationMs.takeIf { it > 0L }?.let { ((it + 500L) / 1_000L) * 1_000L } ?: 0L

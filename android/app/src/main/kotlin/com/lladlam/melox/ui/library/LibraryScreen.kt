@@ -102,12 +102,15 @@ import com.lladlam.melox.core.recommendation.LocalRecommendationStore
 import com.lladlam.melox.playback.ProviderPlaybackCommands
 import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.core.music.model.MusicAccountSummary
+import com.lladlam.melox.core.music.model.MusicAlbumSummary
 import com.lladlam.melox.core.music.model.MusicSource
 import com.lladlam.melox.core.music.provider.MeloXLegacyUiBridge
 import com.lladlam.melox.core.music.provider.MeloXMusicProviders
+import com.lladlam.melox.core.music.provider.AlbumCapability
 import com.lladlam.melox.core.music.provider.PlaylistCapability
 import com.lladlam.melox.core.music.provider.UserLibraryCapability
 import com.lladlam.melox.core.network.NeteaseMusicOperationsClient
+import com.lladlam.melox.core.network.NeteaseCollectionDetailsClient
 import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.ui.MeloXBottomContentClearance
@@ -126,6 +129,7 @@ import com.lladlam.melox.ui.glass.meloXLiquidButton
 import com.lladlam.melox.ui.glass.meloXLiquidTabSelection
 import com.lladlam.melox.ui.player.MeloXFlowingLightBackdrop
 import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
+import com.lladlam.melox.ui.sharing.MeloXNeteaseResourceShareActivity
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.settings.MeloXSwipeFullAction
 import com.lladlam.melox.ui.layout.rememberMeloXWindowInfo
@@ -1388,6 +1392,78 @@ internal fun MeloXUnifiedPlaylistDetailScreen(
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
+internal fun MeloXUnifiedAlbumDetailScreen(
+    albumId: Long,
+    onBack: () -> Unit,
+    onModalVisibilityChanged: (Boolean) -> Unit = {},
+) {
+    val placeholder = remember(albumId) {
+        NeteasePlaylistSummary(
+            id = albumId,
+            name = "专辑",
+            coverUrl = null,
+            trackCount = 0,
+            creatorName = "网易云音乐",
+        )
+    }
+    val context = LocalContext.current.applicationContext
+    val client = remember(context) {
+        NeteaseLibraryClient(cookieProvider = { NeteaseSessionStore.readCookie(context) })
+    }
+    SharedTransitionLayout(Modifier.fillMaxSize()) {
+        AnimatedVisibility(visible = true) {
+            MeloXPlaylistDetailScreen(
+                initialPlaylist = placeholder,
+                client = client,
+                onBack = onBack,
+                sharedTransitionScope = this@SharedTransitionLayout,
+                animatedVisibilityScope = this,
+                onModalVisibilityChanged = onModalVisibilityChanged,
+                albumId = albumId,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+internal fun MeloXUnifiedProviderAlbumDetailScreen(
+    album: MusicAlbumSummary,
+    onBack: () -> Unit,
+) {
+    val legacyId = remember(album.id) {
+        album.id.toString().hashCode().toLong().let { value -> if (value >= 0L) -value - 1L else value }
+    }
+    val placeholder = remember(album, legacyId) {
+        NeteasePlaylistSummary(
+            id = legacyId,
+            name = album.title,
+            coverUrl = album.artworkUrl,
+            trackCount = album.trackCount?.toInt() ?: 0,
+            creatorName = album.artists.joinToString(" / ") { it.name },
+        )
+    }
+    val context = LocalContext.current.applicationContext
+    val client = remember(context) {
+        NeteaseLibraryClient(cookieProvider = { NeteaseSessionStore.readCookie(context) })
+    }
+    SharedTransitionLayout(Modifier.fillMaxSize()) {
+        AnimatedVisibility(visible = true) {
+            MeloXPlaylistDetailScreen(
+                initialPlaylist = placeholder,
+                client = client,
+                onBack = onBack,
+                sharedTransitionScope = this@SharedTransitionLayout,
+                animatedVisibilityScope = this,
+                onModalVisibilityChanged = {},
+                providerAlbum = album,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
 private fun MeloXPlaylistDetailScreen(
     initialPlaylist: NeteasePlaylistSummary,
     client: NeteaseLibraryClient,
@@ -1396,6 +1472,8 @@ private fun MeloXPlaylistDetailScreen(
     animatedVisibilityScope: AnimatedVisibilityScope,
     onModalVisibilityChanged: (Boolean) -> Unit,
     onSongLikeChanged: (SearchSong, Boolean) -> Unit = { _, _ -> },
+    albumId: Long? = null,
+    providerAlbum: MusicAlbumSummary? = null,
 ) {
     val context = LocalContext.current
     val detailWindow = rememberMeloXWindowInfo()
@@ -1408,6 +1486,14 @@ private fun MeloXPlaylistDetailScreen(
     val operationsClient = remember(appContext) {
         NeteaseMusicOperationsClient(cookieProvider = { NeteaseSessionStore.readCookie(appContext) })
     }
+    val albumClient = remember(appContext) {
+        NeteaseCollectionDetailsClient(cookieProvider = { NeteaseSessionStore.readCookie(appContext) })
+    }
+    val providerAlbumCapability = remember(providerAlbum?.id?.source, appContext) {
+        providerAlbum?.let { backing ->
+            MeloXMusicProviders.create(appContext).require(backing.id.source) as? AlbumCapability
+        }
+    }
     val providerPlaylist = initialPlaylist.providerPlaylist
     val providerPlaylistCapability = remember(providerPlaylist?.id?.source, appContext) {
         providerPlaylist?.let { backing ->
@@ -1415,6 +1501,8 @@ private fun MeloXPlaylistDetailScreen(
         }
     }
     val isProviderPlaylist = providerPlaylist != null
+    val isAlbum = albumId != null || providerAlbum != null
+    val isProviderCollection = isProviderPlaylist || providerAlbum != null
     var detail by remember(initialPlaylist.id) { mutableStateOf<NeteasePlaylistDetail?>(null) }
     var loading by remember(initialPlaylist.id) { mutableStateOf(true) }
     var errorMessage by remember(initialPlaylist.id) { mutableStateOf<String?>(null) }
@@ -1428,7 +1516,7 @@ private fun MeloXPlaylistDetailScreen(
     var palette by remember(initialPlaylist.coverUrl) { mutableStateOf(MeloXDetailPalette.LightFallback) }
 
     DisposableEffect(showPlaylistActions, showBatchDownload, selectedTrackAction) {
-        val visible = !isProviderPlaylist && (showPlaylistActions || showBatchDownload || selectedTrackAction != null)
+        val visible = !isProviderCollection && (showPlaylistActions || showBatchDownload || selectedTrackAction != null)
         onModalVisibilityChanged(visible)
         onDispose {
             if (visible) onModalVisibilityChanged(false)
@@ -1436,6 +1524,7 @@ private fun MeloXPlaylistDetailScreen(
     }
 
     suspend fun refreshSavedState() {
+        if (isAlbum) return
         if (isProviderPlaylist) {
             isSaved = null
             return
@@ -1457,7 +1546,45 @@ private fun MeloXPlaylistDetailScreen(
     suspend fun refreshPlaylist() {
         loading = true
         errorMessage = null
-        if (providerPlaylist != null) {
+        if (providerAlbum != null) {
+            val capability = providerAlbumCapability
+            if (capability == null) {
+                errorMessage = "${providerAlbum.id.source.displayName} 当前不提供专辑详情能力"
+                loading = false
+                return
+            }
+            runCatching {
+                withContext(Dispatchers.IO) { capability.albumDetail(providerAlbum, page = 1, pageSize = 150) }
+            }.onSuccess { album ->
+                detail = NeteasePlaylistDetail(
+                    summary = initialPlaylist.copy(
+                        name = album.summary.title,
+                        coverUrl = album.summary.artworkUrl,
+                        trackCount = album.tracks.size,
+                        creatorName = album.summary.artists.joinToString(" / ") { it.name },
+                    ),
+                    songs = album.tracks.map(MeloXLegacyUiBridge::track),
+                )
+                isSaved = null
+            }.onFailure { errorMessage = it.message ?: "专辑加载失败" }
+        } else if (albumId != null) {
+            runCatching { albumClient.albumDetail(albumId) }
+                .onSuccess { album ->
+                    detail = NeteasePlaylistDetail(
+                        summary = NeteasePlaylistSummary(
+                            id = album.album.id,
+                            name = album.album.name,
+                            coverUrl = album.album.artworkUrl,
+                            trackCount = album.songs.size,
+                            creatorName = album.album.artistText,
+                            description = album.description,
+                        ),
+                        songs = album.songs,
+                    )
+                    isSaved = album.subscribed
+                }
+                .onFailure { errorMessage = it.message ?: "专辑加载失败" }
+        } else if (providerPlaylist != null) {
             val capability = providerPlaylistCapability
             if (capability == null) {
                 errorMessage = "${providerPlaylist.id.source.displayName} 当前不提供歌单详情能力"
@@ -1483,7 +1610,7 @@ private fun MeloXPlaylistDetailScreen(
     }
 
     LaunchedEffect(initialPlaylist.id, providerPlaylist?.id) {
-        if (providerPlaylist != null) {
+        if (isAlbum || providerPlaylist != null) {
             refreshPlaylist()
         } else {
             cache.loadPlaylistDetail(initialPlaylist.id)?.let { detail = it }
@@ -1501,6 +1628,7 @@ private fun MeloXPlaylistDetailScreen(
     val displayed = detail?.summary ?: initialPlaylist
     val songs = detail?.songs.orEmpty()
     val ownedPlaylistId = displayed.id.takeIf {
+        !isAlbum &&
         displayed.creatorUserId != null && displayed.creatorUserId == currentUserId
     }
 
@@ -1555,8 +1683,22 @@ private fun MeloXPlaylistDetailScreen(
             MeloXPlaylistToolbar(
                 foreground = foreground,
                 onBack = onBack,
-                onShare = { sharePlaylistFromDetail(context, displayed) },
-                showMore = !isProviderPlaylist,
+                onShare = {
+                    if (providerAlbum != null) {
+                        shareProviderAlbum(context, providerAlbum)
+                    } else if (isAlbum) {
+                        MeloXNeteaseResourceShareActivity.launch(
+                            context,
+                            "album",
+                            displayed.id,
+                            displayed.name,
+                            "https://music.163.com/album?id=${displayed.id}",
+                        )
+                    } else {
+                        sharePlaylistFromDetail(context, displayed)
+                    }
+                },
+                showMore = !isProviderCollection && !isAlbum,
                 onMore = { showPlaylistActions = true },
             )
             MeloXPlaylistSearchField(
@@ -1581,7 +1723,9 @@ private fun MeloXPlaylistDetailScreen(
                         tracks = songs,
                         foreground = foreground,
                         secondary = secondary,
-                        sourceLabel = displayed.providerPlaylist?.id?.source?.displayName ?: "网易云音乐",
+                        sourceLabel = providerAlbum?.id?.source?.displayName
+                            ?: displayed.providerPlaylist?.id?.source?.displayName
+                            ?: "网易云音乐",
                         onPlay = {
                             songs.firstOrNull()?.let { first ->
                                 PlaybackCommands.playQueue(
@@ -1604,18 +1748,19 @@ private fun MeloXPlaylistDetailScreen(
                             }
                         },
                         isSaved = isSaved == true,
-                        showSaveAction = !isProviderPlaylist,
+                        showSaveAction = !isProviderCollection && (!isAlbum || isSaved != null),
                         onToggleSaved = {
                             if (!isProviderPlaylist && !savingPlaylist) {
                                 val desired = isSaved != true
                                 savingPlaylist = true
                                 scope.launch {
                                     runCatching {
-                                        operationsClient.setPlaylistSubscribed(displayed.id, desired)
+                                        if (isAlbum) albumClient.setAlbumSubscribed(displayed.id, desired)
+                                        else operationsClient.setPlaylistSubscribed(displayed.id, desired)
                                     }.onSuccess {
                                         isSaved = desired
                                     }.onFailure {
-                                        errorMessage = it.message ?: "歌单收藏操作失败"
+                                        errorMessage = it.message ?: if (isAlbum) "专辑收藏操作失败" else "歌单收藏操作失败"
                                     }
                                     savingPlaylist = false
                                 }
@@ -1683,7 +1828,7 @@ private fun MeloXPlaylistDetailScreen(
                             song = song,
                             index = index,
                             foreground = foreground,
-                            showMore = !isProviderPlaylist,
+                            showMore = !isProviderCollection,
                             onClick = {
                                 PlaybackCommands.playQueue(
                                     context = context,
@@ -1695,7 +1840,7 @@ private fun MeloXPlaylistDetailScreen(
                             onMore = { selectedTrackAction = song },
                             onPlayNext = { PlaybackCommands.playNext(context, song) },
                             onPlayLast = { PlaybackCommands.addToQueue(context, song) },
-                            endAction = if (isProviderPlaylist) null else if (ownedPlaylistId != null) {
+                            endAction = if (isProviderCollection) null else if (ownedPlaylistId != null) {
                                 MeloXSwipeAction("从歌单移除", MeloXSymbol.Trash, Color(0xFFFF3B30)) {
                                     scope.launch {
                                         runCatching { operationsClient.removeSongFromPlaylist(song.id, ownedPlaylistId) }
@@ -1732,7 +1877,7 @@ private fun MeloXPlaylistDetailScreen(
             }
         }
 
-        if (!isProviderPlaylist) {
+        if (!isProviderCollection) {
             MeloXPlaylistActionsOverlay(
                 playlist = displayed,
                 visible = showPlaylistActions,
@@ -2308,6 +2453,24 @@ private fun sharePlaylistFromDetail(context: android.content.Context, playlist: 
             addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         },
         "分享歌单",
+    ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    context.startActivity(intent)
+}
+
+private fun shareProviderAlbum(context: android.content.Context, album: MusicAlbumSummary) {
+    val text = buildString {
+        append(album.title)
+        val artists = album.artists.joinToString(" / ") { it.name }
+        if (artists.isNotBlank()) append(" · ").append(artists)
+        append('\n').append(album.id.source.displayName)
+    }
+    val intent = android.content.Intent.createChooser(
+        android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(android.content.Intent.EXTRA_TEXT, text)
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        },
+        "分享专辑",
     ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
     context.startActivity(intent)
 }

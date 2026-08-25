@@ -118,11 +118,23 @@ object MusicExperiences {
         providerNativeCapabilities = setOf(MusicCapability.Library, MusicCapability.Playlists),
     )
 
+    val spotify = MusicExperience(
+        source = MusicSource.Spotify,
+        homeSections = emptyList(),
+        providerNativeCapabilities = setOf(
+            MusicCapability.Library,
+            MusicCapability.Playlists,
+            MusicCapability.Albums,
+            MusicCapability.Artists,
+        ),
+    )
+
     fun forSource(source: MusicSource): MusicExperience = when (source) {
         MusicSource.Netease -> netease
         MusicSource.QQMusic -> qqMusic
         MusicSource.Kugou -> kugou
         MusicSource.AppleMusic -> appleMusic
         MusicSource.Bilibili -> bilibili
+        MusicSource.Spotify -> spotify
     }
 }

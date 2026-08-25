@@ -30,6 +30,7 @@ class ProviderPlaybackResolver(
     private val neteaseResolver: NeteasePlaybackResolver,
     private val providers: MusicProviderRegistry,
     private val authKeyProvider: (MusicSource) -> String = { "" },
+    private val providerPlaybackEnabled: (MusicSource) -> Boolean = { true },
 ) : ResolvingDataSource.Resolver {
     private data class ResolveKey(
         val requestUri: String,
@@ -78,6 +79,9 @@ class ProviderPlaybackResolver(
     private fun resolveProviderRequest(uri: Uri): ResolvedRequest {
         val source = parseSource(uri)
             ?: throw IOException("Invalid MeloX provider source: $uri")
+        if (!providerPlaybackEnabled(source)) {
+            throw IOException("${source.displayName} 播放接口已由远程兼容性配置临时关闭")
+        }
         val resourceValue = uri.pathSegments.getOrNull(1)
             ?.let(Uri::decode)
             ?.takeIf(String::isNotBlank)
@@ -94,8 +98,11 @@ class ProviderPlaybackResolver(
             val id = MusicResourceId(source, resourceValue)
             val track = MusicTrack(
                 id = id,
-                title = "",
-                artists = emptyList(),
+                title = uri.getQueryParameter(SpotifyTitleQuery).orEmpty(),
+                artists = uri.getQueryParameter(SpotifyArtistsQuery).orEmpty().split('\u001f')
+                    .filter(String::isNotBlank)
+                    .map { com.lladlam.melox.core.music.model.MusicArtistRef(name = it) },
+                durationMs = uri.getQueryParameter(SpotifyDurationQuery)?.toLongOrNull(),
                 providerMetadata = providerMetadata(uri, id),
             )
             val provider = providers.require(source)
@@ -183,6 +190,10 @@ class ProviderPlaybackResolver(
                 ?: throw IOException("Invalid Bilibili track ID")
             ProviderTrackMetadata.Bilibili(bvid, cid)
         }
+        MusicSource.Spotify -> ProviderTrackMetadata.Spotify(
+            id.value,
+            uri.getQueryParameter(SpotifyIsrcQuery)?.takeIf(String::isNotBlank),
+        )
     }
 
     companion object {
@@ -196,6 +207,10 @@ class ProviderPlaybackResolver(
         private const val KugouAlbumIdQuery = "kgAlbumId"
         private const val AppleStorefrontQuery = "appleStorefront"
         private const val ApplePreviewUrlQuery = "applePreviewUrl"
+        private const val SpotifyTitleQuery = "spotifyTitle"
+        private const val SpotifyArtistsQuery = "spotifyArtists"
+        private const val SpotifyDurationQuery = "spotifyDurationMs"
+        private const val SpotifyIsrcQuery = "spotifyIsrc"
         private const val MAX_RESOLVED_URIS = 96
 
         fun isProviderTrackUri(uri: Uri): Boolean =
@@ -235,6 +250,17 @@ class ProviderPlaybackResolver(
                         }
                     }
                     is ProviderTrackMetadata.Bilibili -> Unit
+                    is ProviderTrackMetadata.Spotify -> {
+                        appendQueryParameter(SpotifyTitleQuery, track.title)
+                        appendQueryParameter(
+                            SpotifyArtistsQuery,
+                            track.artists.joinToString("\u001f") { it.name },
+                        )
+                        track.durationMs?.let { appendQueryParameter(SpotifyDurationQuery, it.toString()) }
+                        metadata.isrc?.takeIf(String::isNotBlank)?.let {
+                            appendQueryParameter(SpotifyIsrcQuery, it)
+                        }
+                    }
                     else -> Unit
                 }
             }

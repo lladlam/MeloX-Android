@@ -485,12 +485,17 @@ class QQMusicApiClient(
                 val singerName = singer.optString("name").ifBlank { singer.optString("title") }
                 if (singerName.isBlank()) continue
                 val singerMid = singer.optString("mid").takeIf(String::isNotBlank)
-                add(
-                    MusicArtistRef(
-                        id = singerMid?.let { MusicResourceId(MusicSource.QQMusic, it) },
-                        name = singerName,
-                    ),
-                )
+                val names = splitQQMusicSingerName(singerName)
+                names.forEach { name ->
+                    add(
+                        MusicArtistRef(
+                            id = singerMid
+                                ?.takeIf { names.size == 1 }
+                                ?.let { MusicResourceId(MusicSource.QQMusic, it) },
+                            name = name,
+                        ),
+                    )
+                }
             }
         }
         val albumObject = item.optJSONObject("album")
@@ -601,6 +606,11 @@ class QQMusicApiClient(
                 "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 }
+
+internal fun splitQQMusicSingerName(value: String): List<String> = value
+    .split(Regex("\\s*(?:;|；)\\s*"))
+    .map(String::trim)
+    .filter(String::isNotBlank)
 
 private data class QQFileType(
     val prefix: String,

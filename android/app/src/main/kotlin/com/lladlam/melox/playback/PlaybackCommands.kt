@@ -71,6 +71,7 @@ object PlaybackCommands {
         val quality = MusicQualityPreferences.read(appContext)
         MusicQualityRuntime.selected = quality
         MusicQualityRuntime.clear()
+        CrossProviderPlaybackRuntime.clear()
         val token = SessionToken(
             appContext,
             ComponentName(appContext, MeloXPlaybackService::class.java),
@@ -229,6 +230,7 @@ object PlaybackCommands {
         MusicQualityPreferences.write(appContext, quality)
         MusicQualityRuntime.selected = quality
         MusicQualityRuntime.clear()
+        CrossProviderPlaybackRuntime.clear()
 
         val controller = activeController ?: return
         val currentIndex = controller.currentMediaItemIndex.coerceAtLeast(0)
@@ -239,7 +241,16 @@ object PlaybackCommands {
             val songId = item.mediaId.toLongOrNull()
             if (songId == null) item else MediaItem.Builder()
                 .setMediaId(item.mediaId)
-                .setUri(NeteasePlaybackResolver.uriForSong(songId, quality))
+                .setUri(
+                    NeteasePlaybackResolver.uriForSong(
+                        songId = songId,
+                        quality = quality,
+                        title = item.mediaMetadata.title?.toString(),
+                        artist = item.mediaMetadata.artist?.toString(),
+                        durationMs = item.mediaMetadata.extras
+                            ?.getLong(PlaybackTrackIdentity.DurationMsExtra, 0L),
+                    ),
+                )
                 .setMediaMetadata(item.mediaMetadata)
                 .build()
         }
@@ -352,6 +363,7 @@ object PlaybackCommands {
                     putString(QUEUE_ORIGIN_KEY, queueOrigin)
                     putInt(QUEUE_ORIGINAL_INDEX_KEY, originalIndex)
                     putBoolean(HEART_MODE_KEY, heartMode)
+                    putLong(PlaybackTrackIdentity.DurationMsExtra, durationMs.coerceAtLeast(0L))
                 },
             )
             .apply {
@@ -363,7 +375,15 @@ object PlaybackCommands {
 
         return MediaItem.Builder()
             .setMediaId(id.toString())
-            .setUri(NeteasePlaybackResolver.uriForSong(id, quality))
+            .setUri(
+                NeteasePlaybackResolver.uriForSong(
+                    songId = id,
+                    quality = quality,
+                    title = name,
+                    artist = artists,
+                    durationMs = durationMs,
+                ),
+            )
             .setMediaMetadata(metadata)
             .build()
     }

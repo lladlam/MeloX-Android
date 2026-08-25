@@ -80,6 +80,7 @@ import com.lladlam.melox.ui.glass.meloXGlassSurface
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.settings.MeloXPlayerBackgroundMode
 import com.lladlam.melox.playback.PlaybackCommands
+import com.lladlam.melox.playback.CrossProviderPlaybackRuntime
 import kotlinx.coroutines.delay
 import kotlin.math.roundToLong
 
@@ -545,6 +546,9 @@ private fun MeloXQualityChipV3(
     var actual by remember(state.mediaId) {
         mutableStateOf(MusicQualityRuntime.actualFor(state.mediaId?.toLongOrNull()))
     }
+    var fallbackSource by remember(state.mediaId) {
+        mutableStateOf(CrossProviderPlaybackRuntime.sourceFor(state.mediaId?.toLongOrNull()))
+    }
     var availability by remember(state.mediaId) {
         mutableStateOf(SongAudioAvailability.Unknown)
     }
@@ -558,11 +562,14 @@ private fun MeloXQualityChipV3(
         val songId = state.mediaId?.toLongOrNull() ?: return@LaunchedEffect
         while (true) {
             actual = MusicQualityRuntime.actualFor(songId)
+            fallbackSource = CrossProviderPlaybackRuntime.sourceFor(songId)
             delay(750L)
         }
     }
 
     val displayQuality = actual ?: selected
+    val displayTitle = fallbackSource?.let { "${it.displayName} · ${displayQuality.title}" }
+        ?: displayQuality.title
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -608,7 +615,7 @@ private fun MeloXQualityChipV3(
                 )
             }
             Text(
-                text = displayQuality.title,
+                text = displayTitle,
                 color = Color.White.copy(alpha = 0.86f),
                 fontSize = 11.sp,
                 lineHeight = 13.sp,

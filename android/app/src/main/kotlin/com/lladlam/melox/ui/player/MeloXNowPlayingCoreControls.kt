@@ -71,6 +71,7 @@ import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.core.music.model.AudioQualityTier
 import com.lladlam.melox.core.music.model.MusicSource
 import com.lladlam.melox.playback.PlaybackTrackIdentity
+import com.lladlam.melox.playback.CrossProviderPlaybackRuntime
 import com.lladlam.melox.playback.ProviderPlaybackQualityRuntime
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import com.lladlam.melox.ui.glass.MeloXSymbol
@@ -228,14 +229,19 @@ private fun SceneQualityChip(
     var providerActual by remember(state.mediaId) {
         mutableStateOf(ProviderPlaybackQualityRuntime.actualFor(identity))
     }
+    var fallbackSource by remember(state.mediaId) {
+        mutableStateOf(CrossProviderPlaybackRuntime.sourceFor(neteaseSongId))
+    }
 
     LaunchedEffect(state.mediaId) {
         while (true) {
             selected = MusicQualityRuntime.selected
             if (identity?.source == MusicSource.Netease) {
                 neteaseActual = MusicQualityRuntime.actualFor(neteaseSongId)
+                fallbackSource = CrossProviderPlaybackRuntime.sourceFor(neteaseSongId)
             } else {
                 providerActual = ProviderPlaybackQualityRuntime.actualFor(identity)
+                fallbackSource = null
             }
             // Quality changes are user-driven and infrequent; polling at frame-
             // like cadence needlessly recomposed the entire controls column.
@@ -243,12 +249,13 @@ private fun SceneQualityChip(
         }
     }
 
-    val displayTitle = when {
+    val qualityTitle = when {
         downloadedQuality != null -> downloadedQuality.title
         identity?.source == MusicSource.Netease -> (neteaseActual ?: selected).title
         providerActual != null -> providerActual!!.sceneTitle()
         else -> selected.title
     }
+    val displayTitle = fallbackSource?.let { "${it.displayName} · $qualityTitle" } ?: qualityTitle
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(

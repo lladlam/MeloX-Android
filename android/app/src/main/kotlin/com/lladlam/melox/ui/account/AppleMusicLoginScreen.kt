@@ -32,6 +32,7 @@ import com.lladlam.melox.ui.glass.MeloXGlassButton
 import com.lladlam.melox.ui.glass.MeloXGlassButtonStyle
 import com.lladlam.melox.ui.glass.MeloXGlassTextField
 import com.lladlam.melox.ui.glass.MeloXSystemColors
+import com.lladlam.melox.ui.legal.MeloXLegalLinks
 
 /**
  * Apple Music credential configuration.
@@ -149,5 +150,7 @@ fun AppleMusicLoginScreen(
                 style = MeloXGlassButtonStyle.Destructive,
             ) { Text("清除 Apple Music 配置") }
         }
+        Spacer(Modifier.weight(1f))
+        MeloXLegalLinks()
     }
 }

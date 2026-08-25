@@ -23,6 +23,11 @@ data class NeteasePlaybackSource(
     val quality: MusicQuality?,
 )
 
+class NeteasePlaybackUnavailableException(
+    message: String,
+    cause: Throwable? = null,
+) : IOException(message, cause)
+
 /**
  * Android port of the quality-sensitive parts of MeloX NeteaseAPI.
  *
@@ -61,8 +66,13 @@ class NeteaseQualityClient(
         val loggedIn = NeteaseSessionStore.containsMusicU(currentCookie)
         val availability = audioAvailabilityBlocking(songId)
         var lastError: Throwable? = null
+        var serverReportedUnavailable = false
+        val candidates = requestedQuality.playbackCandidates(availability)
+        if (availability.isKnown && candidates.isEmpty()) {
+            serverReportedUnavailable = true
+        }
 
-        for (candidate in requestedQuality.playbackCandidates(availability)) {
+        for (candidate in candidates) {
             try {
                 val payload = JSONObject()
                     .put("ids", "[$songId]")
@@ -83,15 +93,25 @@ class NeteaseQualityClient(
                     .asSequence()
                     .mapNotNull(sources::optJSONObject)
                     .firstOrNull { it.optLong("id", -1L) == songId }
-                    ?: throw IOException("no source for ${candidate.apiLevel}")
+                    ?: run {
+                        serverReportedUnavailable = true
+                        throw IOException("no source for ${candidate.apiLevel}")
+                    }
                 val rawUrl = source.optString("url").takeIf(::isUsableHttpUrl)
-                    ?: throw IOException("no URL for ${candidate.apiLevel}")
+                    ?: run {
+                        serverReportedUnavailable = true
+                        throw IOException("no URL for ${candidate.apiLevel}")
+                    }
 
                 val actual = MusicQuality.fromApiLevel(
                     source.optString("level").takeIf(String::isNotBlank),
                 ) ?: candidate
 
-                MusicQualityRuntime.recordActual(songId, actual)
+                MusicQualityRuntime.recordActual(
+                    songId = songId,
+                    requested = requestedQuality,
+                    actual = actual,
+                )
                 Log.i(
                     TAG,
                     "Playback quality resolved: song=$songId requested=${requestedQuality.apiLevel} candidate=${candidate.apiLevel} actual=${actual.apiLevel} bitrate=${source.optInt("br")}",
@@ -107,14 +127,18 @@ class NeteaseQualityClient(
             }
         }
 
-        if (loggedIn) {
-            throw IOException(
-                "网易云登录态未返回可播放的 ${requestedQuality.title} 音源，且 MeloX 降级链路也没有可用资源",
-                lastError,
-            )
-        }
+        terminalPlaybackFailure(
+            loggedIn = loggedIn,
+            serverReportedUnavailable = serverReportedUnavailable,
+            requestedQuality = requestedQuality,
+            lastError = lastError,
+        )?.let { throw it }
 
-        MusicQualityRuntime.recordActual(songId, MusicQuality.Standard)
+        MusicQualityRuntime.recordActual(
+            songId = songId,
+            requested = requestedQuality,
+            actual = MusicQuality.Standard,
+        )
         Log.w(TAG, "Playback quality fallback: song=$songId requested=${requestedQuality.apiLevel} actual=standard authenticated=false")
         return NeteasePlaybackSource(
             url = "https://music.163.com/song/media/outer/url?id=$songId",
@@ -124,8 +148,22 @@ class NeteaseQualityClient(
         )
     }
 
-    private companion object {
+    internal companion object {
         const val TAG = "MeloXQuality"
+
+        fun terminalPlaybackFailure(
+            loggedIn: Boolean,
+            serverReportedUnavailable: Boolean,
+            requestedQuality: MusicQuality,
+            lastError: Throwable?,
+        ): IOException? = when {
+            serverReportedUnavailable -> NeteasePlaybackUnavailableException(
+                "网易云未返回可播放的 ${requestedQuality.title} 音源，且 MeloX 降级链路也没有可用资源",
+                lastError,
+            )
+            loggedIn -> IOException("网易云音频接口请求失败", lastError)
+            else -> null
+        }
     }
 
     fun downloadSourceBlocking(

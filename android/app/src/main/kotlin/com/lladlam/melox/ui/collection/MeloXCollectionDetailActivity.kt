@@ -37,6 +37,8 @@ import com.lladlam.melox.ui.MeloXBottomContentClearance
 import com.lladlam.melox.ui.glass.MeloXActionIcon
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import com.lladlam.melox.ui.library.MeloXBatchDownloadSheet
+import com.lladlam.melox.ui.library.MeloXUnifiedAlbumDetailScreen
+import com.lladlam.melox.ui.podcast.MeloXPodcastScreen
 import com.lladlam.melox.ui.sharing.MeloXNeteaseResourceShareActivity
 import com.lladlam.melox.ui.theme.MeloXTheme
 import kotlinx.coroutines.launch
@@ -56,9 +58,13 @@ class MeloXCollectionDetailActivity : ComponentActivity() {
             MeloXTheme {
                 when {
                     isProgram -> PodcastProgramScreen(id, ::finish)
-                    kind == MeloXSearchKind.Albums -> AlbumScreen(id, ::finish)
-                    kind == MeloXSearchKind.Artists -> ArtistScreen(id, ::finish)
-                    kind == MeloXSearchKind.Podcasts -> PodcastScreen(id, ::finish)
+                    kind == MeloXSearchKind.Albums -> MeloXUnifiedAlbumDetailScreen(id, ::finish)
+                    kind == MeloXSearchKind.Artists -> MeloXArtistDetailScreen(id, ::finish)
+                    kind == MeloXSearchKind.Podcasts -> MeloXPodcastScreen(
+                        initialPodcastId = id,
+                        onExit = ::finish,
+                        bottomPadding = 32.dp,
+                    )
                 }
             }
         }

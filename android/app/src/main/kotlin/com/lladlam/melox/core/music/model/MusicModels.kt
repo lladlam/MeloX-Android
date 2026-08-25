@@ -9,7 +9,8 @@ enum class MusicSource(
     QQMusic("qq_music", "QQ音乐"),
     Kugou("kugou", "酷狗音乐"),
     AppleMusic("apple_music", "Apple Music"),
-    Bilibili("bilibili", "Bilibili");
+    Bilibili("bilibili", "Bilibili"),
+    Spotify("spotify", "Spotify");
 
     companion object {
         fun fromStorageValue(value: String?): MusicSource =
@@ -112,6 +113,11 @@ sealed interface ProviderTrackMetadata {
         val cid: Long,
         val aid: Long? = null,
         val page: Int = 1,
+    ) : ProviderTrackMetadata
+
+    data class Spotify(
+        val trackId: String,
+        val isrc: String? = null,
     ) : ProviderTrackMetadata
 }
 

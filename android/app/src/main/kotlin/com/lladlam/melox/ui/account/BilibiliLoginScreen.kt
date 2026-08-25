@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.lladlam.melox.core.provider.bilibili.BilibiliProvider
 import com.lladlam.melox.core.provider.bilibili.BilibiliSessionStore
+import com.lladlam.melox.ui.legal.MeloXLegalLinks
 import kotlinx.coroutines.delay
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -68,6 +69,10 @@ fun BilibiliLoginScreen(onDismiss: () -> Unit, onLoggedIn: () -> Unit) {
                 }
             }, modifier = Modifier.fillMaxSize())
         }
+        MeloXLegalLinks(
+            modifier = Modifier.padding(vertical = 6.dp),
+            tint = androidx.compose.ui.graphics.Color(0xFFFB7299),
+        )
     }
 }
 

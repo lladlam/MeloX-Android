@@ -60,7 +60,7 @@ class MeloXFloatingLyricsService : Service() {
 
     private val listener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
-            loadLyrics(mediaItem?.mediaId?.toLongOrNull())
+            loadLyrics(mediaItem?.mediaId)
         }
 
         override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
@@ -118,12 +118,17 @@ class MeloXFloatingLyricsService : Service() {
             runCatching { future.get() }.onSuccess { player ->
                 controller = player
                 player.addListener(listener)
-                loadLyrics(player.currentMediaItem?.mediaId?.toLongOrNull())
+                loadLyrics(player.currentMediaItem?.mediaId)
             }
         }, mainExecutor)
     }
 
-    private fun loadLyrics(songId: Long?) {
+    private fun loadLyrics(mediaId: String?) {
+        val songId = mediaId?.toLongOrNull()?.takeIf { it > 0L }
+        if (shouldClearLegacyNeteaseLyrics(mediaId)) {
+            clearLyrics()
+            return
+        }
         if (songId == null || lyricsSongId == songId) return
         lyricsSongId = songId
         lyrics = null
@@ -142,6 +147,16 @@ class MeloXFloatingLyricsService : Service() {
             }
             if (lyricsSongId == songId) lyrics = document?.let(LyricTimelineProcessor::process)
         }
+    }
+
+    private fun clearLyrics() {
+        lyricsJob?.cancel()
+        lyricsJob = null
+        lyricsSongId = null
+        lyrics = null
+        lastIndex = Int.MIN_VALUE
+        primaryText?.text = ""
+        secondaryText?.text = ""
     }
 
     private fun updateText(): Long {
@@ -321,3 +336,6 @@ class MeloXFloatingLyricsService : Service() {
         const val ACTION_STOP = "com.lladlam.melox.action.STOP_FLOATING_LYRICS"
     }
 }
+
+internal fun shouldClearLegacyNeteaseLyrics(mediaId: String?): Boolean =
+    mediaId?.toLongOrNull()?.takeIf { it > 0L } == null

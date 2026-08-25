@@ -55,8 +55,11 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import coil3.request.ImageRequest
+import coil3.size.Precision
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.lladlam.melox.ui.glass.LocalMeloXBackdrop
@@ -70,6 +73,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -484,6 +488,18 @@ private fun SharedArtworkDestination(
         } else {
             maxOf(170.dp, minOf(maxWidth, portraitContentHeight - 92.dp))
         }
+        val context = LocalContext.current
+        val density = LocalDensity.current.density
+        val fullArtworkSizePx = fullArtworkRequestSizePx(fullArtworkSize.value, density)
+        val fullArtworkModel = remember(context, state.artworkUrl, fullArtworkSizePx) {
+            state.artworkUrl?.takeIf(String::isNotBlank)?.let { artworkUrl ->
+                ImageRequest.Builder(context)
+                    .data(artworkUrl)
+                    .size(fullArtworkSizePx, fullArtworkSizePx)
+                    .precision(Precision.INEXACT)
+                    .build()
+            }
+        }
         val artworkFooterHeight = 78.dp
         val fullX = if (isLandscape) {
             ((maxWidth * .43f - fullArtworkSize) / 2f).coerceAtLeast(0.dp)
@@ -510,6 +526,7 @@ private fun SharedArtworkDestination(
         ) {
             Artwork(
                 url = state.artworkUrl,
+                model = fullArtworkModel,
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
@@ -528,6 +545,9 @@ private fun SharedArtworkDestination(
         }
     }
 }
+
+internal fun fullArtworkRequestSizePx(fullArtworkSizeDp: Float, density: Float): Int =
+    (fullArtworkSizeDp * density).roundToInt().coerceAtLeast(1)
 
 private fun lerpDp(start: androidx.compose.ui.unit.Dp, end: androidx.compose.ui.unit.Dp, fraction: Float) =
     start + (end - start) * fraction.coerceIn(0f, 1f)

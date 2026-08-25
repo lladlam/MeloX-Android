@@ -38,7 +38,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.music.provider.PlaybackAccountSlot
+import com.lladlam.melox.core.network.NeteasePhoneAuthClient
+import com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigPolicy
 import com.lladlam.melox.ui.glass.meloXLiquidButton
+import com.lladlam.melox.ui.legal.MeloXLegalLinks
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -54,6 +57,10 @@ fun NeteaseLoginScreen(
     targetSlot: PlaybackAccountSlot = PlaybackAccountSlot.Main,
 ) {
     val context = LocalContext.current.applicationContext
+    val phoneAuthClient = remember { NeteasePhoneAuthClient() }
+    var useWebLogin by remember {
+        mutableStateOf(!MeloXRemoteConfigPolicy.capabilityEnabled(context, "netease_phone_login"))
+    }
     var loginPrepared by remember { mutableStateOf(targetSlot == PlaybackAccountSlot.Main) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var pageLoading by remember { mutableStateOf(true) }
@@ -61,12 +68,13 @@ fun NeteaseLoginScreen(
     var verificationError by remember { mutableStateOf<String?>(null) }
     var handledCookie by remember { mutableStateOf<String?>(null) }
 
-    BackHandler {
+    BackHandler(enabled = useWebLogin) {
         val view = webView
-        if (view?.canGoBack() == true) view.goBack() else onDismiss()
+        if (view?.canGoBack() == true) view.goBack() else useWebLogin = false
     }
 
-    LaunchedEffect(targetSlot) {
+    LaunchedEffect(targetSlot, useWebLogin) {
+        if (!useWebLogin) return@LaunchedEffect
         if (targetSlot == PlaybackAccountSlot.Playback) {
             suspendCancellableCoroutine { continuation ->
                 CookieManager.getInstance().removeAllCookies {
@@ -114,7 +122,31 @@ fun NeteaseLoginScreen(
         }
     }
 
-    Column(
+    if (!useWebLogin) {
+        MeloXPhoneCodeLoginScreen(
+            serviceName = "网易云音乐",
+            brandColor = Color(0xFFE60026),
+            description = "使用手机号接收短信验证码，登录后即可同步你的网易云音乐内容。",
+            onClose = onDismiss,
+            onSendCode = { countryCode, phone ->
+                runCatching { phoneAuthClient.sendCode(countryCode, phone) }
+            },
+            onSubmitCode = { countryCode, phone, code ->
+                runCatching {
+                    val cookie = phoneAuthClient.login(countryCode, phone, code)
+                    session.acceptAuthenticatedCookie(
+                        cookie,
+                        persist = targetSlot == PlaybackAccountSlot.Main,
+                    ).getOrThrow()
+                    if (targetSlot == PlaybackAccountSlot.Playback) {
+                        NeteaseSessionStore.writePlaybackCookie(context, cookie)
+                    }
+                    onLoggedIn()
+                }
+            },
+            onWebLogin = { useWebLogin = true },
+        )
+    } else Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
@@ -226,6 +258,10 @@ fun NeteaseLoginScreen(
                 )
             }
         }
+        MeloXLegalLinks(
+            modifier = Modifier.padding(vertical = 6.dp),
+            tint = Color(0xFFE60026),
+        )
     }
 }
 

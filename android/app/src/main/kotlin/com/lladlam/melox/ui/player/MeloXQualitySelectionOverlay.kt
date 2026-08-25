@@ -49,6 +49,7 @@ import com.lladlam.melox.core.music.model.AudioQualityTier
 import com.lladlam.melox.core.music.model.MusicSource
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.playback.PlaybackTrackIdentity
+import com.lladlam.melox.playback.CrossProviderPlaybackRuntime
 import com.lladlam.melox.playback.ProviderPlaybackQualityRuntime
 import com.lladlam.melox.core.music.provider.PlaybackAccountStore
 import com.lladlam.melox.ui.glass.meloXLiquidButton
@@ -91,6 +92,9 @@ internal fun MeloXQualitySelectionOverlay(
     var providerActual by remember(state.mediaId, visible) {
         mutableStateOf(ProviderPlaybackQualityRuntime.actualFor(identity))
     }
+    var fallbackSource by remember(state.mediaId, visible) {
+        mutableStateOf(CrossProviderPlaybackRuntime.sourceFor(songId))
+    }
     var loading by remember(state.mediaId, visible) { mutableStateOf(false) }
 
     LaunchedEffect(visible, source, songId, downloadedQuality) {
@@ -105,6 +109,7 @@ internal fun MeloXQualitySelectionOverlay(
             }
             return@LaunchedEffect
         }
+        fallbackSource = CrossProviderPlaybackRuntime.sourceFor(songId)
         if (songId == null) return@LaunchedEffect
         if (downloadedQuality != null) {
             selected = downloadedQuality
@@ -116,6 +121,13 @@ internal fun MeloXQualitySelectionOverlay(
         availability = runCatching { client.audioAvailability(songId) }
             .getOrDefault(SongAudioAvailability.Unknown)
         loading = false
+    }
+    LaunchedEffect(visible, songId) {
+        if (!visible || songId == null) return@LaunchedEffect
+        while (visible) {
+            fallbackSource = CrossProviderPlaybackRuntime.sourceFor(songId)
+            delay(180L)
+        }
     }
 
     BackHandler(enabled = visible, onBack = onDismiss)
@@ -141,6 +153,7 @@ internal fun MeloXQualitySelectionOverlay(
                         Text(
                             when {
                                 downloadedQuality != null -> "已下载 · ${downloadedQuality.title}"
+                                fallbackSource != null -> "实际音源：${fallbackSource!!.displayName}"
                                 source != MusicSource.Netease && providerActual != null ->
                                     "${source.displayName} · 实际播放：${providerActual!!.displayTitle()}"
                                 source != MusicSource.Netease -> "${source.displayName} · ${state.title.ifBlank { "正在播放" }}"
@@ -167,6 +180,7 @@ internal fun MeloXQualitySelectionOverlay(
                         source == MusicSource.QQMusic -> quality in QQSelectableQualities
                         source == MusicSource.Kugou -> quality in KugouSelectableQualities
                         source == MusicSource.Bilibili -> quality in BilibiliSelectableQualities
+                        source == MusicSource.Spotify -> true
                         else -> false
                     }
                     val isSelected = quality == selected

@@ -13,6 +13,8 @@ import com.lladlam.melox.core.provider.bilibili.BilibiliProvider
 import com.lladlam.melox.core.provider.bilibili.BilibiliSessionStore
 import com.lladlam.melox.core.provider.bilibili.BilibiliPlaybackAssociationStore
 import com.lladlam.melox.core.provider.bilibili.BilibiliApiCache
+import com.lladlam.melox.core.provider.spotify.SpotifyProvider
+import com.lladlam.melox.BuildConfig
 import com.lladlam.melox.core.network.MeloXHttpClient
 import okhttp3.OkHttpClient
 
@@ -38,8 +40,7 @@ object MeloXMusicProviders {
         httpClient: OkHttpClient = MeloXHttpClient.shared,
     ): MusicProviderRegistry {
         val appContext = context.applicationContext
-        return MusicProviderRegistry(
-            listOf(
+        val nativeProviders = listOf<MusicProvider>(
                 NeteaseProvider({ PlaybackAccountStore.neteaseCookie(appContext) }, httpClient),
                 QQMusicProvider({ PlaybackAccountStore.qqSession(appContext) }, httpClient),
                 KugouProvider({ PlaybackAccountStore.kugouSession(appContext) }, httpClient),
@@ -50,13 +51,19 @@ object MeloXMusicProviders {
                     BilibiliApiCache.shared(appContext),
                     { BilibiliSessionStore.revision(appContext) },
                 ),
+        )
+        return MusicProviderRegistry(
+            nativeProviders + SpotifyProvider(
+                appContext,
+                BuildConfig.SPOTIFY_CLIENT_ID,
+                httpClient,
+                playbackProviders = { nativeProviders },
             ),
         )
     }
 
-    private fun buildRegistry(context: Context, httpClient: OkHttpClient): MusicProviderRegistry =
-        MusicProviderRegistry(
-            listOf(
+    private fun buildRegistry(context: Context, httpClient: OkHttpClient): MusicProviderRegistry {
+        val nativeProviders = listOf<MusicProvider>(
                 NeteaseProvider(
                     cookieProvider = { NeteaseSessionStore.readCookie(context) },
                     httpClient = httpClient,
@@ -80,6 +87,14 @@ object MeloXMusicProviders {
                     apiCache = BilibiliApiCache.shared(context),
                     sessionRevisionProvider = { BilibiliSessionStore.revision(context) },
                 ),
+        )
+        return MusicProviderRegistry(
+            nativeProviders + SpotifyProvider(
+                context,
+                BuildConfig.SPOTIFY_CLIENT_ID,
+                httpClient,
+                playbackProviders = { nativeProviders },
             ),
         )
+    }
 }

@@ -23,11 +23,15 @@ class MeloXApplication : Application() {
 object MeloXAppVisibility : Application.ActivityLifecycleCallbacks {
     @Volatile
     private var startedActivities = 0
+    @Volatile
+    private var foregroundSession = 0L
     private val foregroundState = androidx.compose.runtime.mutableStateOf(false)
 
     val isForeground: Boolean get() = foregroundState.value
+    val foregroundSessionId: Long get() = foregroundSession
 
     override fun onActivityStarted(activity: Activity) {
+        if (startedActivities == 0) foregroundSession++
         startedActivities++
         foregroundState.value = startedActivities > 0
     }
