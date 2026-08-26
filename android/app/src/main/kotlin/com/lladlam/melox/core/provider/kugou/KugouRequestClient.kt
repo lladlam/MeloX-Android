@@ -18,7 +18,7 @@ internal class KugouRequestClient(
         const val AppId = 1005
         const val ClientVersion = 20489
         private const val AndroidSignatureSalt = "OIlwieks28dk2k092lksi2UIkp"
-        private const val UserAgent = "Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi"
+        internal const val UserAgent = "Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi"
     }
 
     fun get(

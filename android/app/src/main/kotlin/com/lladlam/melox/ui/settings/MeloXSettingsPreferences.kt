@@ -91,6 +91,8 @@ object MeloXSettingsRuntime {
         internal set
     var screenAwakeMode by mutableStateOf(MeloXScreenAwakeMode.Disabled)
         internal set
+    var immersivePlaybackEnabled by mutableStateOf(false)
+        internal set
     var showLyricTranslation by mutableStateOf(true)
         internal set
     var automaticLyricSelectionEnabled by mutableStateOf(true)
@@ -398,6 +400,7 @@ object MeloXSettingsRuntime {
                 ),
             )
         }.getOrDefault(MeloXScreenAwakeMode.Disabled)
+        immersivePlaybackEnabled = MeloXSettingsPreferences.boolean(app, "immersive_playback", false)
         showLyricTranslation = MeloXSettingsPreferences.boolean(app, "lyrics_translation", true)
         automaticLyricSelectionEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_auto_select", true)
         lyricStrongBindingEnabled = MeloXSettingsPreferences.boolean(app, "experimental_lyric_strong_binding", false)
@@ -678,6 +681,7 @@ object MeloXSettingsPreferences {
             "general_haptic_feedback" -> MeloXSettingsRuntime.hapticFeedbackEnabled = value
             "playback_previous_restarts" -> MeloXSettingsRuntime.previousRestartsAfterFiveSeconds = value
             "playback_heart_mode_on_launch" -> MeloXSettingsRuntime.startsHeartModeOnLaunch = value
+            "immersive_playback" -> MeloXSettingsRuntime.immersivePlaybackEnabled = value
         }
     }
 

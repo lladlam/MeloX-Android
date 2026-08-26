@@ -32,6 +32,7 @@ import com.lladlam.melox.core.music.model.MusicSource
 import com.lladlam.melox.core.music.provider.MusicProviderSelectionStore
 import com.lladlam.melox.core.music.provider.ProviderAccountManager
 import com.lladlam.melox.ui.account.KugouLoginScreen
+import com.lladlam.melox.ui.account.KuwoLoginScreen
 import com.lladlam.melox.ui.account.QQMusicLoginScreen
 import com.lladlam.melox.ui.account.AppleMusicLoginScreen
 import com.lladlam.melox.ui.account.BilibiliLoginScreen
@@ -80,6 +81,7 @@ fun ProviderSettingsHub(
     var showServiceDialog by remember { mutableStateOf(false) }
     var showQQLogin by remember(currentSource) { mutableStateOf(false) }
     var showKugouLogin by remember(currentSource) { mutableStateOf(false) }
+    var showKuwoLogin by remember(currentSource) { mutableStateOf(false) }
     var showAppleMusicLogin by remember(currentSource) { mutableStateOf(false) }
     var showBilibiliLogin by remember(currentSource) { mutableStateOf(false) }
     var showSpotifyLogin by remember(currentSource) { mutableStateOf(false) }
@@ -114,6 +116,16 @@ fun ProviderSettingsHub(
             onDismiss = { showKugouLogin = false },
             onLoggedIn = {
                 showKugouLogin = false
+                loginRevision += 1
+            },
+        )
+        return
+    }
+    if (showKuwoLogin && currentSource == MusicSource.Kuwo) {
+        KuwoLoginScreen(
+            onDismiss = { showKuwoLogin = false },
+            onLoggedIn = {
+                showKuwoLogin = false
                 loginRevision += 1
             },
         )
@@ -214,6 +226,7 @@ fun ProviderSettingsHub(
                                     MusicSource.Netease -> onNeteaseLogin()
                                     MusicSource.QQMusic -> showQQLogin = true
                                     MusicSource.Kugou -> showKugouLogin = true
+                                    MusicSource.Kuwo -> showKuwoLogin = true
                                     MusicSource.AppleMusic -> showAppleMusicLogin = true
                                     MusicSource.Bilibili -> showBilibiliLogin = true
                                     MusicSource.Spotify -> showSpotifyLogin = true
@@ -230,6 +243,7 @@ fun ProviderSettingsHub(
                                 MusicSource.Netease -> "清除当前网易云登录态后重新登录"
                                 MusicSource.QQMusic -> "只清除 QQ音乐登录态后重新打开登录页"
                                 MusicSource.Kugou -> "保留 MID / GUID，只清除用户登录态后重新扫码"
+                                MusicSource.Kuwo -> "只清除酷我音乐登录态后重新手机号登录"
                                 MusicSource.AppleMusic -> "重新配置 Developer Token / Music User Token"
                                 MusicSource.Bilibili -> "清除当前 Bilibili 登录态后重新登录"
                                 MusicSource.Spotify -> "清除 OAuth token 后重新在浏览器授权"
@@ -348,6 +362,7 @@ fun ProviderSettingsHub(
                                 MusicSource.Netease -> onNeteaseLogin()
                                 MusicSource.QQMusic -> showQQLogin = true
                                 MusicSource.Kugou -> showKugouLogin = true
+                                MusicSource.Kuwo -> showKuwoLogin = true
                                 MusicSource.AppleMusic -> showAppleMusicLogin = true
                                 MusicSource.Bilibili -> showBilibiliLogin = true
                                 MusicSource.Spotify -> showSpotifyLogin = true

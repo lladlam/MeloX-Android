@@ -8,6 +8,7 @@ enum class MusicSource(
     Netease("netease", "网易云音乐"),
     QQMusic("qq_music", "QQ音乐"),
     Kugou("kugou", "酷狗音乐"),
+    Kuwo("kuwo", "酷我音乐"),
     AppleMusic("apple_music", "Apple Music"),
     Bilibili("bilibili", "Bilibili"),
     Spotify("spotify", "Spotify");
@@ -100,6 +101,10 @@ sealed interface ProviderTrackMetadata {
         val hash: String,
         val albumAudioId: Long? = null,
         val albumId: String? = null,
+    ) : ProviderTrackMetadata
+
+    data class Kuwo(
+        val mid: Long,
     ) : ProviderTrackMetadata
 
     data class AppleMusic(

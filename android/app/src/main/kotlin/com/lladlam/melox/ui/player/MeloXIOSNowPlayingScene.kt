@@ -204,7 +204,7 @@ internal fun MeloXIOSNowPlayingScene(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
+                .meloXPlayerStatusBarsPadding()
                 .navigationBarsPadding()
                 .padding(horizontal = 32.dp),
         ) {
@@ -444,7 +444,7 @@ private fun MeloXIOSLandscapeNowPlayingScene(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .statusBarsPadding()
+                    .meloXPlayerStatusBarsPadding()
                     .padding(top = 12.dp, end = 20.dp)
                     .clip(CircleShape)
                     .background(Color.Black.copy(alpha = .24f))
@@ -465,7 +465,7 @@ private fun MeloXIOSLandscapeNowPlayingScene(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
+            .meloXPlayerStatusBarsPadding()
             .navigationBarsPadding()
             .padding(horizontal = 20.dp, vertical = 2.dp),
     ) {

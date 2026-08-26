@@ -48,6 +48,10 @@ import com.lladlam.melox.core.network.NeteaseAccountDetailsClient
 import com.lladlam.melox.core.network.NeteaseSocialExtrasClient
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.ui.MeloXBottomContentClearance
+import com.lladlam.melox.ui.finishMeloXPage
+import com.lladlam.melox.ui.MeloXPredictiveBackPage
+import com.lladlam.melox.ui.prepareMeloXPagePredictiveBack
+import com.lladlam.melox.ui.startMeloXPage
 import com.lladlam.melox.ui.glass.MeloXGlassButton
 import com.lladlam.melox.ui.glass.MeloXGlassButtonStyle
 import com.lladlam.melox.ui.glass.MeloXGlassCard
@@ -69,7 +73,14 @@ class MeloXAccountActivity : ComponentActivity() {
             return
         }
         enableEdgeToEdge()
-        setContent { MeloXTheme { AccountHomeScreen(userId, ::finish) } }
+        prepareMeloXPagePredictiveBack()
+        setContent {
+            MeloXTheme {
+                MeloXPredictiveBackPage(onBack = ::finishMeloXPage) {
+                    AccountHomeScreen(userId, ::finishMeloXPage)
+                }
+            }
+        }
     }
 
     companion object {
@@ -77,7 +88,7 @@ class MeloXAccountActivity : ComponentActivity() {
 
         fun launch(context: Context, userId: Long) {
             if (userId <= 0L) return
-            context.startActivity(
+            context.startMeloXPage(
                 Intent(context, MeloXAccountActivity::class.java)
                     .putExtra(EXTRA_USER_ID, userId)
                     .apply { if (context !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) },

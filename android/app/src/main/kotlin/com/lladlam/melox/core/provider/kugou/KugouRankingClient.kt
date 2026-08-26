@@ -65,7 +65,7 @@ class KugouRankingClient(
         if (singer.isNotBlank() && title.startsWith("$singer - ")) title = title.removePrefix("$singer - ").trim()
         val albumName = firstString(item, "AlbumName", "album_name", "albumname")
         val albumId = firstString(item, "AlbumID", "album_id", "albumid").takeIf(String::isNotBlank)
-        val albumAudioId = firstLong(item, "album_audio_id", "AlbumAudioID", "Audioid", "audio_id", "MixSongID", "mixsongid")
+        val albumAudioId = firstLong(item, "album_audio_id", "MixSongID", "mixsongid", "AlbumAudioID", "Audioid", "audio_id")
             .takeIf { it > 0 }
         val artwork = normalizeArtwork(firstString(item, "Image", "image", "img", "album_img", "sizable_cover"))
         val artists = singer

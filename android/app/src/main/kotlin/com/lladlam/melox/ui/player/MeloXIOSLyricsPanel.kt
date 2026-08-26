@@ -163,7 +163,7 @@ private object UpstreamLyrics {
 
     const val GLOW_INTENSITY = 1f
     const val LONG_TONE_THRESHOLD_MS = 950f
-    const val LONG_TONE_MAX_SCALE = 1.05f
+    const val LONG_TONE_MAX_SCALE = 1.0625f
     const val GLOW_TAIL_MS = 550f
     const val HIGHLIGHT_GRADIENT_WIDTH = 0.7f
     const val HIGHLIGHT_GRADIENT_REDUCTION = 0.65f
@@ -1765,8 +1765,8 @@ private fun MeloXGlyphLyricText(
                         !reduceMotion
                     ) {
                         val glowRadius = with(density) {
-                            (style.fontSize.toPx() * if (renderingQuality == MeloXLyricsRenderingQuality.High) .20f else .12f)
-                                .coerceAtLeast(2.dp.toPx())
+                            (style.fontSize.toPx() * if (renderingQuality == MeloXLyricsRenderingQuality.High) .30f else .18f)
+                                .coerceAtLeast(3.dp.toPx())
                         }
                         val revealFront = if (isRtl) {
                             bounds.right - bounds.width * reveal
@@ -1779,7 +1779,7 @@ private fun MeloXGlyphLyricText(
                             right = if (isRtl) bounds.right + glowRadius else revealFront + glowRadius,
                             bottom = bounds.bottom + glowRadius,
                         ) {
-                            glyphPaint.alpha = (glow.coerceIn(0f, 1f) * .48f * 255f).roundToInt()
+                            glyphPaint.alpha = (glow.coerceIn(0f, 1f) * .648f * 255f).roundToInt()
                             glyphPaint.maskFilter = BlurMaskFilter(glowRadius, BlurMaskFilter.Blur.NORMAL)
                             drawContext.canvas.nativeCanvas.drawText(
                                 glyph.text,
@@ -2185,8 +2185,8 @@ private fun sourceTimedAnnotatedString(line: LyricLine, playbackTimeMs: Long) =
                         ),
                         shadow = if (glowStrength > 0f) {
                             Shadow(
-                                color = Color.White.copy(alpha = (glowStrength * 0.55f).coerceIn(0f, 1f)),
-                                blurRadius = UpstreamLyrics.FONT_SIZE_SP * 0.2f,
+                                color = Color.White.copy(alpha = (glowStrength * 0.7425f).coerceIn(0f, 1f)),
+                                blurRadius = UpstreamLyrics.FONT_SIZE_SP * 0.3f,
                             )
                         } else null,
                     ),

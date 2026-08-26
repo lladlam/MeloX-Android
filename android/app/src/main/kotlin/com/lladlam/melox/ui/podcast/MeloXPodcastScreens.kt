@@ -1,6 +1,13 @@
 package com.lladlam.melox.ui.podcast
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -79,8 +86,20 @@ fun MeloXPodcastScreen(
         if (initialPodcastId != null) onExit?.invoke() else selectedPodcast = null
     }
 
-    Box(modifier.fillMaxSize()) {
-        selectedPodcast?.let { podcast ->
+    AnimatedContent(
+        targetState = selectedPodcast,
+        transitionSpec = {
+            if (targetState != null) {
+                (slideInHorizontally(tween(300)) { it } + fadeIn(tween(220))) togetherWith
+                    (slideOutHorizontally(tween(260)) { -it / 4 } + fadeOut(tween(180)))
+            } else {
+                (slideInHorizontally(tween(300)) { -it / 4 } + fadeIn(tween(220))) togetherWith
+                    (slideOutHorizontally(tween(260)) { it } + fadeOut(tween(180)))
+            }
+        },
+        label = "podcast-page-navigation",
+    ) { podcast ->
+        if (podcast != null) {
             PodcastDetail(
                 initialPodcast = podcast,
                 client = client,
@@ -90,13 +109,15 @@ fun MeloXPodcastScreen(
                 },
                 onSubscriptionChanged = { subscriptionGeneration++ },
             )
-        } ?: PodcastHome(
-            client = client,
-            subscriptionsOnly = subscriptionsOnly,
-            reloadToken = subscriptionGeneration,
-            bottomPadding = bottomPadding,
-            onPodcast = { selectedPodcast = it },
-        )
+        } else {
+            PodcastHome(
+                client = client,
+                subscriptionsOnly = subscriptionsOnly,
+                reloadToken = subscriptionGeneration,
+                bottomPadding = bottomPadding,
+                onPodcast = { selectedPodcast = it },
+            )
+        }
     }
 }
 

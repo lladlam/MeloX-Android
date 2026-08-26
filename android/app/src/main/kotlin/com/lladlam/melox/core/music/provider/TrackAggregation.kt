@@ -84,6 +84,7 @@ object TrackAggregation {
             com.lladlam.melox.core.music.model.MusicSource.QQMusic -> 5
             com.lladlam.melox.core.music.model.MusicSource.Netease -> 3
             com.lladlam.melox.core.music.model.MusicSource.Kugou -> 2
+            com.lladlam.melox.core.music.model.MusicSource.Kuwo -> 2
             com.lladlam.melox.core.music.model.MusicSource.AppleMusic -> 4
             com.lladlam.melox.core.music.model.MusicSource.Bilibili -> 1
             // Spotify is playable only after a strict cross-provider match. A

@@ -59,9 +59,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.shapes.Capsule
 import com.lladlam.melox.ui.glass.meloXLiquidButton
+import com.lladlam.melox.ui.glass.meloXLiquidContentTransform
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import com.lladlam.melox.ui.glass.MeloXSymbolVariant
+import com.lladlam.melox.ui.glass.rememberMeloXLiquidInteraction
 import com.lladlam.melox.playback.MeloXAudioReactiveRuntime
 import com.lladlam.melox.playback.MeloXAudioReactiveSample
 
@@ -81,6 +83,7 @@ fun MeloXIOSMiniPlayer(
     val density = LocalDensity.current
     val swipeWidth = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
     val contentOffset = remember { Animatable(0f) }
+    val liquidInteraction = rememberMeloXLiquidInteraction()
     var accumulatedDrag by remember { mutableFloatStateOf(0f) }
     var pendingDirection by remember { mutableIntStateOf(0) }
     var reactiveSample by remember { mutableStateOf(MeloXAudioReactiveSample.Idle) }
@@ -160,21 +163,6 @@ fun MeloXIOSMiniPlayer(
     val dragProgress = (kotlin.math.abs(contentOffset.value) / swipeWidth.coerceAtLeast(1f)).coerceIn(0f, 1f)
     val adjacentAlpha = smoothStep(dragProgress, 0.15f, 0.85f)
 
-    // The shared bounds itself is rendered in SharedTransitionScope's overlay.
-    // Lift source chrome into the same overlay so it is not abruptly covered by
-    // the growing container. Component-level alpha below keeps the fade visible
-    // even while the overlay owns the actual draw pass.
-    val chromeOverlayModifier =
-        if (sharedTransitionScope != null) {
-            with(sharedTransitionScope) {
-                Modifier.renderInSharedTransitionScopeOverlay(
-                    zIndexInOverlay = 2f,
-                )
-            }
-        } else {
-            Modifier
-        }
-
     val sharedContainerModifier =
         if (sharedTransitionScope != null && animatedVisibilityScope != null) {
             with(sharedTransitionScope) {
@@ -220,65 +208,74 @@ fun MeloXIOSMiniPlayer(
                         lensRadius = 28.dp,
                         refractionHeight = 16.dp,
                         surfaceColor = Color.White.copy(alpha = 0.06f),
+                        interaction = liquidInteraction,
                     ),
             )
         }
 
-        Row(
+        // The glass draws underneath this layer, but both now consume the same
+        // press/drag transform. Keeping MiniPlay chrome in the shared layer
+        // prevents text, artwork and controls from floating over a moving pill.
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp)
-                .clip(Capsule())
-                .padding(
-                    horizontal = lerpDp(12.dp, 8.dp, compact),
-                    vertical = lerpDp(6.dp, 3.dp, compact),
-                )
-                ,
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                .meloXLiquidContentTransform(liquidInteraction),
         ) {
-            Box(
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .pointerInput(state.mediaId) {
-                        detectHorizontalDragGestures(
-                            onDragStart = {
-                                accumulatedDrag = 0f
-                                scope.launch { contentOffset.stop() }
-                            },
-                            onHorizontalDrag = { change, dragAmount ->
-                                change.consume()
-                                accumulatedDrag += dragAmount
-                                scope.launch {
-                                    contentOffset.snapTo((contentOffset.value + dragAmount).coerceIn(-swipeWidth * .86f, swipeWidth * .86f))
-                                }
-                            },
-                            onDragEnd = {
-                                val direction = when {
-                                    accumulatedDrag <= -28f -> -1
-                                    accumulatedDrag >= 28f -> 1
-                                    else -> 0
-                                }
-                                if (direction != 0) {
-                                    scope.launch {
-                                        contentOffset.animateTo(direction * swipeWidth, spring(dampingRatio = .68f, stiffness = 360f))
-                                        pendingDirection = direction
-                                        if (direction < 0) state.nextFromMiniPlayer() else state.previousFromMiniPlayer()
-                                    }
-                                } else {
-                                    scope.launch { contentOffset.animateTo(0f, spring(dampingRatio = .72f, stiffness = 430f)) }
-                                }
-                                accumulatedDrag = 0f
-                            },
-                            onDragCancel = {
-                                accumulatedDrag = 0f
-                                scope.launch { contentOffset.animateTo(0f, spring(dampingRatio = .72f, stiffness = 430f)) }
-                            },
-                        )
-                    }
-                    .clickable(interactionSource = null, indication = null, onClick = onExpand),
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .clip(Capsule())
+                    .padding(
+                        horizontal = lerpDp(12.dp, 8.dp, compact),
+                        vertical = lerpDp(6.dp, 3.dp, compact),
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .pointerInput(state.mediaId) {
+                            detectHorizontalDragGestures(
+                                onDragStart = {
+                                    accumulatedDrag = 0f
+                                    scope.launch { contentOffset.stop() }
+                                },
+                                onHorizontalDrag = { change, dragAmount ->
+                                    change.consume()
+                                    accumulatedDrag += dragAmount
+                                    scope.launch {
+                                        contentOffset.snapTo((contentOffset.value + dragAmount).coerceIn(-swipeWidth * .86f, swipeWidth * .86f))
+                                    }
+                                },
+                                onDragEnd = {
+                                    val direction = when {
+                                        accumulatedDrag <= -28f -> -1
+                                        accumulatedDrag >= 28f -> 1
+                                        else -> 0
+                                    }
+                                    if (direction != 0) {
+                                        scope.launch {
+                                            contentOffset.animateTo(direction * swipeWidth, spring(dampingRatio = .68f, stiffness = 360f))
+                                            pendingDirection = direction
+                                            if (direction < 0) state.nextFromMiniPlayer() else state.previousFromMiniPlayer()
+                                        }
+                                    } else {
+                                        scope.launch { contentOffset.animateTo(0f, spring(dampingRatio = .72f, stiffness = 430f)) }
+                                    }
+                                    accumulatedDrag = 0f
+                                },
+                                onDragCancel = {
+                                    accumulatedDrag = 0f
+                                    scope.launch { contentOffset.animateTo(0f, spring(dampingRatio = .72f, stiffness = 430f)) }
+                                },
+                            )
+                        }
+                        .clickable(interactionSource = null, indication = null, onClick = onExpand),
+                ) {
                 Row(
                     modifier = Modifier.fillMaxSize().graphicsLayer { translationX = contentOffset.value },
                     verticalAlignment = Alignment.CenterVertically,
@@ -298,7 +295,6 @@ fun MeloXIOSMiniPlayer(
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .then(chromeOverlayModifier)
                         .graphicsLayer { alpha = miniChromeAlpha },
                 ) {
                     Text(
@@ -387,6 +383,7 @@ fun MeloXIOSMiniPlayer(
             }
         }
     }
+}
 }
 
 @Composable

@@ -425,7 +425,6 @@ internal object MeloXProviderLyricsLoader {
                 val startedAt = SystemClock.elapsedRealtime()
                 val timeoutMs = when (source) {
                     LyricAutoSource.QQMusic -> 30_000L
-                    LyricAutoSource.Kugou -> 20_000L
                     LyricAutoSource.Netease,
                     LyricAutoSource.Current -> 15_000L
                     LyricAutoSource.AmlL -> error("AMLL must be resolved before fallback sources")
@@ -484,8 +483,8 @@ internal object MeloXProviderLyricsLoader {
         }
         val musicSource = when (source) {
             LyricAutoSource.QQMusic -> MusicSource.QQMusic
-            LyricAutoSource.Kugou -> MusicSource.Kugou
             LyricAutoSource.Netease -> MusicSource.Netease
+            LyricAutoSource.Current -> snapshot.resourceId.source
         }
         if (musicSource == snapshot.resourceId.source) {
             val document = loadCurrentProvider(appContext, snapshot)
@@ -638,13 +637,23 @@ internal object MeloXProviderLyricsLoader {
 
 internal data class AutoLyricCandidate(val priority: Int, val document: LyricsDocument, val binding: LyricBinding? = null)
 
-internal enum class LyricAutoSource { AmlL, QQMusic, Netease, Kugou, Current }
+internal enum class LyricAutoSource { AmlL, QQMusic, Netease, Current }
 
-internal fun automaticLyricSourcesFor(source: MusicSource): List<LyricAutoSource> = when (source) {
-    MusicSource.QQMusic -> listOf(LyricAutoSource.AmlL, LyricAutoSource.Current, LyricAutoSource.Netease, LyricAutoSource.Kugou)
-    MusicSource.Netease -> listOf(LyricAutoSource.AmlL, LyricAutoSource.QQMusic, LyricAutoSource.Kugou, LyricAutoSource.Current)
-    MusicSource.Kugou -> listOf(LyricAutoSource.AmlL, LyricAutoSource.QQMusic, LyricAutoSource.Netease, LyricAutoSource.Current)
-    else -> listOf(LyricAutoSource.AmlL, LyricAutoSource.QQMusic, LyricAutoSource.Netease, LyricAutoSource.Kugou, LyricAutoSource.Current)
+internal fun automaticLyricSourcesFor(source: MusicSource): List<LyricAutoSource> = buildList {
+    add(LyricAutoSource.AmlL)
+    if (source == MusicSource.QQMusic) {
+        add(LyricAutoSource.Current)
+    } else {
+        add(LyricAutoSource.QQMusic)
+    }
+    if (source == MusicSource.Netease) {
+        add(LyricAutoSource.Current)
+    } else {
+        add(LyricAutoSource.Netease)
+    }
+    if (source !in setOf(MusicSource.QQMusic, MusicSource.Netease)) {
+        add(LyricAutoSource.Current)
+    }
 }
 
 internal fun selectAutomaticLyrics(candidates: List<AutoLyricCandidate>): LyricsDocument? =

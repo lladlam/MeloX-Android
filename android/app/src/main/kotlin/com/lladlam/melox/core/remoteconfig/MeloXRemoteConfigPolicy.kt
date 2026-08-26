@@ -29,6 +29,7 @@ object MeloXRemoteConfigPolicy {
     internal fun providerPlaybackEnabled(config: MeloXRemoteConfig, source: MusicSource): Boolean = when (source) {
         MusicSource.QQMusic -> "qq_playback" !in config.disabledCapabilities
         MusicSource.Kugou -> "kugou_playback" !in config.disabledCapabilities
+        MusicSource.Kuwo -> "kuwo_playback" !in config.disabledCapabilities
         MusicSource.Bilibili -> "bilibili_playback" !in config.disabledCapabilities
         else -> true
     }

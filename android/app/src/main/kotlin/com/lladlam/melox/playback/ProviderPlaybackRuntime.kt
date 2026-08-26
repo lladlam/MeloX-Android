@@ -53,6 +53,7 @@ object ProviderPlaybackRuntime {
             MusicSource.Spotify -> SpotifySessionStore.read(context).let { session ->
                 listOf(session.accountId, session.expiresAtEpochMs).joinToString("|")
             }
+            MusicSource.Kuwo -> ""
         }
         return MessageDigest.getInstance("SHA-256").digest(credential.toByteArray())
             .joinToString("") { "%02x".format(it) }

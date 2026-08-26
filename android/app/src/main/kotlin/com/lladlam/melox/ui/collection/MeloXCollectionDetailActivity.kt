@@ -34,6 +34,10 @@ import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.core.network.*
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.ui.MeloXBottomContentClearance
+import com.lladlam.melox.ui.finishMeloXPage
+import com.lladlam.melox.ui.MeloXPredictiveBackPage
+import com.lladlam.melox.ui.prepareMeloXPagePredictiveBack
+import com.lladlam.melox.ui.startMeloXPage
 import com.lladlam.melox.ui.glass.MeloXActionIcon
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import com.lladlam.melox.ui.library.MeloXBatchDownloadSheet
@@ -54,18 +58,23 @@ class MeloXCollectionDetailActivity : ComponentActivity() {
             finish()
             return
         }
+        if (kind != MeloXSearchKind.Albums) prepareMeloXPagePredictiveBack()
+        val onExit: () -> Unit = if (kind == MeloXSearchKind.Albums) ::finish else ::finishMeloXPage
         setContent {
             MeloXTheme {
-                when {
-                    isProgram -> PodcastProgramScreen(id, ::finish)
-                    kind == MeloXSearchKind.Albums -> MeloXUnifiedAlbumDetailScreen(id, ::finish)
-                    kind == MeloXSearchKind.Artists -> MeloXArtistDetailScreen(id, ::finish)
-                    kind == MeloXSearchKind.Podcasts -> MeloXPodcastScreen(
-                        initialPodcastId = id,
-                        onExit = ::finish,
-                        bottomPadding = 32.dp,
-                    )
+                val page: @Composable () -> Unit = {
+                    when {
+                        isProgram -> PodcastProgramScreen(id, onExit)
+                        kind == MeloXSearchKind.Albums -> MeloXUnifiedAlbumDetailScreen(id, ::finish)
+                        kind == MeloXSearchKind.Artists -> MeloXArtistDetailScreen(id, onExit)
+                        kind == MeloXSearchKind.Podcasts -> MeloXPodcastScreen(
+                            initialPodcastId = id,
+                            onExit = onExit,
+                            bottomPadding = 32.dp,
+                        )
+                    }
                 }
+                if (kind == MeloXSearchKind.Albums) page() else MeloXPredictiveBackPage(onExit, page)
             }
         }
     }
@@ -78,10 +87,14 @@ class MeloXCollectionDetailActivity : ComponentActivity() {
         fun launchAlbum(context: Context, a: MeloXAlbumSummary) = launch(context, a.id, MeloXSearchKind.Albums)
         fun launchPodcast(context: Context, id: Long) = launch(context, id, MeloXSearchKind.Podcasts)
         fun launchPodcastProgram(context: Context, id: Long) {
-            context.startActivity(Intent(context, MeloXCollectionDetailActivity::class.java).putExtra(EXTRA_ID, id).putExtra(EXTRA_PROGRAM, true).apply { if (context !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
+            context.startMeloXPage(Intent(context, MeloXCollectionDetailActivity::class.java).putExtra(EXTRA_ID, id).putExtra(EXTRA_PROGRAM, true).apply { if (context !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
         }
         private fun launch(context: Context, id: Long, kind: MeloXSearchKind) {
-            context.startActivity(Intent(context, MeloXCollectionDetailActivity::class.java).putExtra(EXTRA_ID, id).putExtra(EXTRA_KIND, kind.name).apply { if (context !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
+            val intent = Intent(context, MeloXCollectionDetailActivity::class.java)
+                .putExtra(EXTRA_ID, id)
+                .putExtra(EXTRA_KIND, kind.name)
+                .apply { if (context !is Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+            if (kind == MeloXSearchKind.Albums) context.startActivity(intent) else context.startMeloXPage(intent)
         }
     }
 }

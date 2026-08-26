@@ -27,8 +27,8 @@ android {
         applicationId = "com.lladlam.melox.android"
         minSdk = 26
         targetSdk = 37
-        versionCode = 12
-        versionName = "0.4.4-Beta"
+        versionCode = 13
+        versionName = "0.4.5"
         buildConfigField(
             "String",
             "SPOTIFY_CLIENT_ID",

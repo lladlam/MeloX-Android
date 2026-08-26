@@ -40,6 +40,10 @@ import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.core.network.MeloXWikiSection
 import com.lladlam.melox.core.network.NeteaseMusicOperationsClient
 import com.lladlam.melox.ui.MeloXBottomContentClearance
+import com.lladlam.melox.ui.finishMeloXPage
+import com.lladlam.melox.ui.MeloXPredictiveBackPage
+import com.lladlam.melox.ui.prepareMeloXPagePredictiveBack
+import com.lladlam.melox.ui.startMeloXPage
 import com.lladlam.melox.ui.glass.MeloXGlassButton
 import com.lladlam.melox.ui.glass.MeloXGlassButtonStyle
 import com.lladlam.melox.ui.glass.MeloXGlassCard
@@ -55,7 +59,14 @@ class MeloXSongWikiActivity : ComponentActivity() {
             return
         }
         enableEdgeToEdge()
-        setContent { MeloXTheme { MeloXSongWikiScreen(song, ::finish) } }
+        prepareMeloXPagePredictiveBack()
+        setContent {
+            MeloXTheme {
+                MeloXPredictiveBackPage(onBack = ::finishMeloXPage) {
+                    MeloXSongWikiScreen(song, ::finishMeloXPage)
+                }
+            }
+        }
     }
 
     companion object {
@@ -68,7 +79,7 @@ class MeloXSongWikiActivity : ComponentActivity() {
 
         fun launch(context: Context, song: SearchSong) {
             if (song.id <= 0L || song.providerTrack != null) return
-            context.startActivity(
+            context.startMeloXPage(
                 Intent(context, MeloXSongWikiActivity::class.java)
                     .putExtra(EXTRA_ID, song.id)
                     .putExtra(EXTRA_TITLE, song.name)

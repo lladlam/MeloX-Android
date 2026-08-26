@@ -1564,6 +1564,17 @@ private fun PlayerAppearanceSettings(context: android.content.Context) {
             grouped = true,
         )
     }
+    Spacer(Modifier.height(10.dp))
+    SettingsGlassGroup {
+        SettingsToggleRow(
+            context,
+            "沉浸式播放",
+            "immersive_playback",
+            false,
+            "播放器全屏时自动隐藏顶部系统状态栏",
+            grouped = true,
+        )
+    }
 }
 
 @Composable

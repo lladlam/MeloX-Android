@@ -39,6 +39,7 @@ import com.lladlam.melox.core.music.provider.MusicProviderSelectionStore
 import com.lladlam.melox.core.music.provider.ProviderAccountManager
 import com.lladlam.melox.ui.MeloXBottomContentClearance
 import com.lladlam.melox.ui.account.KugouLoginScreen
+import com.lladlam.melox.ui.account.KuwoLoginScreen
 import com.lladlam.melox.ui.account.QQMusicLoginScreen
 import com.lladlam.melox.ui.account.AppleMusicLoginScreen
 import com.lladlam.melox.ui.account.BilibiliLoginScreen
@@ -70,6 +71,7 @@ fun ProviderServicesScreen(
     }
     var showQQLogin by remember(currentSource) { mutableStateOf(false) }
     var showKugouLogin by remember(currentSource) { mutableStateOf(false) }
+    var showKuwoLogin by remember(currentSource) { mutableStateOf(false) }
     var showAppleMusicLogin by remember(currentSource) { mutableStateOf(false) }
     var showBilibiliLogin by remember(currentSource) { mutableStateOf(false) }
     var showSpotifyLogin by remember(currentSource) { mutableStateOf(false) }
@@ -91,6 +93,13 @@ fun ProviderServicesScreen(
         KugouLoginScreen(
             onDismiss = { showKugouLogin = false },
             onLoggedIn = { showKugouLogin = false; loginRevision++ },
+        )
+        return
+    }
+    if (showKuwoLogin && currentSource == MusicSource.Kuwo) {
+        KuwoLoginScreen(
+            onDismiss = { showKuwoLogin = false },
+            onLoggedIn = { showKuwoLogin = false; loginRevision++ },
         )
         return
     }
@@ -188,6 +197,7 @@ fun ProviderServicesScreen(
                             MusicSource.Netease -> onNeteaseLogin()
                             MusicSource.QQMusic -> showQQLogin = true
                             MusicSource.Kugou -> showKugouLogin = true
+                            MusicSource.Kuwo -> showKuwoLogin = true
                             MusicSource.AppleMusic -> showAppleMusicLogin = true
                             MusicSource.Bilibili -> showBilibiliLogin = true
                             MusicSource.Spotify -> showSpotifyLogin = true
@@ -271,6 +281,7 @@ fun ProviderServicesScreen(
                                 MusicSource.Netease -> onNeteaseLogin()
                                 MusicSource.QQMusic -> showQQLogin = true
                                 MusicSource.Kugou -> showKugouLogin = true
+                                MusicSource.Kuwo -> showKuwoLogin = true
                                 MusicSource.AppleMusic -> showAppleMusicLogin = true
                                 MusicSource.Bilibili -> showBilibiliLogin = true
                                 MusicSource.Spotify -> showSpotifyLogin = true

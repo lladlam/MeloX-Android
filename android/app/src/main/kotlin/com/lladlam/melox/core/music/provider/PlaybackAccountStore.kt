@@ -4,6 +4,8 @@ import android.content.Context
 import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.provider.kugou.KugouSession
 import com.lladlam.melox.core.provider.kugou.KugouSessionStore
+import com.lladlam.melox.core.provider.kuwo.KuwoSession
+import com.lladlam.melox.core.provider.kuwo.KuwoSessionStore
 import com.lladlam.melox.core.provider.qqmusic.QQMusicSession
 import com.lladlam.melox.core.provider.qqmusic.QQMusicSessionStore
 
@@ -32,10 +34,15 @@ object PlaybackAccountStore {
         isEnabled(context), KugouSessionStore.read(context, playback = true), KugouSessionStore.read(context), KugouSession::isLoggedIn,
     )
 
+    fun kuwoSession(context: Context): KuwoSession = selectPlaybackSession(
+        isEnabled(context), KuwoSessionStore.read(context, playback = true), KuwoSessionStore.read(context), KuwoSession::isLoggedIn,
+    )
+
     fun clear(context: Context) {
         NeteaseSessionStore.clearPlayback(context)
         QQMusicSessionStore.clear(context, clearWebCookies = false, playback = true)
         KugouSessionStore.clearLogin(context, playback = true)
+        KuwoSessionStore.clear(context, playback = true)
     }
 }
 

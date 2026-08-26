@@ -442,6 +442,7 @@ private fun shareProviderSong(
     val providerUrl = when (identity.source) {
         MusicSource.QQMusic -> "https://y.qq.com/n/ryqq/songDetail/${identity.value}"
         MusicSource.Kugou,
+        MusicSource.Kuwo,
         MusicSource.Netease -> null
         MusicSource.AppleMusic -> "https://music.apple.com/song/${identity.value}"
         MusicSource.Bilibili -> identity.value.substringBefore(':').takeIf(String::isNotBlank)?.let {

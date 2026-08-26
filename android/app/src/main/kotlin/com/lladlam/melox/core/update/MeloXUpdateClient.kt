@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
 
 data class MeloXRelease(
@@ -30,7 +31,24 @@ class MeloXUpdateClient(
     suspend fun latestStableRelease(forceSourceBenchmark: Boolean = false): MeloXRelease = withContext(Dispatchers.IO) {
         val router = requireNotNull(routing) { "Context is required for update requests" }
         var lastError: Throwable? = null
-        for (source in router.candidates(forceSourceBenchmark)) {
+        val sources = router.candidates(forceSourceBenchmark)
+        for (source in sources) {
+            val request = Request.Builder()
+                .url(router.routedUrl(source, GitHubReleasesUrl))
+                .header("Accept", "application/vnd.github+json")
+                .header("User-Agent", "MeloX-Android")
+                .build()
+            val result = runCatching {
+                router.client(source).newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) throw IOException("${source.label} HTTP ${response.code}")
+                    parseReleases(response.body.string())
+                        ?: throw IOException("${source.label} 没有可用的 Android Release")
+                }
+            }
+            result.getOrNull()?.let { return@withContext it }
+            lastError = result.exceptionOrNull()
+        }
+        for (source in sources) {
             val request = Request.Builder()
                 .url(router.routedUrl(source, MeloXGitHubRouting.UpdateManifestUrl))
                 .header("Accept", "application/json")
@@ -77,18 +95,66 @@ class MeloXUpdateClient(
         )
     }
 
+    internal fun parseReleases(body: String): MeloXRelease? {
+        val releases = JSONArray(body)
+        return (0 until releases.length())
+            .asSequence()
+            .mapNotNull(releases::optJSONObject)
+            .filterNot { it.optBoolean("draft", false) }
+            .mapNotNull { value ->
+                val tag = value.optString("tag_name").trim()
+                val parts = versionParts(tag) ?: return@mapNotNull null
+                val pageUrl = value.optString("html_url").trim()
+                if (!pageUrl.startsWith(ReleasePagePrefix)) return@mapNotNull null
+                val asset = value.optJSONArray("assets")?.let { assets ->
+                    (0 until assets.length()).asSequence()
+                        .mapNotNull(assets::optJSONObject)
+                        .firstOrNull { it.optString("name").endsWith(".apk", ignoreCase = true) }
+                }
+                val apkUrl = asset?.optString("browser_download_url")?.trim()?.takeIf {
+                    it.startsWith(ReleaseDownloadPrefix)
+                }
+                parts to MeloXRelease(
+                    version = tag,
+                    name = value.optString("name").ifBlank { tag },
+                    notes = value.optString("body"),
+                    pageUrl = pageUrl,
+                    apkUrl = apkUrl,
+                    apkName = asset?.optString("name")?.trim()?.takeIf(String::isNotBlank),
+                    publishedAt = value.optString("published_at"),
+                )
+            }
+            .maxWithOrNull(compareBy<Pair<List<Int>, MeloXRelease>>(
+                { it.first[0] },
+                { it.first[1] },
+                { it.first[2] },
+                { it.second.publishedAt },
+            ))
+            ?.second
+    }
+
     fun isNewer(latest: String, current: String): Boolean {
-        fun parts(value: String) = value.trim()
-            .removePrefix("android-")
-            .removePrefix("v")
-            .substringBefore('-')
-            .split('.').map { it.toIntOrNull() ?: 0 }
-        val left = parts(latest)
-        val right = parts(current)
-        for (index in 0 until maxOf(left.size, right.size)) {
-            val difference = left.getOrElse(index) { 0 } - right.getOrElse(index) { 0 }
+        val left = versionParts(latest) ?: return false
+        val right = versionParts(current) ?: return false
+        for (index in left.indices) {
+            val difference = left[index].compareTo(right[index])
             if (difference != 0) return difference > 0
         }
         return false
+    }
+
+    private fun versionParts(value: String): List<Int>? {
+        val match = VERSION_PATTERN.matchEntire(value.trim()) ?: return null
+        return match.groupValues.drop(1).map { it.toIntOrNull() ?: return null }
+    }
+
+    private companion object {
+        const val GitHubReleasesUrl = "https://api.github.com/repos/lladlam/MeloX-Android/releases?per_page=100"
+        const val ReleasePagePrefix = "https://github.com/lladlam/MeloX-Android/releases/"
+        const val ReleaseDownloadPrefix = "https://github.com/lladlam/MeloX-Android/releases/download/"
+        val VERSION_PATTERN = Regex(
+            pattern = "^(?:android-)?v?(\\d+)\\.(\\d+)\\.(\\d+)(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?$",
+            option = RegexOption.IGNORE_CASE,
+        )
     }
 }

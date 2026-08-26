@@ -19,13 +19,13 @@
 
 > MeloX Android 是非官方开源项目，与网易云音乐、小米、Apple 及其关联公司不存在隶属、合作或授权关系。
 
-## 当前版本：0.4.4-Beta
+## 当前版本：0.4.5
 
-`0.4.4-Beta` 集中完善多音乐源、云端兼容配置、无尽播放与 Mei 风格页面：增加 Spotify、手机号登录和跨平台完整音源回退；引入用户授权、签名验证和防回滚的音乐源云控；专辑、歌手、个人中心、歌曲百科和播客页面统一迁移并适配深色模式；主页改为全宽贯通布局，搜索歌曲支持双向滑动操作，AMLL 歌词与队尾推荐预取更加稳定。
+`0.4.5` 是首个正式版，合并了从 0.4.x 开发分支以来的全部稳定性改进：新增酷我音乐原生源（搜索、播放、歌词与手机号登录），统一自动歌词源优先级为 AMLL → QQ音乐 → 网易云 → 当前源；加入「沉浸式播放」开关，可在全屏播放器中隐藏顶部状态栏；歌词长音高光范围、亮度与放大动画进一步增强；同时修复了酷狗串台、更新检测、HTTPS 明文请求和 lyricx 歌词解析等问题。
 
-- 下载与完整更新日志：[GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.4.4-Beta)
+- 下载与完整更新日志：[GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.4.5)
 - 详细版本记录：[CHANGELOG.md](CHANGELOG.md)
-- 本次版本说明：[0.4.4-Beta Release Notes](docs/releases/0.4.4-Beta.md)
+- 本次版本说明：[0.4.5 Release Notes](docs/releases/0.4.5.md)
 
 ## 项目说明
 

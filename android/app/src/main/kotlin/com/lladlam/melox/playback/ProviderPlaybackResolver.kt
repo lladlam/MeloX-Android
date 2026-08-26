@@ -59,7 +59,8 @@ class ProviderPlaybackResolver(
         return dataSpec.buildUpon()
             .setUri(resolved.uri)
             .setHttpRequestHeaders(dataSpec.httpRequestHeaders + resolved.headers)
-            .setKey(dataSpec.key ?: uri.toString())
+            // Provider CDN URLs are short-lived. Do not reuse bytes cached for an earlier resolution.
+            .setKey(resolved.uri.toString())
             .build()
     }
 
@@ -179,6 +180,10 @@ class ProviderPlaybackResolver(
             hash = id.value,
             albumAudioId = uri.getQueryParameter(KugouAlbumAudioIdQuery)?.toLongOrNull(),
             albumId = uri.getQueryParameter(KugouAlbumIdQuery)?.takeIf(String::isNotBlank),
+        )
+        MusicSource.Kuwo -> ProviderTrackMetadata.Kuwo(
+            mid = id.value.toLongOrNull()
+                ?: throw IOException("Invalid Kuwo track ID: ${id.value}"),
         )
         MusicSource.AppleMusic -> ProviderTrackMetadata.AppleMusic(
             catalogId = id.value,

@@ -125,6 +125,7 @@ import com.lladlam.melox.ui.glass.meloXLiquidBottomBar
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import com.lladlam.melox.ui.glass.meloXLiquidTabSelection
 import com.lladlam.melox.ui.glass.publicdemo.PublicDampedDragAnimation
+import com.lladlam.melox.ui.player.MeloXImmersivePlaybackEffect
 import com.lladlam.melox.ui.player.MeloXIOSMiniPlayer
 import com.lladlam.melox.ui.player.MeloXProviderLyricsLoader
 import com.lladlam.melox.ui.player.MeloXIOSNowPlayingSharedHost
@@ -409,6 +410,11 @@ fun MeloXApp(
             val sharedScope = this
             val fullPlayerVisible = playbackState.hasMedia &&
                 (playerTransitionState.currentState || playerTransitionState.targetState)
+
+            MeloXImmersivePlaybackEffect(
+                enabled = fullPlayerVisible && MeloXSettingsRuntime.immersivePlaybackEnabled,
+            )
+
             Scaffold(
                 modifier = Modifier
                     .fillMaxSize()
@@ -427,7 +433,7 @@ fun MeloXApp(
                         targetState = selectedTab,
                         transitionSpec = {
                             when {
-                                initialState in visibleRootTabs && targetState in visibleRootTabs ->
+                                initialState != AppTab.Services && targetState != AppTab.Services ->
                                     fadeIn(tween(220)) togetherWith fadeOut(tween(160))
 
                                 initialState == AppTab.Services && targetState == AppTab.Settings ->
@@ -604,6 +610,11 @@ fun MeloXApp(
                                 MeloXSearchLaunchBus.post(query, kind)
                             }
                             selectedTab = AppTab.Search
+                            closePlayer()
+                        },
+                        onOpenPlaybackSettings = {
+                            settingsRouteRequest = "Playback"
+                            selectedTab = AppTab.Settings
                             closePlayer()
                         },
                         onSeekCollapse = { fraction ->

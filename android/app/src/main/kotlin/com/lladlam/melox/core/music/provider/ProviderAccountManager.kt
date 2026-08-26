@@ -5,6 +5,7 @@ import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.music.model.MusicSource
 import com.lladlam.melox.core.provider.applemusic.AppleMusicSessionStore
 import com.lladlam.melox.core.provider.kugou.KugouSessionStore
+import com.lladlam.melox.core.provider.kuwo.KuwoSessionStore
 import com.lladlam.melox.core.provider.qqmusic.QQMusicSessionStore
 import com.lladlam.melox.core.provider.bilibili.BilibiliSessionStore
 import com.lladlam.melox.core.provider.spotify.SpotifySessionStore
@@ -54,6 +55,14 @@ class ProviderAccountManager(
                 accountId = session.userId.takeIf { it > 0L }?.toString(),
             )
         }
+        MusicSource.Kuwo -> {
+            val session = KuwoSessionStore.read(appContext)
+            AccountState(
+                source = source,
+                loggedIn = session.isLoggedIn,
+                accountId = session.userId.takeIf(String::isNotBlank),
+            )
+        }
 
         MusicSource.AppleMusic -> {
             val session = AppleMusicSessionStore.read(appContext)
@@ -85,6 +94,7 @@ class ProviderAccountManager(
 
             MusicSource.QQMusic -> QQMusicSessionStore.clear(appContext, clearWebCookies = true)
             MusicSource.Kugou -> KugouSessionStore.clearLogin(appContext)
+            MusicSource.Kuwo -> KuwoSessionStore.clear(appContext)
             MusicSource.AppleMusic -> AppleMusicSessionStore.clear(appContext)
             MusicSource.Bilibili -> BilibiliSessionStore.clear(appContext, clearWebCookies = true)
             MusicSource.Spotify -> SpotifySessionStore.clear(appContext)

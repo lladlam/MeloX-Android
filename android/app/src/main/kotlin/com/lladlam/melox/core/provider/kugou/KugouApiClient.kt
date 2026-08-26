@@ -1,5 +1,6 @@
 package com.lladlam.melox.core.provider.kugou
 
+import android.util.Log
 import com.lladlam.melox.core.lyrics.KugouKrcLyricsParser
 import com.lladlam.melox.core.lyrics.LrcLyricsParser
 import com.lladlam.melox.core.lyrics.LyricsDocument
@@ -22,7 +23,7 @@ import org.json.JSONObject
 /** Direct Android implementation of the request shapes from MakcRe/KuGouMusicApi. */
 class KugouApiClient(
     private val sessionProvider: () -> KugouSession,
-    httpClient: OkHttpClient = com.lladlam.melox.core.network.MeloXHttpClient.shared,
+    private val httpClient: OkHttpClient = com.lladlam.melox.core.network.MeloXHttpClient.shared,
 ) {
     private val requests = KugouRequestClient(sessionProvider, httpClient)
 
@@ -129,50 +130,77 @@ class KugouApiClient(
     ): PlaybackResolution {
         val metadata = track.requireKugouMetadata()
         val session = sessionProvider()
-        val requested = quality.kugouQuality()
         val hash = metadata.hash.lowercase()
         val key = md5Hex(
             hash + "57ae12eb6890223e355ccfcb74edf70d" +
                 KugouRequestClient.AppId + session.mid + session.userId,
         )
-        val response = runCatching {
-            requests.get(
-                path = "/v5/url",
-                params = mapOf(
-                    "album_id" to (metadata.albumId?.toLongOrNull() ?: 0L).toString(),
-                    "area_code" to "1",
-                    "hash" to hash,
-                    "ssa_flag" to "is_fromtrack",
-                    "version" to "11430",
-                    "page_id" to "151369488",
-                    "quality" to requested.apiValue,
-                    "album_audio_id" to (metadata.albumAudioId ?: 0L).toString(),
-                    "behavior" to "play",
-                    "pid" to "2",
-                    "cmd" to "26",
-                    "pidversion" to "3001",
-                    "IsFreePart" to "0",
-                    "ppage_id" to "463467626,350369493,788954147",
-                    "cdnBackup" to "1",
-                    "module" to "",
-                    "clientver" to "11430",
-                    "key" to key,
-                ),
-                headers = mapOf("x-router" to "trackercdn.kugou.com"),
+        var lastError: IOException? = null
+        for (candidate in quality.kugouPlaybackCandidates()) {
+            val response = runCatching {
+                requests.get(
+                    path = "/v5/url",
+                    params = mapOf(
+                        "album_id" to (metadata.albumId?.toLongOrNull() ?: 0L).toString(),
+                        "area_code" to "1",
+                        "hash" to hash,
+                        "ssa_flag" to "is_fromtrack",
+                        "version" to "11430",
+                        "page_id" to "151369488",
+                        "quality" to candidate.apiValue,
+                        "album_audio_id" to (metadata.albumAudioId ?: 0L).toString(),
+                        "behavior" to "play",
+                        "pid" to "2",
+                        "cmd" to "26",
+                        "pidversion" to "3001",
+                        "IsFreePart" to "0",
+                        "ppage_id" to "463467626,350369493,788954147",
+                        "cdnBackup" to "1",
+                        "module" to "",
+                        "clientver" to "11430",
+                        "key" to key,
+                    ),
+                    headers = mapOf("x-router" to "trackercdn.kugou.com"),
+                )
+            }.getOrElse { error ->
+                lastError = IOException(error.message ?: "酷狗音乐请求失败", error)
+                Log.w(TAG, "Playback unavailable: hash=$hash quality=${candidate.apiValue}", error)
+                null
+            } ?: continue
+            val url = findPlaybackUrl(response)
+            if (url == null) {
+                lastError = IOException("酷狗音乐没有返回 ${candidate.apiValue} 可播放链接")
+                Log.w(TAG, "Playback returned no URL: hash=$hash quality=${candidate.apiValue}")
+                continue
+            }
+            if (candidate != quality.kugouQuality()) {
+                Log.i(TAG, "Playback quality fallback: hash=$hash requested=${quality.name} actual=${candidate.actualTier}")
+            }
+            Log.i(
+                TAG,
+                "Playback URL resolved: hash=$hash quality=${candidate.apiValue} " +
+                    "format=${formatFromUrl(url)} endpoint=${url.redactedEndpoint()}",
             )
-        }.getOrElse { error ->
-            return if (!session.isLoggedIn) PlaybackResolution.LoginRequired
-            else PlaybackResolution.Unavailable(error.message)
+            return PlaybackResolution.Playable(
+                url = secureUrl(url),
+                requestedQuality = quality,
+                actualQuality = candidate.actualTier,
+                format = formatFromUrl(url),
+                requestHeaders = mapOf(
+                    "User-Agent" to KugouRequestClient.UserAgent,
+                    "Referer" to "https://www.kugou.com/",
+                    "Accept" to "*/*",
+                    "Accept-Encoding" to "identity",
+                    "Cookie" to session.asCookieMap().entries.joinToString("; ") { (key, value) -> "$key=$value" },
+                ),
+            )
         }
-        val url = findHttpUrl(response)
-            ?: return if (!session.isLoggedIn) PlaybackResolution.LoginRequired
-            else PlaybackResolution.Unavailable("酷狗音乐没有返回可播放链接")
-        return PlaybackResolution.Playable(
-            url = secureUrl(url),
-            requestedQuality = quality,
-            actualQuality = requested.actualTier,
-            format = formatFromUrl(url),
-        )
+        val message = lastError?.message ?: "酷狗音乐没有返回可播放链接"
+        return if (!session.isLoggedIn && message.requiresKugouLogin()) {
+            PlaybackResolution.LoginRequired
+        } else {
+            PlaybackResolution.Unavailable(message)
+        }
     }
 
     private fun parseSearchTrack(item: JSONObject): MusicTrack? {
@@ -194,11 +222,11 @@ class KugouApiClient(
         val albumAudioId = firstLong(
             item,
             "album_audio_id",
+            "MixSongID",
+            "mixsongid",
             "AlbumAudioID",
             "Audioid",
             "audio_id",
-            "MixSongID",
-            "mixsongid",
         ).takeIf { it > 0L }
         val durationSeconds = firstLong(item, "Duration", "duration", "time_length").takeIf { it > 0L }
         val artwork = normalizeArtwork(firstString(item, "Image", "image", "img", "album_img"))
@@ -223,16 +251,16 @@ class KugouApiClient(
         )
     }
 
-    private fun findHttpUrl(value: Any?): String? = when (value) {
+    private fun findPlaybackUrl(value: Any?): String? = when (value) {
         is JSONObject -> {
             val preferredKeys = listOf("url", "play_url", "playUrl", "backup_url", "backupUrl")
             preferredKeys.asSequence()
-                .mapNotNull { key -> value.opt(key)?.let(::findHttpUrl) }
+                .mapNotNull { key -> value.opt(key)?.let(::findPlaybackUrl) }
                 .firstOrNull()
-                ?: value.keys().asSequence().mapNotNull { key -> findHttpUrl(value.opt(key)) }.firstOrNull()
+                ?: value.keys().asSequence().mapNotNull { key -> findPlaybackUrl(value.opt(key)) }.firstOrNull()
         }
-        is JSONArray -> (0 until value.length()).asSequence().mapNotNull { findHttpUrl(value.opt(it)) }.firstOrNull()
-        is String -> value.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+        is JSONArray -> (0 until value.length()).asSequence().mapNotNull { findPlaybackUrl(value.opt(it)) }.firstOrNull()
+        is String -> value.takeIf { it.isPlaybackUrl() }
         else -> null
     }
 
@@ -268,6 +296,10 @@ class KugouApiClient(
         MessageDigest.getInstance("MD5")
             .digest(value.toByteArray(Charsets.UTF_8))
             .joinToString("") { byte -> "%02x".format(byte) }
+
+    private companion object {
+        const val TAG = "MeloXKugou"
+    }
 }
 
 private data class KugouQuality(
@@ -283,6 +315,43 @@ private fun AudioQualityTier.kugouQuality(): KugouQuality = when (this) {
     AudioQualityTier.Immersive,
     AudioQualityTier.Master -> KugouQuality("high", AudioQualityTier.HiResolution)
 }
+
+private fun AudioQualityTier.kugouPlaybackCandidates(): List<KugouQuality> = when (this) {
+    AudioQualityTier.Standard -> listOf(AudioQualityTier.Standard.kugouQuality())
+    AudioQualityTier.High -> listOf(AudioQualityTier.High.kugouQuality(), AudioQualityTier.Standard.kugouQuality())
+    AudioQualityTier.Lossless -> listOf(
+        AudioQualityTier.Lossless.kugouQuality(),
+        AudioQualityTier.High.kugouQuality(),
+        AudioQualityTier.Standard.kugouQuality(),
+    )
+    AudioQualityTier.HiResolution,
+    AudioQualityTier.Immersive,
+    AudioQualityTier.Master,
+    -> listOf(
+        AudioQualityTier.HiResolution.kugouQuality(),
+        AudioQualityTier.Lossless.kugouQuality(),
+        AudioQualityTier.High.kugouQuality(),
+        AudioQualityTier.Standard.kugouQuality(),
+    )
+}
+
+private fun String.requiresKugouLogin(): Boolean {
+    val normalized = lowercase()
+    return "登录" in normalized || "login" in normalized || "token" in normalized || "userid" in normalized
+}
+
+private fun String.isPlaybackUrl(): Boolean {
+    if (!startsWith("http://") && !startsWith("https://")) return false
+    return formatFromPlaybackUrl() !in setOf("avif", "bmp", "gif", "heic", "jpeg", "jpg", "png", "webp")
+}
+
+private fun String.formatFromPlaybackUrl(): String? =
+    substringBefore('?').substringAfterLast('.', "").lowercase().takeIf(String::isNotBlank)
+
+private fun String.redactedEndpoint(): String = runCatching {
+    val parsed = java.net.URI(this)
+    "${parsed.host ?: "unknown"}${parsed.path ?: "/"}"
+}.getOrDefault("invalid")
 
 private fun MusicTrack.requireKugouMetadata(): ProviderTrackMetadata.Kugou {
     require(id.source == MusicSource.Kugou) {

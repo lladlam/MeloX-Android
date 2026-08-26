@@ -92,6 +92,11 @@ object MusicExperiences {
         ),
     )
 
+    val kuwo = MusicExperience(
+        source = MusicSource.Kuwo,
+        homeSections = emptyList(),
+    )
+
     val appleMusic = MusicExperience(
         source = MusicSource.AppleMusic,
         homeSections = listOf(
@@ -133,6 +138,7 @@ object MusicExperiences {
         MusicSource.Netease -> netease
         MusicSource.QQMusic -> qqMusic
         MusicSource.Kugou -> kugou
+        MusicSource.Kuwo -> kuwo
         MusicSource.AppleMusic -> appleMusic
         MusicSource.Bilibili -> bilibili
         MusicSource.Spotify -> spotify

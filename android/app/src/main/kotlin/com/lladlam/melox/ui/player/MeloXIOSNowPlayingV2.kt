@@ -120,7 +120,7 @@ fun MeloXIOSNowPlayingV2(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
+                .meloXPlayerStatusBarsPadding()
                 .navigationBarsPadding()
                 .padding(horizontal = 32.dp),
         ) {

@@ -81,6 +81,7 @@ fun MeloXIOSNowPlayingSharedHost(
     state: MeloXPlaybackUiState,
     onDismiss: () -> Unit,
     onNavigateSearch: (String, MeloXSearchKind) -> Unit = { _, _ -> },
+    onOpenPlaybackSettings: () -> Unit,
     onSeekCollapse: suspend (Float) -> Unit,
     onSettleCollapse: suspend (Boolean) -> Unit,
     sharedTransitionScope: SharedTransitionScope,
@@ -417,6 +418,7 @@ fun MeloXIOSNowPlayingSharedHost(
                 state = state,
                 visible = showQuality,
                 onDismiss = { showQuality = false },
+                onOpenPlaybackSettings = onOpenPlaybackSettings,
             )
         }
     }
@@ -477,7 +479,7 @@ private fun SharedArtworkDestination(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
+            .meloXPlayerStatusBarsPadding()
             .padding(horizontal = if (isLandscape) 20.dp else 32.dp),
     ) {
         val contentTop = 30.dp

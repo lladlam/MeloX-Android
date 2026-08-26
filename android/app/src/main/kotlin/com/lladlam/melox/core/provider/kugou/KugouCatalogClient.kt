@@ -244,7 +244,7 @@ internal class KugouCatalogClient(
         val artwork = normalizeArtwork(firstString(item, "sizable_cover", "Image", "image", "img", "album_img"))
         val durationRaw = firstLong(item, "duration", "Duration", "time_length")
         val durationMs = durationRaw.takeIf { it > 0 }?.let { if (it > 100_000L) it else it * 1_000L }
-        val albumAudioId = firstLong(item, "album_audio_id", "AlbumAudioID", "audio_id", "audioid", "MixSongID")
+        val albumAudioId = firstLong(item, "album_audio_id", "MixSongID", "mixsongid", "AlbumAudioID", "audio_id", "audioid")
             .takeIf { it > 0 }
         return MusicTrack(
             id = MusicResourceId(MusicSource.Kugou, hash),

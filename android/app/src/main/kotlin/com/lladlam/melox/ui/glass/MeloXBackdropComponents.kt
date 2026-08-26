@@ -44,6 +44,19 @@ import kotlin.math.tanh
 /** The screen backdrop sampled by all MeloX liquid controls. */
 val LocalMeloXBackdrop = staticCompositionLocalOf<Backdrop?> { null }
 
+/** Shared interaction state for a liquid surface and the content that rides on it. */
+class MeloXLiquidInteraction internal constructor(
+    internal val highlight: PublicInteractiveHighlight,
+)
+
+@Composable
+fun rememberMeloXLiquidInteraction(): MeloXLiquidInteraction {
+    val animationScope = rememberCoroutineScope()
+    return remember(animationScope) {
+        MeloXLiquidInteraction(PublicInteractiveHighlight(animationScope))
+    }
+}
+
 /**
  * Official LiquidButton-style glass, generalized so existing MeloX controls
  * keep their exact iOS-derived size, shape and content.
@@ -58,10 +71,11 @@ fun Modifier.meloXLiquidButton(
     blurRadius: Dp? = null,
     lensRadius: Dp? = null,
     refractionHeight: Dp? = null,
+    interaction: MeloXLiquidInteraction? = null,
 ): Modifier {
     val baseSpec = MeloXGlassSpec.forMaterial(material)
     val animationScope = rememberCoroutineScope()
-    val interactiveHighlight = remember(animationScope) {
+    val interactiveHighlight = interaction?.highlight ?: remember(animationScope) {
         PublicInteractiveHighlight(animationScope)
     }
     return meloXGlassSurface(
@@ -83,6 +97,24 @@ fun Modifier.meloXLiquidButton(
     ).then(if (enabled) interactiveHighlight.modifier else Modifier)
         .then(if (enabled) interactiveHighlight.gestureModifier else Modifier)
 }
+
+/** Applies the same optical press/drag transform to content placed over liquid glass. */
+fun Modifier.meloXLiquidContentTransform(interaction: MeloXLiquidInteraction): Modifier =
+    graphicsLayer {
+        val controlHeight = size.height.coerceAtLeast(1f)
+        val dragOffset = interaction.highlight.offset
+        val pressProgress = interaction.highlight.pressProgress
+        val baseScale = 1f + (4.dp.toPx() / controlHeight) * pressProgress
+        val maxOffset = size.minDimension.coerceAtLeast(1f)
+        translationX = maxOffset * tanh(0.05f * dragOffset.x / maxOffset)
+        translationY = maxOffset * tanh(0.05f * dragOffset.y / maxOffset)
+        val maxDragScale = 4.dp.toPx() / controlHeight
+        val angle = atan2(dragOffset.y, dragOffset.x)
+        scaleX = baseScale + maxDragScale * abs(cos(angle) * dragOffset.x / size.maxDimension.coerceAtLeast(1f)) *
+            (size.width / controlHeight).fastCoerceAtMost(1f)
+        scaleY = baseScale + maxDragScale * abs(sin(angle) * dragOffset.y / size.maxDimension.coerceAtLeast(1f)) *
+            (controlHeight / size.width.coerceAtLeast(1f)).fastCoerceAtMost(1f)
+    }
 
 /** Shared material entry point for all Native Component-style controls. */
 @Composable

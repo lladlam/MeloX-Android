@@ -603,7 +603,7 @@ fun MeloXNowPlaying(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
+                .meloXPlayerStatusBarsPadding()
                 .padding(horizontal = 32.dp),
         ) {
             Box(

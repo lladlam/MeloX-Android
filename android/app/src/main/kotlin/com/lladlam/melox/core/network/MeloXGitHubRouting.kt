@@ -153,7 +153,7 @@ class MeloXGitHubRouting(
         private const val BenchmarkTtlMs = 6L * 60L * 60L * 1_000L
         private val BenchmarkMutex = Mutex()
         private val ConcreteSources = MeloXGitHubSource.entries.filterNot { it == MeloXGitHubSource.Auto }
-        private val AllowedGitHubHosts = setOf("github.com", "raw.githubusercontent.com")
+        private val AllowedGitHubHosts = setOf("api.github.com", "github.com", "raw.githubusercontent.com")
 
         internal fun routedUrlFor(source: MeloXGitHubSource, originalUrl: String): String {
             require(source != MeloXGitHubSource.Auto) { "Auto is not a concrete GitHub source" }
