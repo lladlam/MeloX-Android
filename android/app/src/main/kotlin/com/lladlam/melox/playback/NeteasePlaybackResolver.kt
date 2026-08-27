@@ -24,6 +24,8 @@ class NeteasePlaybackResolver(
     private val client: NeteaseSearchClient = NeteaseSearchClient(cookieProvider = cookieProvider),
     private val localSourceProvider: (Long) -> Uri? = { null },
     private val crossProviderFallback: CrossProviderPlaybackFallbackResolver? = null,
+    private val chkszPlayback: ChkszPlaybackResolver? = null,
+    private val lxUserPlayback: LxUserPlaybackResolver? = null,
     private val providerPlaybackEnabled: (com.lladlam.melox.core.music.model.MusicSource) -> Boolean = { true },
 ) : ResolvingDataSource.Resolver {
     private data class ResolveKey(
@@ -84,33 +86,62 @@ class NeteasePlaybackResolver(
             .getOrElse { throw IOException("Unable to resolve playback source", it.cause ?: it) }
         return try {
             val resolved = try {
-                val source = qualityClient.playbackSourceBlocking(
-                    songId = songId,
-                    requestedQuality = quality,
-                )
-                if (quality == MusicQualityRuntime.selected) {
-                    CrossProviderPlaybackRuntime.clear(songId)
+                val thirdParty = runCatching { chkszPlayback?.resolve(songId, quality.toCommonTier()) }.getOrNull()
+                if (thirdParty != null) {
+                    ResolvedRequest(
+                        uri = Uri.parse(thirdParty.url),
+                        cacheIdentity = "chksz:${chkszPlayback?.cacheIdentity()}",
+                    )
+                } else {
+                    val source = qualityClient.playbackSourceBlocking(
+                        songId = songId,
+                        requestedQuality = quality,
+                    )
+                    if (quality == MusicQualityRuntime.selected) {
+                        CrossProviderPlaybackRuntime.clear(songId)
+                    }
+                    ResolvedRequest(Uri.parse(source.url))
                 }
-                ResolvedRequest(Uri.parse(source.url))
             } catch (error: NeteasePlaybackUnavailableException) {
                 val fallback = fallbackRequest
                     ?.copy(quality = quality.toCommonTier())
                     ?.let { crossProviderFallback?.resolve(it) }
+                if (fallback != null) {
+                    MusicQualityRuntime.recordActual(
+                        songId = songId,
+                        requested = quality,
+                        actual = fallback.actualQuality.toMusicQuality(quality),
+                    )
+                    if (quality == MusicQualityRuntime.selected) {
+                        CrossProviderPlaybackRuntime.record(songId, fallback.source)
+                    }
+                    ResolvedRequest(
+                        uri = Uri.parse(fallback.url),
+                        headers = fallback.requestHeaders,
+                        expiresAtEpochMs = fallback.expiresAtEpochMs,
+                        cacheIdentity = "${fallback.source.storageValue}:${fallback.resourceId}",
+                    )
+                } else chkszPlayback?.resolve(songId, quality.toCommonTier())?.let { result ->
+                        ResolvedRequest(
+                            uri = Uri.parse(result.url),
+                            cacheIdentity = "chksz:${chkszPlayback.cacheIdentity()}",
+                        )
+                    } ?: fallbackRequest?.let {
+                        lxUserPlayback?.resolve(
+                            songId = it.songId,
+                            title = it.title,
+                            artist = it.artist,
+                            durationMs = it.durationMs,
+                            quality = it.quality,
+                        )
+                    }?.let { result ->
+                        ResolvedRequest(
+                            uri = Uri.parse(result.url),
+                            headers = result.requestHeaders,
+                            cacheIdentity = "lx-user:${result.sourceId}",
+                        )
+                    }
                     ?: throw error
-                MusicQualityRuntime.recordActual(
-                    songId = songId,
-                    requested = quality,
-                    actual = fallback.actualQuality.toMusicQuality(quality),
-                )
-                if (quality == MusicQualityRuntime.selected) {
-                    CrossProviderPlaybackRuntime.record(songId, fallback.source)
-                }
-                ResolvedRequest(
-                    uri = Uri.parse(fallback.url),
-                    headers = fallback.requestHeaders,
-                    expiresAtEpochMs = fallback.expiresAtEpochMs,
-                    cacheIdentity = "${fallback.source.storageValue}:${fallback.resourceId}",
-                )
             }
             synchronized(cacheLock) { resolvedUris[key] = resolved }
             pending.complete(resolved)

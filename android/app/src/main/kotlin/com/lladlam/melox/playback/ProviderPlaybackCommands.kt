@@ -105,6 +105,10 @@ object ProviderPlaybackCommands {
             putString(PlaybackTrackIdentity.SourceExtra, id.source.storageValue)
             putString(PlaybackTrackIdentity.ResourceIdExtra, id.value)
             putLong(PlaybackTrackIdentity.DurationMsExtra, normalizedQueueDurationMs(durationMs))
+            putString(PlaybackTrackIdentity.TitleExtra, title)
+            putString(PlaybackTrackIdentity.ArtistExtra, artistText)
+            putString(PlaybackTrackIdentity.AlbumExtra, album?.name.orEmpty())
+            putString(PlaybackTrackIdentity.ArtworkExtra, artworkUrl.orEmpty())
         }
         val metadata = MediaMetadata.Builder()
             .setTitle(title)

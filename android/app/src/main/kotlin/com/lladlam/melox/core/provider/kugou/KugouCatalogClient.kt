@@ -229,11 +229,11 @@ internal class KugouCatalogClient(
     private fun parseTrack(item: JSONObject): MusicTrack? {
         val hash = firstString(item, "hash", "Hash", "FileHash", "filehash", "audio_hash").uppercase()
         if (hash.isBlank()) return null
-        val rawSinger = firstString(item, "author_name", "SingerName", "singername", "singer_name")
-        var title = firstString(item, "audio_name", "AudioName", "SongName", "songname", "name", "FileName")
-        if (title.isBlank()) title = "未知歌曲"
-        if (rawSinger.isNotBlank() && title.startsWith("$rawSinger - ")) title = title.removePrefix("$rawSinger - ").trim()
-        val artists = rawSinger
+        val (title, singer) = recoverKugouTrackText(
+            firstString(item, "audio_name", "AudioName", "SongName", "songname", "name", "FileName"),
+            kugouSingerName(item, "author_name", "SingerName", "singername", "singer_name"),
+        ).let { (value, artist) -> (value.ifBlank { "未知歌曲" }) to artist }
+        val artists = singer
             .split(Regex("\\s*(?:、|/|&|,|;|；)\\s*"))
             .map(String::trim)
             .filter(String::isNotBlank)

@@ -79,6 +79,8 @@ import coil3.compose.AsyncImage
 import com.lladlam.melox.R
 import com.lladlam.melox.BuildConfig
 import com.lladlam.melox.core.account.NeteaseSessionStore
+import com.lladlam.melox.core.diagnostics.MeloXLogExporter
+import com.lladlam.melox.core.diagnostics.MeloXLogDeviceInfo
 import com.lladlam.melox.core.provider.bilibili.BilibiliPlaybackAssociationStore
 import com.lladlam.melox.core.music.provider.PlaybackAccountSlot
 import com.lladlam.melox.core.music.provider.PlaybackAccountStore
@@ -534,6 +536,18 @@ private fun LegalSettings(context: android.content.Context) {
                 )
             },
             onClick = { selectedDocument = MeloXLegalDocument.CloudControlPrivacy },
+            showTopSeparator = true,
+        )
+        MeloXIosListRow(
+            title = "第三方音乐源使用协议",
+            leading = {
+                MeloXSymbolIcon(
+                    MeloXSymbol.Book,
+                    Modifier.size(24.dp),
+                    MeloXSystemColors.Blue,
+                )
+            },
+            onClick = { selectedDocument = MeloXLegalDocument.ThirdPartyMusicSources },
             showTopSeparator = true,
         )
     }
@@ -2774,9 +2788,29 @@ private fun AboutSettings(context: android.content.Context) {
     val updateClient = remember { MeloXUpdateClient(context, routing = githubRouting) }
     val scope = rememberCoroutineScope()
     var checking by remember { mutableStateOf(false) }
+    var exportingLogs by remember { mutableStateOf(false) }
+    var showLogExportInfo by remember { mutableStateOf(false) }
     var release by remember { mutableStateOf<MeloXRelease?>(null) }
     var updateStatus by remember { mutableStateOf<String?>(null) }
     var downloadSource by remember { mutableStateOf(githubRouting.selectedSource()) }
+    val exportLogsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain"),
+    ) { uri ->
+        if (uri == null) {
+            exportingLogs = false
+        } else {
+            scope.launch {
+                runCatching {
+                    MeloXLogExporter.exportRecentLogs(context, uri)
+                }.onSuccess { result ->
+                    updateStatus = "已导出最近 10 分钟日志（${result.lineCount} 行）"
+                }.onFailure { error ->
+                    updateStatus = error.message ?: "日志导出失败"
+                }
+                exportingLogs = false
+            }
+        }
+    }
     SettingsGlassGroup {
         Column(Modifier.padding(18.dp)) {
             Text("MeloX Android", fontSize = 22.sp, fontWeight = FontWeight.Bold)
@@ -2893,6 +2927,55 @@ private fun AboutSettings(context: android.content.Context) {
     Spacer(Modifier.height(10.dp))
     SettingsActionButton("赞助我") {
         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://ifdian.net/a/lladlam"))) }
+    }
+    Spacer(Modifier.height(10.dp))
+    SettingsActionButton(if (exportingLogs) "正在导出日志…" else "导出10分钟内的日志") {
+        if (!exportingLogs) showLogExportInfo = true
+    }
+
+    if (showLogExportInfo) {
+        val deviceInfo: MeloXLogDeviceInfo = MeloXLogExporter.collectDeviceInfo(context)
+        MeloXGlassDialog(
+            visible = true,
+            onDismiss = { showLogExportInfo = false },
+        ) {
+            Text("导出最近 10 分钟日志", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "导出前请确认以下信息。日志只来自 MeloX 当前进程，并会附带这些设备与登录状态信息。",
+                modifier = Modifier.padding(top = 8.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .64f),
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 14.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = .045f))
+                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text("Android 版本：${deviceInfo.androidVersion}", fontSize = 13.sp)
+                Text("手机型号：${deviceInfo.phoneModel}", fontSize = 13.sp)
+                Text("系统版本：${deviceInfo.systemVersion}", fontSize = 13.sp)
+                Text(
+                    "已登录音乐源：${deviceInfo.loggedMusicSources.takeIf { it.isNotEmpty() }?.joinToString("、") ?: "无"}",
+                    fontSize = 13.sp,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                SettingsActionButton("取消", Modifier.weight(1f)) { showLogExportInfo = false }
+                SettingsActionButton("选择导出位置", Modifier.weight(1f)) {
+                    showLogExportInfo = false
+                    exportingLogs = true
+                    exportLogsLauncher.launch("MeloX-logs-${System.currentTimeMillis()}.txt")
+                }
+            }
+        }
     }
 }
 

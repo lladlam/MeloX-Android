@@ -67,6 +67,7 @@ import com.lladlam.melox.core.music.provider.ArtistCapability
 import com.lladlam.melox.core.music.provider.CatalogSearchCapability
 import com.lladlam.melox.core.music.provider.HomeFeedCapability
 import com.lladlam.melox.core.music.provider.MeloXMusicProviders
+import com.lladlam.melox.core.music.provider.loadAllPlaylistTracks
 import com.lladlam.melox.core.music.provider.MusicProviderSelectionStore
 import com.lladlam.melox.core.music.provider.PlaylistCapability
 import com.lladlam.melox.core.music.provider.SearchCapability
@@ -993,7 +994,7 @@ private fun SearchCollectionDetail(
                             is ProviderSearchDestination.Playlist -> {
                                 val capability = provider as? PlaylistCapability
                                     ?: throw IllegalStateException("${item.source.displayName} 当前不提供歌单详情")
-                                capability.playlistDetail(item.value, page = 1, pageSize = 150).tracks
+                                capability.loadAllPlaylistTracks(item.value, pageSize = 200).tracks
                             }
                             is ProviderSearchDestination.Album -> {
                                 val capability = provider as? AlbumCapability

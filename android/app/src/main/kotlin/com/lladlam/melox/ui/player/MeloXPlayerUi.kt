@@ -73,6 +73,7 @@ import com.lladlam.melox.playback.MeloXPlaybackModePreferences
 import com.lladlam.melox.playback.MeloXPlaybackModeRuntime
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.playback.PlaybackTrackIdentity
+import com.lladlam.melox.core.music.model.MusicSource
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.settings.MeloXVolumeControlMode
 import com.lladlam.melox.ui.glass.MeloXSymbol
@@ -192,18 +193,32 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
         MeloXPlaybackModeRuntime.heartModeActive = item.mediaMetadata.extras
             ?.getBoolean(PlaybackCommands.HEART_MODE_KEY, false) == true
         val metadata = player.mediaMetadata.takeUnless { it == MediaMetadata.EMPTY }
-            ?: item?.mediaMetadata
-            ?: MediaMetadata.EMPTY
+            ?: item.mediaMetadata
+        val itemExtras = item.mediaMetadata.extras
+        val extras = metadata.extras ?: itemExtras
+        val providerSource = PlaybackTrackIdentity.fromMediaItem(item)?.source
 
         mediaId = item?.mediaId
-        val originalTitle = metadata.extras?.getString("melox.system.original_title")
-        val originalArtist = metadata.extras?.getString("melox.system.original_artist")
-        title = originalTitle ?: metadata.title?.toString().orEmpty()
-        artist = originalArtist ?: metadata.artist?.toString().orEmpty()
+        val originalTitle = extras?.getString("melox.system.original_title")
+        val originalArtist = extras?.getString("melox.system.original_artist")
+        val rawTitle = originalTitle ?: metadata.title?.toString().orEmpty()
+            .ifBlank { extras?.getString(PlaybackTrackIdentity.TitleExtra).orEmpty() }
+        val rawArtist = originalArtist ?: metadata.artist?.toString().orEmpty()
+            .ifBlank { extras?.getString(PlaybackTrackIdentity.ArtistExtra).orEmpty() }
+        val recovered = if (providerSource == MusicSource.Kugou &&
+            (rawArtist.isBlank() || rawArtist == "未知歌手") &&
+            " - " in rawTitle
+        ) {
+            rawTitle.split(" - ", limit = 2).let { it[0] to it.getOrElse(1) { rawTitle } }
+        } else rawArtist to rawTitle
+        artist = recovered.first
+        title = recovered.second
         album = metadata.albumTitle?.toString().orEmpty()
+            .ifBlank { extras?.getString(PlaybackTrackIdentity.AlbumExtra).orEmpty() }
         val currentSongId = item?.mediaId?.toLongOrNull()
         artworkUrl = currentSongId?.let(downloadStore::localArtworkUri)?.toString()
             ?: metadata.artworkUri?.toString()
+            ?: extras?.getString(PlaybackTrackIdentity.ArtworkExtra)?.takeIf(String::isNotBlank)
         isPlaying = player.isPlaying
         positionMs = player.currentPosition.coerceAtLeast(0L)
         durationMs = player.duration

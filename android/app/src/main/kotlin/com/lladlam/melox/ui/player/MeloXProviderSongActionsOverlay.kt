@@ -54,6 +54,7 @@ import com.lladlam.melox.core.music.model.MusicPlaylistSummary
 import com.lladlam.melox.core.music.model.MusicResourceId
 import com.lladlam.melox.core.music.model.MusicSource
 import com.lladlam.melox.core.music.model.MusicTrack
+import com.lladlam.melox.core.music.model.ProviderTrackMetadata
 import com.lladlam.melox.core.music.provider.FavoriteCapability
 import com.lladlam.melox.core.music.provider.MeloXMusicProviders
 import com.lladlam.melox.core.music.provider.PlaylistWriteCapability
@@ -107,6 +108,11 @@ internal fun MeloXProviderSongActionsOverlay(
                 MusicArtistRef(name = state.artist.ifBlank { "未知歌手" }),
             ),
             durationMs = state.durationMs.takeIf { it > 0L },
+            providerMetadata = when (identity.source) {
+                MusicSource.Kugou -> ProviderTrackMetadata.Kugou(hash = identity.value)
+                MusicSource.Kuwo -> ProviderTrackMetadata.Kuwo(mid = identity.value.toLongOrNull() ?: 0L)
+                else -> ProviderTrackMetadata.Empty
+            },
         )
     }
 

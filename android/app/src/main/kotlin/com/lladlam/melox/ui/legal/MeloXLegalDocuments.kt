@@ -42,7 +42,7 @@ import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import com.lladlam.melox.ui.glass.MeloXSystemColors
 
-const val MELOX_LEGAL_VERSION = "1.1-2026-08-25"
+const val MELOX_LEGAL_VERSION = "1.2-2026-08-27"
 
 enum class MeloXLegalDocument(
     val title: String,
@@ -51,6 +51,7 @@ enum class MeloXLegalDocument(
     PrivacyPolicy("隐私政策", "legal/privacy-policy-zh-CN.md"),
     Disclaimer("免责声明与使用须知", "legal/disclaimer-zh-CN.md"),
     CloudControlPrivacy("云控隐私协议", "legal/cloud-control-privacy-zh-CN.md"),
+    ThirdPartyMusicSources("第三方音乐源使用协议", "legal/third-party-music-sources-zh-CN.md"),
 }
 
 private enum class LegalBlockKind { Heading, Subheading, Paragraph, Bullet }
@@ -91,6 +92,55 @@ fun MeloXLegalLinks(
         MeloXLegalDocumentDialog(
             document = document,
             onDismiss = { selectedDocument = null },
+        )
+    }
+}
+
+@Composable
+fun MeloXThirdPartyMusicSourceConsentDialog(
+    onReject: () -> Unit,
+    onAccept: () -> Unit,
+) {
+    var showPolicy by remember { mutableStateOf(false) }
+    MeloXGlassDialog(visible = true, onDismiss = {}) {
+        Text("开启第三方音乐源？", style = MaterialTheme.typography.titleLarge)
+        Text(
+            "第三方音乐源由用户自行配置和使用，不属于 MeloX 内置音乐服务，也不在 MeloX 云控范围内。启用前请阅读并同意第三方音乐源使用协议。",
+            modifier = Modifier.padding(top = 9.dp),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = .68f),
+            fontSize = 14.sp,
+            lineHeight = 21.sp,
+        )
+        Text(
+            "查看第三方音乐源使用协议",
+            modifier = Modifier
+                .padding(top = 8.dp)
+                .clip(MaterialTheme.shapes.small)
+                .clickable(role = Role.Button) { showPolicy = true }
+                .padding(horizontal = 6.dp, vertical = 7.dp),
+            color = MeloXSystemColors.Blue,
+            fontWeight = FontWeight.Medium,
+        )
+        Row(
+            Modifier.fillMaxWidth().padding(top = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            MeloXGlassButton(
+                onClick = onReject,
+                modifier = Modifier.weight(1f),
+                style = MeloXGlassButtonStyle.Plain,
+            ) { Text("不同意") }
+            MeloXGlassButton(
+                onClick = onAccept,
+                modifier = Modifier.weight(1f),
+                style = MeloXGlassButtonStyle.BorderedProminent,
+            ) { Text("同意并开启") }
+        }
+    }
+    if (showPolicy) {
+        MeloXLegalDocumentDialog(
+            document = MeloXLegalDocument.ThirdPartyMusicSources,
+            onDismiss = { showPolicy = false },
         )
     }
 }

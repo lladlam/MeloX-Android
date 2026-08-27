@@ -152,3 +152,37 @@ internal class KugouRequestClient(
             .digest(value.toByteArray(Charsets.UTF_8))
             .joinToString("") { byte -> "%02x".format(byte) }
 }
+
+/** Search/catalog endpoints do not use one consistent singer field. */
+internal fun kugouSingerName(item: JSONObject, vararg keys: String): String {
+    keys.asSequence()
+        .map(item::optString)
+        .firstOrNull(String::isNotBlank)
+        ?.let { return it }
+
+    val arrays = listOf("Singers", "singers", "artists", "authors")
+    arrays.forEach { key ->
+        val values = item.optJSONArray(key) ?: return@forEach
+        val names = buildList {
+            for (index in 0 until values.length()) {
+                when (val value = values.opt(index)) {
+                    is JSONObject -> value.optString("name").takeIf(String::isNotBlank)?.let(::add)
+                    is String -> value.takeIf(String::isNotBlank)?.let(::add)
+                }
+            }
+        }
+        if (names.isNotEmpty()) return names.joinToString(" / ")
+    }
+    return ""
+}
+
+internal fun recoverKugouTrackText(rawTitle: String, rawSinger: String): Pair<String, String> {
+    val title = rawTitle.trim()
+    val singer = rawSinger.trim()
+    if (singer.isNotBlank()) return title.removePrefix("$singer - ").trim() to singer
+    val separator = title.indexOf(" - ")
+    if (separator > 0 && separator < title.lastIndex - 2) {
+        return title.substring(separator + 3).trim() to title.substring(0, separator).trim()
+    }
+    return title to singer
+}

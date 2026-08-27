@@ -16,7 +16,9 @@ import com.lladlam.melox.core.music.model.ProviderTrackMetadata
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.Base64
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -195,6 +197,28 @@ class KugouApiClient(
                 ),
             )
         }
+        val legacyUrl = runCatching {
+            resolveLegacyPlaybackUrl(metadata, session)
+        }.onFailure { error ->
+            Log.w(TAG, "Legacy playback fallback failed: hash=$hash", error)
+        }.getOrNull()
+        if (!legacyUrl.isNullOrBlank()) {
+            Log.i(TAG, "Legacy playback URL resolved: hash=$hash endpoint=${legacyUrl.redactedEndpoint()}")
+            return PlaybackResolution.Playable(
+                url = secureUrl(legacyUrl),
+                requestedQuality = quality,
+                actualQuality = AudioQualityTier.Standard,
+                format = formatFromUrl(legacyUrl),
+                requestHeaders = mapOf(
+                    "User-Agent" to KugouRequestClient.UserAgent,
+                    "Referer" to "https://www.kugou.com/",
+                    "Accept" to "*/*",
+                    "Accept-Encoding" to "identity",
+                    "Cookie" to session.asCookieMap().entries.joinToString("; ") { (key, value) -> "$key=$value" },
+                ),
+            )
+        }
+
         val message = lastError?.message ?: "酷狗音乐没有返回可播放链接"
         return if (!session.isLoggedIn && message.requiresKugouLogin()) {
             PlaybackResolution.LoginRequired
@@ -206,12 +230,10 @@ class KugouApiClient(
     private fun parseSearchTrack(item: JSONObject): MusicTrack? {
         val hash = firstString(item, "FileHash", "Hash", "hash", "filehash").uppercase()
         if (hash.isBlank()) return null
-        val singerName = firstString(item, "SingerName", "singername", "SingerName2", "author_name", "AuthorName")
-        var title = firstString(item, "SongName", "songname", "AudioName", "audio_name", "FileName", "filename")
-        if (title.isBlank()) title = "未知歌曲"
-        if (singerName.isNotBlank() && title.startsWith("$singerName - ")) {
-            title = title.removePrefix("$singerName - ").trim()
-        }
+        val (title, singerName) = recoverKugouTrackText(
+            firstString(item, "SongName", "songname", "AudioName", "audio_name", "FileName", "filename"),
+            kugouSingerName(item, "SingerName", "singername", "SingerName2", "author_name", "AuthorName"),
+        ).let { (value, singer) -> (value.ifBlank { "未知歌曲" }) to singer }
         val artistNames = singerName
             .split(Regex("\\s*(?:、|/|&|,|;|；)\\s*"))
             .map(String::trim)
@@ -229,7 +251,7 @@ class KugouApiClient(
             "audio_id",
         ).takeIf { it > 0L }
         val durationSeconds = firstLong(item, "Duration", "duration", "time_length").takeIf { it > 0L }
-        val artwork = normalizeArtwork(firstString(item, "Image", "image", "img", "album_img"))
+        val artwork = normalizeArtwork(firstString(item, "Image", "image", "img", "album_img", "AlbumImage"))
         return MusicTrack(
             id = MusicResourceId(MusicSource.Kugou, hash),
             title = title,
@@ -262,6 +284,36 @@ class KugouApiClient(
         is JSONArray -> (0 until value.length()).asSequence().mapNotNull { findPlaybackUrl(value.opt(it)) }.firstOrNull()
         is String -> value.takeIf { it.isPlaybackUrl() }
         else -> null
+    }
+
+    /** Older free tracks are still returned by Kugou's mobile playInfo endpoint. */
+    private fun resolveLegacyPlaybackUrl(
+        metadata: ProviderTrackMetadata.Kugou,
+        session: KugouSession,
+    ): String? {
+        val url = "https://m.kugou.com/app/i/getSongInfo.php".toHttpUrl().newBuilder()
+            .addQueryParameter("cmd", "playInfo")
+            .addQueryParameter("hash", metadata.hash)
+            .addQueryParameter("appid", KugouRequestClient.AppId.toString())
+            .addQueryParameter("mid", session.mid)
+            .addQueryParameter("dfid", session.dfid.ifBlank { "-" })
+            .addQueryParameter("userid", session.userId.toString())
+            .addQueryParameter("token", session.token)
+            .addQueryParameter("album_audio_id", (metadata.albumAudioId ?: 0L).toString())
+            .build()
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", KugouRequestClient.UserAgent)
+            .header("Accept", "application/json, text/plain, */*")
+            .get()
+            .build()
+        return httpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return@use null
+            val json = runCatching { JSONObject(response.body.string()) }.getOrNull() ?: return@use null
+            findPlaybackUrl(json.opt("url"))
+                ?: findPlaybackUrl(json.opt("play_url"))
+                ?: findPlaybackUrl(json.opt("backup_url"))
+        }
     }
 
     private fun normalizeArtwork(value: String): String? = value

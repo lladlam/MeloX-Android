@@ -232,12 +232,11 @@ class KugouDiscoveryClient(
     private fun parseTrack(item: JSONObject): MusicTrack? {
         val hash = firstString(item, "FileHash", "Hash", "hash", "filehash").uppercase()
         if (hash.isBlank()) return null
-        val singerName = firstString(item, "SingerName", "singername", "author_name", "AuthorName")
-        var title = firstString(item, "SongName", "songname", "AudioName", "audio_name", "FileName", "filename", "name")
+        val (title, singerName) = recoverKugouTrackText(
+            firstString(item, "SongName", "songname", "AudioName", "audio_name", "FileName", "filename", "name"),
+            kugouSingerName(item, "SingerName", "singername", "author_name", "AuthorName"),
+        )
         if (title.isBlank()) return null
-        if (singerName.isNotBlank() && title.startsWith("$singerName - ")) {
-            title = title.removePrefix("$singerName - ").trim()
-        }
         val albumName = firstString(item, "AlbumName", "album_name", "albumname")
         val albumId = firstString(item, "AlbumID", "album_id", "albumid").takeIf(String::isNotBlank)
         val albumAudioId = firstLong(item, "album_audio_id", "MixSongID", "mixsongid", "AlbumAudioID", "Audioid", "audio_id")

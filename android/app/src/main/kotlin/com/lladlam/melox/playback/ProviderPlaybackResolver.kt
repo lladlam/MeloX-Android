@@ -31,6 +31,7 @@ class ProviderPlaybackResolver(
     private val providers: MusicProviderRegistry,
     private val authKeyProvider: (MusicSource) -> String = { "" },
     private val providerPlaybackEnabled: (MusicSource) -> Boolean = { true },
+    private val chkszPlayback: ChkszPlaybackResolver? = null,
 ) : ResolvingDataSource.Resolver {
     private data class ResolveKey(
         val requestUri: String,
@@ -106,6 +107,13 @@ class ProviderPlaybackResolver(
                 durationMs = uri.getQueryParameter(SpotifyDurationQuery)?.toLongOrNull(),
                 providerMetadata = providerMetadata(uri, id),
             )
+            val thirdParty = runCatching { chkszPlayback?.resolve(track, quality) }.getOrNull()
+            if (thirdParty != null) {
+                val result = ResolvedRequest(Uri.parse(thirdParty.url), emptyMap())
+                synchronized(cacheLock) { resolvedUris[key] = result }
+                pending.complete(result)
+                return result
+            }
             val provider = providers.require(source)
             val playback = provider as? PlaybackCapability
                 ?: throw IOException("${provider.displayName} 当前没有实现播放能力")

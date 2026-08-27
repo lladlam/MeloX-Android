@@ -27,8 +27,8 @@ android {
         applicationId = "com.lladlam.melox.android"
         minSdk = 26
         targetSdk = 37
-        versionCode = 13
-        versionName = "0.4.5"
+        versionCode = 14
+        versionName = "0.5.0"
         buildConfigField(
             "String",
             "SPOTIFY_CLIENT_ID",
@@ -127,6 +127,8 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.5.0")
     implementation("com.squareup.okhttp3:okhttp:5.3.0")
     implementation("com.squareup.okhttp3:okhttp-dnsoverhttps:5.3.0")
+    // LX Music-compatible user source scripts run in an isolated QuickJS context.
+    implementation("wang.harlon.quickjs:wrapper-android:2.4.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("com.google.zxing:core:3.5.4")
 

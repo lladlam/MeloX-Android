@@ -1,6 +1,8 @@
 package com.lladlam.melox.ui.provider
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -37,6 +40,9 @@ import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.music.model.MusicSource
 import com.lladlam.melox.core.music.provider.MusicProviderSelectionStore
 import com.lladlam.melox.core.music.provider.ProviderAccountManager
+import com.lladlam.melox.core.music.provider.ThirdPartyMusicSourceConsentStore
+import com.lladlam.melox.core.provider.lxuser.LxUserSourceStore
+import com.lladlam.melox.core.provider.lxuser.ChkszApiKeyStore
 import com.lladlam.melox.ui.MeloXBottomContentClearance
 import com.lladlam.melox.ui.account.KugouLoginScreen
 import com.lladlam.melox.ui.account.KuwoLoginScreen
@@ -54,6 +60,13 @@ import com.lladlam.melox.ui.glass.MeloXIosTopBar
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import com.lladlam.melox.ui.glass.MeloXSystemColors
+import com.lladlam.melox.ui.glass.MeloXGlassTextField
+import com.lladlam.melox.ui.legal.MeloXLegalDocument
+import com.lladlam.melox.ui.legal.MeloXLegalDocumentDialog
+import com.lladlam.melox.ui.legal.MeloXThirdPartyMusicSourceConsentDialog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private enum class ServicesAccountAction { Logout, Switch }
 
@@ -79,6 +92,29 @@ fun ProviderServicesScreen(
     var pendingAction by remember { mutableStateOf<Pair<MusicSource, ServicesAccountAction>?>(null) }
     var unifiedEnabled by remember { mutableStateOf(MusicProviderSelectionStore.unifiedEnabled(context)) }
     var unifiedSources by remember { mutableStateOf(MusicProviderSelectionStore.unifiedSources(context)) }
+    var thirdPartySourcesEnabled by remember { mutableStateOf(ThirdPartyMusicSourceConsentStore.enabled(context)) }
+    var showThirdPartySourceConsent by remember { mutableStateOf(false) }
+    var showThirdPartySourceAgreement by remember { mutableStateOf(false) }
+    var lxSources by remember { mutableStateOf(LxUserSourceStore.list(context)) }
+    var showLxImportDialog by remember { mutableStateOf(false) }
+    var lxImportUrl by remember { mutableStateOf("") }
+    var lxImportError by remember { mutableStateOf<String?>(null) }
+    var chkszApiKey by remember { mutableStateOf(ChkszApiKeyStore.read(context)) }
+    var showChkszKeyDialog by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val lxFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            runCatching {
+                val script = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                        ?: error("无法读取音乐源文件")
+                }
+                withContext(Dispatchers.IO) { LxUserSourceStore.import(context, script) }
+            }.onSuccess { lxSources = LxUserSourceStore.list(context) }
+                .onFailure { lxImportError = it.message ?: "导入音乐源失败"; showLxImportDialog = true }
+        }
+    }
 
     BackHandler(onBack = onBack)
 
@@ -223,6 +259,69 @@ fun ProviderServicesScreen(
         }
 
         Spacer(Modifier.size(24.dp))
+        ServicesSectionLabel("第三方音乐源")
+        MeloXIosGroupedList(surfaceColor = MaterialTheme.colorScheme.surface) {
+            MeloXIosListRow(
+                title = "开启第三方音乐源设置",
+                subtitle = "需要先同意第三方音乐源使用协议；不受云控管理",
+                leading = { MeloXSymbolIcon(MeloXSymbol.Info, Modifier.size(24.dp), MeloXSystemColors.Red) },
+                trailing = {
+                    MeloXGlassToggle(
+                        checked = thirdPartySourcesEnabled,
+                        onCheckedChange = { enabled ->
+                            if (enabled) showThirdPartySourceConsent = true
+                            else {
+                                ThirdPartyMusicSourceConsentStore.reject(context)
+                                thirdPartySourcesEnabled = false
+                            }
+                        },
+                    )
+                },
+                showTopSeparator = false,
+            )
+            if (thirdPartySourcesEnabled) {
+                MeloXIosListRow(
+                    title = "网易云 SVIP 音乐解析",
+                    subtitle = if (chkszApiKey.isBlank()) "未配置 API Key · 点击配置" else "CHKSZ API Key 已配置",
+                    leading = { Spacer(Modifier.width(25.dp)) },
+                    onClick = { showChkszKeyDialog = true },
+                )
+                MeloXIosListRow(
+                    title = "查看第三方音乐源使用协议",
+                    subtitle = "查看责任范围、内容合规和服务可用性说明",
+                    leading = { Spacer(Modifier.width(25.dp)) },
+                    onClick = { showThirdPartySourceAgreement = true },
+                )
+            }
+        }
+
+        if (thirdPartySourcesEnabled) {
+            Spacer(Modifier.size(24.dp))
+            ServicesSectionLabel("已添加音乐源")
+            MeloXIosGroupedList(surfaceColor = MaterialTheme.colorScheme.surface) {
+                MeloXIosListRow(
+                    title = "添加音乐源",
+                    subtitle = "导入 LX Music 兼容的 JavaScript 音乐源",
+                    leading = { MeloXSymbolIcon(MeloXSymbol.Plus, Modifier.size(24.dp), MeloXSystemColors.Red) },
+                    onClick = { showLxImportDialog = true; lxImportError = null },
+                    showTopSeparator = false,
+                )
+                lxSources.forEach { source ->
+                    MeloXIosListRow(
+                        title = source.metadata.name ?: source.id,
+                        subtitle = listOfNotNull(source.metadata.version?.let { "v$it" }, source.metadata.author).joinToString(" · "),
+                        detail = "删除",
+                        leading = { Spacer(Modifier.width(25.dp)) },
+                        onClick = {
+                            LxUserSourceStore.remove(context, source.id)
+                            lxSources = LxUserSourceStore.list(context)
+                        },
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.size(24.dp))
         ServicesSectionLabel("跨平台搜索")
         MeloXIosGroupedList(surfaceColor = MaterialTheme.colorScheme.surface) {
             MeloXIosListRow(
@@ -291,6 +390,119 @@ fun ProviderServicesScreen(
                     modifier = Modifier.weight(1f),
                     style = if (isLogout) MeloXGlassButtonStyle.Destructive else MeloXGlassButtonStyle.BorderedProminent,
                 ) { Text(if (isLogout) "退出" else "继续") }
+            }
+        }
+    }
+
+    if (showThirdPartySourceConsent) {
+        MeloXThirdPartyMusicSourceConsentDialog(
+            onReject = { showThirdPartySourceConsent = false },
+            onAccept = {
+                ThirdPartyMusicSourceConsentStore.accept(context)
+                thirdPartySourcesEnabled = true
+                showThirdPartySourceConsent = false
+            },
+        )
+    }
+    if (showThirdPartySourceAgreement) {
+        MeloXLegalDocumentDialog(
+            document = MeloXLegalDocument.ThirdPartyMusicSources,
+            onDismiss = { showThirdPartySourceAgreement = false },
+        )
+    }
+    if (showLxImportDialog) {
+        MeloXGlassDialog(visible = true, onDismiss = { showLxImportDialog = false }) {
+            Text("导入 LX Music 音乐源", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "支持本地 JavaScript 文件或在线脚本地址。脚本将在受限运行时中执行，导入前请确认来源可信。",
+                modifier = Modifier.padding(top = 8.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f),
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+            )
+            MeloXGlassButton(
+                onClick = { lxFileLauncher.launch("text/*") },
+                modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+                style = MeloXGlassButtonStyle.BorderedProminent,
+            ) { Text("从本地文件导入") }
+            MeloXGlassTextField(
+                value = lxImportUrl,
+                onValueChange = { lxImportUrl = it },
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                placeholder = { Text("https://.../source.js") },
+                singleLine = true,
+            )
+            lxImportError?.let {
+                Text(it, modifier = Modifier.padding(top = 7.dp), color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MeloXGlassButton(
+                    onClick = { showLxImportDialog = false },
+                    modifier = Modifier.weight(1f),
+                    style = MeloXGlassButtonStyle.Plain,
+                ) { Text("取消") }
+                MeloXGlassButton(
+                    onClick = {
+                        val url = lxImportUrl.trim()
+                        scope.launch {
+                            runCatching {
+                                require(url.startsWith("https://") || url.startsWith("http://")) { "请输入有效的 HTTP(S) 地址" }
+                                val script = withContext(Dispatchers.IO) {
+                                    val request = okhttp3.Request.Builder().url(url).build()
+                                    com.lladlam.melox.core.network.MeloXHttpClient.shared.newCall(request).execute().use { response ->
+                                        if (!response.isSuccessful) error("下载失败：HTTP ${response.code}")
+                                        response.body.string()
+                                    }
+                                }
+                                withContext(Dispatchers.IO) { LxUserSourceStore.import(context, script) }
+                            }.onSuccess {
+                                lxSources = LxUserSourceStore.list(context)
+                                lxImportUrl = ""
+                                showLxImportDialog = false
+                            }.onFailure { lxImportError = it.message ?: "导入音乐源失败" }
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    style = MeloXGlassButtonStyle.BorderedProminent,
+                ) { Text("导入") }
+            }
+        }
+    }
+    if (showChkszKeyDialog) {
+        MeloXGlassDialog(visible = true, onDismiss = { showChkszKeyDialog = false }) {
+            Text("网易云 SVIP 音乐解析", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "使用 api.chksz.com 的网易云、QQ音乐和酷狗音乐解析接口。请先前往 api.chksz.com 注册账号并在登录后获取个人 API Key；目前该服务仅支持 LinuxDo 用户注册。API Key 仅保存在本机，不属于 MeloX 云控。",
+                modifier = Modifier.padding(top = 8.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f),
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+            )
+            MeloXGlassTextField(
+                value = chkszApiKey,
+                onValueChange = { chkszApiKey = it },
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                placeholder = { Text("请输入个人 API Key") },
+            )
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MeloXGlassButton(
+                    onClick = {
+                        ChkszApiKeyStore.clear(context)
+                        chkszApiKey = ""
+                        showChkszKeyDialog = false
+                    },
+                    modifier = Modifier.weight(1f),
+                    style = MeloXGlassButtonStyle.Plain,
+                ) { Text("清除") }
+                MeloXGlassButton(
+                    onClick = {
+                        ChkszApiKeyStore.write(context, chkszApiKey)
+                        chkszApiKey = ChkszApiKeyStore.read(context)
+                        showChkszKeyDialog = false
+                    },
+                    modifier = Modifier.weight(1f),
+                    style = MeloXGlassButtonStyle.BorderedProminent,
+                ) { Text("保存") }
             }
         }
     }

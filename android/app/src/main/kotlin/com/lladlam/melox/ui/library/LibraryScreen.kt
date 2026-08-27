@@ -106,6 +106,7 @@ import com.lladlam.melox.core.music.model.MusicAlbumSummary
 import com.lladlam.melox.core.music.model.MusicSource
 import com.lladlam.melox.core.music.provider.MeloXLegacyUiBridge
 import com.lladlam.melox.core.music.provider.MeloXMusicProviders
+import com.lladlam.melox.core.music.provider.loadAllPlaylistTracks
 import com.lladlam.melox.core.music.provider.AlbumCapability
 import com.lladlam.melox.core.music.provider.PlaylistCapability
 import com.lladlam.melox.core.music.provider.UserLibraryCapability
@@ -1593,7 +1594,7 @@ private fun MeloXPlaylistDetailScreen(
             }
             runCatching {
                 withContext(Dispatchers.IO) {
-                    capability.playlistDetail(providerPlaylist, page = 1, pageSize = 150)
+                    capability.loadAllPlaylistTracks(providerPlaylist, pageSize = 200)
                 }
             }.onSuccess { providerDetail ->
                 detail = MeloXLegacyUiBridge.playlistDetail(providerDetail)

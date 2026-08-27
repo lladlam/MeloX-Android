@@ -58,6 +58,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -430,30 +431,8 @@ fun MeloXApp(
                         .padding(innerPadding),
                 ) {
                     AnimatedContent(
-                        targetState = selectedTab,
-                        transitionSpec = {
-                            when {
-                                initialState != AppTab.Services && targetState != AppTab.Services ->
-                                    fadeIn(tween(220)) togetherWith fadeOut(tween(160))
-
-                                initialState == AppTab.Services && targetState == AppTab.Settings ->
-                                    slideInHorizontally(
-                                        animationSpec = tween(300, easing = FastOutSlowInEasing),
-                                        initialOffsetX = { -it / 4 },
-                                    ) togetherWith slideOutHorizontally(
-                                        animationSpec = tween(300, easing = FastOutSlowInEasing),
-                                        targetOffsetX = { it },
-                                    )
-
-                                else -> slideInHorizontally(
-                                    animationSpec = tween(300, easing = FastOutSlowInEasing),
-                                    initialOffsetX = { it },
-                                ) togetherWith slideOutHorizontally(
-                                    animationSpec = tween(300, easing = FastOutSlowInEasing),
-                                    targetOffsetX = { -it / 4 },
-                                )
-                            }
-                        },
+                        targetState = if (selectedTab == AppTab.Services) AppTab.Settings else selectedTab,
+                        transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
                         modifier = Modifier.fillMaxSize(),
                         label = "melox-page-transition",
                     ) { tab ->
@@ -518,21 +497,44 @@ fun MeloXApp(
                             initialRouteRequest = settingsRouteRequest,
                             onInitialRouteConsumed = { settingsRouteRequest = null },
                         )
-                        AppTab.Services -> ProviderServicesScreen(
-                            currentSource = selectedSource,
-                            onSourceSelected = { source ->
-                                selectedSource = source
-                                MusicProviderSelectionStore.setSelectedSource(context, source)
-                            },
-                            neteaseSession = neteaseSession,
-                            onNeteaseLogin = {
-                                loginReturnTab = AppTab.Services
-                                showNeteaseLogin = true
-                            },
-                            onBack = { selectedTab = AppTab.Settings },
-                        )
+                        AppTab.Services -> Unit
                     } }
                     }
+                }
+            }
+
+            AnimatedVisibility(
+                visible = selectedTab == AppTab.Services,
+                enter = slideInHorizontally(
+                    animationSpec = tween(300, easing = FastOutSlowInEasing),
+                    initialOffsetX = { it },
+                ),
+                exit = slideOutHorizontally(
+                    animationSpec = tween(300, easing = FastOutSlowInEasing),
+                    targetOffsetX = { it },
+                ),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(10f),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background),
+                ) {
+                    ProviderServicesScreen(
+                        currentSource = selectedSource,
+                        onSourceSelected = { source ->
+                            selectedSource = source
+                            MusicProviderSelectionStore.setSelectedSource(context, source)
+                        },
+                        neteaseSession = neteaseSession,
+                        onNeteaseLogin = {
+                            loginReturnTab = AppTab.Services
+                            showNeteaseLogin = true
+                        },
+                        onBack = { selectedTab = AppTab.Settings },
+                    )
                 }
             }
 
@@ -932,6 +934,13 @@ private fun MeloXBottomChrome(
                 val selectionSegmentPx = selectionTravelWidthPx / tabCount.toFloat()
                 val selectionWidth = (maxWidth - selectionEdgeInset * 2f) / tabCount.toFloat()
                 val selectedIndex = primaryTabs.indexOfFirst { it.first == selectedTab }
+                val dockExpanded = progress < 0.56f
+                val currentProgress by rememberUpdatedState(progress)
+                val currentSelectedTab by rememberUpdatedState(selectedTab)
+                val currentPrimaryTabs by rememberUpdatedState(primaryTabs)
+                val currentSelectionSegmentPx by rememberUpdatedState(selectionSegmentPx)
+                val currentSelectionEdgeInsetPx by rememberUpdatedState(selectionEdgeInsetPx)
+                val currentOnSelect by rememberUpdatedState(onSelect)
                 val dampedDock = remember(tabCount) {
                     PublicDampedDragAnimation(
                         animationScope = dockScope,
@@ -941,38 +950,39 @@ private fun MeloXBottomChrome(
                         initialScale = 1f,
                         pressedScale = 78f / 56f,
                         onTap = { position ->
-                            if (progress < 0.56f) {
-                                val index = ((position.x - selectionEdgeInsetPx) / selectionSegmentPx)
+                            if (currentProgress < 0.56f) {
+                                val index = ((position.x - currentSelectionEdgeInsetPx) / currentSelectionSegmentPx)
                                     .toInt()
                                     .coerceIn(0, tabCount - 1)
-                                onSelect(primaryTabs[index].first)
-                            } else if (progress >= 0.68f) {
-                                onSelect(selectedTab)
+                                currentOnSelect(currentPrimaryTabs[index].first)
+                            } else if (currentProgress >= 0.68f) {
+                                currentOnSelect(currentSelectedTab)
                             }
                         },
                         onDragStopped = {
                             val target = targetValue.roundToInt().coerceIn(0, tabCount - 1)
                             animateToValue(target.toFloat())
-                            onSelect(primaryTabs[target].first)
+                            currentOnSelect(currentPrimaryTabs[target].first)
                         },
                         onDrag = { _, dragAmount ->
                             updateValue(
-                                targetValue + dragAmount.x / selectionSegmentPx,
+                                targetValue + dragAmount.x / currentSelectionSegmentPx.coerceAtLeast(1f),
                             )
                         },
                     )
                 }
-                LaunchedEffect(selectedIndex, progress) {
-                    if (progress < 0.56f && selectedIndex >= 0) {
+                LaunchedEffect(selectedIndex, dockExpanded) {
+                    if (dockExpanded && selectedIndex >= 0) {
                         dampedDock.animateToValue(selectedIndex.toFloat())
                     }
                 }
-                val dockHighlight = remember(dockScope, dampedDock, selectionSegmentPx) {
+                val dockHighlight = remember(dockScope, dampedDock) {
                     com.lladlam.melox.ui.glass.publicdemo.PublicInteractiveHighlight(
                         animationScope = dockScope,
                         position = { size, _ ->
                             Offset(
-                                selectionEdgeInsetPx + (dampedDock.value + 0.5f) * selectionSegmentPx,
+                                currentSelectionEdgeInsetPx +
+                                    (dampedDock.value + 0.5f) * currentSelectionSegmentPx,
                                 size.height / 2f,
                             )
                         },

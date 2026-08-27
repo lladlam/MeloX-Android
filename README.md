@@ -19,13 +19,13 @@
 
 > MeloX Android 是非官方开源项目，与网易云音乐、小米、Apple 及其关联公司不存在隶属、合作或授权关系。
 
-## 当前版本：0.4.5
+## 当前版本：0.5.0
 
-`0.4.5` 是首个正式版，合并了从 0.4.x 开发分支以来的全部稳定性改进：新增酷我音乐原生源（搜索、播放、歌词与手机号登录），统一自动歌词源优先级为 AMLL → QQ音乐 → 网易云 → 当前源；加入「沉浸式播放」开关，可在全屏播放器中隐藏顶部状态栏；歌词长音高光范围、亮度与放大动画进一步增强；同时修复了酷狗串台、更新检测、HTTPS 明文请求和 lyricx 歌词解析等问题。
+`0.5.0` 增加第三方音乐源授权入口、LX Music 用户脚本导入与 QuickJS 兼容运行时，并接入 CHKSZ 的网易云、QQ音乐和酷狗优先播放解析；新增酷我云歌单及分页支持，继续完善多来源元数据和播放回退。酷我手机号登录目前仍未修复，不能保证验证码登录可用。
 
-- 下载与完整更新日志：[GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.4.5)
+- 下载与完整更新日志：[GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.5.0)
 - 详细版本记录：[CHANGELOG.md](CHANGELOG.md)
-- 本次版本说明：[0.4.5 Release Notes](docs/releases/0.4.5.md)
+- 本次版本说明：[CHANGELOG.md](CHANGELOG.md)
 
 ## 项目说明
 
@@ -122,6 +122,13 @@ Root 权限不是应用正常运行的必要条件；平台增强功能应尽量
 - 首次启动引导、剪贴板链接识别、页面/首页排序与内容功能开关；
 - GitHub 版本检查、更新提示、项目许可与设置重置。
 
+### 第三方音乐源
+
+- 可在“音乐服务”中单独开启第三方音乐源设置并阅读专用协议；该功能完全由本地开关控制，不属于云控范围。
+- 支持导入 LX Music 兼容的 JavaScript 音乐源，并在受限 QuickJS 运行时中解析播放地址。
+- 可配置 CHKSZ 个人 API Key，优先解析网易云、QQ音乐和酷狗歌曲；配置前需要前往 `api.chksz.com` 注册，目前仅支持 LinuxDo 用户注册。
+- 第三方解析失败时才回退到对应平台的原生播放；歌词仍由 MeloX 自己的歌词路线处理。
+
 ## 平台范围
 
 iOS Live Activity / Dynamic Island 已映射为 Android 媒体通知、歌词通知和可选 HyperOS 焦点通知；iOS 画中画歌词已映射为 Android 悬浮窗歌词。Apple Watch、watchOS 和 macOS 专属目标不属于 Android APK 的迁移范围。
@@ -207,7 +214,7 @@ DF:CC:A9:86:5B:87:A4:02:D3:41:98:5A:48:EB:13:2B:D8:67:9D:FA:6D:9D:50:2F:36:5D:D1
 可使用 Android SDK Build Tools 验证：
 
 ```bash
-apksigner verify --verbose --print-certs MeloX-Android-0.4.4-Beta.apk
+apksigner verify --verbose --print-certs MeloX-Android-0.5.0.apk
 ```
 
 ## 项目结构
