@@ -1561,18 +1561,8 @@ private fun MeloXGlyphLyricText(
     val context = LocalContext.current
     val density = LocalDensity.current
     val lyricWeight = MeloXSettingsRuntime.lyricFontWeight.composeWeight
-    val fontTypeface = remember(lyricWeight) {
-        val resource = when {
-            lyricWeight.weight <= 100 -> R.font.mi_lan_pro_thin
-            lyricWeight.weight <= 200 -> R.font.mi_lan_pro_extra_light
-            lyricWeight.weight <= 300 -> R.font.mi_lan_pro_light
-            lyricWeight.weight <= 400 -> R.font.mi_lan_pro_regular
-            lyricWeight.weight <= 500 -> R.font.mi_lan_pro_medium
-            lyricWeight.weight <= 600 -> R.font.mi_lan_pro_semi_bold
-            lyricWeight.weight <= 700 -> R.font.mi_lan_pro_bold
-            else -> R.font.mi_lan_pro_heavy
-        }
-        ResourcesCompat.getFont(context, resource) ?: Typeface.DEFAULT
+    val fontTypeface = remember {
+        ResourcesCompat.getFont(context, R.font.mi_lan_pro) ?: Typeface.DEFAULT
     }
     val textMeasurer = rememberTextMeasurer(cacheSize = 64)
     BoxWithConstraints(modifier = modifier) {
@@ -1641,16 +1631,9 @@ private fun MeloXGlyphLyricText(
                 color = android.graphics.Color.WHITE
                 textSize = with(density) { style.fontSize.toPx() }
                 typeface = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    Typeface.create(
-                        fontTypeface,
-                        style.fontWeight?.weight ?: 400,
-                        false,
-                    )
+                    Typeface.create(fontTypeface, lyricWeight.weight, false)
                 } else {
-                    Typeface.create(
-                        fontTypeface,
-                        if ((style.fontWeight?.weight ?: 400) >= 600) Typeface.BOLD else Typeface.NORMAL,
-                    )
+                    Typeface.create(fontTypeface, if (lyricWeight.weight >= 600) Typeface.BOLD else Typeface.NORMAL)
                 }
             }
         }
