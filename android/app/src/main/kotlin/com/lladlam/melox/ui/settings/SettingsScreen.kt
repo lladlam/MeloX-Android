@@ -78,6 +78,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationCompat
 import coil3.compose.AsyncImage
@@ -282,6 +283,7 @@ fun SettingsScreen(
         visible = route != null,
         enter = slideInHorizontally(tween(300)) { it } + fadeIn(tween(220)),
         exit = slideOutHorizontally(tween(260)) { it / 4 } + fadeOut(tween(180)),
+        modifier = Modifier.fillMaxSize().zIndex(1f),
     ) {
         route?.let { selectedRoute ->
             Box(
@@ -300,9 +302,12 @@ fun SettingsScreen(
         }
     }
     AnimatedVisibility(
-        visible = route == null,
+        // Keep the destination underneath the detail page so predictive back
+        // reveals real Settings content instead of the Scaffold background.
+        visible = true,
         enter = slideInHorizontally(tween(300)) { -it / 4 } + fadeIn(tween(220)),
         exit = slideOutHorizontally(tween(260)) { -it / 4 } + fadeOut(tween(180)),
+        modifier = Modifier.fillMaxSize().zIndex(0f),
     ) {
     val normalized = search.trim().lowercase()
     val visibleSections = SettingsSections.mapNotNull { section ->
