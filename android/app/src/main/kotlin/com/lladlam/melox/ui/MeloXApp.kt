@@ -88,6 +88,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.ui.zIndex
 import com.lladlam.melox.core.account.rememberNeteaseSessionStore
 import com.lladlam.melox.core.account.NeteaseSessionStore
@@ -224,6 +226,15 @@ fun MeloXApp(
         }
     }
     var heartModeLaunchAttempted by remember { mutableStateOf(false) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        val persistedSource = MusicProviderSelectionStore.selectedSource(context)
+        if (persistedSource != selectedSource) {
+            selectedSource = persistedSource
+            tabBarMinimized = false
+            libraryModalVisible = false
+            heartModeLaunchAttempted = false
+        }
+    }
     val playbackState = rememberMeloXPlaybackUiState(connectionEnabled = playbackConnectionEnabled)
     val playerTransitionState = remember { SeekableTransitionState(false) }
     val playerTransition = rememberTransition(
