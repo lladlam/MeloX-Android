@@ -108,6 +108,9 @@ import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.MeloXAppVisibility
 import com.lladlam.melox.ui.settings.MeloXLyricsStyle
 import com.lladlam.melox.ui.theme.LocalMeloXFontFamily
+import com.lladlam.melox.ui.theme.MeloXLanTingProFontFamily
+import com.lladlam.melox.R
+import androidx.core.content.res.ResourcesCompat
 import com.lladlam.melox.ui.settings.MeloXLyricsRenderingQuality
 import com.lladlam.melox.ui.settings.MeloXLyricAnnotationDisplayMode
 import com.lladlam.melox.ui.settings.MeloXLyricsGroupingMode
@@ -1555,7 +1558,11 @@ private fun MeloXGlyphLyricText(
 ) {
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val flipped = line.agent?.alignment == com.lladlam.melox.core.lyrics.LyricAgentAlignment.Flipped
+    val context = LocalContext.current
     val density = LocalDensity.current
+    val fontTypeface = remember {
+        ResourcesCompat.getFont(context, R.font.mi_lan_pro_vf) ?: Typeface.DEFAULT
+    }
     val textMeasurer = rememberTextMeasurer(cacheSize = 64)
     BoxWithConstraints(modifier = modifier) {
         val widthPx = with(density) { maxWidth.roundToPx().coerceAtLeast(1) }
@@ -1618,19 +1625,19 @@ private fun MeloXGlyphLyricText(
                 longToneThresholdMs = longToneThresholdMs,
             )
         }
-        val glyphPaint = remember(style, density) {
+        val glyphPaint = remember(style, density, fontTypeface) {
             Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
                 color = android.graphics.Color.WHITE
                 textSize = with(density) { style.fontSize.toPx() }
                 typeface = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     Typeface.create(
-                        Typeface.SANS_SERIF,
+                        fontTypeface,
                         style.fontWeight?.weight ?: 400,
                         false,
                     )
                 } else {
                     Typeface.create(
-                        Typeface.SANS_SERIF,
+                        fontTypeface,
                         if ((style.fontWeight?.weight ?: 400) >= 600) Typeface.BOLD else Typeface.NORMAL,
                     )
                 }

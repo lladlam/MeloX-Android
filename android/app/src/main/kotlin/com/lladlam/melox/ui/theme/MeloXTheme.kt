@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.settings.MeloXThemeMode
 import com.lladlam.melox.ui.glass.MeloXTypography as GlassTypography
+import com.lladlam.melox.ui.theme.MeloXLanTingProFontFamily
 
 private val LightColors = lightColorScheme(
     primary = Color(0xFF007AFF),
@@ -46,7 +47,7 @@ private val DarkColors = darkColorScheme(
 // system sans family as one app-wide typeface, including its CJK fallbacks,
 // while retaining MeloX's iOS-derived sizes, weights, and line heights.
 private val MeloXTypography = Typography().let { base ->
-    val family = FontFamily.SansSerif
+    val family = MeloXLanTingProFontFamily
     Typography(
         displayLarge = base.displayLarge.copy(fontFamily = family),
         displayMedium = base.displayMedium.copy(fontFamily = family),
