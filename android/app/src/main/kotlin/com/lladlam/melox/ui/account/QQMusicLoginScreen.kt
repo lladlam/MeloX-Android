@@ -48,6 +48,9 @@ import com.lladlam.melox.core.provider.qqmusic.QQMusicSessionStore
 import com.lladlam.melox.core.music.provider.PlaybackAccountSlot
 import com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigPolicy
 import com.lladlam.melox.ui.glass.meloXLiquidButton
+import com.lladlam.melox.ui.glass.MeloXGlassButton
+import com.lladlam.melox.ui.glass.MeloXGlassButtonStyle
+import com.lladlam.melox.ui.glass.MeloXGlassDialog
 import com.lladlam.melox.ui.legal.MeloXLegalLinks
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -69,9 +72,8 @@ fun QQMusicLoginScreen(
     val scope = rememberCoroutineScope()
     var pendingPhone by rememberSaveable { mutableStateOf("") }
     var resumeAtCodeStep by rememberSaveable { mutableStateOf(false) }
-    var useWebLogin by remember {
-        mutableStateOf(!MeloXRemoteConfigPolicy.capabilityEnabled(context, "qq_phone_login"))
-    }
+    var useWebLogin by remember { mutableStateOf(true) }
+    var showQrLoginTip by rememberSaveable { mutableStateOf(true) }
     var webLoginUrl by remember { mutableStateOf(QQ_MUSIC_LOGIN_URL) }
     var securityChallengeActive by remember { mutableStateOf(false) }
     var webView by remember { mutableStateOf<WebView?>(null) }
@@ -81,17 +83,8 @@ fun QQMusicLoginScreen(
     var verificationError by remember { mutableStateOf<String?>(null) }
 
     BackHandler(enabled = useWebLogin) {
-        if (securityChallengeActive) {
-            webView?.stopLoading()
-            webView?.destroy()
-            webView = null
-            securityChallengeActive = false
-            webLoginUrl = QQ_MUSIC_LOGIN_URL
-            useWebLogin = false
-            return@BackHandler
-        }
         val view = webView
-        if (view?.canGoBack() == true) view.goBack() else useWebLogin = false
+        if (view?.canGoBack() == true) view.goBack() else onDismiss()
     }
 
     LaunchedEffect(webView) {
@@ -230,14 +223,7 @@ fun QQMusicLoginScreen(
                         refractionHeight = 11.dp,
                     )
                     .clickable {
-                        if (securityChallengeActive) {
-                            webView?.stopLoading()
-                            webView?.destroy()
-                            webView = null
-                            securityChallengeActive = false
-                            webLoginUrl = QQ_MUSIC_LOGIN_URL
-                            useWebLogin = false
-                        } else onDismiss()
+                        onDismiss()
                     }
                     .padding(8.dp),
                 color = Color(0xFFFF3147),
@@ -369,6 +355,22 @@ fun QQMusicLoginScreen(
             modifier = Modifier.padding(vertical = 6.dp),
             tint = Color(0xFF20C573),
         )
+    }
+    if (showQrLoginTip) {
+        MeloXGlassDialog(visible = true, onDismiss = { showQrLoginTip = false }) {
+            Text("QQ 登录提示", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "如果使用 QQ 扫码登录，请先截图二维码，再把 MeloX 挂到小窗，然后前往 QQ 扫描截图中的二维码，否则可能无法完成登录。",
+                modifier = Modifier.padding(top = 10.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                lineHeight = 21.sp,
+            )
+            MeloXGlassButton(
+                onClick = { showQrLoginTip = false },
+                modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
+                style = MeloXGlassButtonStyle.BorderedProminent,
+            ) { Text("知道了") }
+        }
     }
 }
 

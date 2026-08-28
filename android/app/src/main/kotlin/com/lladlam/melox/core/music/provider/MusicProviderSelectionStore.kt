@@ -21,6 +21,7 @@ object MusicProviderSelectionStore {
     fun visibleSources(): List<MusicSource> =
         MusicSource.entries.filter { source ->
             source != MusicSource.AppleMusic &&
+                source != MusicSource.Kuwo &&
                 (source != MusicSource.Spotify || BuildConfig.SPOTIFY_CLIENT_ID.isNotBlank())
         }
 
