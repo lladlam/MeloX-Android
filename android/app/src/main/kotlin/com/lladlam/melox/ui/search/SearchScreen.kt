@@ -1,6 +1,9 @@
 package com.lladlam.melox.ui.search
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +43,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -51,6 +56,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
 import com.lladlam.melox.R
 import com.lladlam.melox.core.account.NeteaseSessionStore
@@ -105,6 +111,7 @@ import com.lladlam.melox.ui.settings.MeloXSwipeFullAction
 import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
 import com.lladlam.melox.ui.layout.rememberMeloXWindowInfo
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -232,6 +239,7 @@ fun SearchScreen(source: MusicSource = MusicSource.Netease) {
     var categoryTitle by remember(source) { mutableStateOf<String?>(null) }
     var categoryPlaylists by remember(source) { mutableStateOf<List<NeteasePlaylistSummary>>(emptyList()) }
     var selectedDetail by remember(source) { mutableStateOf<SearchDetailDestination?>(null) }
+    val playlistBackProgress = remember { Animatable(0f) }
     var podcastDiscovery by remember(source) { mutableStateOf(false) }
     var loading by remember(source) { mutableStateOf(false) }
     var error by remember(source) { mutableStateOf<String?>(null) }
@@ -407,7 +415,23 @@ fun SearchScreen(source: MusicSource = MusicSource.Netease) {
         loading = false
     }
 
-    BackHandler(enabled = podcastDiscovery || selectedDetail != null || categoryTitle != null) {
+    val playlistDetail = selectedDetail?.takeIf { destination ->
+        when (destination) {
+            is SearchDetailDestination.Netease -> destination.value.kind == MeloXSearchKind.Playlists
+            is SearchDetailDestination.Provider -> destination.value is ProviderSearchDestination.Playlist
+        }
+    }
+    PredictiveBackHandler(enabled = playlistDetail != null) {
+        try {
+            it.collect { event -> playlistBackProgress.snapTo(event.progress) }
+            playlistBackProgress.animateTo(1f, tween(160))
+            selectedDetail = null
+            playlistBackProgress.snapTo(0f)
+        } catch (_: CancellationException) {
+            playlistBackProgress.animateTo(0f)
+        }
+    }
+    BackHandler(enabled = playlistDetail == null && (podcastDiscovery || selectedDetail != null || categoryTitle != null)) {
         when {
             podcastDiscovery -> podcastDiscovery = false
             selectedDetail != null -> selectedDetail = null
@@ -415,37 +439,35 @@ fun SearchScreen(source: MusicSource = MusicSource.Netease) {
         }
     }
 
-    if (podcastDiscovery) {
-        MeloXPodcastScreen()
-        return
-    }
-
-    selectedDetail?.let { destination ->
-        SearchCollectionDetail(
-            destination = destination,
-            universal = universal,
-            library = library,
-            providerRegistry = providerRegistry,
-            onBack = { selectedDetail = null },
-        )
-        return
-    }
-
-    categoryTitle?.let { title ->
-        SearchCategoryPage(title, categoryPlaylists, loading, error, onBack = {
-            categoryTitle = null; categoryPlaylists = emptyList(); error = null
-        }, onPlaylist = { selectedDetail = SearchDetailDestination.Netease(it.asSearchItem()) })
-        return
-    }
-
-    val window = rememberMeloXWindowInfo()
-    Column(
+    Box(Modifier.fillMaxSize()) {
+        when {
+            podcastDiscovery -> MeloXPodcastScreen()
+            selectedDetail != null && playlistDetail == null -> SearchCollectionDetail(
+                destination = selectedDetail!!,
+                universal = universal,
+                library = library,
+                providerRegistry = providerRegistry,
+                onBack = { selectedDetail = null },
+            )
+            categoryTitle != null -> SearchCategoryPage(
+                categoryTitle!!,
+                categoryPlaylists,
+                loading,
+                error,
+                onBack = {
+                    categoryTitle = null; categoryPlaylists = emptyList(); error = null
+                },
+                onPlaylist = { selectedDetail = SearchDetailDestination.Netease(it.asSearchItem()) },
+            )
+            else -> {
+                val window = rememberMeloXWindowInfo()
+                Column(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
             .padding(top = 26.dp)
             .padding(horizontal = if (window.supportsTwoPane) window.gutter else 0.dp),
-    ) {
+                ) {
         MeloXIosTopBar(title = stringResource(R.string.tab_search))
         Spacer(Modifier.height(16.dp))
         SearchField(
@@ -532,6 +554,31 @@ fun SearchScreen(source: MusicSource = MusicSource.Netease) {
                         else -> selectedDetail = SearchDetailDestination.Netease(item)
                     }
                 }
+            }
+        }
+            }
+        }
+        }
+        playlistDetail?.let { destination ->
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .zIndex(1f)
+                    .graphicsLayer {
+                        translationX = size.width * playlistBackProgress.value
+                        val scale = 1f - 0.08f * playlistBackProgress.value
+                        scaleX = scale
+                        scaleY = scale
+                        transformOrigin = TransformOrigin(0f, 0.5f)
+                    },
+            ) {
+                SearchCollectionDetail(
+                    destination = destination,
+                    universal = universal,
+                    library = library,
+                    providerRegistry = providerRegistry,
+                    onBack = { selectedDetail = null },
+                )
             }
         }
     }
