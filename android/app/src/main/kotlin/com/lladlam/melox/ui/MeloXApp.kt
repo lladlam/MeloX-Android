@@ -96,6 +96,7 @@ import com.lladlam.melox.R
 import com.lladlam.melox.core.music.model.MusicSource
 import com.lladlam.melox.core.music.provider.MusicProviderSelectionStore
 import com.lladlam.melox.ui.account.NeteaseLoginScreen
+import com.lladlam.melox.ui.account.MeloXAccountActivity
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.shapes.Capsule
@@ -497,6 +498,14 @@ fun MeloXApp(
                             onNeteaseLogin = {
                                 loginReturnTab = AppTab.Settings
                                 showNeteaseLogin = true
+                            },
+                            onOpenAccount = {
+                                neteaseSession.profile?.userId?.let { userId ->
+                                    MeloXAccountActivity.launch(hostContext, userId)
+                                } ?: run {
+                                    loginReturnTab = AppTab.Settings
+                                    showNeteaseLogin = true
+                                }
                             },
                             onOpenServices = { MeloXProviderServicesActivity.launch(hostContext) },
                             onOpenMessages = { messagesVisible = true },

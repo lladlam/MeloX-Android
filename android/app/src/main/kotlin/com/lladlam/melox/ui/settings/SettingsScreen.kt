@@ -238,6 +238,7 @@ fun SettingsScreen(
     session: NeteaseSessionStore,
     source: MusicSource = MusicSource.Netease,
     onLogin: () -> Unit,
+    onOpenAccount: (() -> Unit)? = null,
     onOpenServices: (() -> Unit)? = null,
     onOpenMessages: (() -> Unit)? = null,
     initialRouteRequest: String? = null,
@@ -333,6 +334,7 @@ fun SettingsScreen(
             SettingsAccountCard(
                 session = session,
                 onLogin = onLogin,
+                onOpenAccount = onOpenAccount,
                 onOpenServices = onOpenServices,
             )
             Spacer(Modifier.height(24.dp))
@@ -401,6 +403,7 @@ private fun SettingsSearchField(value: String, onValueChange: (String) -> Unit) 
 private fun SettingsAccountCard(
     session: NeteaseSessionStore,
     onLogin: () -> Unit,
+    onOpenAccount: (() -> Unit)?,
     onOpenServices: (() -> Unit)?,
 ) {
     val accent = com.lladlam.melox.ui.glass.MeloXSystemColors.Red
@@ -419,7 +422,7 @@ private fun SettingsAccountCard(
                     leading = { AsyncImage(model = profile.avatarUrl, contentDescription = null, modifier = Modifier.size(30.dp).clip(CircleShape)) },
                     detail = "已登录",
                     chevronTint = accent,
-                    onClick = onOpenServices ?: onLogin,
+                     onClick = onOpenAccount ?: onLogin,
                     showTopSeparator = false,
                 )
             }
@@ -433,8 +436,18 @@ private fun SettingsAccountCard(
                 title = "登录网易云音乐",
                 leading = { MeloXSymbolIcon(MeloXSymbol.Person, Modifier.size(30.dp), accent, MeloXSymbolVariant.Fill) },
                 chevronTint = accent,
-                onClick = onOpenServices ?: onLogin,
+                 onClick = onOpenAccount ?: onLogin,
                 showTopSeparator = false,
+            )
+        }
+        if (onOpenServices != null) {
+            MeloXIosListRow(
+                title = "音乐服务",
+                subtitle = "切换音乐源、登录账号与聚合设置",
+                leading = { MeloXSymbolIcon(MeloXSymbol.MusicNote, Modifier.size(30.dp), accent) },
+                chevronTint = accent,
+                onClick = onOpenServices,
+                showTopSeparator = true,
             )
         }
     }
