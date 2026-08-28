@@ -272,6 +272,7 @@ fun SettingsScreen(
     PredictiveBackHandler(enabled = route != null) {
         try {
             it.collect { event -> backProgress.snapTo(event.progress) }
+            backProgress.animateTo(1f, tween(160))
             route = null
             backProgress.snapTo(0f)
         } catch (_: CancellationException) {
