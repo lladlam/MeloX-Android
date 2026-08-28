@@ -1560,8 +1560,19 @@ private fun MeloXGlyphLyricText(
     val flipped = line.agent?.alignment == com.lladlam.melox.core.lyrics.LyricAgentAlignment.Flipped
     val context = LocalContext.current
     val density = LocalDensity.current
-    val fontTypeface = remember {
-        ResourcesCompat.getFont(context, R.font.mi_lan_pro_vf) ?: Typeface.DEFAULT
+    val lyricWeight = MeloXSettingsRuntime.lyricFontWeight.composeWeight
+    val fontTypeface = remember(lyricWeight) {
+        val resource = when {
+            lyricWeight.weight <= 100 -> R.font.mi_lan_pro_thin
+            lyricWeight.weight <= 200 -> R.font.mi_lan_pro_extra_light
+            lyricWeight.weight <= 300 -> R.font.mi_lan_pro_light
+            lyricWeight.weight <= 400 -> R.font.mi_lan_pro_regular
+            lyricWeight.weight <= 500 -> R.font.mi_lan_pro_medium
+            lyricWeight.weight <= 600 -> R.font.mi_lan_pro_semi_bold
+            lyricWeight.weight <= 700 -> R.font.mi_lan_pro_bold
+            else -> R.font.mi_lan_pro_heavy
+        }
+        ResourcesCompat.getFont(context, resource) ?: Typeface.DEFAULT
     }
     val textMeasurer = rememberTextMeasurer(cacheSize = 64)
     BoxWithConstraints(modifier = modifier) {
@@ -1571,7 +1582,7 @@ private fun MeloXGlyphLyricText(
             fontFamily = LocalMeloXFontFamily.current,
             fontSize = (UpstreamLyrics.FONT_SIZE_SP * fontScale).sp,
             lineHeight = (UpstreamLyrics.LINE_HEIGHT_SP * fontScale).sp,
-            fontWeight = MeloXSettingsRuntime.lyricFontWeight.composeWeight,
+            fontWeight = lyricWeight,
             textAlign = if (flipped) TextAlign.End else TextAlign.Start,
         )
         val layout = remember(line.text, widthPx, style) {
