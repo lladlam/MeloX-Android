@@ -1007,7 +1007,6 @@ private fun MeloXLibrarySegmentedPicker(
         modifier = modifier
             .fillMaxWidth()
             .height(30.dp)
-            .clip(panelShape)
             .meloXLiquidBottomBar(
                 shape = panelShape,
                 tint = panelTint,
