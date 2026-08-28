@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -264,7 +265,7 @@ private fun MeloXPopupGlassMenu(
             )
             .size(width = menuWidth * PopupOvershootScale, height = menuHeight * PopupOvershootScale),
     ) {
-        Column(
+        Box(
             Modifier
                 .align(if (opensAbove) Alignment.BottomEnd else Alignment.TopEnd)
                 .blur(10.dp * (1f - visualProgress), BlurredEdgeTreatment.Unbounded)
@@ -296,17 +297,22 @@ private fun MeloXPopupGlassMenu(
                     ) else Modifier.meloXContentSurface(shape, surface)
                 )
                 .then(if (interactive) highlight.modifier else Modifier)
-                .then(if (interactive) highlight.gestureModifier else Modifier)
-                .clip(shape)
-                .padding(10.dp)
-                .graphicsLayer {
-                    val contentScale = .92f + .08f * visualProgress
-                    scaleX = contentScale
-                    scaleY = contentScale
-                    transformOrigin = TransformOrigin(1f, if (opensAbove) 1f else 0f)
-                },
-            content = content,
-        )
+                .then(if (interactive) highlight.gestureModifier else Modifier),
+        ) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .clip(shape)
+                    .padding(10.dp)
+                    .graphicsLayer {
+                        val contentScale = .92f + .08f * visualProgress
+                        scaleX = contentScale
+                        scaleY = contentScale
+                        transformOrigin = TransformOrigin(1f, if (opensAbove) 1f else 0f)
+                    },
+                content = content,
+            )
+        }
     }
 }
 
