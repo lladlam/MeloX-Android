@@ -222,7 +222,6 @@ fun QQMusicLoginScreen(
             Text(
                 text = if (securityChallengeActive) "返回" else "取消",
                 modifier = Modifier
-                    .clip(RoundedCornerShape(18.dp))
                     .meloXLiquidButton(
                         shape = RoundedCornerShape(18.dp),
                         tint = Color(0xFFFF3147),

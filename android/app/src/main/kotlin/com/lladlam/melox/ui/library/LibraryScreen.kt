@@ -2135,7 +2135,6 @@ private fun MeloXStandardPlaylistHero(
                     modifier = Modifier
                         .width(140.dp)
                         .height(50.dp)
-                        .clip(RoundedCornerShape(25.dp))
                         .meloXLiquidButton(
                             shape = RoundedCornerShape(25.dp),
                             enabled = tracks.isNotEmpty(),
@@ -2274,7 +2273,6 @@ private fun MeloXGlassCircleButton(
     Box(
         modifier = Modifier
             .size(size)
-            .clip(CircleShape)
             .meloXLiquidButton(
                 shape = CircleShape,
                 enabled = enabled,

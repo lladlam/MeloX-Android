@@ -122,7 +122,6 @@ fun KugouLoginScreen(
             Text(
                 text = "取消",
                 modifier = Modifier
-                    .clip(RoundedCornerShape(18.dp))
                     .meloXLiquidButton(
                         shape = RoundedCornerShape(18.dp),
                         tint = Color(0xFFFF3147),

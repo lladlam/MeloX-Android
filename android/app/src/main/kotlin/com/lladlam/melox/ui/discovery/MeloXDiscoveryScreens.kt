@@ -554,7 +554,6 @@ private fun HomeAccountButton(account: HomeAccountUi) {
     Box(
         modifier = Modifier
             .size(42.dp)
-            .clip(CircleShape)
             .meloXGlassSurface(
                 shape = CircleShape,
                 tint = MeloXSystemColors.Red.copy(alpha = 0.12f),

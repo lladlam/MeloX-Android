@@ -589,7 +589,6 @@ private fun MeloXQualityChipV3(
                     scaleY = scale
                 }
                 .height(24.dp)
-                .clip(RoundedCornerShape(7.dp))
                 .meloXLiquidButton(
                     shape = RoundedCornerShape(7.dp),
                     surfaceColor = Color.White.copy(alpha = 0.10f),
