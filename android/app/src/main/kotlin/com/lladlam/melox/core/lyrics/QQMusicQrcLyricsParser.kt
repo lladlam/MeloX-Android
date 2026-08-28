@@ -95,25 +95,13 @@ object QQMusicQrcLyricsParser {
             .ifEmpty { NeteaseLyricParser.parseLrc(extractLyricText(translation)) }
         val romanized = parseQrcLines(extractLyricText(romanization))
             .ifEmpty { NeteaseLyricParser.parseLrc(extractLyricText(romanization)) }
-        val translationOffset = estimateGlobalOffset(primaryLines, translated)
-        val romanizationOffset = estimateGlobalOffset(primaryLines, romanized)
+        val alignedTranslations = NeteaseLyricParser.alignSecondary(primaryLines, translated)
+        val alignedRomanizations = NeteaseLyricParser.alignSecondary(primaryLines, romanized)
 
         return LyricsDocument(
             lines = primaryLines.mapIndexed { index, line ->
-                val translationLine = alignedAnnotation(
-                    target = line,
-                    index = index,
-                    primarySize = primaryLines.size,
-                    candidates = translated,
-                    globalOffsetMs = translationOffset,
-                )
-                val romanizationLine = alignedAnnotation(
-                    target = line,
-                    index = index,
-                    primarySize = primaryLines.size,
-                    candidates = romanized,
-                    globalOffsetMs = romanizationOffset,
-                )
+                val translationLine = alignedTranslations.getOrNull(index)
+                val romanizationLine = alignedRomanizations.getOrNull(index)
                 line.copy(
                     translation = annotationText(line, translationLine),
                     romanization = annotationText(line, romanizationLine),

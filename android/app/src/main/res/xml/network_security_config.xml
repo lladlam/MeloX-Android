@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
+    <!-- LX requests are still restricted by LxUserRuntime to http/https URLs. -->
+    <base-config cleartextTrafficPermitted="true" />
 
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">music.163.com</domain>
         <domain includeSubdomains="true">music.126.net</domain>
         <domain includeSubdomains="true">ar.i.kuwo.cn</domain>
+        <!-- One installed LX source still exposes its endpoint on this legacy HTTP host. -->
+        <domain includeSubdomains="false">97.64.37.235</domain>
     </domain-config>
 </network-security-config>

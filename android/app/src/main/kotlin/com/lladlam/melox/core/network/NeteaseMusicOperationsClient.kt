@@ -174,10 +174,10 @@ class NeteaseMusicOperationsClient(
 
     suspend fun setPlaylistSubscribed(playlistId: Long, subscribed: Boolean) = withContext(Dispatchers.IO) {
         ensureLoggedIn()
-        val path = if (subscribed) "/api/playlist/subscribe" else "/api/playlist/unsubscribe"
-        val data = JSONObject().put("id", playlistId)
-        if (subscribed) data.put("checkToken", NETEASE_CHECK_TOKEN)
-        eapi(path, data, true)
+        val data = JSONObject()
+            .put("id", playlistId)
+            .put("t", if (subscribed) 1 else 2)
+        eapi("/api/playlist/subscribe", data, true)
         Unit
     }
 

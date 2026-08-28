@@ -87,6 +87,8 @@ object MeloXSettingsRuntime {
         internal set
     var playerBackgroundIsolationEnabled by mutableStateOf(true)
         internal set
+    var frostedGlassEnabled by mutableStateOf(false)
+        internal set
     var keepScreenOn by mutableStateOf(false)
         internal set
     var screenAwakeMode by mutableStateOf(MeloXScreenAwakeMode.Disabled)
@@ -127,7 +129,7 @@ object MeloXSettingsRuntime {
         internal set
     var lyricRomanizationDisplayMode by mutableStateOf(MeloXLyricAnnotationDisplayMode.FocusedLine)
         internal set
-    var lyricTranslationDisplayMode by mutableStateOf(MeloXLyricAnnotationDisplayMode.FocusedLine)
+    var lyricTranslationDisplayMode by mutableStateOf(MeloXLyricAnnotationDisplayMode.AllLines)
         internal set
     var lyricFollowDelayMs by mutableStateOf(3_000)
         internal set
@@ -299,6 +301,8 @@ object MeloXSettingsRuntime {
         internal set
     var rememberLastTab by mutableStateOf(true)
         internal set
+    var disableAutomaticTabBarShrink by mutableStateOf(false)
+        internal set
     var tabOrder by mutableStateOf(listOf("Home", "Explore", "Library", "Podcasts", "Downloads", "Cloud", "Settings"))
         internal set
     var defaultTab by mutableStateOf("Home")
@@ -343,6 +347,7 @@ object MeloXSettingsRuntime {
         downloadsTabPlacement = MeloXSettingsPreferences.boolean(app, "placement_downloads_tab", false)
         cloudTabPlacement = MeloXSettingsPreferences.boolean(app, "placement_cloud_tab", false)
         rememberLastTab = MeloXSettingsPreferences.boolean(app, "general_remember_tab", true)
+        disableAutomaticTabBarShrink = MeloXSettingsPreferences.boolean(app, "general_disable_auto_tabbar_shrink", false)
         tabOrder = MeloXSettingsPreferences.string(app, "tab_order", "Home,Explore,Library,Podcasts,Downloads,Cloud,Settings")
             .split(',').filter { it in setOf("Home", "Explore", "Library", "Podcasts", "Downloads", "Cloud", "Settings") }.distinct()
             .let { order -> (order + listOf("Home", "Explore", "Library", "Podcasts", "Downloads", "Cloud", "Settings")).distinct() }
@@ -390,6 +395,7 @@ object MeloXSettingsRuntime {
         playerTransitionDurationMs = MeloXSettingsPreferences.int(app, "player_transition_duration_ms", 575)
             .coerceIn(200, 1_200)
         playerBackgroundIsolationEnabled = MeloXSettingsPreferences.boolean(app, "player_background_isolation", true)
+        frostedGlassEnabled = MeloXSettingsPreferences.boolean(app, "player_frosted_glass", false)
         keepScreenOn = MeloXSettingsPreferences.boolean(app, "player_keep_screen_on", false)
         screenAwakeMode = runCatching {
             MeloXScreenAwakeMode.valueOf(
@@ -404,7 +410,7 @@ object MeloXSettingsRuntime {
         showLyricTranslation = MeloXSettingsPreferences.boolean(app, "lyrics_translation", true)
         automaticLyricSelectionEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_auto_select", true)
         lyricStrongBindingEnabled = MeloXSettingsPreferences.boolean(app, "experimental_lyric_strong_binding", false)
-        showLyricRomanization = MeloXSettingsPreferences.boolean(app, "lyrics_romanization", true)
+        showLyricRomanization = MeloXSettingsPreferences.boolean(app, "lyrics_romanization", false)
         lyricWordByWordEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_word_by_word", true)
         lyricPseudoTimingEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_pseudo_timing", false)
         lyricTapSeekEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_tap_seek", true)
@@ -416,7 +422,7 @@ object MeloXSettingsRuntime {
         lyricAdvanceAppliesToWordByWord = MeloXSettingsPreferences.boolean(app, "lyrics_advance_word_by_word", false)
         lyricRefreshRate = MeloXSettingsPreferences.int(app, "lyrics_refresh_rate", 60)
             .takeIf { it in setOf(30, 60, 90, 120) } ?: 60
-        lyricBackgroundFrameRate = MeloXSettingsPreferences.int(app, "lyrics_background_frame_rate", 24)
+        lyricBackgroundFrameRate = MeloXSettingsPreferences.int(app, "lyrics_background_frame_rate", 60)
             .takeIf { it in setOf(15, 24, 30, 45, 60) } ?: 24
         lyricRenderingQuality = runCatching {
             MeloXLyricsRenderingQuality.valueOf(
@@ -427,8 +433,8 @@ object MeloXSettingsRuntime {
                 ),
             )
         }.getOrDefault(MeloXLyricsRenderingQuality.High)
-        lyricRomanizationDisplayMode = annotationMode(app, "lyrics_romanization_display_mode")
-        lyricTranslationDisplayMode = annotationMode(app, "lyrics_translation_display_mode")
+        lyricRomanizationDisplayMode = annotationMode(app, "lyrics_romanization_display_mode", MeloXLyricAnnotationDisplayMode.FocusedLine)
+        lyricTranslationDisplayMode = annotationMode(app, "lyrics_translation_display_mode", MeloXLyricAnnotationDisplayMode.AllLines)
         lyricFollowDelayMs = MeloXSettingsPreferences.int(app, "lyrics_follow_delay_ms", 3_000).coerceIn(1_000, 8_000)
         lyricFontScale = MeloXSettingsPreferences.float(app, "lyrics_font_scale", 1f).coerceIn(.8f, 1.25f)
         lyricFocusPosition = MeloXSettingsPreferences.float(app, "lyrics_focus_position", .25f).coerceIn(.05f, .8f)
@@ -539,6 +545,7 @@ object MeloXSettingsRuntime {
         exploreTabEnabled = MeloXSettingsPreferences.boolean(app, "tab_explore", true)
         libraryTabEnabled = MeloXSettingsPreferences.boolean(app, "tab_library", true)
         rememberLastTab = MeloXSettingsPreferences.boolean(app, "general_remember_tab", true)
+        disableAutomaticTabBarShrink = MeloXSettingsPreferences.boolean(app, "general_disable_auto_tabbar_shrink", false)
         tabOrder = MeloXSettingsPreferences.string(app, "tab_order", "Home,Explore,Library,Podcasts,Downloads,Cloud,Settings")
             .split(',').filter { it in setOf("Home", "Explore", "Library", "Podcasts", "Downloads", "Cloud", "Settings") }.distinct()
             .let { order -> (order + listOf("Home", "Explore", "Library", "Podcasts", "Downloads", "Cloud", "Settings")).distinct() }
@@ -563,11 +570,15 @@ object MeloXSettingsRuntime {
         }.getOrDefault(MeloXVolumeControlMode.System)
     }
 
-    private fun annotationMode(context: Context, key: String): MeloXLyricAnnotationDisplayMode = runCatching {
+    private fun annotationMode(
+        context: Context,
+        key: String,
+        default: MeloXLyricAnnotationDisplayMode,
+    ): MeloXLyricAnnotationDisplayMode = runCatching {
         MeloXLyricAnnotationDisplayMode.valueOf(
-            MeloXSettingsPreferences.string(context, key, MeloXLyricAnnotationDisplayMode.FocusedLine.name),
+            MeloXSettingsPreferences.string(context, key, default.name),
         )
-    }.getOrDefault(MeloXLyricAnnotationDisplayMode.FocusedLine)
+    }.getOrDefault(default)
 }
 
 object MeloXSettingsPreferences {
@@ -636,6 +647,7 @@ object MeloXSettingsPreferences {
             "player_flowing_backdrop" -> MeloXSettingsRuntime.flowingBackdropEnabled = value
             "player_artwork_motion" -> MeloXSettingsRuntime.artworkMotionEnabled = value
             "player_background_isolation" -> MeloXSettingsRuntime.playerBackgroundIsolationEnabled = value
+            "player_frosted_glass" -> MeloXSettingsRuntime.frostedGlassEnabled = value
             "player_keep_screen_on" -> MeloXSettingsRuntime.keepScreenOn = value
             "lyrics_translation" -> MeloXSettingsRuntime.showLyricTranslation = value
             "lyrics_auto_select" -> MeloXSettingsRuntime.automaticLyricSelectionEnabled = value
@@ -673,6 +685,7 @@ object MeloXSettingsPreferences {
             "tab_explore" -> MeloXSettingsRuntime.exploreTabEnabled = value
             "tab_library" -> MeloXSettingsRuntime.libraryTabEnabled = value
             "general_remember_tab" -> MeloXSettingsRuntime.rememberLastTab = value
+            "general_disable_auto_tabbar_shrink" -> MeloXSettingsRuntime.disableAutomaticTabBarShrink = value
             "library_remember_page" -> MeloXSettingsRuntime.rememberLibraryPage = value
             "download_lyrics" -> MeloXSettingsRuntime.downloadLyricsEnabled = value
             "content_playlist_play_count" -> MeloXSettingsRuntime.showPlaylistPlayCount = value
@@ -777,7 +790,7 @@ object MeloXSettingsPreferences {
             }.getOrDefault(MeloXLyricAnnotationDisplayMode.FocusedLine)
             "lyrics_translation_display_mode" -> MeloXSettingsRuntime.lyricTranslationDisplayMode = runCatching {
                 MeloXLyricAnnotationDisplayMode.valueOf(value)
-            }.getOrDefault(MeloXLyricAnnotationDisplayMode.FocusedLine)
+            }.getOrDefault(MeloXLyricAnnotationDisplayMode.AllLines)
             "lyrics_rendering_quality" -> MeloXSettingsRuntime.lyricRenderingQuality = runCatching {
                 MeloXLyricsRenderingQuality.valueOf(value)
             }.getOrDefault(MeloXLyricsRenderingQuality.High)
@@ -843,6 +856,7 @@ object MeloXSettingsPreferences {
             .remove("player_flowing_backdrop")
             .remove("player_artwork_motion")
             .remove("player_background_isolation")
+            .remove("player_frosted_glass")
             .remove("player_transition_duration_ms")
             .remove("lyrics_style")
             .remove("lyrics_rendering_quality")

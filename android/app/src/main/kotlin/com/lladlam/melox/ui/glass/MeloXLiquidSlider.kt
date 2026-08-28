@@ -22,6 +22,7 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
 import com.lladlam.melox.ui.glass.liquidsliderdemo.MeloXDemoLiquidSlider
+import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import kotlin.math.roundToInt
 
 @Composable
@@ -67,7 +68,7 @@ fun MeloXLiquidSlider(
         }
     }
     val backdrop = LocalMeloXBackdrop.current
-    if (backdrop == null) {
+    if (backdrop == null || MeloXSettingsRuntime.frostedGlassEnabled) {
         Slider(
             value = transientValue,
             onValueChange = {

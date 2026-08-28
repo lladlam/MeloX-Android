@@ -3,6 +3,7 @@ package com.lladlam.melox.ui.account
 import android.annotation.SuppressLint
 import android.graphics.Color as AndroidColor
 import android.os.SystemClock
+import android.util.Log
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebView
@@ -59,6 +60,7 @@ private const val QQ_MUSIC_LOGIN_URL = "https://y.qq.com/"
 private const val COOKIE_POLL_INTERVAL_MS = 500L
 private const val COOKIE_STABLE_POLLS_BEFORE_VERIFY = 3
 private const val VERIFY_RETRY_COOLDOWN_MS = 8_000L
+private const val TAG = "MeloXQQLogin"
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -82,6 +84,10 @@ fun QQMusicLoginScreen(
     var securityRetrying by remember { mutableStateOf(false) }
     var verificationError by remember { mutableStateOf<String?>(null) }
 
+    LaunchedEffect(Unit) {
+        QQMusicSessionStore.clearWebLoginCookies()
+    }
+
     BackHandler(enabled = useWebLogin) {
         val view = webView
         if (view?.canGoBack() == true) view.goBack() else onDismiss()
@@ -90,7 +96,7 @@ fun QQMusicLoginScreen(
     LaunchedEffect(webView) {
         if (webView == null) return@LaunchedEffect
 
-        var previousCandidate = ""
+        var previousSessionFingerprint = ""
         var stablePolls = 0
         var lastAttemptFingerprint: String? = null
         var lastAttemptAt = 0L
@@ -99,11 +105,15 @@ fun QQMusicLoginScreen(
             val candidate = collectQQMusicCookieHeader()
             val session = QQMusicSessionStore.parse(candidate)
 
-            if (candidate.isNotBlank() && candidate == previousCandidate) {
+            val sessionFingerprint = if (session.isLoggedIn) "${session.uin}:${session.musicKey}" else ""
+            if (sessionFingerprint != previousSessionFingerprint) {
+                Log.d(TAG, "QQ Music WebView session state changed: available=${sessionFingerprint.isNotBlank()}")
+            }
+            if (sessionFingerprint.isNotBlank() && sessionFingerprint == previousSessionFingerprint) {
                 stablePolls += 1
             } else {
-                previousCandidate = candidate
-                stablePolls = if (candidate.isBlank()) 0 else 1
+                previousSessionFingerprint = sessionFingerprint
+                stablePolls = if (sessionFingerprint.isBlank()) 0 else 1
             }
 
             if (!securityChallengeActive && session.isLoggedIn && stablePolls >= COOKIE_STABLE_POLLS_BEFORE_VERIFY && !verifying) {
@@ -132,6 +142,7 @@ fun QQMusicLoginScreen(
 
                     verificationError = result.exceptionOrNull()?.message
                         ?: "QQ音乐登录状态验证失败，请稍后重试"
+                    Log.w(TAG, "QQ Music WebView session verification failed", result.exceptionOrNull())
                 }
             }
 
@@ -382,6 +393,11 @@ private fun collectQQMusicCookieHeader(): String {
         "https://u.y.qq.com/",
         "https://c.y.qq.com/",
         "https://c6.y.qq.com/",
+        "https://ssl.ptlogin2.qq.com/",
+        "https://ptlogin2.qq.com/",
+        "https://ptlogin2.music.qq.com/",
+        "https://ui.ptlogin2.qq.com/",
+        "https://xui.ptlogin2.qq.com/",
         "https://music.qq.com/",
         "https://qq.com/",
     )

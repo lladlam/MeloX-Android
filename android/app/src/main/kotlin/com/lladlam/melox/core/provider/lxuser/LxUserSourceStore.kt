@@ -39,14 +39,19 @@ object LxUserSourceStore {
     }
 
     fun import(context: Context, script: String): LxUserSourceRecord {
-        require(script.toByteArray(Charsets.UTF_8).size <= MaxScriptBytes) { "音乐源脚本过大（最大 9 MB）" }
-        require(script.trimStart().startsWith("/*")) { "不是有效的 LX Music 音乐源脚本" }
-        val metadata = LxUserScriptMetadata.parse(script)
+        val normalizedScript = script.removePrefix("\uFEFF")
+        require(normalizedScript.toByteArray(Charsets.UTF_8).size <= MaxScriptBytes) { "音乐源脚本过大（最大 9 MB）" }
+        require(
+            normalizedScript.contains("globalThis.lx") ||
+                normalizedScript.contains("lx.on") ||
+                normalizedScript.contains("musicUrl"),
+        ) { "不是有效的 LX Music 音乐源脚本" }
+        val metadata = LxUserScriptMetadata.parse(normalizedScript)
         val id = "user_api_${System.currentTimeMillis()}_${(100..999).random()}"
         val record = LxUserSourceRecord(id, metadata)
         val app = context.applicationContext
         val dir = File(app.filesDir, "lx-user-sources").apply { mkdirs() }
-        File(dir, "$id.js").writeText(script, Charsets.UTF_8)
+        File(dir, "$id.js").writeText(normalizedScript, Charsets.UTF_8)
         val records = (list(app) + record).takeLast(MaxSources)
         saveList(app, records)
         return record

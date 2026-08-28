@@ -21,8 +21,25 @@ object QQMusicSessionStore {
     private val LoginCookieDomains = listOf(
         "https://y.qq.com/",
         "https://u.y.qq.com/",
+        "https://c.y.qq.com/",
+        "https://c6.y.qq.com/",
+        "https://i.y.qq.com/",
+        "https://login.y.qq.com/",
         "https://music.qq.com/",
+        "https://qqmusic.qq.com/",
         "https://qq.com/",
+        "https://graph.qq.com/",
+        "https://ssl.ptlogin2.qq.com/",
+        "https://ptlogin2.qq.com/",
+        "https://ptlogin2.music.qq.com/",
+        "https://ui.ptlogin2.qq.com/",
+        "https://xui.ptlogin2.qq.com/",
+    )
+
+    private val KnownLoginCookieNames = setOf(
+        "uin", "p_uin", "luin", "o_cookie", "qqmusic_uin", "wxuin", "login_type",
+        "qm_keyst", "qqmusic_key", "skey", "p_skey", "pt4_token", "ptcz", "qrsig",
+        "lskey", "music_key", "yqq_stat",
     )
 
     fun read(context: Context, playback: Boolean = false): QQMusicSession =
@@ -59,6 +76,11 @@ object QQMusicSessionStore {
         if (clearWebCookies) clearProviderWebCookies(session.cookie)
     }
 
+    /** Clears only QQ/QQ Music WebView cookies before opening a fresh login flow. */
+    fun clearWebLoginCookies() {
+        clearProviderWebCookies("")
+    }
+
     fun parse(cookie: String): QQMusicSession {
         val values = cookieValues(cookie)
         val rawUin = values["qqmusic_uin"]
@@ -93,7 +115,7 @@ object QQMusicSessionStore {
         .toMap()
 
     private fun clearProviderWebCookies(cookie: String) {
-        val names = cookieNames(cookie)
+        val names = cookieNames(cookie) + KnownLoginCookieNames
         if (names.isEmpty()) return
         runCatching {
             val manager = CookieManager.getInstance()
@@ -102,6 +124,12 @@ object QQMusicSessionStore {
                     manager.setCookie(
                         domain,
                         "$name=; Max-Age=0; Path=/; SameSite=Lax",
+                    )
+                    // Some QQ cookies are scoped to the parent domain rather
+                    // than the host returned by CookieManager.getCookie().
+                    manager.setCookie(
+                        domain,
+                        "$name=; Max-Age=0; Path=/; Domain=.qq.com; SameSite=Lax",
                     )
                 }
             }

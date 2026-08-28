@@ -193,7 +193,7 @@ class MeloXFloatingLyricsService : Service() {
                 MeloXSecondaryLyricMode.Hidden -> ""
                 MeloXSecondaryLyricMode.Auto -> when {
                     MeloXSettingsPreferences.boolean(this, "lyrics_translation", true) && translation.isNotBlank() -> translation
-                    MeloXSettingsPreferences.boolean(this, "lyrics_romanization", true) && romanization.isNotBlank() -> romanization
+                    MeloXSettingsPreferences.boolean(this, "lyrics_romanization", false) && romanization.isNotBlank() -> romanization
                     else -> nextLineText
                 }
             }

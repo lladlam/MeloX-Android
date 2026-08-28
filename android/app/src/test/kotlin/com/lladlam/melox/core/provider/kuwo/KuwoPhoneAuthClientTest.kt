@@ -3,7 +3,9 @@ package com.lladlam.melox.core.provider.kuwo
 import java.math.BigInteger
 import java.security.MessageDigest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.fail
 import org.junit.Test
+import org.json.JSONObject
 
 class KuwoPhoneAuthClientTest {
 
@@ -21,6 +23,34 @@ class KuwoPhoneAuthClientTest {
         val actual = KuwoPhoneAuthClient.authParams(mobile, type, tm).secret
 
         assertEquals(expected, actual)
+    }
+
+    @Test
+    fun loginAcceptsSuccessCallbackWithMinusOneStatus() {
+        val response = JSONObject()
+            .put("success", true)
+            .put("status", "-1")
+            .put("userInfo", JSONObject().put("uid", "123").put("sessionId", "sid-value"))
+
+        val session = KuwoPhoneAuthClient().parseLoginResponse(response)
+
+        assertEquals("123", session.userId)
+        assertEquals("sid-value", session.token)
+    }
+
+    @Test
+    fun minusOneWithoutSuccessIsRejected() {
+        val response = JSONObject()
+            .put("success", false)
+            .put("status", "-1")
+            .put("userInfo", JSONObject().put("uid", "123").put("sid", "sid-value"))
+
+        try {
+            KuwoPhoneAuthClient().parseLoginResponse(response)
+            fail("Expected login failure")
+        } catch (_: java.io.IOException) {
+            // -1 is meaningful only on the successful callback branch.
+        }
     }
 
     private fun md5Hex(input: String): String {

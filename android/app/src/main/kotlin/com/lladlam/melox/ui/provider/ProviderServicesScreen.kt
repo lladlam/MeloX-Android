@@ -92,6 +92,7 @@ fun ProviderServicesScreen(
     var unifiedEnabled by remember { mutableStateOf(MusicProviderSelectionStore.unifiedEnabled(context)) }
     var unifiedSources by remember { mutableStateOf(MusicProviderSelectionStore.unifiedSources(context)) }
     var thirdPartySourcesEnabled by remember { mutableStateOf(ThirdPartyMusicSourceConsentStore.enabled(context)) }
+    var membershipFallbackOnly by remember { mutableStateOf(ThirdPartyMusicSourceConsentStore.membershipFallbackOnly(context)) }
     var showThirdPartySourceConsent by remember { mutableStateOf(false) }
     var showThirdPartySourceAgreement by remember { mutableStateOf(false) }
     var lxSources by remember { mutableStateOf(LxUserSourceStore.list(context)) }
@@ -101,17 +102,31 @@ fun ProviderServicesScreen(
     var chkszApiKey by remember { mutableStateOf(ChkszApiKeyStore.read(context)) }
     var showChkszKeyDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val lxFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+    val lxFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
         scope.launch {
-            runCatching {
-                val script = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-                        ?: error("无法读取音乐源文件")
+            val failures = mutableListOf<String>()
+            var imported = 0
+            uris.forEachIndexed { index, uri ->
+                runCatching {
+                    val script = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                            ?: error("无法读取音乐源文件")
+                    }
+                    withContext(Dispatchers.IO) { LxUserSourceStore.import(context, script) }
+                }.onSuccess {
+                    imported++
+                }.onFailure {
+                    failures += "第 ${index + 1} 个文件：${it.message ?: "导入失败"}"
                 }
-                withContext(Dispatchers.IO) { LxUserSourceStore.import(context, script) }
-            }.onSuccess { lxSources = LxUserSourceStore.list(context) }
-                .onFailure { lxImportError = it.message ?: "导入音乐源失败"; showLxImportDialog = true }
+            }
+            lxSources = LxUserSourceStore.list(context)
+            lxImportError = when {
+                failures.isEmpty() -> "已导入 $imported 个音乐源"
+                imported > 0 -> "已导入 $imported 个，失败 ${failures.size} 个\n${failures.joinToString("\n")}"
+                else -> failures.joinToString("\n")
+            }
+            showLxImportDialog = true
         }
     }
 
@@ -278,7 +293,22 @@ fun ProviderServicesScreen(
             )
             if (thirdPartySourcesEnabled) {
                 MeloXIosListRow(
-                    title = "网易云 SVIP 音乐解析",
+                    title = "遇到会员歌曲时再调用",
+                    subtitle = "优先使用官方音源，仅在会员/版权受限时尝试第三方解析",
+                    leading = { Spacer(Modifier.width(25.dp)) },
+                    trailing = {
+                        MeloXGlassToggle(
+                            checked = membershipFallbackOnly,
+                            onCheckedChange = {
+                                membershipFallbackOnly = it
+                                ThirdPartyMusicSourceConsentStore.setMembershipFallbackOnly(context, it)
+                            },
+                        )
+                    },
+                    showTopSeparator = false,
+                )
+                MeloXIosListRow(
+                    title = "CHKSZ解析源",
                     subtitle = if (chkszApiKey.isBlank()) "未配置 API Key · 点击配置" else "CHKSZ API Key 已配置",
                     leading = { Spacer(Modifier.width(25.dp)) },
                     onClick = { showChkszKeyDialog = true },
@@ -418,7 +448,9 @@ fun ProviderServicesScreen(
                 lineHeight = 19.sp,
             )
             MeloXGlassButton(
-                onClick = { lxFileLauncher.launch("text/*") },
+                // Android file providers often label .js as application/javascript,
+                // octet-stream, or provide no MIME type at all.
+                onClick = { lxFileLauncher.launch(arrayOf("*/*")) },
                 modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
                 style = MeloXGlassButtonStyle.BorderedProminent,
             ) { Text("从本地文件导入") }

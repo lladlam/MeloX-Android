@@ -27,6 +27,8 @@ class NeteasePlaybackResolver(
     private val chkszPlayback: ChkszPlaybackResolver? = null,
     private val lxUserPlayback: LxUserPlaybackResolver? = null,
     private val providerPlaybackEnabled: (com.lladlam.melox.core.music.model.MusicSource) -> Boolean = { true },
+    private val thirdPartySourcesEnabled: () -> Boolean = { true },
+    private val thirdPartyOnlyForMembership: () -> Boolean = { false },
 ) : ResolvingDataSource.Resolver {
     private data class ResolveKey(
         val songId: Long,
@@ -86,7 +88,9 @@ class NeteasePlaybackResolver(
             .getOrElse { throw IOException("Unable to resolve playback source", it.cause ?: it) }
         return try {
             val resolved = try {
-                val thirdParty = runCatching { chkszPlayback?.resolve(songId, quality.toCommonTier()) }.getOrNull()
+                val thirdParty = if (thirdPartySourcesEnabled() && !thirdPartyOnlyForMembership()) {
+                    runCatching { chkszPlayback?.resolve(songId, quality.toCommonTier()) }.getOrNull()
+                } else null
                 if (thirdParty != null) {
                     ResolvedRequest(
                         uri = Uri.parse(thirdParty.url),
@@ -121,27 +125,31 @@ class NeteasePlaybackResolver(
                         expiresAtEpochMs = fallback.expiresAtEpochMs,
                         cacheIdentity = "${fallback.source.storageValue}:${fallback.resourceId}",
                     )
-                } else chkszPlayback?.resolve(songId, quality.toCommonTier())?.let { result ->
-                        ResolvedRequest(
-                            uri = Uri.parse(result.url),
-                            cacheIdentity = "chksz:${chkszPlayback.cacheIdentity()}",
-                        )
-                    } ?: fallbackRequest?.let {
-                        lxUserPlayback?.resolve(
-                            songId = it.songId,
-                            title = it.title,
-                            artist = it.artist,
-                            durationMs = it.durationMs,
-                            quality = it.quality,
-                        )
-                    }?.let { result ->
-                        ResolvedRequest(
-                            uri = Uri.parse(result.url),
-                            headers = result.requestHeaders,
-                            cacheIdentity = "lx-user:${result.sourceId}",
-                        )
+                    } else {
+                        val chksz = if (thirdPartySourcesEnabled()) {
+                            chkszPlayback?.resolve(songId, quality.toCommonTier())
+                        } else null
+                        chksz?.let { result ->
+                            ResolvedRequest(
+                                uri = Uri.parse(result.url),
+                                cacheIdentity = "chksz:${chkszPlayback?.cacheIdentity()}",
+                            )
+                        } ?: (if (thirdPartySourcesEnabled()) fallbackRequest?.let {
+                            lxUserPlayback?.resolve(
+                                songId = it.songId,
+                                title = it.title,
+                                artist = it.artist,
+                                durationMs = it.durationMs,
+                                quality = it.quality,
+                            )
+                        }?.let { result ->
+                            ResolvedRequest(
+                                uri = Uri.parse(result.url),
+                                headers = result.requestHeaders,
+                                cacheIdentity = "lx-user:${result.sourceId}",
+                            )
+                        } else null) ?: throw error
                     }
-                    ?: throw error
             }
             synchronized(cacheLock) { resolvedUris[key] = resolved }
             pending.complete(resolved)
@@ -266,6 +274,10 @@ class NeteasePlaybackResolver(
                 providers = registry,
                 authKeyProvider = ProviderPlaybackRuntime::authKey,
                 providerPlaybackEnabled = providerPlaybackEnabled,
+                chkszPlayback = chkszPlayback,
+                lxUserPlayback = lxUserPlayback,
+                thirdPartySourcesEnabled = thirdPartySourcesEnabled,
+                thirdPartyOnlyForMembership = thirdPartyOnlyForMembership,
             ).also { providerDelegate = it }
         }
     }

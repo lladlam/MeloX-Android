@@ -3,6 +3,7 @@ package com.lladlam.melox.ui.player
 import android.content.ComponentName
 import android.content.Context
 import android.media.AudioManager
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import androidx.compose.animation.AnimatedContent
@@ -60,6 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.C
+import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
@@ -75,6 +77,7 @@ import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.playback.PlaybackTrackIdentity
 import com.lladlam.melox.core.music.model.MusicSource
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
+import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
 import com.lladlam.melox.ui.settings.MeloXVolumeControlMode
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSymbolIcon
@@ -169,6 +172,7 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
         controller?.removeListener(listener)
         controller = newController
         newController.addListener(listener)
+        restoreLastPlaybackIfNeeded()
         refresh(rebuildQueue = true)
     }
 
@@ -231,6 +235,9 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
             if (LocalRecommendationStore.isAlgorithmEnabled(appContext) && LocalRecommendationStore.hasPersonalizationConsent(appContext)) {
                 LocalRecommendationEngine.start(appContext)
             }
+        }
+        if (MeloXSettingsPreferences.boolean(appContext, "playback_remember_last_song", true)) {
+            MeloXLastPlaybackStore.save(appContext, item, metadata, extras)
         }
         hasPrevious = player.hasPreviousMediaItem()
         hasNext = player.hasNextMediaItem()
@@ -345,6 +352,26 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
         controller?.let { player ->
             if (player.isPlaying) player.pause() else player.play()
         }
+    }
+
+    private fun restoreLastPlaybackIfNeeded() {
+        val player = controller ?: return
+        if (player.currentMediaItem != null || !MeloXSettingsPreferences.boolean(appContext, "playback_remember_last_song", true)) return
+        val saved = MeloXLastPlaybackStore.read(appContext) ?: return
+        val builder = MediaItem.Builder()
+            .setMediaId(saved.mediaId)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(saved.title)
+                    .setArtist(saved.artist)
+                    .setAlbumTitle(saved.album)
+                    .setArtworkUri(saved.artworkUrl?.let(Uri::parse))
+                    .build(),
+            )
+        saved.uri?.let { builder.setUri(Uri.parse(it)) }
+        player.setMediaItem(builder.build())
+        player.prepare()
+        player.pause()
     }
 
     fun seekTo(positionMs: Long) {
@@ -467,6 +494,43 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
     val insertion = (current + 1 + manualCount).coerceIn(0, player.mediaItemCount)
     player.addMediaItem(insertion, copied)
     refresh(rebuildQueue = true)
+}
+
+private data class MeloXLastPlayback(
+    val mediaId: String,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val artworkUrl: String?,
+    val uri: String?,
+)
+
+private object MeloXLastPlaybackStore {
+    private const val PREFS = "melox_last_playback"
+
+    fun save(context: Context, item: MediaItem, metadata: MediaMetadata, extras: android.os.Bundle?) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString("media_id", item.mediaId)
+            .putString("title", metadata.title?.toString().orEmpty())
+            .putString("artist", metadata.artist?.toString().orEmpty())
+            .putString("album", metadata.albumTitle?.toString().orEmpty())
+            .putString("artwork_url", metadata.artworkUri?.toString() ?: extras?.getString(PlaybackTrackIdentity.ArtworkExtra))
+            .putString("uri", item.localConfiguration?.uri?.toString())
+            .apply()
+    }
+
+    fun read(context: Context): MeloXLastPlayback? {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val mediaId = prefs.getString("media_id", null)?.takeIf(String::isNotBlank) ?: return null
+        return MeloXLastPlayback(
+            mediaId = mediaId,
+            title = prefs.getString("title", "").orEmpty(),
+            artist = prefs.getString("artist", "").orEmpty(),
+            album = prefs.getString("album", "").orEmpty(),
+            artworkUrl = prefs.getString("artwork_url", null),
+            uri = prefs.getString("uri", null),
+        )
+    }
 }
 
     fun setSleepTimer(minutes: Int) {

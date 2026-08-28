@@ -80,6 +80,7 @@ import com.lladlam.melox.ui.glass.publicdemo.LiquidDragAnimation
 import com.lladlam.melox.ui.glass.publicdemo.PublicDampedDragAnimation
 import androidx.compose.ui.draw.drawBehind
 import com.lladlam.melox.ui.theme.isMeloXDarkTheme
+import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 
 @Composable
 fun MeloXGlassButton(
@@ -137,8 +138,8 @@ fun MeloXGlassButton(
                 role = Role.Button,
                 onClick = onClick,
             )
-            .then(if (enabled) interactiveHighlight.modifier else Modifier)
-            .then(if (enabled) interactiveHighlight.gestureModifier else Modifier)
+             .then(if (enabled && !MeloXSettingsRuntime.frostedGlassEnabled) interactiveHighlight.modifier else Modifier)
+             .then(if (enabled && !MeloXSettingsRuntime.frostedGlassEnabled) interactiveHighlight.gestureModifier else Modifier)
             .padding(contentPadding),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,

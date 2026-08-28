@@ -2887,7 +2887,7 @@ private fun AboutSettings(context: android.content.Context) {
                 runCatching {
                     MeloXLogExporter.exportRecentLogs(context, uri)
                 }.onSuccess { result ->
-                    updateStatus = "已导出最近 10 分钟日志（${result.lineCount} 行）"
+                    updateStatus = "已导出 MeloX 当前进程日志（${result.lineCount} 行）"
                 }.onFailure { error ->
                     updateStatus = error.message ?: "日志导出失败"
                 }
@@ -3057,7 +3057,7 @@ private fun AboutSettings(context: android.content.Context) {
         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://ifdian.net/a/lladlam"))) }
     }
     Spacer(Modifier.height(10.dp))
-    SettingsActionButton(if (exportingLogs) "正在导出日志…" else "导出10分钟内的日志") {
+    SettingsActionButton(if (exportingLogs) "正在导出日志…" else "导出 MeloX 全部日志") {
         if (!exportingLogs) showLogExportInfo = true
     }
 
@@ -3067,9 +3067,9 @@ private fun AboutSettings(context: android.content.Context) {
             visible = true,
             onDismiss = { showLogExportInfo = false },
         ) {
-            Text("导出最近 10 分钟日志", style = MaterialTheme.typography.titleMedium)
+            Text("导出 MeloX 全部日志", style = MaterialTheme.typography.titleMedium)
             Text(
-                "导出前请确认以下信息。日志只来自 MeloX 当前进程，并会附带这些设备与登录状态信息。",
+                "导出当前 MeloX 进程可读取的全部日志，不跳转到外部日志页面；并会附带这些设备与登录状态信息。",
                 modifier = Modifier.padding(top = 8.dp),
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = .64f),
                 fontSize = 13.sp,

@@ -162,11 +162,13 @@ object NeteaseLyricParser {
 
         val translated = selectSecondary(translatedYrc, translatedLrc)
         val romanized = selectSecondary(romanizedYrc, romanizedLrc)
+        val alignedTranslations = alignSecondary(primary, translated)
+        val alignedRomanizations = alignSecondary(primary, romanized)
 
         return LyricsDocument(
-            primary.map { line ->
-                val translationLine = nearestSecondary(line, translated)
-                val romanizationLine = nearestSecondary(line, romanized)
+            primary.mapIndexed { index, line ->
+                val translationLine = alignedTranslations.getOrNull(index)
+                val romanizationLine = alignedRomanizations.getOrNull(index)
                 line.copy(
                     translation = annotationText(line, translationLine),
                     romanization = annotationText(line, romanizationLine),
@@ -284,18 +286,63 @@ object NeteaseLyricParser {
         return if (synchronized.isNotEmpty()) synchronized else parseLrc(lrc)
     }
 
-    private fun nearestSecondary(
-        target: LyricLine,
+    internal fun alignSecondary(
+        primary: List<LyricLine>,
         candidates: List<LyricLine>,
-    ): LyricLine? {
-        if (candidates.isEmpty()) return null
-        val candidate = candidates.minByOrNull { kotlin.math.abs(it.timeMs - target.timeMs) }
-            ?: return null
-        if (kotlin.math.abs(candidate.timeMs - target.timeMs) > ANNOTATION_TOLERANCE_MS) {
-            return null
+    ): List<LyricLine?> {
+        if (primary.isEmpty() || candidates.isEmpty()) return List(primary.size) { null }
+        val offset = estimateSecondaryOffset(primary, candidates)
+        val adjusted = candidates.map { it.shiftBy(-offset) }
+        val result = MutableList<LyricLine?>(primary.size) { null }
+        var cursor = 0
+        for ((index, target) in primary.withIndex()) {
+            while (cursor + 1 < adjusted.size &&
+                kotlin.math.abs(adjusted[cursor + 1].timeMs - target.timeMs) <=
+                kotlin.math.abs(adjusted[cursor].timeMs - target.timeMs)
+            ) {
+                cursor++
+            }
+            val candidate = adjusted[cursor]
+            if (kotlin.math.abs(candidate.timeMs - target.timeMs) <= ANNOTATION_TOLERANCE_MS) {
+                result[index] = candidate
+            }
+            if (cursor < adjusted.lastIndex) cursor++
         }
-        return candidate
+        return result
     }
+
+    private fun estimateSecondaryOffset(
+        primary: List<LyricLine>,
+        candidates: List<LyricLine>,
+    ): Long {
+        val differences = if (primary.size == candidates.size) {
+            primary.indices.map { candidates[it].timeMs - primary[it].timeMs }
+        } else {
+            primary.mapNotNull { target ->
+                candidates.minByOrNull { kotlin.math.abs(it.timeMs - target.timeMs) }
+                    ?.let { candidate ->
+                        (candidate.timeMs - target.timeMs).takeIf { kotlin.math.abs(it) <= 5_000L }
+                    }
+            }
+        }.sorted()
+        return differences.getOrNull(differences.size / 2) ?: 0L
+    }
+
+    private fun LyricLine.shiftBy(deltaMs: Long): LyricLine = copy(
+        timeMs = timeMs + deltaMs,
+        syllables = syllables.map { it.copy(startTimeMs = it.startTimeMs + deltaMs, endTimeMs = it.endTimeMs + deltaMs) },
+        romanizationSyllables = romanizationSyllables.map {
+            it.copy(startTimeMs = it.startTimeMs + deltaMs, endTimeMs = it.endTimeMs + deltaMs)
+        },
+        accompaniment = accompaniment.map { accompaniment ->
+            accompaniment.copy(
+                timeMs = accompaniment.timeMs + deltaMs,
+                syllables = accompaniment.syllables.map {
+                    it.copy(startTimeMs = it.startTimeMs + deltaMs, endTimeMs = it.endTimeMs + deltaMs)
+                },
+            )
+        },
+    )
 
     private fun annotationText(target: LyricLine, candidate: LyricLine?): String? {
         val text = candidate?.text?.trim().orEmpty()

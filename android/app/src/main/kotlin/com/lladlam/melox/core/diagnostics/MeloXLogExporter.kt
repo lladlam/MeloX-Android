@@ -6,7 +6,6 @@ import android.os.Build
 import com.lladlam.melox.core.music.provider.ProviderAccountManager
 import java.io.IOException
 import java.util.concurrent.TimeUnit
-import kotlin.math.floor
 
 data class MeloXLogExportResult(
     val lineCount: Int,
@@ -20,7 +19,6 @@ data class MeloXLogDeviceInfo(
 )
 
 object MeloXLogExporter {
-    private const val WindowSeconds = 10 * 60L
     private const val CommandTimeoutSeconds = 12L
 
     fun collectDeviceInfo(context: Context): MeloXLogDeviceInfo {
@@ -40,20 +38,30 @@ object MeloXLogExporter {
         uri: Uri,
         deviceInfo: MeloXLogDeviceInfo = collectDeviceInfo(context),
     ): MeloXLogExportResult {
-        val nowSeconds = System.currentTimeMillis() / 1_000L
-        val cutoffSeconds = nowSeconds - WindowSeconds
-        val logcat = readProcessLogs(cutoffSeconds)
+        val logcat = readProcessLogs()
+        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
         val content = buildString {
             appendLine("MeloX Android 日志")
-            appendLine("时间范围：最近 10 分钟")
+            appendLine("日志范围：当前 MeloX 进程可读取的全部日志")
             appendLine("导出时间：${System.currentTimeMillis()}")
             appendLine("进程：${android.os.Process.myPid()}")
+            appendLine("应用包名：${context.packageName}")
+            val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                packageInfo.longVersionCode
+            } else {
+                @Suppress("DEPRECATION") packageInfo.versionCode.toLong()
+            }
+            appendLine("应用版本：${packageInfo.versionName}（$versionCode）")
+            appendLine("构建类型：${if (com.lladlam.melox.BuildConfig.DEBUG) "Debug" else "Release"}")
             appendLine("Android 版本：${deviceInfo.androidVersion}")
             appendLine("手机型号：${deviceInfo.phoneModel}")
             appendLine("系统版本：${deviceInfo.systemVersion}")
             appendLine("已登录音乐源：${deviceInfo.loggedMusicSources.takeIf { it.isNotEmpty() }?.joinToString("、") ?: "无"}")
+            appendLine("应用日志条数：${logcat.lineCount}")
             appendLine()
-            append(logcat.text)
+            appendLine("以下为当前 MeloX 进程日志，不包含其他应用进程日志：")
+            appendLine()
+            append(logcat.text.ifBlank { "（当前没有可读取的应用日志）\n" })
         }
 
         context.contentResolver.openOutputStream(uri)?.use { output ->
@@ -63,7 +71,7 @@ object MeloXLogExporter {
         return MeloXLogExportResult(logcat.lineCount)
     }
 
-    private fun readProcessLogs(cutoffSeconds: Long): ProcessLogResult {
+    private fun readProcessLogs(): ProcessLogResult {
         val process = runCatching {
             ProcessBuilder(
                 "logcat",
@@ -85,20 +93,12 @@ object MeloXLogExporter {
             throw IOException("读取应用日志失败（退出码 ${process.exitValue()}）")
         }
 
-        val lines = output.lineSequence()
-            .filter { line -> lineEpochSeconds(line)?.let { it >= cutoffSeconds } == true }
-            .toList()
+        val lines = output.lineSequence().filter(String::isNotBlank).toList()
         return ProcessLogResult(
             text = lines.joinToString(separator = "\n", postfix = if (lines.isEmpty()) "" else "\n"),
             lineCount = lines.size,
         )
     }
-
-    private fun lineEpochSeconds(line: String): Long? = line
-        .substringBefore(' ')
-        .toDoubleOrNull()
-        ?.let(::floor)
-        ?.toLong()
 
     private fun detectSystemVersion(): String {
         val hyperOsName = systemProperty("ro.mi.os.version.name")

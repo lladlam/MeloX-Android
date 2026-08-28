@@ -107,6 +107,7 @@ import com.lladlam.melox.core.lyrics.withPseudoTiming
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.MeloXAppVisibility
 import com.lladlam.melox.ui.settings.MeloXLyricsStyle
+import com.lladlam.melox.ui.theme.LocalMeloXFontFamily
 import com.lladlam.melox.ui.settings.MeloXLyricsRenderingQuality
 import com.lladlam.melox.ui.settings.MeloXLyricAnnotationDisplayMode
 import com.lladlam.melox.ui.settings.MeloXLyricsGroupingMode
@@ -1560,6 +1561,7 @@ private fun MeloXGlyphLyricText(
         val widthPx = with(density) { maxWidth.roundToPx().coerceAtLeast(1) }
         val style = TextStyle(
             color = Color.White,
+            fontFamily = LocalMeloXFontFamily.current,
             fontSize = (UpstreamLyrics.FONT_SIZE_SP * fontScale).sp,
             lineHeight = (UpstreamLyrics.LINE_HEIGHT_SP * fontScale).sp,
             fontWeight = MeloXSettingsRuntime.lyricFontWeight.composeWeight,

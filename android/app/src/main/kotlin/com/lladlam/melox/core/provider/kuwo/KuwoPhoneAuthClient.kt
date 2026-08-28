@@ -3,7 +3,6 @@ package com.lladlam.melox.core.provider.kuwo
 import com.lladlam.melox.core.network.MeloXHttpClient
 import java.io.IOException
 import java.net.URLEncoder
-import java.nio.charset.Charset
 import java.security.MessageDigest
 import java.util.Base64
 import java.util.UUID
@@ -37,6 +36,8 @@ class KuwoPhoneAuthClient(
     private val httpClient: OkHttpClient = MeloXHttpClient.shared,
 ) {
     private val smsTimestamps = mutableMapOf<String, String>()
+    // Kuwo reuses this eight-byte key for both requests and response decryption.
+    private val sessionSx = (System.currentTimeMillis().toString() + "12345678").take(8)
 
 
     /** 向指定手机号发送短信验证码。 */
@@ -53,7 +54,8 @@ class KuwoPhoneAuthClient(
         }
         val response = get(SEND_SMS_PATH, body)
         val code = response.optInt("code", -1)
-        if (code != 200) {
+        val result = response.optString("ret", response.optString("result"))
+        if (code != 200 && !result.equals("succ", ignoreCase = true)) {
             throw IOException(response.optString("msg").ifBlank { "验证码发送失败（$code）" })
         }
         synchronized(smsTimestamps) { smsTimestamps[phone] = tm }
@@ -91,11 +93,39 @@ class KuwoPhoneAuthClient(
                 throw IOException("酷我登录请求失败：HTTP ${response.code}")
             }
             val bytes = response.body.bytes()
-            // Kuwo auth endpoints historically return GBK/GB2312 for some fields.
-            val text = bytes.toString(Charsets.UTF_8)
-            runCatching { JSONObject(text) }
-                .recoverCatching { JSONObject(bytes.toString(Charset.forName("GBK"))) }
-                .getOrElse { throw IOException("酷我登录返回了无法解析的数据", it) }
+            decodeResponse(bytes.toString(Charsets.UTF_8))
+        }
+    }
+
+    private fun decodeResponse(raw: String): JSONObject {
+        val text = raw.trim()
+        runCatching { JSONObject(text) }.getOrNull()?.let { return it }
+
+        val decrypted = runCatching {
+            val encoded = text.removeSurrounding("\"")
+            val ciphertext = Base64.getDecoder().decode(encoded)
+            val cipher = Cipher.getInstance("DES/ECB/NoPadding")
+            cipher.init(
+                Cipher.DECRYPT_MODE,
+                SecretKeySpec(sessionSx.toByteArray(Charsets.UTF_8), "DES"),
+            )
+            cipher.doFinal(ciphertext).toString(Charsets.UTF_8).trimEnd('\u0000')
+        }.getOrElse { throw IOException("酷我登录返回了无法解析的数据", it) }
+
+        runCatching { JSONObject(decrypted) }.getOrNull()?.let { return it }
+
+        val fields = decrypted
+            .split('&', '\n', '\r', ';')
+            .mapNotNull { entry ->
+                val separator = entry.indexOf('=')
+                if (separator <= 0) return@mapNotNull null
+                entry.substring(0, separator).trim() to entry.substring(separator + 1).trim()
+            }
+        if (fields.isEmpty()) throw IOException("酷我登录返回了无法解析的数据")
+        return JSONObject().apply {
+            fields.forEach { (key, value) ->
+                put(key, runCatching { JSONObject(value) }.getOrDefault(value))
+            }
         }
     }
 
@@ -117,31 +147,35 @@ class KuwoPhoneAuthClient(
         if (includeUser) append("&user=")
         append("&dev_name=Android")
         append("&devType=Pixel")
-        append("&sx=0")
+        append("&sx=").append(sessionSx)
         append("&from=android")
         append("&devResolution=1080*1920")
     }
 
-    private fun parseLoginResponse(response: JSONObject): KuwoSession {
-        val code = response.optInt("code", response.optInt("status", 200))
-        val success = code == 200 || code == 0 || response.optBoolean("success", false)
-        if (!success) {
-            throw IOException(response.stringValue("msg") ?: response.stringValue("message") ?: "酷我登录失败（$code）")
+    internal fun parseLoginResponse(response: JSONObject): KuwoSession {
+        val success = response.optBoolean("success", false)
+        val status = response.optString("status")
+        if (!success || status != "-1") {
+            throw IOException(
+                response.stringValue("msg") ?: response.stringValue("message")
+                    ?: "酷我登录失败（status=$status）",
+            )
         }
 
-        val data = response.optJSONObject("data")
-            ?: response.optJSONObject("userInfo")
-            ?: response
-        val token = data.stringValue("loginSid")
+        val data = response.optJSONObject("userInfo")
+            ?: response.optString("userInfo").takeIf(String::isNotBlank)?.let { value ->
+                runCatching { JSONObject(value) }.getOrNull()
+            }
+            ?: throw IOException("登录响应缺少 userInfo")
+        val token = data.stringValue("sessionId")
             ?: data.stringValue("sid")
-            ?: data.stringValue("token")
-            ?: throw IOException("登录响应缺少 token")
-        val userId = data.stringValue("loginUid")
-            ?: data.stringValue("uid")
+            ?: data.stringValue("loginSid")
+            ?: throw IOException("登录响应缺少 sessionId/sid")
+        val userId = data.stringValue("uid")
+            ?: data.stringValue("loginUid")
             ?: data.stringValue("userid")
             ?: data.stringValue("user_id")
-            ?: data.stringValue("id")
-            ?: throw IOException("登录响应缺少用户标识")
+            ?: throw IOException("登录响应缺少 uid")
         val nickname = data.stringValue("nickname")
             ?: data.stringValue("uname")
             ?: ""

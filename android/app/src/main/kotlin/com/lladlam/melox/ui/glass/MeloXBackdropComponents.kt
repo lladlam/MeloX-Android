@@ -32,6 +32,7 @@ import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.lladlam.melox.ui.theme.isMeloXDarkTheme
+import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.glass.publicdemo.PublicInteractiveHighlight
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
@@ -94,8 +95,8 @@ fun Modifier.meloXLiquidButton(
         ),
         pressProgress = if (enabled) interactiveHighlight.pressProgress else 0f,
         dragOffset = if (enabled) interactiveHighlight.offset else Offset.Zero,
-    ).then(if (enabled) interactiveHighlight.modifier else Modifier)
-        .then(if (enabled) interactiveHighlight.gestureModifier else Modifier)
+    ).then(if (enabled && !MeloXSettingsRuntime.frostedGlassEnabled) interactiveHighlight.modifier else Modifier)
+        .then(if (enabled && !MeloXSettingsRuntime.frostedGlassEnabled) interactiveHighlight.gestureModifier else Modifier)
 }
 
 /** Applies the same optical press/drag transform to content placed over liquid glass. */
@@ -148,74 +149,85 @@ fun Modifier.meloXGlassSurface(
         }
         return background(stableSurface, shape)
     }
-    return this
-        .drawBackdrop(
+    if (MeloXSettingsRuntime.frostedGlassEnabled) {
+        return drawBackdrop(
             backdrop = backdrop,
             shape = { shape },
-            effects = {
-                vibrancy()
-                blur(spec.blurRadius.toPx())
-                if (spec.useLens) {
-                    lens(
-                        spec.lensRadius.toPx(),
-                        spec.refractionHeight.toPx(),
-                        depthEffect = pressProgress > 0.01f,
-                        chromaticAberration = true,
-                    )
-                }
-            },
-            highlight = {
-                Highlight.Default.copy(
-                    alpha = ((if (dark) 0.32f else 0.48f) + 0.30f * pressProgress)
-                        .coerceAtMost(1f),
-                )
-            },
-            shadow = {
-                Shadow(
-                    radius = 24.dp,
-                    color = Color.Black.copy(alpha = 0.12f),
-                    alpha = (0.08f + 0.22f * pressProgress) * if (enabled) 1f else 0.35f,
-                )
-            },
-            innerShadow = {
-                InnerShadow(
-                    radius = 4.dp + 8.dp * pressProgress,
-                    color = Color.Black.copy(alpha = 0.12f),
-                    alpha = (0.10f + 0.30f * pressProgress) * if (enabled) 1f else 0.35f,
-                )
-            },
-            layerBlock = {
-                val controlHeight = size.height.coerceAtLeast(1f)
-                val scale = 1f + (4.dp.toPx() / controlHeight) * pressProgress
-                val maxOffset = size.minDimension.coerceAtLeast(1f)
-                translationX = maxOffset * tanh(0.05f * dragOffset.x / maxOffset)
-                translationY = maxOffset * tanh(0.05f * dragOffset.y / maxOffset)
-                val maxDragScale = 4.dp.toPx() / controlHeight
-                val angle = atan2(dragOffset.y, dragOffset.x)
-                scaleX = scale + maxDragScale * abs(cos(angle) * dragOffset.x / size.maxDimension.coerceAtLeast(1f)) *
-                    (size.width / controlHeight).fastCoerceAtMost(1f)
-                scaleY = scale + maxDragScale * abs(sin(angle) * dragOffset.y / size.maxDimension.coerceAtLeast(1f)) *
-                    (controlHeight / size.width.coerceAtLeast(1f)).fastCoerceAtMost(1f)
-            },
+            effects = { blur(spec.blurRadius.toPx()) },
+            highlight = null,
+            shadow = null,
+            innerShadow = null,
             onDrawSurface = {
-                // iOS-style controls keep a faint milky edge in addition to
-                // the sampled/refraction layer, especially over album art.
-                drawRect(
-                    Color.White.copy(alpha = if (dark) 0.045f else 0.12f),
-                    blendMode = BlendMode.Screen,
-                )
-                if (pressProgress > 0.001f) {
-                    drawRect(Color.White.copy(alpha = 0.08f * pressProgress), blendMode = BlendMode.Plus)
-                }
-                if (tint != Color.Unspecified && tint.alpha > 0.001f) {
-                    drawRect(tint.copy(alpha = tint.alpha * alphaScale), blendMode = BlendMode.Hue)
-                    drawRect(tint.copy(alpha = tint.alpha * 0.75f * alphaScale))
-                }
-                if (surfaceColor != Color.Unspecified) {
-                    drawRect(surfaceColor.copy(alpha = surfaceColor.alpha * alphaScale))
-                }
+                if (tint != Color.Unspecified) drawRect(tint.copy(alpha = tint.alpha * alphaScale))
+                if (surfaceColor != Color.Unspecified) drawRect(surfaceColor.copy(alpha = surfaceColor.alpha * alphaScale))
             },
         )
+    }
+    return this.drawBackdrop(
+        backdrop = backdrop,
+        shape = { shape },
+        effects = {
+            vibrancy()
+            blur(spec.blurRadius.toPx())
+            if (spec.useLens) {
+                lens(
+                    spec.lensRadius.toPx(),
+                    spec.refractionHeight.toPx(),
+                    depthEffect = pressProgress > 0.01f,
+                    chromaticAberration = true,
+                )
+            }
+        },
+        highlight = {
+            Highlight.Default.copy(
+                alpha = ((if (dark) 0.32f else 0.48f) + 0.30f * pressProgress)
+                    .coerceAtMost(1f),
+            )
+        },
+        shadow = {
+            Shadow(
+                radius = 24.dp,
+                color = Color.Black.copy(alpha = 0.12f),
+                alpha = (0.08f + 0.22f * pressProgress) * if (enabled) 1f else 0.35f,
+            )
+        },
+        innerShadow = {
+            InnerShadow(
+                radius = 4.dp + 8.dp * pressProgress,
+                color = Color.Black.copy(alpha = 0.12f),
+                alpha = (0.10f + 0.30f * pressProgress) * if (enabled) 1f else 0.35f,
+            )
+        },
+        layerBlock = {
+            val controlHeight = size.height.coerceAtLeast(1f)
+            val scale = 1f + (4.dp.toPx() / controlHeight) * pressProgress
+            val maxOffset = size.minDimension.coerceAtLeast(1f)
+            translationX = maxOffset * tanh(0.05f * dragOffset.x / maxOffset)
+            translationY = maxOffset * tanh(0.05f * dragOffset.y / maxOffset)
+            val maxDragScale = 4.dp.toPx() / controlHeight
+            val angle = atan2(dragOffset.y, dragOffset.x)
+            scaleX = scale + maxDragScale * abs(cos(angle) * dragOffset.x / size.maxDimension.coerceAtLeast(1f)) *
+                (size.width / controlHeight).fastCoerceAtMost(1f)
+            scaleY = scale + maxDragScale * abs(sin(angle) * dragOffset.y / size.maxDimension.coerceAtLeast(1f)) *
+                (controlHeight / size.width.coerceAtLeast(1f)).fastCoerceAtMost(1f)
+        },
+        onDrawSurface = {
+            drawRect(
+                Color.White.copy(alpha = if (dark) 0.045f else 0.12f),
+                blendMode = BlendMode.Screen,
+            )
+            if (pressProgress > 0.001f) {
+                drawRect(Color.White.copy(alpha = 0.08f * pressProgress), blendMode = BlendMode.Plus)
+            }
+            if (tint != Color.Unspecified && tint.alpha > 0.001f) {
+                drawRect(tint.copy(alpha = tint.alpha * alphaScale), blendMode = BlendMode.Hue)
+                drawRect(tint.copy(alpha = tint.alpha * 0.75f * alphaScale))
+            }
+            if (surfaceColor != Color.Unspecified) {
+                drawRect(surfaceColor.copy(alpha = surfaceColor.alpha * alphaScale))
+            }
+        },
+    )
 }
 
 /**
@@ -277,6 +289,17 @@ fun Modifier.meloXLiquidBottomBar(
         val stableSurface = surfaceColor.compositeOver(MaterialTheme.colorScheme.background)
         return background(stableSurface, shape)
     }
+    if (MeloXSettingsRuntime.frostedGlassEnabled) {
+        return drawBackdrop(
+            backdrop = backdrop,
+            shape = { shape },
+            effects = { blur(8.dp.toPx()) },
+            highlight = null,
+            shadow = null,
+            innerShadow = null,
+            onDrawSurface = { drawRect(surfaceColor) },
+        )
+    }
     val dark = isMeloXDarkTheme()
     return drawBackdrop(
         backdrop = backdrop,
@@ -326,6 +349,17 @@ fun Modifier.meloXLiquidTabSelection(
     val backdrop = LocalMeloXBackdrop.current
     if (backdrop == null) {
         return background(tint.copy(alpha = maxOf(tint.alpha, 0.36f)), shape)
+    }
+    if (MeloXSettingsRuntime.frostedGlassEnabled) {
+        return drawBackdrop(
+            backdrop = backdrop,
+            shape = { shape },
+            effects = { blur(8.dp.toPx()) },
+            highlight = null,
+            shadow = null,
+            innerShadow = null,
+            onDrawSurface = { drawRect(tint) },
+        )
     }
     // Official LiquidBottomTabs records the panel into a second Backdrop and
     // samples the combined page + panel scene for the moving selection.

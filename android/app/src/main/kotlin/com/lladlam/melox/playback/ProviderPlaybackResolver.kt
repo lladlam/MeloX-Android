@@ -1,6 +1,7 @@
 package com.lladlam.melox.playback
 
 import android.net.Uri
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
@@ -32,6 +33,9 @@ class ProviderPlaybackResolver(
     private val authKeyProvider: (MusicSource) -> String = { "" },
     private val providerPlaybackEnabled: (MusicSource) -> Boolean = { true },
     private val chkszPlayback: ChkszPlaybackResolver? = null,
+    private val lxUserPlayback: LxUserPlaybackResolver? = null,
+    private val thirdPartySourcesEnabled: () -> Boolean = { true },
+    private val thirdPartyOnlyForMembership: () -> Boolean = { false },
 ) : ResolvingDataSource.Resolver {
     private data class ResolveKey(
         val requestUri: String,
@@ -100,20 +104,44 @@ class ProviderPlaybackResolver(
             val id = MusicResourceId(source, resourceValue)
             val track = MusicTrack(
                 id = id,
-                title = uri.getQueryParameter(SpotifyTitleQuery).orEmpty(),
-                artists = uri.getQueryParameter(SpotifyArtistsQuery).orEmpty().split('\u001f')
+                title = uri.getQueryParameter(TrackTitleQuery).orEmpty(),
+                artists = uri.getQueryParameter(TrackArtistsQuery).orEmpty().split('\u001f')
                     .filter(String::isNotBlank)
                     .map { com.lladlam.melox.core.music.model.MusicArtistRef(name = it) },
-                durationMs = uri.getQueryParameter(SpotifyDurationQuery)?.toLongOrNull(),
+                durationMs = uri.getQueryParameter(TrackDurationQuery)?.toLongOrNull(),
                 providerMetadata = providerMetadata(uri, id),
             )
-            val thirdParty = runCatching { chkszPlayback?.resolve(track, quality) }.getOrNull()
+            Log.d(TAG, "resolve detail source=${source.storageValue} id=${resourceValue.take(8)} title=${track.title.take(40)} " +
+                "artists=${track.artistText.take(60)} durationMs=${track.durationMs} metadata=${track.providerMetadata.javaClass.simpleName}")
+            Log.i(TAG, "Resolve start source=${source.storageValue} quality=${quality.name} thirdParty=${thirdPartySourcesEnabled()}")
+            val lx = if (thirdPartySourcesEnabled() && !thirdPartyOnlyForMembership()) {
+                runCatching { lxUserPlayback?.resolve(track, quality) }
+                    .onFailure { Log.w(TAG, "LX stage failed source=${source.storageValue} error=${it.javaClass.simpleName}") }
+                    .getOrNull()
+            } else null
+            if (lx != null) {
+                Log.i(TAG, "Resolve success source=${source.storageValue} stage=lx script=${lx.sourceId}")
+                val result = ResolvedRequest(Uri.parse(lx.url), lx.requestHeaders)
+                synchronized(cacheLock) { resolvedUris[key] = result }
+                pending.complete(result)
+                return result
+            }
+            val thirdParty = if (thirdPartySourcesEnabled() && !thirdPartyOnlyForMembership()) {
+                runCatching { chkszPlayback?.resolve(track, quality) }
+                    .onFailure { Log.w(TAG, "CHKSZ stage failed source=${source.storageValue} error=${it.javaClass.simpleName}") }
+                    .getOrNull()
+            } else null
             if (thirdParty != null) {
+                Log.i(TAG, "Resolve success source=${source.storageValue} stage=chksz")
                 val result = ResolvedRequest(Uri.parse(thirdParty.url), emptyMap())
                 synchronized(cacheLock) { resolvedUris[key] = result }
                 pending.complete(result)
                 return result
             }
+            Log.i(
+                TAG,
+                "Resolve fallback source=${source.storageValue} stage=provider chksz=${chkszPlayback?.cacheIdentity() ?: "unavailable"}",
+            )
             val provider = providers.require(source)
             val playback = provider as? PlaybackCapability
                 ?: throw IOException("${provider.displayName} 当前没有实现播放能力")
@@ -131,7 +159,14 @@ class ProviderPlaybackResolver(
                 }
                 is PlaybackResolution.Preview -> ResolvedRequest(Uri.parse(resolution.url), emptyMap())
                 PlaybackResolution.LoginRequired -> throw IOException("${provider.displayName} 需要登录后播放")
-                PlaybackResolution.SubscriptionRequired -> throw IOException("${provider.displayName} 当前歌曲需要对应会员权益")
+                PlaybackResolution.SubscriptionRequired -> {
+                    if (thirdPartySourcesEnabled()) {
+                        resolveThirdParty(track, quality, source)
+                            ?: throw IOException("${provider.displayName} 当前歌曲需要对应会员权益")
+                    } else {
+                        throw IOException("${provider.displayName} 当前歌曲需要对应会员权益")
+                    }
+                }
                 PlaybackResolution.RegionRestricted -> throw IOException("${provider.displayName} 当前地区不可播放")
                 PlaybackResolution.CopyrightRestricted -> throw IOException("${provider.displayName} 当前版权不可播放")
                 is PlaybackResolution.Unavailable -> throw IOException(
@@ -147,6 +182,21 @@ class ProviderPlaybackResolver(
         } finally {
             inFlight.remove(key, pending)
         }
+    }
+
+    private fun resolveThirdParty(
+        track: MusicTrack,
+        quality: AudioQualityTier,
+        source: MusicSource,
+    ): ResolvedRequest? {
+        val lx = runCatching { lxUserPlayback?.resolve(track, quality) }
+            .onFailure { Log.w(TAG, "LX membership fallback failed source=${source.storageValue}", it) }
+            .getOrNull()
+        if (lx != null) return ResolvedRequest(Uri.parse(lx.url), lx.requestHeaders)
+        val chksz = runCatching { chkszPlayback?.resolve(track, quality) }
+            .onFailure { Log.w(TAG, "CHKSZ membership fallback failed source=${source.storageValue}", it) }
+            .getOrNull()
+        return chksz?.let { ResolvedRequest(Uri.parse(it.url), emptyMap()) }
     }
 
     private fun cached(key: ResolveKey): ResolvedRequest? = synchronized(cacheLock) {
@@ -224,6 +274,10 @@ class ProviderPlaybackResolver(
         private const val SpotifyArtistsQuery = "spotifyArtists"
         private const val SpotifyDurationQuery = "spotifyDurationMs"
         private const val SpotifyIsrcQuery = "spotifyIsrc"
+        private const val TrackTitleQuery = "trackTitle"
+        private const val TrackArtistsQuery = "trackArtists"
+        private const val TrackDurationQuery = "trackDurationMs"
+        private const val TAG = "MeloXThirdParty"
         private const val MAX_RESOLVED_URIS = 96
 
         fun isProviderTrackUri(uri: Uri): Boolean =
@@ -238,6 +292,9 @@ class ProviderPlaybackResolver(
             .appendPath(track.id.source.storageValue)
             .appendPath(track.id.value)
             .appendQueryParameter(QualityQuery, quality.name)
+            .appendQueryParameter(TrackTitleQuery, track.title)
+            .appendQueryParameter(TrackArtistsQuery, track.artists.joinToString("\u001f") { it.name })
+            .apply { track.durationMs?.let { appendQueryParameter(TrackDurationQuery, it.toString()) } }
             .apply {
                 when (val metadata = track.providerMetadata) {
                     is ProviderTrackMetadata.QQMusic -> {

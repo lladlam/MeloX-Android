@@ -50,6 +50,7 @@ import com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigPolicy
 import com.lladlam.melox.core.music.provider.MeloXMusicProviders
 import com.lladlam.melox.core.music.provider.PlaylistCapability
 import com.lladlam.melox.core.music.provider.UserLibraryCapability
+import com.lladlam.melox.core.music.provider.ThirdPartyMusicSourceConsentStore
 import com.lladlam.melox.platform.xiaomi.HyperOsFocusBridge
 import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
@@ -121,6 +122,7 @@ class MeloXPlaybackService : MediaSessionService() {
     private var mixPlan = MeloXAutoMixPlan(0L, 0L)
     private val mixEqualizerEnvelope = MeloXAutoMixEqualizerEnvelope()
     private var lastMaintenanceRealtimeMs = 0L
+    private var appliedAudioFocusPolicy: Boolean? = null
 
     private val audioAttributes = AudioAttributes.Builder()
         .setUsage(C.USAGE_MEDIA)
@@ -276,6 +278,7 @@ class MeloXPlaybackService : MediaSessionService() {
         override fun run() {
             val active = player
             if (active != null) {
+                applyAudioFocusPolicy(active)
                 active.currentMediaItem?.mediaId?.toLongOrNull()?.let { current -> if (current == historySongId) historyPositionMs = active.currentPosition.coerceAtLeast(0L) }
                 val uiTransitionActive = MeloXPlayerTransitionState.isActive
                 runCatching {
@@ -398,6 +401,8 @@ class MeloXPlaybackService : MediaSessionService() {
             providerPlaybackEnabled = { source ->
                 MeloXRemoteConfigPolicy.providerPlaybackEnabled(this@MeloXPlaybackService, source)
             },
+            thirdPartySourcesEnabled = { ThirdPartyMusicSourceConsentStore.enabled(this@MeloXPlaybackService) },
+            thirdPartyOnlyForMembership = { ThirdPartyMusicSourceConsentStore.membershipFallbackOnly(this@MeloXPlaybackService) },
         )
         autoMixAnalyzer = MeloXAutoMixAudioAnalyzer(this)
         val upstream = DefaultDataSource.Factory(this, httpFactory)
@@ -418,8 +423,8 @@ class MeloXPlaybackService : MediaSessionService() {
         )
         mediaSourceFactory = DefaultMediaSourceFactory(this).setDataSourceFactory(cached)
 
-        val active = buildPlayer(managesAudioFocus = true)
-        player = active
+        val active = buildPlayer(managesAudioFocus = shouldManageAudioFocus())
+            player = active
         val sessionActivityIntent = Intent(this, MainActivity::class.java).apply {
             action = MainActivity.ACTION_OPEN_NOW_PLAYING
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -567,6 +572,17 @@ class MeloXPlaybackService : MediaSessionService() {
                 setHandleAudioBecomingNoisy(managesAudioFocus)
                 if (observesSession) addListener(playerListener)
             }
+
+    private fun shouldManageAudioFocus(): Boolean =
+        !MeloXSettingsPreferences.boolean(this, "playback_allow_other_apps", false)
+
+    private fun applyAudioFocusPolicy(active: ExoPlayer) {
+        val managesAudioFocus = shouldManageAudioFocus()
+        if (appliedAudioFocusPolicy == managesAudioFocus) return
+        active.setAudioAttributes(audioAttributes, managesAudioFocus)
+        active.setHandleAudioBecomingNoisy(managesAudioFocus)
+        appliedAudioFocusPolicy = managesAudioFocus
+    }
 
     private fun maybePrepareAutoplay(active: ExoPlayer) {
         if (!MeloXPlaybackModePreferences.autoplay(this)) return
@@ -1223,8 +1239,10 @@ class MeloXPlaybackService : MediaSessionService() {
         old.volume = 0f
         incoming.volume = mixBaseVolume
         incoming.setPlaybackSpeed(1f)
-        incoming.setAudioAttributes(audioAttributes, true)
-        incoming.setHandleAudioBecomingNoisy(true)
+        val managesAudioFocus = shouldManageAudioFocus()
+        incoming.setAudioAttributes(audioAttributes, managesAudioFocus)
+        incoming.setHandleAudioBecomingNoisy(managesAudioFocus)
+        appliedAudioFocusPolicy = managesAudioFocus
         incoming.addListener(playerListener)
         val session = mediaSession ?: error("MediaSession unavailable during AutoMix handoff")
         if (session.player !== incoming) session.setPlayer(incoming)
