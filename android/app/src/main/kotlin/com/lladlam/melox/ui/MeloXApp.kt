@@ -20,6 +20,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.SeekableTransitionState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -136,7 +137,7 @@ import com.lladlam.melox.ui.provider.ProviderHomeScreen
 import com.lladlam.melox.ui.provider.ProviderLibraryScreen
 import com.lladlam.melox.ui.provider.ProviderSearchScreen
 import com.lladlam.melox.ui.provider.ProviderSettingsHub
-import com.lladlam.melox.ui.provider.ProviderServicesScreen
+import com.lladlam.melox.ui.provider.MeloXProviderServicesActivity
 import com.lladlam.melox.ui.search.SearchScreen
 import com.lladlam.melox.ui.search.MeloXSearchLaunchBus
 import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
@@ -161,7 +162,6 @@ enum class AppTab(@StringRes val titleRes: Int) {
     Downloads(R.string.tab_downloads),
     Cloud(R.string.tab_cloud),
     Settings(R.string.tab_settings),
-    Services(R.string.tab_services),
     Search(R.string.tab_search),
 }
 
@@ -200,6 +200,9 @@ fun MeloXApp(
     LaunchedEffect(tabBarMinimized) {
         if (com.lladlam.melox.ui.settings.MeloXSettingsRuntime.hapticFeedbackEnabled)
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
+    LaunchedEffect(MeloXSettingsRuntime.disableAutomaticTabBarShrink) {
+        if (MeloXSettingsRuntime.disableAutomaticTabBarShrink) tabBarMinimized = false
     }
     var libraryModalVisible by remember { mutableStateOf(false) }
     var onboardingPage by remember {
@@ -282,6 +285,10 @@ fun MeloXApp(
                 source: NestedScrollSource,
             ): Offset {
                 if (source != NestedScrollSource.UserInput) return Offset.Zero
+                if (MeloXSettingsRuntime.disableAutomaticTabBarShrink) {
+                    scrollAccumulator = 0f
+                    return Offset.Zero
+                }
 
                 if (available.y < 0f) {
                     if (scrollAccumulator > 0f) scrollAccumulator = 0f
@@ -386,12 +393,11 @@ fun MeloXApp(
                 AppTab.Downloads -> MeloXSettingsRuntime.downloadsEnabled && MeloXSettingsRuntime.downloadsTabPlacement
                 AppTab.Cloud -> MeloXSettingsRuntime.cloudMusicEnabled && MeloXSettingsRuntime.cloudTabPlacement
                 AppTab.Settings -> true
-                AppTab.Services -> false
                 AppTab.Search -> false
             }
         }.let { if (AppTab.Settings in it) it else it + AppTab.Settings }
     LaunchedEffect(visibleRootTabs, selectedTab) {
-        if (selectedTab !in visibleRootTabs && selectedTab != AppTab.Search && selectedTab != AppTab.Services) {
+        if (selectedTab !in visibleRootTabs && selectedTab != AppTab.Search) {
             selectedTab = visibleRootTabs.first()
         }
     }
@@ -431,7 +437,7 @@ fun MeloXApp(
                         .padding(innerPadding),
                 ) {
                     AnimatedContent(
-                        targetState = if (selectedTab == AppTab.Services) AppTab.Settings else selectedTab,
+                        targetState = selectedTab,
                         transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
                         modifier = Modifier.fillMaxSize(),
                         label = "melox-page-transition",
@@ -492,53 +498,17 @@ fun MeloXApp(
                                 loginReturnTab = AppTab.Settings
                                 showNeteaseLogin = true
                             },
-                            onOpenServices = { selectedTab = AppTab.Services },
+                            onOpenServices = { MeloXProviderServicesActivity.launch(hostContext) },
                             onOpenMessages = { messagesVisible = true },
                             initialRouteRequest = settingsRouteRequest,
                             onInitialRouteConsumed = { settingsRouteRequest = null },
                         )
-                        AppTab.Services -> Unit
                     } }
                     }
                 }
             }
 
-            AnimatedVisibility(
-                visible = selectedTab == AppTab.Services,
-                enter = slideInHorizontally(
-                    animationSpec = tween(300, easing = FastOutSlowInEasing),
-                    initialOffsetX = { it },
-                ),
-                exit = slideOutHorizontally(
-                    animationSpec = tween(300, easing = FastOutSlowInEasing),
-                    targetOffsetX = { it },
-                ),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .zIndex(10f),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background),
-                ) {
-                    ProviderServicesScreen(
-                        currentSource = selectedSource,
-                        onSourceSelected = { source ->
-                            selectedSource = source
-                            MusicProviderSelectionStore.setSelectedSource(context, source)
-                        },
-                        neteaseSession = neteaseSession,
-                        onNeteaseLogin = {
-                            loginReturnTab = AppTab.Services
-                            showNeteaseLogin = true
-                        },
-                        onBack = { selectedTab = AppTab.Settings },
-                    )
-                }
-            }
-
-            if (selectedTab != AppTab.Services && !messagesVisible) CompositionLocalProvider(LocalMeloXBackdrop provides bottomChromeBackdrop) {
+            if (!messagesVisible) CompositionLocalProvider(LocalMeloXBackdrop provides bottomChromeBackdrop) {
                 MeloXBottomChrome(
                     selectedTab = selectedTab,
                     source = selectedSource,
@@ -853,7 +823,16 @@ private fun MeloXBottomChrome(
 
     val navHeight = lerpDp(64.dp, 48.dp, sizeStage)
     val searchSize = lerpDp(64.dp, 48.dp, sizeStage)
-    val expandedChromeHeight = if (hasMedia) 124.dp else 64.dp
+    val mediaReveal by animateFloatAsState(
+        targetValue = if (hasMedia) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.9f, stiffness = 360f),
+        label = "melox-mini-player-reveal",
+    )
+    val expandedChromeHeight by animateDpAsState(
+        targetValue = if (hasMedia) 124.dp else 64.dp,
+        animationSpec = spring(dampingRatio = 0.9f, stiffness = 360f),
+        label = "melox-chrome-height",
+    )
     val chromeHeight = lerpDp(expandedChromeHeight, 56.dp, dropStage)
     val labelAlpha = 1f - labelStage
     val expandedLayerAlpha = 1f - smoothStep(progress, 0.43f, 0.72f)
@@ -888,7 +867,7 @@ private fun MeloXBottomChrome(
             val compactMiniWrapperX = horizontalMargin + compactSize + compactGap
             val miniWrapperWidth = lerpDp(maxWidth - horizontalMargin * 2, compactMiniWrapperWidth, shrinkStage)
             val miniWrapperX = lerpDp(horizontalMargin, compactMiniWrapperX, shrinkStage)
-            val miniLift = lerpDp(66.dp, 0.dp, shrinkStage)
+            val miniLift = lerpDp(66.dp, 0.dp, shrinkStage) * mediaReveal
 
             if (hasMedia) {
                 Box(
@@ -905,9 +884,12 @@ private fun MeloXBottomChrome(
             }
 
             val dark = isMeloXDarkTheme()
+            val frostedGlass = MeloXSettingsRuntime.frostedGlassEnabled
             // Mei uses the app's red accent for the selected tab. Blue makes
             // this chrome read as Material even when the glass effect is on.
-            val selectionTint = if (dark) {
+            val selectionTint = if (frostedGlass) {
+                MeloXSystemColors.Red.copy(alpha = if (dark) 0.08f else 0.05f)
+            } else if (dark) {
                 MeloXSystemColors.Red.copy(alpha = 0.30f)
             } else {
                 MeloXSystemColors.Red.copy(alpha = 0.16f)
@@ -1061,11 +1043,7 @@ private fun MeloXBottomChrome(
                             RootGlyphIcon(
                                 glyph = selectedTab.rootGlyph(),
                                 modifier = Modifier.size(25.dp),
-                                color = if (selectedTab == AppTab.Search) {
-                                    MaterialTheme.colorScheme.onSurface
-                                } else {
-                                    MeloXSystemColors.Red
-                                },
+                                 color = MeloXSystemColors.Red,
                                 selected = true,
                             )
                         }
@@ -1073,38 +1051,38 @@ private fun MeloXBottomChrome(
                     }
 
                     val lensAlpha by animateFloatAsState(
-                        targetValue = if (selectedIndex >= 0 && progress < 0.56f) 1f else 0f,
+                        targetValue = if (!frostedGlass && selectedIndex >= 0 && progress < 0.56f) 1f else 0f,
                         animationSpec = spring(dampingRatio = 0.86f, stiffness = 440f),
                         label = "melox-tab-selection-alpha",
                     )
                     val lensVisibility = lensAlpha * expandedLayerAlpha
-                    Box(
-                        modifier = Modifier
-                            // This is a sibling overlay, not content inside
-                            // the panel backdrop. It can lift and stretch
-                            // beyond one tab without being clipped by Dock.
-                            .width(selectionWidth)
-                            .fillMaxHeight()
-                            .offset {
-                                IntOffset(
-                                    x = (selectionEdgeInsetPx + dampedDock.value * selectionSegmentPx).roundToInt(),
-                                    y = 0,
+                    if (!frostedGlass) {
+                        Box(
+                            modifier = Modifier
+                                // This is a sibling overlay, not content inside
+                                // the panel backdrop. It can lift and stretch
+                                // beyond one tab without being clipped by Dock.
+                                .width(selectionWidth)
+                                .fillMaxHeight()
+                                .offset {
+                                    IntOffset(
+                                        x = (selectionEdgeInsetPx + dampedDock.value * selectionSegmentPx).roundToInt(),
+                                        y = 0,
+                                    )
+                                }
+                                .padding(4.dp)
+                                .meloXLiquidTabSelection(
+                                    shape = Capsule(),
+                                    selected = lensVisibility > 0.001f,
+                                    panelBackdrop = tabsBackdrop,
+                                    pressProgress = dampedDock.pressProgress,
+                                    scaleX = dampedDock.scaleX,
+                                    scaleY = dampedDock.scaleY,
+                                    velocity = dampedDock.velocity,
+                                    tint = selectionTint,
                                 )
-                            }
-                            .padding(4.dp)
-                            .meloXLiquidTabSelection(
-                                shape = Capsule(),
-                                selected = lensVisibility > 0.001f,
-                                panelBackdrop = tabsBackdrop,
-                                pressProgress = dampedDock.pressProgress,
-                                scaleX = dampedDock.scaleX,
-                                scaleY = dampedDock.scaleY,
-                                velocity = dampedDock.velocity,
-                                tint = selectionTint.copy(
-                                    alpha = selectionTint.alpha * lensVisibility,
-                                ),
-                            )
-                    )
+                        )
+                    }
                 }
             }
 
@@ -1227,7 +1205,6 @@ private fun AppTab.rootGlyph(): RootGlyph = when (this) {
     AppTab.Downloads -> RootGlyph.Downloads
     AppTab.Cloud -> RootGlyph.Cloud
     AppTab.Settings -> RootGlyph.Settings
-    AppTab.Services -> RootGlyph.Settings
     AppTab.Search -> RootGlyph.Search
 }
 
