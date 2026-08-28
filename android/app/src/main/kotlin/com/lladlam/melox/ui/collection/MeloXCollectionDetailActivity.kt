@@ -35,8 +35,6 @@ import com.lladlam.melox.core.network.*
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.ui.MeloXBottomContentClearance
 import com.lladlam.melox.ui.finishMeloXPage
-import com.lladlam.melox.ui.MeloXPredictiveBackPage
-import com.lladlam.melox.ui.prepareMeloXPagePredictiveBack
 import com.lladlam.melox.ui.startMeloXPage
 import com.lladlam.melox.ui.glass.MeloXActionIcon
 import com.lladlam.melox.ui.glass.meloXLiquidButton
@@ -58,8 +56,7 @@ class MeloXCollectionDetailActivity : ComponentActivity() {
             finish()
             return
         }
-        if (kind != MeloXSearchKind.Albums) prepareMeloXPagePredictiveBack()
-        val onExit: () -> Unit = if (kind == MeloXSearchKind.Albums) ::finish else ::finishMeloXPage
+        val onExit: () -> Unit = ::finish
         setContent {
             MeloXTheme {
                 val page: @Composable () -> Unit = {
@@ -74,7 +71,7 @@ class MeloXCollectionDetailActivity : ComponentActivity() {
                         )
                     }
                 }
-                if (kind == MeloXSearchKind.Albums) page() else MeloXPredictiveBackPage(onExit, page)
+                page()
             }
         }
     }
@@ -119,7 +116,6 @@ private fun AlbumScreen(id: Long, onBack: () -> Unit) {
             .onFailure { error = it.message ?: "专辑加载失败" }
         loading = false
     }
-    BackHandler(onBack = onBack)
     val songs = detail?.songs.orEmpty()
     val filtered = remember(songs, query) {
         val normalized = query.trim().lowercase()
@@ -200,7 +196,6 @@ private fun AlbumScreen(id: Long, onBack: () -> Unit) {
             .onFailure { error = it.message ?: "节目加载失败" }
         loading = false
     }
-    BackHandler(onBack = onBack)
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(20.dp, 8.dp, 20.dp, MeloXBottomContentClearance)) {
         item { Header(program?.name ?: "播客节目", onBack) }
         program?.let { value ->

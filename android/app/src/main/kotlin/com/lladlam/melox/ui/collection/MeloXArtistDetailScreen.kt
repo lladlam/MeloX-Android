@@ -1,6 +1,5 @@
 package com.lladlam.melox.ui.collection
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -87,7 +86,6 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
             .onFailure { error = it.message ?: "歌手加载失败" }
         loading = false
     }
-    BackHandler(onBack = onBack)
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         LazyColumn(

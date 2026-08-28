@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
@@ -49,8 +48,6 @@ import com.lladlam.melox.core.network.NeteaseSocialExtrasClient
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.ui.MeloXBottomContentClearance
 import com.lladlam.melox.ui.finishMeloXPage
-import com.lladlam.melox.ui.MeloXPredictiveBackPage
-import com.lladlam.melox.ui.prepareMeloXPagePredictiveBack
 import com.lladlam.melox.ui.startMeloXPage
 import com.lladlam.melox.ui.glass.MeloXGlassButton
 import com.lladlam.melox.ui.glass.MeloXGlassButtonStyle
@@ -73,12 +70,9 @@ class MeloXAccountActivity : ComponentActivity() {
             return
         }
         enableEdgeToEdge()
-        prepareMeloXPagePredictiveBack()
         setContent {
             MeloXTheme {
-                MeloXPredictiveBackPage(onBack = ::finishMeloXPage) {
-                    AccountHomeScreen(userId, ::finishMeloXPage)
-                }
+                AccountHomeScreen(userId, ::finishMeloXPage)
             }
         }
     }
@@ -146,7 +140,6 @@ private fun AccountHomeScreen(userId: Long, onBack: () -> Unit) {
         return
     }
 
-    BackHandler(onBack = onBack)
     MeloXPinnedListPage(
         title = "个人中心",
         onNavigateBack = onBack,
