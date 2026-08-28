@@ -41,6 +41,7 @@ import com.lladlam.melox.core.network.MeloXWikiSection
 import com.lladlam.melox.core.network.NeteaseMusicOperationsClient
 import com.lladlam.melox.ui.MeloXBottomContentClearance
 import com.lladlam.melox.ui.finishMeloXPage
+import com.lladlam.melox.ui.prepareMeloXPagePredictiveBack
 import com.lladlam.melox.ui.startMeloXPage
 import com.lladlam.melox.ui.glass.MeloXGlassButton
 import com.lladlam.melox.ui.glass.MeloXGlassButtonStyle
@@ -57,6 +58,7 @@ class MeloXSongWikiActivity : ComponentActivity() {
             return
         }
         enableEdgeToEdge()
+        prepareMeloXPagePredictiveBack()
         setContent {
             MeloXTheme {
                 MeloXSongWikiScreen(song, ::finishMeloXPage)

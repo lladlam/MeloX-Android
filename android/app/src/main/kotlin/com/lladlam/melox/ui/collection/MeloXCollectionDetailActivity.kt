@@ -35,6 +35,7 @@ import com.lladlam.melox.core.network.*
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.ui.MeloXBottomContentClearance
 import com.lladlam.melox.ui.finishMeloXPage
+import com.lladlam.melox.ui.prepareMeloXPagePredictiveBack
 import com.lladlam.melox.ui.startMeloXPage
 import com.lladlam.melox.ui.glass.MeloXActionIcon
 import com.lladlam.melox.ui.glass.meloXLiquidButton
@@ -56,6 +57,7 @@ class MeloXCollectionDetailActivity : ComponentActivity() {
             finish()
             return
         }
+        prepareMeloXPagePredictiveBack()
         val onExit: () -> Unit = ::finish
         setContent {
             MeloXTheme {

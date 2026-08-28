@@ -33,6 +33,7 @@ import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.core.network.NeteaseSocialExtrasClient
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import com.lladlam.melox.ui.glass.MeloXActionIcon
+import com.lladlam.melox.ui.prepareMeloXPagePredictiveBack
 import com.lladlam.melox.ui.theme.MeloXTheme
 import kotlinx.coroutines.launch
 
@@ -43,7 +44,7 @@ private data class ShareResource(val type: String, val id: Long, val title: Stri
 
 class MeloXNeteaseResourceShareActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState); enableEdgeToEdge()
+        super.onCreate(savedInstanceState); enableEdgeToEdge(); prepareMeloXPagePredictiveBack()
         val direct = intent.getStringExtra(EXTRA_TYPE)?.let { type ->
             val id = intent.getLongExtra(EXTRA_ID, -1L); if (id > 0L) ShareResource(type, id, intent.getStringExtra(EXTRA_TITLE).orEmpty(), intent.getStringExtra(EXTRA_URL).orEmpty()) else null
         }
