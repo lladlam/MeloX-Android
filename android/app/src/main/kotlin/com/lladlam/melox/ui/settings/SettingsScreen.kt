@@ -11,7 +11,7 @@ import android.os.StatFs
 import android.provider.Settings as AndroidSettings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -42,6 +43,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.ui.window.Dialog
@@ -66,6 +68,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -73,6 +77,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationCompat
 import coil3.compose.AsyncImage
@@ -131,9 +136,12 @@ import com.lladlam.melox.playback.MeloXListenTogetherCoordinator
 import com.lladlam.melox.platform.floating.MeloXFloatingLyricsService
 import com.lladlam.melox.platform.xiaomi.HyperOsFocusBridge
 import com.lladlam.melox.ui.MeloXBottomContentClearance
+import com.lladlam.melox.ui.MeloXPinkCat
 import com.lladlam.melox.ui.glass.MeloXActionIcon
 import com.lladlam.melox.ui.glass.MeloXGlassTextField
 import com.lladlam.melox.ui.glass.MeloXGlassDialog
+import com.lladlam.melox.ui.glass.MeloXGlassButton
+import com.lladlam.melox.ui.glass.MeloXGlassButtonStyle
 import com.lladlam.melox.ui.glass.MeloXGlassToggle
 import com.lladlam.melox.ui.glass.MeloXSettingsDropdown
 import com.lladlam.melox.ui.glass.MeloXShapes
@@ -163,6 +171,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 
 private enum class SettingsRoute(val title: String) {
     Playback("播放"),
@@ -236,6 +245,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     var route by remember { mutableStateOf<SettingsRoute?>(null) }
+    val backProgress = remember { Animatable(0f) }
     var search by remember { mutableStateOf("") }
     // Keep the root ScrollState alive while a detail route is displayed.
     // Creating it inside the root-only branch reset Settings to y=0 on Back.
@@ -257,7 +267,15 @@ fun SettingsScreen(
         if (session.isLoggedIn) session.refreshProfile()
     }
 
-    BackHandler(enabled = route != null) { route = null }
+    PredictiveBackHandler(enabled = route != null) {
+        try {
+            it.collect { event -> backProgress.snapTo(event.progress) }
+            route = null
+            backProgress.snapTo(0f)
+        } catch (_: CancellationException) {
+            backProgress.animateTo(0f)
+        }
+    }
 
     AnimatedVisibility(
         visible = route != null,
@@ -265,7 +283,19 @@ fun SettingsScreen(
         exit = slideOutHorizontally(tween(260)) { it / 4 } + fadeOut(tween(180)),
     ) {
         route?.let { selectedRoute ->
-            SettingsDetailScreen(route = selectedRoute, source = source, session = session, onBack = { route = null })
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        translationX = size.width * backProgress.value
+                        val scale = 1f - 0.08f * backProgress.value
+                        scaleX = scale
+                        scaleY = scale
+                        transformOrigin = TransformOrigin(0f, 0.5f)
+                    },
+            ) {
+                SettingsDetailScreen(route = selectedRoute, source = source, session = session, onBack = { route = null })
+            }
         }
     }
     AnimatedVisibility(
@@ -1332,7 +1362,23 @@ private fun PlaybackSettings(context: android.content.Context) {
             onSelected = { volumeMode = it; MeloXSettingsPreferences.setString(context, "playback_volume_mode", it.name) },
             grouped = true,
         )
+        SettingsToggleRow(
+            context,
+            "允许与其他应用同时播放",
+            "playback_allow_other_apps",
+            false,
+            "开启后 MeloX 不会独占音频焦点，其他应用可以继续播放。",
+            grouped = true,
+        )
         SettingsToggleRow(context, "记住播放器上次页面", "playback_remember_page", true, grouped = true)
+        SettingsToggleRow(
+            context,
+            "记录上次播放到哪个音乐",
+            "playback_remember_last_song",
+            true,
+            "下次进入软件时显示上次播放的歌曲，但不会自动播放。",
+            grouped = true,
+        )
         SettingsToggleRow(context, "登录后以心动模式开始播放", "playback_heart_mode_on_launch", false, grouped = true)
         SettingsToggleRow(context, "播放超过 5 秒时上一首先回到开头", "playback_previous_restarts", true, grouped = true)
         LyricsChoiceSetting(
@@ -1536,6 +1582,14 @@ private fun PlayerAppearanceSettings(context: android.content.Context) {
         }
     }
     Spacer(Modifier.height(10.dp))
+    SettingsToggleRow(
+        context,
+        "使用毛玻璃",
+        "player_frosted_glass",
+        false,
+        "关闭液态玻璃的折射、色散和交互变形，改用更省性能的普通模糊。",
+    )
+    Spacer(Modifier.height(10.dp))
     SettingsGlassGroup {
         MeloXSettingsDropdown(
             title = "播放器背景",
@@ -1553,12 +1607,12 @@ private fun PlayerAppearanceSettings(context: android.content.Context) {
         )
         SettingsToggleRow(context, "流动光影背景", "player_flowing_backdrop", true, "关闭后使用模糊封面背景。", grouped = true)
         SettingsToggleRow(context, "播放器背景隔离", "player_background_isolation", true, "开启后播放器独立覆盖首页；关闭后恢复原始透明背景，可能透出下层页面。", grouped = true)
-        LyricsChoiceSetting(context, "动态背景帧率", "lyrics_background_frame_rate", 24, listOf(15, 24, 30, 45, 60), grouped = true) { value ->
+        LyricsChoiceSetting(context, "动态背景帧率", "lyrics_background_frame_rate", 60, listOf(15, 24, 30, 45, 60), grouped = true) { value ->
             when (value) {
                 15 -> "15 FPS · 省电"
-                24 -> "24 FPS · 推荐"
+                24 -> "24 FPS · 省电"
                 30 -> "30 FPS · 均衡"
-                else -> "$value FPS · 流畅"
+                else -> "$value FPS · 推荐"
             }
         }
     }
@@ -1686,9 +1740,9 @@ private fun LyricsSettings(context: android.content.Context) {
         LyricsFloatChoiceSetting(context, "翻译歌词亮度", "lyrics_translation_opacity", .9f, listOf(.4f, .5f, .6f, .7f, .8f, .9f), grouped = true) { "${(it * 100).toInt()}%" }
         LyricsStringChoiceSetting(
             context, "翻译显示范围", "lyrics_translation_display_mode",
-            MeloXLyricAnnotationDisplayMode.FocusedLine.name, MeloXLyricAnnotationDisplayMode.entries.map { it.name }, grouped = true,
+            MeloXLyricAnnotationDisplayMode.AllLines.name, MeloXLyricAnnotationDisplayMode.entries.map { it.name }, grouped = true,
         ) { if (it == MeloXLyricAnnotationDisplayMode.FocusedLine.name) "仅当前播放行" else "全部歌词行" }
-        SettingsToggleRow(context, "显示罗马音", "lyrics_romanization", true, grouped = true)
+        SettingsToggleRow(context, "显示罗马音", "lyrics_romanization", false, grouped = true)
         LyricsStringChoiceSetting(
             context, "罗马音显示范围", "lyrics_romanization_display_mode",
             MeloXLyricAnnotationDisplayMode.FocusedLine.name, MeloXLyricAnnotationDisplayMode.entries.map { it.name }, grouped = true,
@@ -2575,6 +2629,14 @@ private fun GeneralSettings(context: android.content.Context) {
         )
         SettingsToggleRow(context, "识别剪贴板中的网易云链接", "general_clipboard_links", true, "每次回到前台只读取一次；识别歌曲或歌单后会先询问是否打开。", grouped = true)
         SettingsToggleRow(context, "触感", "general_haptic_feedback", true, grouped = true)
+        SettingsToggleRow(
+            context,
+            "不自动缩小底栏",
+            "general_disable_auto_tabbar_shrink",
+            false,
+            "向上滚动页面时，底部导航栏仍保持展开。",
+            grouped = true,
+        )
     }
 }
 
@@ -2792,6 +2854,9 @@ private fun AboutSettings(context: android.content.Context) {
     var showLogExportInfo by remember { mutableStateOf(false) }
     var release by remember { mutableStateOf<MeloXRelease?>(null) }
     var updateStatus by remember { mutableStateOf<String?>(null) }
+    var versionTapCount by remember { mutableIntStateOf(0) }
+    var lastVersionTapAt by remember { mutableStateOf(0L) }
+    var showCatEgg by remember { mutableStateOf(false) }
     var downloadSource by remember { mutableStateOf(githubRouting.selectedSource()) }
     val exportLogsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/plain"),
@@ -2811,12 +2876,56 @@ private fun AboutSettings(context: android.content.Context) {
             }
         }
     }
-    SettingsGlassGroup {
-        Column(Modifier.padding(18.dp)) {
+    Box(
+        modifier = Modifier.pointerInput(Unit) {
+            var distance = 0f
+            detectVerticalDragGestures(
+                onDragStart = { distance = 0f },
+                onVerticalDrag = { _, dragAmount ->
+                    distance += dragAmount
+                    if (distance > 180f) {
+                        showCatEgg = true
+                        distance = 0f
+                    }
+                },
+            )
+        },
+    ) {
+        SettingsGlassGroup {
+            Column(Modifier.padding(18.dp)) {
             Text("MeloX Android", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Text("版本 ${BuildConfig.VERSION_NAME} · MeloX 的 Android 原生迁移版。", modifier = Modifier.padding(top=7.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha=.62f))
+            Text(
+                "版本 ${BuildConfig.VERSION_NAME} · MeloX 的 Android 原生迁移版。",
+                modifier = Modifier
+                    .padding(top = 7.dp)
+                    .clickable {
+                        val now = System.currentTimeMillis()
+                        versionTapCount = if (now - lastVersionTapAt < 2_000L) versionTapCount + 1 else 1
+                        lastVersionTapAt = now
+                        if (versionTapCount >= 7) {
+                            showCatEgg = true
+                            versionTapCount = 0
+                        }
+                    },
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha=.62f),
+            )
             Text("Android 原生迁移与维护：lladlam", modifier = Modifier.padding(top=14.dp), fontWeight=FontWeight.SemiBold)
             Text("上游 iOS 原生项目：youshen2/MeloX（SwiftUI）", modifier = Modifier.padding(top=5.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha=.58f))
+            }
+        }
+    }
+    if (showCatEgg) {
+        MeloXGlassDialog(visible = true, onDismiss = { showCatEgg = false }) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                MeloXPinkCat()
+                Text("MeloX 小猫出现了", style = MaterialTheme.typography.titleLarge)
+                Text("粉色的音乐守护猫。", modifier = Modifier.padding(top = 7.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f))
+                MeloXGlassButton(
+                    onClick = { showCatEgg = false },
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                    style = MeloXGlassButtonStyle.BorderedProminent,
+                ) { Text("收下这只猫") }
+            }
         }
     }
     Spacer(Modifier.height(14.dp))
