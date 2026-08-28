@@ -1,6 +1,5 @@
 package com.lladlam.melox.ui.provider
 
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -115,8 +114,6 @@ fun ProviderServicesScreen(
                 .onFailure { lxImportError = it.message ?: "导入音乐源失败"; showLxImportDialog = true }
         }
     }
-
-    BackHandler(onBack = onBack)
 
     if (showQQLogin && currentSource == MusicSource.QQMusic) {
         QQMusicLoginScreen(
