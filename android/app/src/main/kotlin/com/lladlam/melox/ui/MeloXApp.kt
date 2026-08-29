@@ -81,6 +81,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -1047,6 +1048,7 @@ private fun MeloXBottomChrome(
                                 selected = selectedTab == tab,
                                 labelAlpha = labelAlpha,
                                 dark = dark,
+                                interactive = false,
                                 onClick = { onSelect(tab) },
                             )
                         }
@@ -1065,6 +1067,7 @@ private fun MeloXBottomChrome(
                                 selected = selectedTab == tab,
                                 labelAlpha = labelAlpha,
                                 dark = dark,
+                                interactive = dockExpanded,
                                 onClick = { onSelect(tab) },
                             )
                         }
@@ -1181,6 +1184,7 @@ private fun RowScope.RootTabButton(
     selected: Boolean,
     labelAlpha: Float,
     dark: Boolean,
+    interactive: Boolean = true,
     onClick: () -> Unit,
 ) {
     val foreground by animateColorAsState(
@@ -1197,17 +1201,21 @@ private fun RowScope.RootTabButton(
             .weight(1f)
             .fillMaxHeight()
             .padding(horizontal = 4.dp, vertical = 4.dp)
-            .clickable(
-                interactionSource = null,
-                indication = null,
-                role = Role.Tab,
-                onClick = onClick,
-            )
-            .semantics {
-                contentDescription = title
-                role = Role.Tab
-                this.selected = selected
-            },
+            .then(
+                if (interactive) Modifier
+                    .clickable(
+                        interactionSource = null,
+                        indication = null,
+                        role = Role.Tab,
+                        onClick = onClick,
+                    )
+                    .semantics {
+                        contentDescription = title
+                        role = Role.Tab
+                        this.selected = selected
+                    }
+                else Modifier.clearAndSetSemantics { },
+            ),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {

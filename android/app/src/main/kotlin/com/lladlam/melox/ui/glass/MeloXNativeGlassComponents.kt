@@ -57,6 +57,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.geometry.Offset
@@ -207,6 +211,7 @@ fun MeloXGlassToggle(
             pressedScale = 1.5f,
             onDragStarted = {},
             onDragStopped = {
+                if (!enabled) return@LiquidDragAnimation
                 if (didDrag) {
                     fraction = if (targetValue >= 0.5f) 1f else 0f
                     didDrag = false
@@ -218,6 +223,7 @@ fun MeloXGlassToggle(
                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
             },
             onDrag = { _, dragAmount ->
+                if (!enabled) return@LiquidDragAnimation
                 if (!didDrag) {
                     didDrag = kotlin.math.abs(dragAmount.x) > tapThresholdPx
                 }
@@ -231,10 +237,8 @@ fun MeloXGlassToggle(
         snapshotFlow { fraction }.collectLatest(animation::updateValue)
     }
     LaunchedEffect(checked) {
-        android.util.Log.d("MeloXToggle", "LaunchedEffect(checked) checked=$checked fraction=$fraction")
         val target = if (checked) 1f else 0f
         if (target != fraction) {
-            android.util.Log.d("MeloXToggle", "  -> resetting fraction to $target")
             fraction = target
             animation.animateToValue(target)
         }
@@ -246,8 +250,16 @@ fun MeloXGlassToggle(
         modifier = modifier
             .width(64.dp)
             .height(28.dp)
-            .semantics { role = Role.Switch }
-            .then(animation.modifier),
+            .semantics {
+                role = Role.Switch
+                toggleableState = ToggleableState(checked)
+                if (!enabled) disabled()
+                onClick {
+                    if (enabled) onCheckedChange(!checked)
+                    enabled
+                }
+            }
+            .then(if (enabled) animation.modifier else Modifier),
         contentAlignment = Alignment.CenterStart,
     ) {
         Box(

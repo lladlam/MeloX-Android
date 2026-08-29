@@ -81,6 +81,7 @@ import com.lladlam.melox.ui.animation.meloXPageEnter
 import com.lladlam.melox.ui.animation.meloXPageExit
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationCompat
 import coil3.compose.AsyncImage
@@ -310,7 +311,10 @@ fun SettingsScreen(
         visible = true,
         enter = meloXPageEnter(fromRight = false),
         exit = meloXPageExit(toRight = false),
-        modifier = Modifier.fillMaxSize().zIndex(0f),
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(0f)
+            .then(if (route != null) Modifier.clearAndSetSemantics { } else Modifier),
     ) {
     val normalized = search.trim().lowercase()
     val visibleSections = SettingsSections.mapNotNull { section ->
