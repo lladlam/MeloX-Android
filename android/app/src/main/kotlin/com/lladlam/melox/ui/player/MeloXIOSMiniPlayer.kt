@@ -167,7 +167,9 @@ fun MeloXIOSMiniPlayer(
     val artworkRadius = 6.dp
     val compactArtistAlpha = 1f - smoothStep(compact, 0.04f, 0.52f)
     val compactNextAlpha = 1f - smoothStep(compact, 0.04f, 0.50f)
-    val controlStageWidth = lerpDp(72.dp, 36.dp, smoothStep(compact, 0.08f, 0.84f))
+    // Both controls keep a 48dp touch target. The expanded stage leaves an
+    // 8dp gap between them; the compact stage collapses to the play button.
+    val controlStageWidth = lerpDp(104.dp, 48.dp, smoothStep(compact, 0.08f, 0.84f))
     val artistHeight = lerpDp(15.dp, 0.dp, smoothStep(compact, 0.04f, 0.72f))
     val dragDirection = when {
         contentOffset.value < 0f -> -1
