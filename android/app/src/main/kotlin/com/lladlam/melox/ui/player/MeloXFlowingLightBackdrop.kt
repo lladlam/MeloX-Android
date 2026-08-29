@@ -206,7 +206,7 @@ internal fun MeloXFlowingLightBackdrop(
         }
         var currentAverage = targetPalette.average
         val pixels = IntArray(meshWidth * meshHeight)
-        if (!isPlaying || !appInForeground) {
+        if (MeloXSettingsRuntime.reduceMotion || !isPlaying || !appInForeground) {
             withContext(Dispatchers.Default) {
                 fillFlowingMeshPixels(
                     pixels = pixels,

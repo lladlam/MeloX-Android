@@ -1643,6 +1643,7 @@ private fun PlayerAppearanceSettings(context: android.content.Context) {
     }
     Spacer(Modifier.height(10.dp))
     SettingsGlassGroup {
+        SettingsToggleRow(context, "减少动态效果", "reduce_motion", false, "减少页面位移、封面缩放、流动背景与弹性效果。", grouped = true)
         SettingsToggleRow(context, "封面播放动效", "player_artwork_motion", true, grouped = true)
         MeloXSettingsDropdown(
             title = "屏幕常亮范围",

@@ -29,6 +29,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
@@ -231,10 +234,11 @@ private fun QueueModeButton(
 ) {
     Box(
         modifier = modifier
-            .height(44.dp)
+            .height(48.dp)
             .clip(RoundedCornerShape(22.dp))
             .background(Color.White.copy(alpha = if (selected) .70f else .12f))
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { this.selected = selected },
         contentAlignment = Alignment.Center,
     ) {
         MeloXSymbolIcon(

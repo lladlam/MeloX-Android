@@ -469,7 +469,7 @@ private fun SharedArtworkDestination(
     )
 
     val playbackScale by animateFloatAsState(
-        targetValue = if (!MeloXSettingsRuntime.artworkMotionEnabled || state.isPlaying) 1f else 0.74f,
+        targetValue = if (MeloXSettingsRuntime.reduceMotion || !MeloXSettingsRuntime.artworkMotionEnabled || state.isPlaying) 1f else 0.74f,
         animationSpec = if (state.isPlaying) {
             spring(
                 dampingRatio = 0.70f,

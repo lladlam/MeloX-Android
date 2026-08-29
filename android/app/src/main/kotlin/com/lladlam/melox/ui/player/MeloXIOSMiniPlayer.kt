@@ -142,7 +142,7 @@ fun MeloXIOSMiniPlayer(
     val miniChromeAlpha = 1f - smoothStep(expansionProgress, 0.10f, 0.58f)
     val miniSurfaceAlpha = 1f - smoothStep(expansionProgress, 0.02f, 0.48f)
     val playerArtworkScale = if (
-        !applyPlayerArtworkScale || !MeloXSettingsRuntime.artworkMotionEnabled || state.isPlaying
+        !applyPlayerArtworkScale || MeloXSettingsRuntime.reduceMotion || !MeloXSettingsRuntime.artworkMotionEnabled || state.isPlaying
     ) 1f else 0.74f
     val sharedArtworkScale = 1f +
         (playerArtworkScale - 1f) * smoothStep(expansionProgress, 0.30f, 0.88f)
@@ -380,7 +380,7 @@ fun MeloXIOSMiniPlayer(
             Box(
                 modifier = Modifier
                     .width(controlStageWidth)
-                    .height(36.dp)
+                    .height(48.dp)
                     .zIndex(8f),
             ) {
                 MiniVectorButton(
@@ -456,7 +456,7 @@ private fun MiniVectorButton(
     Box(
         modifier = modifier
             .graphicsLayer { alpha = drawAlpha }
-            .size(36.dp)
+            .size(48.dp)
             .clip(CircleShape)
             .clickable(
                 enabled = enabled && drawAlpha > 0.05f,

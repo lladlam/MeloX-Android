@@ -282,7 +282,7 @@ private fun SceneQualityChip(
                     scaleX = scale
                     scaleY = scale
                 }
-                .height(24.dp)
+                .height(48.dp)
                 .meloXLiquidButton(
                     shape = RoundedCornerShape(7.dp),
                     surfaceColor = Color.White.copy(alpha = 0.10f),
@@ -630,7 +630,7 @@ private fun ScenePageButton(
 
     Box(
         modifier = Modifier
-            .size(44.dp)
+            .size(48.dp)
             .graphicsLayer {
                 val s = pressScale * selectionScale
                 scaleX = s
