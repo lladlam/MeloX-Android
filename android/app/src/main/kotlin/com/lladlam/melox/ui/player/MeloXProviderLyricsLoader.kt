@@ -199,19 +199,6 @@ internal object MeloXProviderLyricsLoader {
             if (policy.loadMatchedLyrics) return loadBilibiliMatched(appContext, snapshot)
             if (snapshot.automaticSelection) return LyricsDocument(emptyList())
         }
-        if (snapshot.resourceId.source == MusicSource.Local) {
-            val provider = MeloXMusicProviders.create(appContext).require(MusicSource.Local)
-            val lyrics = provider as? LyricsCapability ?: return LyricsDocument(emptyList())
-            val track = MusicTrack(
-                id = snapshot.resourceId,
-                title = snapshot.title,
-                artists = listOf(MusicArtistRef(name = snapshot.artist)),
-                album = snapshot.album.takeIf(String::isNotBlank)?.let { MusicAlbumRef(name = it) },
-                artworkUrl = snapshot.artworkUrl,
-                durationMs = snapshot.durationMs.takeIf { it > 0L },
-            )
-            return lyrics.lyrics(track)
-        }
         if (snapshot.automaticSelection) {
             snapshot.binding?.let { binding ->
                 val bound = loadBinding(appContext, binding)
@@ -467,6 +454,8 @@ internal object MeloXProviderLyricsLoader {
     ): ResolvedLyrics {
         if (source == LyricAutoSource.AmlL) {
             val id = snapshot.resourceId.takeIf { it.source == MusicSource.Netease }?.value?.toLongOrNull()
+                ?: snapshot.resourceId.takeIf { it.source == MusicSource.Local }
+                    ?.let { LocalMusicRepository(appContext).track(it.value)?.recognizedNeteaseId }
                 ?: findMatchedNeteaseTrack(appContext, snapshot)?.id?.value?.toLongOrNull()
                 ?: return ResolvedLyrics.Empty
             val document = runCatching { AmlldbLyricsClient().lyrics(id) }.getOrDefault(LyricsDocument(emptyList()))
