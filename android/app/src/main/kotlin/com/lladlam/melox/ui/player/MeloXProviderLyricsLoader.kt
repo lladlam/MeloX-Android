@@ -661,26 +661,18 @@ internal fun selectAutomaticLyrics(candidates: List<AutoLyricCandidate>): Lyrics
     selectAutomaticLyricCandidate(candidates)?.document
 
 internal fun selectAutomaticLyricCandidate(candidates: List<AutoLyricCandidate>): AutoLyricCandidate? {
-    // AMLL's authored word timing is the highest-quality result regardless of
-    // which provider is currently selected. Do not let a provider-priority tie
-    // break replace it with a different timed document.
+    // AMLL only has absolute priority when it contains authored word timing.
+    // Line-timed AMLL must not prevent the ordered QQ -> NetEase -> current
+    // provider fallback selected by automaticLyricSourcesFor().
     candidates.firstOrNull {
         it.document.source == com.lladlam.melox.core.lyrics.LyricSource.AmlL &&
             it.document.lines.isNotEmpty() &&
             hasWordTiming(it.document)
     }?.let { return it }
-    candidates.firstOrNull { it.priority == 0 && it.document.lines.isNotEmpty() }?.let { return it }
-    return selectBestQualityCandidate(
-        candidates.filter { it.document.lines.isNotEmpty() && hasWordTiming(it.document) }
-            .ifEmpty { candidates.filter { it.document.lines.isNotEmpty() } },
-    )
-}
-
-private fun selectBestQualityCandidate(candidates: List<AutoLyricCandidate>): AutoLyricCandidate? {
-    val bestScore = candidates.maxOfOrNull { lyricQualityScore(it.document) } ?: return null
-    val nearQualityWindow = maxOf(10, bestScore / 20)
     return candidates
-        .filter { bestScore - lyricQualityScore(it.document) <= nearQualityWindow }
+        .asSequence()
+        .filterNot { it.document.source == com.lladlam.melox.core.lyrics.LyricSource.AmlL }
+        .filter { it.document.lines.isNotEmpty() }
         .minByOrNull(AutoLyricCandidate::priority)
 }
 
