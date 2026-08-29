@@ -84,7 +84,11 @@ internal object MeloXProviderLyricsLoader {
         val localRecord = if (resourceId.source == MusicSource.Local) {
             LocalMusicRepository(appContext).track(resourceId.value)
         } else null
-        val auto = MeloXSettingsRuntime.automaticLyricSelectionEnabled
+        // Local has no independent online lyric catalog. Always use the common
+        // AMLL -> QQ -> NetEase -> persisted-local chain, even when automatic
+        // selection is disabled for ordinary provider tracks.
+        val auto = MeloXSettingsRuntime.automaticLyricSelectionEnabled ||
+            resourceId.source == MusicSource.Local
         val bilibiliAlignment = resourceId.source == MusicSource.Bilibili &&
             MeloXSettingsPreferences.boolean(appContext, "bilibili_lyric_audio_alignment", false)
         val binding = if (auto && MeloXSettingsRuntime.lyricStrongBindingEnabled) {
@@ -119,13 +123,14 @@ internal object MeloXProviderLyricsLoader {
 
     fun preloadQueue(context: Context, state: MeloXPlaybackUiState, count: Int = 2) {
         val appContext = context.applicationContext
-        val automaticSelection = MeloXSettingsRuntime.automaticLyricSelectionEnabled
+        val automaticSelectionEnabled = MeloXSettingsRuntime.automaticLyricSelectionEnabled
         val bilibiliAlignment = MeloXSettingsPreferences.boolean(appContext, "bilibili_lyric_audio_alignment", false)
         val snapshots = state.queue
             .drop((state.currentIndex + 1).coerceAtLeast(0))
             .take(count.coerceIn(0, 4))
             .mapNotNull { entry ->
                 val resourceId = PlaybackTrackIdentity.decode(entry.mediaId) ?: return@mapNotNull null
+                val automaticSelection = automaticSelectionEnabled || resourceId.source == MusicSource.Local
                 // Bilibili matching can issue several catalog requests. Do not
                 // preload it without the active decoder duration.
                 if (resourceId.source == MusicSource.Bilibili && entry.durationMs <= 0L) return@mapNotNull null
