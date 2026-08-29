@@ -158,6 +158,8 @@ import com.lladlam.melox.core.update.MeloXUpdateClient
 import com.lladlam.melox.playback.PlaybackCommands
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
@@ -247,6 +249,7 @@ fun MeloXApp(
     )
     var playerArtworkPageUsesScale by remember { mutableStateOf(false) }
     val playerScope = rememberCoroutineScope()
+    var playerTransitionJob by remember { mutableStateOf<Job?>(null) }
     val clipboardTarget = remember(clipboardLinkRequest, selectedSource) {
         if (selectedSource == MusicSource.Netease) {
             clipboardLinkRequest?.let(NeteaseClipboardLink::parse)
@@ -256,7 +259,8 @@ fun MeloXApp(
     }
     val openPlayer: () -> Unit = {
         if (playbackState.hasMedia) {
-            playerScope.launch {
+            playerTransitionJob?.cancel()
+            playerTransitionJob = playerScope.launch {
                 playerTransitionState.animateTo(
                     targetState = true,
                     animationSpec = playerAutomaticFractionSpec(),
@@ -265,7 +269,8 @@ fun MeloXApp(
         }
     }
     val closePlayer: () -> Unit = {
-        playerScope.launch {
+        playerTransitionJob?.cancel()
+        playerTransitionJob = playerScope.launch {
             playerTransitionState.animateTo(
                 targetState = false,
                 animationSpec = playerAutomaticFractionSpec(),
@@ -617,12 +622,16 @@ fun MeloXApp(
                         },
                         onLocalMetadataChanged = { playbackState.refreshCurrentLocalMetadata() },
                         onSeekCollapse = { fraction ->
+                            playerTransitionJob?.cancelAndJoin()
+                            playerTransitionJob = null
                             playerTransitionState.seekTo(
                                 fraction = fraction.coerceIn(0f, 0.999f),
                                 targetState = false,
                             )
                         },
                         onSettleCollapse = { collapse ->
+                            playerTransitionJob?.cancelAndJoin()
+                            playerTransitionJob = null
                             playerTransitionState.animateTo(
                                 targetState = !collapse,
                                 animationSpec = playerGestureSettleSpec(),

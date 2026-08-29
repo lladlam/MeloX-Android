@@ -114,6 +114,7 @@ fun MeloXIOSNowPlayingSharedHost(
     val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
     var gestureCollapseProgress by remember { mutableFloatStateOf(0f) }
     var settleJob by remember { mutableStateOf<Job?>(null) }
+    var seekJob by remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
     val hostView = LocalView.current
     LaunchedEffect(isLandscape) {
@@ -170,6 +171,12 @@ fun MeloXIOSNowPlayingSharedHost(
     val collapseProgress = (1f - expansionProgress).coerceIn(0f, 1f)
     val latestCollapseProgress = rememberUpdatedState(collapseProgress)
     val latestPage = rememberUpdatedState(page)
+    DisposableEffect(Unit) {
+        onDispose {
+            seekJob?.cancel()
+            settleJob?.cancel()
+        }
+    }
     val cornerRadius = (24f + 8f * smoothStep(collapseProgress, 0f, 1f)).dp
     val sharedShellModifier = with(sharedTransitionScope) {
         Modifier.sharedBounds(
@@ -200,7 +207,8 @@ fun MeloXIOSNowPlayingSharedHost(
             val next = (old + delta / dragRangePx).coerceIn(0f, 0.999f)
             if (next == old) return
             gestureCollapseProgress = next
-            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            seekJob?.cancel()
+            seekJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 onSeekCollapse(next)
             }
         }
@@ -208,6 +216,8 @@ fun MeloXIOSNowPlayingSharedHost(
         suspend fun beginCollapseDrag() {
             settleJob?.cancelAndJoin()
             settleJob = null
+            seekJob?.cancelAndJoin()
+            seekJob = null
             gestureCollapseProgress = latestCollapseProgress.value.coerceIn(0f, 0.999f)
             onSeekCollapse(gestureCollapseProgress)
         }
@@ -217,6 +227,8 @@ fun MeloXIOSNowPlayingSharedHost(
             val shouldCollapse = releaseProgress >= 0.42f || velocity >= 1200f
             settleJob?.cancel()
             settleJob = scope.launch {
+                seekJob?.cancelAndJoin()
+                seekJob = null
                 onSettleCollapse(shouldCollapse)
                 if (!shouldCollapse) {
                     gestureCollapseProgress = 0f
