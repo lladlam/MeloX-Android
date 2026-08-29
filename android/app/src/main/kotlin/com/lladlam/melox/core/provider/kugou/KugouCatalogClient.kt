@@ -179,7 +179,7 @@ internal class KugouCatalogClient(
         return MusicPlaylistSummary(
             id = MusicResourceId(MusicSource.Kugou, id),
             title = firstString(item, "specialname", "special_name", "name", "title").ifBlank { "酷狗歌单" },
-            artworkUrl = normalizeArtwork(firstString(item, "img", "imgurl", "image", "sizable_cover", "cover")),
+            artworkUrl = normalizeKugouArtworkUrl(firstString(item, "img", "imgurl", "image", "sizable_cover", "cover")),
             creatorName = firstString(item, "nickname", "author_name", "username", "creator").takeIf(String::isNotBlank),
             description = firstString(item, "intro", "desc", "description").takeIf(String::isNotBlank),
             trackCount = firstLong(item, "songcount", "song_count", "count").takeIf { it >= 0 }?.toInt(),
@@ -196,7 +196,7 @@ internal class KugouCatalogClient(
         return MusicAlbumSummary(
             id = MusicResourceId(MusicSource.Kugou, id),
             title = firstString(item, "album_name", "albumname", "name", "title").ifBlank { "酷狗专辑" },
-            artworkUrl = normalizeArtwork(firstString(item, "sizable_cover", "img", "imgurl", "image", "cover")),
+            artworkUrl = normalizeKugouArtworkUrl(firstString(item, "sizable_cover", "img", "imgurl", "image", "cover")),
             artists = artistName.takeIf(String::isNotBlank)?.let {
                 listOf(
                     MusicArtistRef(
@@ -219,7 +219,7 @@ internal class KugouCatalogClient(
         return MusicArtistSummary(
             id = MusicResourceId(MusicSource.Kugou, id),
             name = name,
-            artworkUrl = normalizeArtwork(firstString(item, "sizable_avatar", "avatar", "img", "imgurl", "image")),
+            artworkUrl = normalizeKugouArtworkUrl(firstString(item, "sizable_avatar", "avatar", "img", "imgurl", "image")),
             description = firstString(item, "intro", "desc", "description").takeIf(String::isNotBlank),
             songCount = firstLong(item, "songcount", "song_count", "audio_count", "music_count").takeIf { it >= 0 },
             albumCount = firstLong(item, "albumcount", "album_count").takeIf { it >= 0 },
@@ -241,7 +241,7 @@ internal class KugouCatalogClient(
             .map { MusicArtistRef(name = it) }
         val albumName = firstString(item, "album_name", "AlbumName", "albumname")
         val albumId = firstString(item, "album_id", "AlbumID", "albumid").takeIf(String::isNotBlank)
-        val artwork = normalizeArtwork(firstString(item, "sizable_cover", "Image", "image", "img", "album_img"))
+        val artwork = normalizeKugouArtworkUrl(firstString(item, "sizable_cover", "Image", "image", "img", "album_img"))
         val durationRaw = firstLong(item, "duration", "Duration", "time_length")
         val durationMs = durationRaw.takeIf { it > 0 }?.let { if (it > 100_000L) it else it * 1_000L }
         val albumAudioId = firstLong(item, "album_audio_id", "MixSongID", "mixsongid", "AlbumAudioID", "audio_id", "audioid")
@@ -314,12 +314,6 @@ internal class KugouCatalogClient(
         }.firstOrNull() ?: -1L
 
     private fun hasAny(value: JSONObject, vararg keys: String): Boolean = keys.any(value::has)
-
-    private fun normalizeArtwork(value: String): String? = value
-        .trim()
-        .takeIf(String::isNotBlank)
-        ?.replace("{size}", "400")
-        ?.replace("http://", "https://")
 
     private fun safePage(page: Int): Int = page.coerceAtLeast(1)
     private fun safeSize(pageSize: Int): Int = pageSize.coerceIn(1, 50)

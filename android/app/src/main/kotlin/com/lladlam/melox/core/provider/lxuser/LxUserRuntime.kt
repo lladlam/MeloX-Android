@@ -87,9 +87,9 @@ class LxUserRuntime(
             }
         }
         context.evaluate(script.source, "lx-user.js")
-        // A number of real-world LX sources register their request listener from
-        // a Promise microtask after the top-level script has evaluated.
-        repeat(16) { context.evaluate("void 0") }
+        // v5 sources commonly fetch remote configuration before registering the
+        // request listener. Drain that initialization before the first action.
+        drainScriptInitialization()
         Log.d(TAG, "load done name=${info.name.orEmpty()} handlers=${requestHandlers.size} qualities=${sourceQualities}")
         return info
     }
@@ -476,6 +476,19 @@ class LxUserRuntime(
                 if (done.count == 0L || pendingHttpResponses.isNotEmpty()) return@synchronized
                 drainSignal.wait(5)
             }
+        }
+    }
+
+    private fun drainScriptInitialization() {
+        repeat(600) { iteration ->
+            dispatchTimers()
+            processPendingHttpResponses()
+            runCatching { context.evaluate("void 0") }
+            if (requestHandlers.isNotEmpty()) return
+            synchronized(drainSignal) {
+                if (requestHandlers.isEmpty() && pendingHttpResponses.isEmpty()) drainSignal.wait(5)
+            }
+            if (iteration >= 20 && pendingHttpResponses.isEmpty() && timers.isEmpty()) Thread.sleep(5)
         }
     }
 

@@ -251,7 +251,9 @@ class KugouApiClient(
             "audio_id",
         ).takeIf { it > 0L }
         val durationSeconds = firstLong(item, "Duration", "duration", "time_length").takeIf { it > 0L }
-        val artwork = normalizeArtwork(firstString(item, "Image", "image", "img", "album_img", "AlbumImage"))
+        val artwork = normalizeKugouArtworkUrl(
+            firstString(item, "Image", "image", "img", "album_img", "AlbumImage", "sizable_cover", "cover"),
+        )
         return MusicTrack(
             id = MusicResourceId(MusicSource.Kugou, hash),
             title = title,
@@ -315,12 +317,6 @@ class KugouApiClient(
                 ?: findPlaybackUrl(json.opt("backup_url"))
         }
     }
-
-    private fun normalizeArtwork(value: String): String? = value
-        .trim()
-        .takeIf(String::isNotBlank)
-        ?.replace("{size}", "400")
-        ?.let(::secureUrl)
 
     private fun firstString(value: JSONObject, vararg keys: String): String =
         keys.asSequence().map(value::optString).firstOrNull(String::isNotBlank).orEmpty()

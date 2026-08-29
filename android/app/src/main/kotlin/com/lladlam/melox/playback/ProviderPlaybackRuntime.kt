@@ -54,6 +54,9 @@ object ProviderPlaybackRuntime {
                 listOf(session.accountId, session.expiresAtEpochMs).joinToString("|")
             }
             MusicSource.Kuwo -> ""
+            MusicSource.Jellyfin -> com.lladlam.melox.core.provider.jellyfin.JellyfinSessionStore.read(context).let { session ->
+                listOf(session.serverUrl, session.accessToken, session.userId).joinToString("|")
+            }
         }
         return MessageDigest.getInstance("SHA-256").digest(credential.toByteArray())
             .joinToString("") { "%02x".format(it) }

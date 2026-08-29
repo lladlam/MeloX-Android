@@ -134,6 +134,18 @@ object MusicExperiences {
         ),
     )
 
+    val jellyfin = MusicExperience(
+        source = MusicSource.Jellyfin,
+        homeSections = emptyList(),
+        providerNativeCapabilities = setOf(
+            MusicCapability.Library,
+            MusicCapability.Playlists,
+            MusicCapability.Albums,
+            MusicCapability.Artists,
+            MusicCapability.Favorites,
+        ),
+    )
+
     fun forSource(source: MusicSource): MusicExperience = when (source) {
         MusicSource.Netease -> netease
         MusicSource.QQMusic -> qqMusic
@@ -142,5 +154,6 @@ object MusicExperiences {
         MusicSource.AppleMusic -> appleMusic
         MusicSource.Bilibili -> bilibili
         MusicSource.Spotify -> spotify
+        MusicSource.Jellyfin -> jellyfin
     }
 }

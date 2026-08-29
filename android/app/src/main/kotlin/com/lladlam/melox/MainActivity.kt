@@ -10,9 +10,24 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
 import com.lladlam.melox.core.network.parseNeteaseListenTogetherInvitation
 import com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigRuntime
 import com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigConsent
@@ -38,6 +53,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val coldStart = savedInstanceState == null
         enableEdgeToEdge()
         consumePlaybackIntent(intent)
         MeloXSettingsPreferences.initializeCritical(this)
@@ -45,12 +61,42 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MeloXTheme {
-                MeloXApp(
-                    openNowPlayingRequest = openNowPlayingRequest,
-                    clipboardLinkRequest = clipboardLinkRequest,
-                    onClipboardLinkConsumed = { clipboardLinkRequest = null },
-                    playbackConnectionEnabled = playbackConnectionEnabled,
+                var splashVisible by remember { mutableStateOf(coldStart) }
+                val pageAlpha by animateFloatAsState(
+                    targetValue = if (splashVisible) 0f else 1f,
+                    animationSpec = tween(350),
+                    label = "melox-start-page",
                 )
+                val splashAlpha by animateFloatAsState(
+                    targetValue = if (splashVisible) 1f else 0f,
+                    animationSpec = tween(350),
+                    label = "melox-start-icon",
+                )
+                LaunchedEffect(coldStart) {
+                    if (coldStart) delay(1_000L)
+                    splashVisible = false
+                }
+                Box(Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize().alpha(pageAlpha)) {
+                        MeloXApp(
+                            openNowPlayingRequest = openNowPlayingRequest,
+                            clipboardLinkRequest = clipboardLinkRequest,
+                            onClipboardLinkConsumed = { clipboardLinkRequest = null },
+                            playbackConnectionEnabled = playbackConnectionEnabled,
+                        )
+                    }
+                    if (splashAlpha > 0f) {
+                        Image(
+                            painter = painterResource(R.drawable.ic_launcher_foreground),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .size(104.dp)
+                                .clip(RoundedCornerShape(24.dp))
+                                .alpha(splashAlpha),
+                        )
+                    }
+                }
             }
         }
 

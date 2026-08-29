@@ -60,5 +60,6 @@ object SpotifyTrackMatcher {
         MusicSource.Kuwo -> 2
         MusicSource.Bilibili -> 1
         MusicSource.Spotify -> 0
+        MusicSource.Jellyfin -> 0
     }
 }

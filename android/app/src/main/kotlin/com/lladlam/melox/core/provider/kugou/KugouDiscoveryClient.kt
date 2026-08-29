@@ -201,7 +201,7 @@ class KugouDiscoveryClient(
         return MusicPlaylistSummary(
             id = MusicResourceId(MusicSource.Kugou, id),
             title = title,
-            artworkUrl = normalizeArtwork(
+            artworkUrl = normalizeKugouArtworkUrl(
                 firstString(item, "imgurl", "img_url", "image", "pic", "cover", "cover_url", "sizable_cover"),
             ),
             creatorName = firstString(item, "nickname", "nick_name", "username", "author_name")
@@ -223,7 +223,7 @@ class KugouDiscoveryClient(
         return MusicRankingSummary(
             id = MusicResourceId(MusicSource.Kugou, id),
             title = title,
-            artworkUrl = normalizeArtwork(firstString(item, "imgurl", "img_url", "image", "banner7url", "cover")),
+            artworkUrl = normalizeKugouArtworkUrl(firstString(item, "imgurl", "img_url", "image", "banner7url", "cover")),
             subtitle = firstString(item, "update_frequency", "updateFrequency", "intro", "description")
                 .takeIf(String::isNotBlank),
         )
@@ -241,7 +241,7 @@ class KugouDiscoveryClient(
         val albumId = firstString(item, "AlbumID", "album_id", "albumid").takeIf(String::isNotBlank)
         val albumAudioId = firstLong(item, "album_audio_id", "MixSongID", "mixsongid", "AlbumAudioID", "Audioid", "audio_id")
             .takeIf { it > 0 }
-        val artwork = normalizeArtwork(firstString(item, "Image", "image", "img", "album_img", "sizable_cover"))
+        val artwork = normalizeKugouArtworkUrl(firstString(item, "Image", "image", "img", "album_img", "sizable_cover"))
         val durationSeconds = firstLong(item, "Duration", "duration", "time_length").takeIf { it > 0 }
         val artists = singerName
             .split(Regex("\\s*(?:、|/|&|,|;|；)\\s*"))
@@ -303,12 +303,6 @@ class KugouDiscoveryClient(
                 else -> null
             }
         }.firstOrNull() ?: -1L
-
-    private fun normalizeArtwork(value: String): String? = value
-        .trim()
-        .takeIf(String::isNotBlank)
-        ?.replace("{size}", "400")
-        ?.let { if (it.startsWith("http://", true)) "https://${it.substringAfter("://")}" else it }
 
     /** MakcRe/KuGouMusicApi signParamsKey(clienttime). */
     private fun paramsKey(clientTime: String): String = md5Hex(

@@ -455,6 +455,7 @@ private fun shareProviderSong(
             "https://www.bilibili.com/video/$it"
         }
         MusicSource.Spotify -> "https://open.spotify.com/track/${identity.value}"
+        MusicSource.Jellyfin -> null
     }
     val text = buildString {
         append(state.title.ifBlank { "正在播放" })

@@ -136,7 +136,7 @@ class KugouPlaylistWriteClient(
         return MusicPlaylistSummary(
             id = MusicResourceId(MusicSource.Kugou, listId.toString()),
             title = title,
-            artworkUrl = normalizeArtwork(
+            artworkUrl = normalizeKugouArtworkUrl(
                 firstString(item, "imgurl", "img_url", "image", "pic", "cover", "cover_url", "sizable_cover"),
             ),
             creatorName = firstString(item, "nickname", "nick_name", "username", "author_name")
@@ -180,9 +180,4 @@ class KugouPlaylistWriteClient(
             }
         }.firstOrNull() ?: -1L
 
-    private fun normalizeArtwork(value: String): String? = value
-        .trim()
-        .takeIf(String::isNotBlank)
-        ?.replace("{size}", "400")
-        ?.let { if (it.startsWith("http://", true)) "https://${it.substringAfter("://")}" else it }
 }

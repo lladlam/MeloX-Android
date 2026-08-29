@@ -232,6 +232,7 @@ fun ProviderSettingsHub(
                                     MusicSource.AppleMusic -> showAppleMusicLogin = true
                                     MusicSource.Bilibili -> showBilibiliLogin = true
                                     MusicSource.Spotify -> showSpotifyLogin = true
+                                    MusicSource.Jellyfin -> Unit
                                 }
                             }
                         },
@@ -249,6 +250,7 @@ fun ProviderSettingsHub(
                                 MusicSource.AppleMusic -> "重新配置 Developer Token / Music User Token"
                                 MusicSource.Bilibili -> "清除当前 Bilibili 登录态后重新登录"
                                 MusicSource.Spotify -> "清除 OAuth token 后重新在浏览器授权"
+                                MusicSource.Jellyfin -> "清除当前 Jellyfin 服务器登录态后重新连接"
                             },
                             onClick = {
                                 showServiceDialog = false
@@ -368,6 +370,7 @@ fun ProviderSettingsHub(
                                 MusicSource.AppleMusic -> showAppleMusicLogin = true
                                 MusicSource.Bilibili -> showBilibiliLogin = true
                                 MusicSource.Spotify -> showSpotifyLogin = true
+                                MusicSource.Jellyfin -> Unit
                             }
                         }
                     },

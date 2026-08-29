@@ -41,11 +41,7 @@ object LxUserSourceStore {
     fun import(context: Context, script: String): LxUserSourceRecord {
         val normalizedScript = script.removePrefix("\uFEFF")
         require(normalizedScript.toByteArray(Charsets.UTF_8).size <= MaxScriptBytes) { "音乐源脚本过大（最大 9 MB）" }
-        require(
-            normalizedScript.contains("globalThis.lx") ||
-                normalizedScript.contains("lx.on") ||
-                normalizedScript.contains("musicUrl"),
-        ) { "不是有效的 LX Music 音乐源脚本" }
+        require(looksLikeLxMusicSource(normalizedScript)) { "不是有效的 LX Music 音乐源脚本" }
         val metadata = LxUserScriptMetadata.parse(normalizedScript)
         val id = "user_api_${System.currentTimeMillis()}_${(100..999).random()}"
         val record = LxUserSourceRecord(id, metadata)
@@ -83,6 +79,20 @@ object LxUserSourceStore {
         context.getSharedPreferences(PreferencesName, Context.MODE_PRIVATE)
             .edit().putString(KeyList, json.toString()).apply()
     }
+
+    /** LX v5 sources are often obfuscated and encode public names as Unicode escapes. */
+    internal fun looksLikeLxMusicSource(script: String): Boolean {
+        val decoded = EscapedUnicode.replace(script) { match ->
+            match.groupValues[1].toInt(16).toChar().toString()
+        }
+        val hasMetadata = decoded.contains("@name") && decoded.contains("@version")
+        val hasRuntimeMarker = decoded.contains("globalThis") && (
+            decoded.contains("lx") || decoded.contains("musicUrl") || decoded.contains("apiUrl")
+        )
+        return hasMetadata && hasRuntimeMarker
+    }
+
+    private val EscapedUnicode = Regex("\\\\u([0-9a-fA-F]{4})")
 }
 
 data class LxUserSourceRecord(

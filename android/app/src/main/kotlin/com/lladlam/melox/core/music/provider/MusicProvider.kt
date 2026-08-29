@@ -120,6 +120,14 @@ interface PlaylistWriteCapability {
     )
 }
 
+/** Optional full playlist mutation surface for providers with native sync APIs. */
+interface PlaylistSyncCapability {
+    suspend fun createPlaylist(name: String): MusicPlaylistSummary
+    suspend fun renamePlaylist(playlist: MusicPlaylistSummary, name: String)
+    suspend fun removeTrackFromPlaylist(track: MusicTrack, playlist: MusicPlaylistSummary)
+    suspend fun reorderPlaylistTrack(playlist: MusicPlaylistSummary, track: MusicTrack, newIndex: Int)
+}
+
 /** Home semantic feed. Providers return only the sections they actually expose. */
 interface HomeFeedCapability {
     suspend fun homeFeed(

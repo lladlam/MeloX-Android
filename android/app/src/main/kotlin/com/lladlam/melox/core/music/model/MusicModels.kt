@@ -11,7 +11,8 @@ enum class MusicSource(
     Kuwo("kuwo", "酷我音乐"),
     AppleMusic("apple_music", "Apple Music"),
     Bilibili("bilibili", "Bilibili"),
-    Spotify("spotify", "Spotify");
+    Spotify("spotify", "Spotify"),
+    Jellyfin("jellyfin", "Jellyfin");
 
     companion object {
         fun fromStorageValue(value: String?): MusicSource =

@@ -114,7 +114,8 @@ class ProviderPlaybackResolver(
             Log.d(TAG, "resolve detail source=${source.storageValue} id=${resourceValue.take(8)} title=${track.title.take(40)} " +
                 "artists=${track.artistText.take(60)} durationMs=${track.durationMs} metadata=${track.providerMetadata.javaClass.simpleName}")
             Log.i(TAG, "Resolve start source=${source.storageValue} quality=${quality.name} thirdParty=${thirdPartySourcesEnabled()}")
-            val lx = if (thirdPartySourcesEnabled() && !thirdPartyOnlyForMembership()) {
+            val allowExternalResolver = source != MusicSource.Jellyfin
+            val lx = if (allowExternalResolver && thirdPartySourcesEnabled() && !thirdPartyOnlyForMembership()) {
                 runCatching { lxUserPlayback?.resolve(track, quality) }
                     .onFailure { Log.w(TAG, "LX stage failed source=${source.storageValue} error=${it.javaClass.simpleName}") }
                     .getOrNull()
@@ -126,7 +127,7 @@ class ProviderPlaybackResolver(
                 pending.complete(result)
                 return result
             }
-            val thirdParty = if (thirdPartySourcesEnabled() && !thirdPartyOnlyForMembership()) {
+            val thirdParty = if (allowExternalResolver && thirdPartySourcesEnabled() && !thirdPartyOnlyForMembership()) {
                 runCatching { chkszPlayback?.resolve(track, quality) }
                     .onFailure { Log.w(TAG, "CHKSZ stage failed source=${source.storageValue} error=${it.javaClass.simpleName}") }
                     .getOrNull()
@@ -160,7 +161,7 @@ class ProviderPlaybackResolver(
                 is PlaybackResolution.Preview -> ResolvedRequest(Uri.parse(resolution.url), emptyMap())
                 PlaybackResolution.LoginRequired -> throw IOException("${provider.displayName} 需要登录后播放")
                 PlaybackResolution.SubscriptionRequired -> {
-                    if (thirdPartySourcesEnabled()) {
+                    if (allowExternalResolver && thirdPartySourcesEnabled()) {
                         resolveThirdParty(track, quality, source)
                             ?: throw IOException("${provider.displayName} 当前歌曲需要对应会员权益")
                     } else {
@@ -257,6 +258,7 @@ class ProviderPlaybackResolver(
             id.value,
             uri.getQueryParameter(SpotifyIsrcQuery)?.takeIf(String::isNotBlank),
         )
+        MusicSource.Jellyfin -> ProviderTrackMetadata.Empty
     }
 
     companion object {

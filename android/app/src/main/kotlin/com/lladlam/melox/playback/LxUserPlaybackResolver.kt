@@ -8,6 +8,10 @@ import com.lladlam.melox.core.music.model.MusicTrack
 import com.lladlam.melox.core.provider.lxuser.LxUserRuntime
 import com.lladlam.melox.core.provider.lxuser.LxUserScript
 import com.lladlam.melox.core.provider.lxuser.LxUserSourceStore
+import com.lladlam.melox.core.network.NeteaseSearchClient
+import com.lladlam.melox.core.music.model.MusicArtistRef
+import com.lladlam.melox.core.music.model.MusicResourceId
+import com.lladlam.melox.core.music.model.ProviderTrackMetadata
 import java.io.IOException
 import java.util.Locale
 
@@ -82,24 +86,30 @@ class LxUserPlaybackResolver(
                     runtime.load(LxUserScript(script))
                     phase = "request"
                     (sourceCode?.let(::listOf) ?: listOf("kw", "kg", "tx", "wy", "mg")).asSequence()
-                        .mapNotNull { source ->
-                            val sourceQuality = runtime.qualityFor(source, lxQuality)
-                            Log.d(TAG, "LX candidate script=${record.id} source=$source requested=$lxQuality actual=$sourceQuality")
-                            val response = runtime.callAction(
-                                "musicUrl",
-                                song + mapOf(
-                                    "source" to source,
-                                    "type" to sourceQuality,
-                                    "musicInfo" to song,
-                                ),
-                            )
-                            response?.let { value ->
+                        .flatMap { source ->
+                            lxQualityFallbacks(lxQuality).asSequence().map { requestedQuality -> source to requestedQuality }
+                        }
+                        .mapNotNull { (source, requestedQuality) ->
+                            val sourceQuality = runtime.qualityFor(source, requestedQuality)
+                            Log.d(TAG, "LX candidate script=${record.id} source=$source requested=$requestedQuality actual=$sourceQuality")
+                            runCatching {
+                                runtime.callAction(
+                                    "musicUrl",
+                                    song + mapOf(
+                                        "source" to source,
+                                        "type" to sourceQuality,
+                                        "musicInfo" to song,
+                                    ),
+                                )
+                            }.onFailure {
+                                Log.w(TAG, "LX candidate failed script=${record.id} source=$source quality=$sourceQuality detail=${it.safeLogMessage()}")
+                            }.getOrNull()?.let { value ->
                                 val url = when (value) {
                                     is String -> value
                                     is Map<*, *> -> value["url"]?.toString()
                                     else -> null
                                 }?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
-                                Log.d(TAG, "LX candidate result script=${record.id} source=$source url=${url != null}")
+                                Log.d(TAG, "LX candidate result script=${record.id} source=$source quality=$sourceQuality url=${url != null}")
                                 url?.let { LxUserPlaybackResult(record.id, it) }
                             }
                         }
@@ -116,7 +126,74 @@ class LxUserPlaybackResolver(
                 )
                     }
         }
+        if (track.id.source != MusicSource.Netease) {
+            resolveViaNeteaseMatch(track, quality)?.let { return it }
+        }
         Log.i(TAG, "LX unresolved source=${track.id.source.storageValue} scripts=${LxUserSourceStore.list(appContext).size}")
+        return null
+    }
+
+    private fun resolveViaNeteaseMatch(track: MusicTrack, quality: AudioQualityTier): LxUserPlaybackResult? {
+        val query = track.title.trim()
+        val candidates = runCatching {
+            kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                NeteaseSearchClient().searchSongs(query, limit = 50)
+            }
+        }.onFailure { Log.w(TAG, "LX Netease match search failed title=${track.title.take(40)} detail=${it.safeLogMessage()}") }
+            .getOrNull().orEmpty()
+        val match = candidates
+            .asSequence()
+            .filter { normalizeLxText(it.name) == normalizeLxText(track.title) }
+            .filter { candidate -> track.durationMs == null || candidate.durationMs <= 0L || kotlin.math.abs(candidate.durationMs - track.durationMs) <= 8_000L }
+            .sortedWith(compareByDescending<com.lladlam.melox.core.model.SearchSong> {
+                val requestedArtist = normalizeLxText(track.artistText)
+                if (requestedArtist.isNotBlank() && normalizeLxText(it.artists).contains(requestedArtist)) 1 else 0
+            }.thenBy { candidate -> kotlin.math.abs(candidate.durationMs - (track.durationMs ?: candidate.durationMs)) })
+            .firstOrNull()
+        if (match == null) {
+            Log.w(TAG, "LX Netease match not found title=${track.title.take(40)} candidates=${candidates.size}")
+            return null
+        }
+
+        val neteaseTrack = MusicTrack(
+            id = MusicResourceId(MusicSource.Netease, match.id.toString()),
+            title = match.name,
+            artists = listOf(MusicArtistRef(name = match.artists)),
+            durationMs = match.durationMs,
+            artworkUrl = match.artworkUrl,
+            providerMetadata = ProviderTrackMetadata.Netease(match.id),
+        )
+        Log.i(TAG, "LX Netease match source=${track.id.source.storageValue} id=${track.id.value.take(8)} -> ${match.id}")
+        return resolveNeteaseTrack(neteaseTrack, quality)
+    }
+
+    private fun resolveNeteaseTrack(track: MusicTrack, quality: AudioQualityTier): LxUserPlaybackResult? {
+        val song = standardMusicInfo(track, "wy", quality.toLxQuality())
+        for (record in LxUserSourceStore.list(appContext)) {
+            val script = LxUserSourceStore.script(appContext, record.id) ?: continue
+            val result = runCatching {
+                LxUserRuntime().use { runtime ->
+                    runtime.load(LxUserScript(script))
+                    lxQualityFallbacks(quality.toLxQuality()).asSequence().mapNotNull { requestedQuality ->
+                        val sourceQuality = runtime.qualityFor("wy", requestedQuality)
+                        val response = runCatching {
+                            runtime.callAction("musicUrl", song + mapOf(
+                                "source" to "wy",
+                                "type" to sourceQuality,
+                                "musicInfo" to song,
+                            ))
+                        }.onFailure { Log.w(TAG, "LX Netease candidate failed quality=$sourceQuality detail=${it.safeLogMessage()}") }.getOrNull()
+                        val url = when (response) {
+                            is String -> response
+                            is Map<*, *> -> response["url"]?.toString()
+                            else -> null
+                        }?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+                        url?.let { LxUserPlaybackResult(record.id, it) }
+                    }.firstOrNull()
+                }
+            }.getOrNull()
+            if (result != null) return result
+        }
         return null
     }
 
@@ -124,6 +201,18 @@ class LxUserPlaybackResolver(
         const val TAG = "MeloXThirdParty"
     }
 }
+
+private fun lxQualityFallbacks(requested: String): List<String> = when (requested) {
+    "flac24bit" -> listOf("flac24bit", "flac", "320k", "128k")
+    "flac" -> listOf("flac", "320k", "128k")
+    "320k" -> listOf("320k", "128k")
+    else -> listOf(requested)
+}
+
+private fun normalizeLxText(value: String): String = value
+    .lowercase(Locale.ROOT)
+    .replace(Regex("[\\s\\p{Punct}·•，。！？、（）()\\[\\]【】]"), "")
+
 
 private fun standardMusicInfo(
     track: MusicTrack,
@@ -136,9 +225,12 @@ private fun standardMusicInfo(
     }
     val metadata = when (val provider = track.providerMetadata) {
         is com.lladlam.melox.core.music.model.ProviderTrackMetadata.QQMusic -> mapOf(
-            "songId" to (provider.numericSongId ?: track.id.value),
+            // LX's canonical model keeps QQ's mid, numeric id and media mid
+            // separately. User sources rely on all three fields.
+            "songId" to track.id.value,
+            "id" to (provider.numericSongId ?: 0L),
             "strMediaMid" to (provider.mediaMid ?: track.id.value),
-            "albumMid" to null,
+            "albumMid" to (track.album?.id?.value ?: ""),
         )
         is com.lladlam.melox.core.music.model.ProviderTrackMetadata.Kugou -> mapOf(
             "songId" to track.id.value,

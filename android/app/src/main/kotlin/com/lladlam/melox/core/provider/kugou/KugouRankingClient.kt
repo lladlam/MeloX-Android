@@ -68,7 +68,7 @@ class KugouRankingClient(
         val albumId = firstString(item, "AlbumID", "album_id", "albumid").takeIf(String::isNotBlank)
         val albumAudioId = firstLong(item, "album_audio_id", "MixSongID", "mixsongid", "AlbumAudioID", "Audioid", "audio_id")
             .takeIf { it > 0 }
-        val artwork = normalizeArtwork(firstString(item, "Image", "image", "img", "album_img", "sizable_cover"))
+        val artwork = normalizeKugouArtworkUrl(firstString(item, "Image", "image", "img", "album_img", "sizable_cover"))
         val artists = singer
             .split(Regex("\\s*(?:、|/|&|,|;|；)\\s*"))
             .map(String::trim)
@@ -130,8 +130,4 @@ class KugouRankingClient(
             }
         }.firstOrNull() ?: -1L
 
-    private fun normalizeArtwork(value: String): String? = value.trim()
-        .takeIf(String::isNotBlank)
-        ?.replace("{size}", "400")
-        ?.let { if (it.startsWith("http://", true)) "https://${it.substringAfter("://")}" else it }
 }

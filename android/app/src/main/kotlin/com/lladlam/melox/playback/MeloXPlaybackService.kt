@@ -83,7 +83,7 @@ class MeloXPlaybackService : MediaSessionService() {
     private lateinit var equalizerController: MeloXEqualizerController
     private lateinit var playbackHistoryReporter: MeloXPlaybackHistoryReporter
     private var historySongId: Long? = null
-    private var historyPositionMs = 0L
+    private val listenedTimeTracker = MeloXListenedTimeTracker()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val handler = Handler(Looper.getMainLooper())
     private var recommendationJob: Job? = null
@@ -142,6 +142,7 @@ class MeloXPlaybackService : MediaSessionService() {
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            listenedTimeTracker.onPlayingChanged(SystemClock.elapsedRealtime(), isPlaying)
             Log.d(TAG, "isPlaying=$isPlaying, ongoing=${isPlaybackOngoing()}")
         }
 
@@ -155,8 +156,17 @@ class MeloXPlaybackService : MediaSessionService() {
         override fun onPlaybackStateChanged(playbackState: Int) {
             val active = player ?: return
             if (playbackState == Player.STATE_ENDED) {
-                historySongId?.let { playbackHistoryReporter.recordDuration(it, elapsedMs = historyPositionMs, durationMs = active.duration.takeIf { value -> value != C.TIME_UNSET && value > 0L }, completed = true) }
-                historySongId = null; historyPositionMs = 0L
+                historySongId?.let {
+                    playbackHistoryReporter.recordDuration(
+                        it,
+                        elapsedMs = listenedTimeTracker.elapsedMs(
+                            SystemClock.elapsedRealtime(),
+                            active.duration.takeIf { value -> value != C.TIME_UNSET && value > 0L },
+                        ),
+                    )
+                }
+                historySongId = null
+                listenedTimeTracker.reset(SystemClock.elapsedRealtime(), false)
                 if (!MeloXNetworkAvailability.isOnline(this@MeloXPlaybackService)) {
                     if (!skipToNextDownloaded(active)) active.pause()
                     return
@@ -172,8 +182,14 @@ class MeloXPlaybackService : MediaSessionService() {
             autoMixRetrySourceId = null
             autoMixRetryAfterRealtimeMs = 0L
             val transitionedId = mediaItem?.mediaId?.toLongOrNull(); val previousHistoryId = historySongId
-            if (previousHistoryId != null && previousHistoryId != transitionedId) playbackHistoryReporter.recordDuration(previousHistoryId, elapsedMs = historyPositionMs)
-            if (transitionedId != null && transitionedId != previousHistoryId) { historySongId = transitionedId; historyPositionMs = 0L; playbackHistoryReporter.recordStart(transitionedId) }
+            if (previousHistoryId != null && previousHistoryId != transitionedId) {
+                playbackHistoryReporter.recordDuration(previousHistoryId, elapsedMs = listenedTimeTracker.elapsedMs(SystemClock.elapsedRealtime()))
+            }
+            if (transitionedId != previousHistoryId) {
+                historySongId = transitionedId
+                listenedTimeTracker.reset(SystemClock.elapsedRealtime(), player?.isPlaying == true)
+                transitionedId?.let(playbackHistoryReporter::recordStart)
+            }
             MeloXAudioReactiveRuntime.select(mediaItem?.mediaId)
             mediaItem?.let(downloadStore::recordPlayback)
             mediaItem?.let(::scheduleBackgroundAnalysis)
@@ -279,7 +295,6 @@ class MeloXPlaybackService : MediaSessionService() {
             val active = player
             if (active != null) {
                 applyAudioFocusPolicy(active)
-                active.currentMediaItem?.mediaId?.toLongOrNull()?.let { current -> if (current == historySongId) historyPositionMs = active.currentPosition.coerceAtLeast(0L) }
                 val uiTransitionActive = MeloXPlayerTransitionState.isActive
                 runCatching {
                     active.currentMediaItem?.let(::ensureBackgroundAnalysisScheduled)
@@ -1394,7 +1409,9 @@ class MeloXPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
-        historySongId?.let { playbackHistoryReporter.recordDuration(it, elapsedMs = historyPositionMs) }; historySongId = null; playbackHistoryReporter.close()
+        historySongId?.let { playbackHistoryReporter.recordDuration(it, elapsedMs = listenedTimeTracker.elapsedMs(SystemClock.elapsedRealtime())) }
+        historySongId = null
+        playbackHistoryReporter.close()
         handler.removeCallbacks(modeMonitor)
         recommendationJob?.cancel()
         playlistAnalysisJob?.cancel()

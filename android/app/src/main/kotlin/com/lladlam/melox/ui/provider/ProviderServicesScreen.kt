@@ -42,6 +42,8 @@ import com.lladlam.melox.core.music.provider.ProviderAccountManager
 import com.lladlam.melox.core.music.provider.ThirdPartyMusicSourceConsentStore
 import com.lladlam.melox.core.provider.lxuser.LxUserSourceStore
 import com.lladlam.melox.core.provider.lxuser.ChkszApiKeyStore
+import com.lladlam.melox.core.provider.jellyfin.JellyfinApiClient
+import com.lladlam.melox.core.provider.jellyfin.JellyfinSessionStore
 import com.lladlam.melox.ui.MeloXBottomContentClearance
 import com.lladlam.melox.ui.account.KugouLoginScreen
 import com.lladlam.melox.ui.account.KuwoLoginScreen
@@ -101,6 +103,12 @@ fun ProviderServicesScreen(
     var lxImportError by remember { mutableStateOf<String?>(null) }
     var chkszApiKey by remember { mutableStateOf(ChkszApiKeyStore.read(context)) }
     var showChkszKeyDialog by remember { mutableStateOf(false) }
+    var showJellyfinDialog by remember { mutableStateOf(false) }
+    var jellyfinServerUrl by remember { mutableStateOf(JellyfinSessionStore.read(context).serverUrl) }
+    var jellyfinUsername by remember { mutableStateOf(JellyfinSessionStore.read(context).userName) }
+    var jellyfinPassword by remember { mutableStateOf("") }
+    var jellyfinError by remember { mutableStateOf<String?>(null) }
+    var jellyfinBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val lxFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
@@ -249,6 +257,7 @@ fun ProviderServicesScreen(
                             MusicSource.AppleMusic -> showAppleMusicLogin = true
                             MusicSource.Bilibili -> showBilibiliLogin = true
                             MusicSource.Spotify -> showSpotifyLogin = true
+                            MusicSource.Jellyfin -> { jellyfinError = null; showJellyfinDialog = true }
                         }
                     }
                 },
@@ -274,6 +283,13 @@ fun ProviderServicesScreen(
         ServicesSectionLabel("第三方音乐源")
         MeloXIosGroupedList(surfaceColor = MaterialTheme.colorScheme.surface) {
             MeloXIosListRow(
+                title = "Jellyfin",
+                subtitle = if (accountManager.state(MusicSource.Jellyfin).loggedIn) "已连接 · 点击管理" else "连接自建 Jellyfin 音乐服务器",
+                leading = { MeloXSymbolIcon(MeloXSymbol.Devices, Modifier.size(24.dp), MeloXSystemColors.Red) },
+                onClick = { jellyfinError = null; showJellyfinDialog = true },
+                showTopSeparator = false,
+            )
+            MeloXIosListRow(
                 title = "开启第三方音乐源设置",
                 subtitle = "需要先同意第三方音乐源使用协议；不受云控管理",
                 leading = { MeloXSymbolIcon(MeloXSymbol.Info, Modifier.size(24.dp), MeloXSystemColors.Red) },
@@ -289,7 +305,7 @@ fun ProviderServicesScreen(
                         },
                     )
                 },
-                showTopSeparator = false,
+                showTopSeparator = true,
             )
             if (thirdPartySourcesEnabled) {
                 MeloXIosListRow(
@@ -411,6 +427,7 @@ fun ProviderServicesScreen(
                                 MusicSource.AppleMusic -> showAppleMusicLogin = true
                                 MusicSource.Bilibili -> showBilibiliLogin = true
                                 MusicSource.Spotify -> showSpotifyLogin = true
+                                MusicSource.Jellyfin -> Unit
                             }
                         }
                     },
@@ -494,6 +511,33 @@ fun ProviderServicesScreen(
                     modifier = Modifier.weight(1f),
                     style = MeloXGlassButtonStyle.BorderedProminent,
                 ) { Text("导入") }
+            }
+        }
+    }
+    if (showJellyfinDialog) {
+        MeloXGlassDialog(visible = true, onDismiss = { if (!jellyfinBusy) showJellyfinDialog = false }) {
+            Text("连接 Jellyfin", style = MaterialTheme.typography.titleLarge)
+            Text("输入你的 Jellyfin 服务器和音乐账号。登录信息只保存在本机。", modifier = Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f), fontSize = 13.sp, lineHeight = 19.sp)
+            MeloXGlassTextField(jellyfinServerUrl, { jellyfinServerUrl = it }, Modifier.fillMaxWidth().padding(top = 12.dp), placeholder = { Text("https://music.example.com") }, singleLine = true)
+            MeloXGlassTextField(jellyfinUsername, { jellyfinUsername = it }, Modifier.fillMaxWidth().padding(top = 10.dp), placeholder = { Text("用户名") }, singleLine = true)
+            MeloXGlassTextField(jellyfinPassword, { jellyfinPassword = it }, Modifier.fillMaxWidth().padding(top = 10.dp), placeholder = { Text("密码") }, singleLine = true)
+            jellyfinError?.let { Text(it, Modifier.padding(top = 7.dp), color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MeloXGlassButton(onClick = { JellyfinSessionStore.clear(context); showJellyfinDialog = false }, modifier = Modifier.weight(1f), style = MeloXGlassButtonStyle.Plain) { Text("退出") }
+                MeloXGlassButton(
+                    onClick = {
+                        jellyfinBusy = true
+                        scope.launch {
+                            runCatching {
+                                require(jellyfinServerUrl.trim().startsWith("http://") || jellyfinServerUrl.trim().startsWith("https://")) { "请输入有效的服务器地址" }
+                                require(jellyfinUsername.isNotBlank()) { "请输入用户名" }
+                                JellyfinApiClient(com.lladlam.melox.core.network.MeloXHttpClient.shared).authenticate(jellyfinServerUrl.trim(), jellyfinUsername.trim(), jellyfinPassword).also { JellyfinSessionStore.write(context, it) }
+                            }.onSuccess { jellyfinPassword = ""; jellyfinBusy = false; loginRevision++; showJellyfinDialog = false }
+                                .onFailure { jellyfinBusy = false; jellyfinError = it.message ?: "Jellyfin 登录失败" }
+                        }
+                    },
+                    modifier = Modifier.weight(1f), style = MeloXGlassButtonStyle.BorderedProminent,
+                ) { Text(if (jellyfinBusy) "连接中…" else "连接") }
             }
         }
     }
