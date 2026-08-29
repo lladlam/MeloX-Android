@@ -108,6 +108,7 @@ enum class MeloXQueueOrigin { Base, Manual }
 
 data class MeloXQueueEntry(
     val index: Int,
+    val entryId: String,
     val mediaId: String,
     val title: String,
     val artist: String,
@@ -404,6 +405,8 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
             val metadata = item.mediaMetadata
             MeloXQueueEntry(
                 index = index,
+                entryId = metadata.extras?.getString(PlaybackCommands.QUEUE_ENTRY_ID_KEY)
+                    ?: "${item.mediaId}@$index",
                 mediaId = item.mediaId,
                 title = metadata.extras?.getString("melox.system.original_title")
                     ?: metadata.title?.toString().orEmpty().ifBlank { "未知歌曲" },
@@ -555,6 +558,7 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
     val item = player.currentMediaItem ?: return
     val extras = (item.mediaMetadata.extras ?: android.os.Bundle()).let { android.os.Bundle(it) }.apply {
         putString(PlaybackCommands.QUEUE_ORIGIN_KEY, PlaybackCommands.QUEUE_ORIGIN_MANUAL)
+        putString(PlaybackCommands.QUEUE_ENTRY_ID_KEY, java.util.UUID.randomUUID().toString())
     }
     val copied = item.buildUpon()
         .setMediaMetadata(item.mediaMetadata.buildUpon().setExtras(extras).build())

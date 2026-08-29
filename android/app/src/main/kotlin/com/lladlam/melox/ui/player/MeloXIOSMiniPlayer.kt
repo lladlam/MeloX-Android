@@ -88,17 +88,25 @@ fun MeloXIOSMiniPlayer(
     val liquidInteraction = rememberMeloXLiquidInteraction()
     var accumulatedDrag by remember { mutableFloatStateOf(0f) }
     var pendingDirection by remember { mutableIntStateOf(0) }
+    var pendingOutgoingMediaId by remember { mutableStateOf<String?>(null) }
     var reactiveSample by remember { mutableStateOf(MeloXAudioReactiveSample.Idle) }
 
-    LaunchedEffect(state.mediaId, state.title, state.artworkUrl) {
-        if (pendingDirection != 0 && state.title.isNotBlank() && state.artworkUrl != null) {
-            // Keep the outgoing frame in place until the new media metadata is
-            // available, then reveal the new frame without a second animation.
+    LaunchedEffect(state.mediaId, pendingDirection) {
+        if (pendingDirection != 0 && state.mediaId != pendingOutgoingMediaId) {
             contentOffset.snapTo(0f)
             pendingDirection = 0
+            pendingOutgoingMediaId = null
         } else if (pendingDirection == 0) {
             contentOffset.snapTo(0f)
         }
+    }
+
+    LaunchedEffect(pendingOutgoingMediaId) {
+        if (pendingOutgoingMediaId == null) return@LaunchedEffect
+        kotlinx.coroutines.delay(1_500L)
+        contentOffset.animateTo(0f, spring(dampingRatio = .72f, stiffness = 430f))
+        pendingDirection = 0
+        pendingOutgoingMediaId = null
     }
 
     val expansionProgress = if (animatedVisibilityScope != null) {
@@ -117,7 +125,7 @@ fun MeloXIOSMiniPlayer(
     // updates so the shared-bound transition can spend its frame budget on
     // layout and glass rendering instead.
     LaunchedEffect(state.mediaId, state.isPlaying, expansionProgress > 0.01f) {
-        if (expansionProgress > 0.01f) {
+        if (expansionProgress > 0.01f || !state.isPlaying) {
             reactiveSample = MeloXAudioReactiveSample.Idle
             return@LaunchedEffect
         }
@@ -258,6 +266,7 @@ fun MeloXIOSMiniPlayer(
                                         scope.launch {
                                             contentOffset.animateTo(direction * swipeWidth, spring(dampingRatio = .68f, stiffness = 360f))
                                             pendingDirection = direction
+                                            pendingOutgoingMediaId = state.mediaId
                                             if (direction < 0) state.nextFromMiniPlayer() else state.previousFromMiniPlayer()
                                         }
                                     } else {

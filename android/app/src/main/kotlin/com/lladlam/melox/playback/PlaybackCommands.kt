@@ -21,6 +21,7 @@ import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.core.network.MeloXNetworkAvailability
 import java.io.IOException
 import java.util.concurrent.Executor
+import java.util.UUID
 
 object PlaybackCommands {
     private const val TAG = "MeloXPlayback"
@@ -28,6 +29,7 @@ object PlaybackCommands {
     const val QUEUE_ORIGIN_BASE = "base"
     const val QUEUE_ORIGIN_MANUAL = "manual"
     const val QUEUE_ORIGINAL_INDEX_KEY = "melox.queue.original_index"
+    const val QUEUE_ENTRY_ID_KEY = "melox.queue.entry_id"
     const val QUEUE_ORIGINAL_INDEX_UNSET = -1
     const val HEART_MODE_KEY = "melox.playback.heart_mode"
 
@@ -362,6 +364,7 @@ object PlaybackCommands {
                 Bundle().apply {
                     putString(QUEUE_ORIGIN_KEY, queueOrigin)
                     putInt(QUEUE_ORIGINAL_INDEX_KEY, originalIndex)
+                    putString(QUEUE_ENTRY_ID_KEY, UUID.randomUUID().toString())
                     putBoolean(HEART_MODE_KEY, heartMode)
                     putLong(PlaybackTrackIdentity.DurationMsExtra, durationMs.coerceAtLeast(0L))
                 },

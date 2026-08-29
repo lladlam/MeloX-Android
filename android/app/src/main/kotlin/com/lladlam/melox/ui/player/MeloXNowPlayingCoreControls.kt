@@ -42,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -117,8 +118,10 @@ private fun SceneProgressControl(
     } else {
         0f
     }
-    var scrubbing by remember { mutableStateOf(false) }
-    var localProgress by remember { mutableFloatStateOf(sourceProgress) }
+    var scrubbing by remember(state.mediaId) { mutableStateOf(false) }
+    var localProgress by remember(state.mediaId) { mutableFloatStateOf(sourceProgress) }
+    var scrubMediaId by remember(state.mediaId) { mutableStateOf<String?>(null) }
+    var scrubDurationMs by remember(state.mediaId) { mutableLongStateOf(0L) }
     val trackHeight by animateDpAsState(
         targetValue = if (scrubbing) 6.dp else 4.dp,
         animationSpec = tween(120),
@@ -138,14 +141,19 @@ private fun SceneProgressControl(
         Slider(
             value = localProgress,
             onValueChange = {
+                if (!scrubbing) {
+                    scrubMediaId = state.mediaId
+                    scrubDurationMs = state.durationMs
+                }
                 scrubbing = true
                 localProgress = it.coerceIn(0f, 1f)
             },
             onValueChangeFinished = {
-                if (state.durationMs > 0L) {
-                    state.seekTo((state.durationMs * localProgress).roundToLong())
+                if (scrubMediaId == state.mediaId && scrubDurationMs > 0L) {
+                    state.seekTo((scrubDurationMs * localProgress).roundToLong())
                 }
                 scrubbing = false
+                scrubMediaId = null
             },
             modifier = Modifier
                 .fillMaxWidth()

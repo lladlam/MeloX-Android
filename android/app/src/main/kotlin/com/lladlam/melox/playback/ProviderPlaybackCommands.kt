@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
+import java.util.UUID
 import androidx.core.content.ContextCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -103,6 +104,7 @@ object ProviderPlaybackCommands {
         val extras = Bundle().apply {
             putString(PlaybackCommands.QUEUE_ORIGIN_KEY, queueOrigin)
             putInt(PlaybackCommands.QUEUE_ORIGINAL_INDEX_KEY, originalIndex)
+            putString(PlaybackCommands.QUEUE_ENTRY_ID_KEY, UUID.randomUUID().toString())
             putBoolean(PlaybackCommands.HEART_MODE_KEY, false)
             putString(PlaybackTrackIdentity.SourceExtra, id.source.storageValue)
             putString(PlaybackTrackIdentity.ResourceIdExtra, id.value)
