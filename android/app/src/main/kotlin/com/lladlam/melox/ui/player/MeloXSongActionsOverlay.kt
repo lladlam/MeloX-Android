@@ -81,6 +81,8 @@ import com.lladlam.melox.ui.glass.MeloXIosGroupedList
 import com.lladlam.melox.ui.glass.MeloXIosListRow
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSymbolIcon
+import com.lladlam.melox.ui.animation.meloXPanelEnter
+import com.lladlam.melox.ui.animation.meloXPanelExit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -245,8 +247,7 @@ fun MeloXSongActionsOverlay(
         AnimatedContent(
                     targetState = page,
                     transitionSpec = {
-                        (fadeIn(spring(stiffness = 520f)) + scaleIn(initialScale = .96f)) togetherWith
-                            (fadeOut(spring(stiffness = 620f)) + scaleOut(targetScale = .96f))
+                        meloXPanelEnter() togetherWith meloXPanelExit()
                     },
             modifier = Modifier.fillMaxWidth(),
             label = "song-action-page",

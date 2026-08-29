@@ -58,6 +58,7 @@ import com.lladlam.melox.ui.glass.MeloXPinnedListPage
 import com.lladlam.melox.ui.glass.MeloXShapes
 import com.lladlam.melox.ui.library.MeloXUnifiedPlaylistDetailScreen
 import com.lladlam.melox.ui.theme.MeloXTheme
+import com.lladlam.melox.ui.MeloXPredictiveBackPage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -73,8 +74,10 @@ class MeloXAccountActivity : ComponentActivity() {
         enableEdgeToEdge()
         prepareMeloXPagePredictiveBack()
         setContent {
-            MeloXTheme {
-                AccountHomeScreen(userId, ::finishMeloXPage)
+            MeloXPredictiveBackPage(onBack = ::finishMeloXPage) {
+                MeloXTheme {
+                    AccountHomeScreen(userId, ::finishMeloXPage)
+                }
             }
         }
     }

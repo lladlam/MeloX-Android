@@ -62,6 +62,8 @@ import com.lladlam.melox.core.music.provider.ProviderAccountManager
 import com.lladlam.melox.core.network.MeloXSearchKind
 import com.lladlam.melox.core.provider.bilibili.BilibiliLyricOffsetStore
 import com.lladlam.melox.ui.glass.MeloXActionIcon
+import com.lladlam.melox.ui.animation.meloXPanelEnter
+import com.lladlam.melox.ui.animation.meloXPanelExit
 import com.lladlam.melox.ui.glass.MeloXIosGroupedList
 import com.lladlam.melox.ui.glass.MeloXIosListRow
 import com.lladlam.melox.ui.glass.MeloXLiquidSlider
@@ -150,8 +152,7 @@ internal fun MeloXProviderSongActionsOverlay(
         AnimatedContent(
                     targetState = page,
                     transitionSpec = {
-                        (fadeIn(spring(stiffness = 520f)) + scaleIn(initialScale = 0.96f)) togetherWith
-                            (fadeOut(spring(stiffness = 620f)) + scaleOut(targetScale = 0.96f))
+                        meloXPanelEnter() togetherWith meloXPanelExit()
                     },
             modifier = Modifier.fillMaxWidth(),
             label = "provider-song-action-page",

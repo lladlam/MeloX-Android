@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.lladlam.melox.ui.theme.isMeloXDarkTheme
+import com.lladlam.melox.ui.animation.meloXPanelEnter
 
 /**
  * Floating iOS 26-style Action Sheet / Context Menu surface.
@@ -73,7 +74,7 @@ fun MeloXGlassSheet(
         ) {
             AnimatedVisibility(
                 visible = true,
-                enter = fadeIn(spring(stiffness = 520f)) + scaleIn(initialScale = 0.97f),
+                enter = meloXPanelEnter(initialScale = 0.97f),
             ) {
                 Box(
                     modifier = Modifier
@@ -142,7 +143,7 @@ fun MeloXGlassDialog(
         ) {
             AnimatedVisibility(
                 visible = true,
-                enter = fadeIn(spring(stiffness = 520f)) + scaleIn(initialScale = 0.96f),
+                enter = meloXPanelEnter(),
             ) {
                 Box(
                     modifier = Modifier

@@ -61,6 +61,8 @@ import com.lladlam.melox.ui.glass.MeloXActionIcon
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
+import com.lladlam.melox.ui.animation.meloXContentEnter
+import com.lladlam.melox.ui.animation.meloXContentExit
 import com.lladlam.melox.ui.layout.rememberMeloXWindowInfo
 import com.lladlam.melox.playback.MeloXPlaybackModeRuntime
 import kotlinx.coroutines.delay
@@ -494,7 +496,7 @@ private fun MeloXIOSLandscapeNowPlayingScene(
                 AnimatedContent(
                     targetState = page,
                     modifier = Modifier.fillMaxSize(),
-                    transitionSpec = { fadeIn(tween(260)) togetherWith fadeOut(tween(180)) },
+                    transitionSpec = { meloXContentEnter() togetherWith meloXContentExit() },
                     label = "landscape-player-page",
                 ) { destination ->
                     when (destination) {

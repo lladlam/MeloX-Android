@@ -79,6 +79,7 @@ import com.lladlam.melox.ui.glass.MeloXGlassMaterial
 import com.lladlam.melox.ui.glass.meloXGlassSurface
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.settings.MeloXPlayerBackgroundMode
+import com.lladlam.melox.ui.animation.MeloXMotion
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.playback.CrossProviderPlaybackRuntime
 import kotlinx.coroutines.delay
@@ -224,59 +225,59 @@ private fun pageTransform(
 
     if (directLyricsQueue) {
         return (
-            fadeIn(tween(440)) +
+            fadeIn(tween(MeloXMotion.ContentEnterMillis, easing = FastOutSlowInEasing)) +
                 scaleIn(
                     initialScale = 0.92f,
-                    animationSpec = tween(440, easing = FastOutSlowInEasing),
+                    animationSpec = tween(MeloXMotion.ContentEnterMillis, easing = FastOutSlowInEasing),
                 )
             ) togetherWith (
-            fadeOut(tween(300)) +
+            fadeOut(tween(MeloXMotion.ContentExitMillis, easing = FastOutSlowInEasing)) +
                 scaleOut(
                     targetScale = 0.92f,
-                    animationSpec = tween(300, easing = FastOutSlowInEasing),
+                    animationSpec = tween(MeloXMotion.ContentExitMillis, easing = FastOutSlowInEasing),
                 )
             )
     }
 
     return when (target) {
         MeloXNowPlayingPage.Artwork -> (
-            fadeIn(tween(220, delayMillis = 70)) +
+            fadeIn(tween(MeloXMotion.ContentEnterMillis, easing = FastOutSlowInEasing)) +
                 slideInVertically(
-                    animationSpec = tween(220, delayMillis = 70, easing = FastOutSlowInEasing),
+                    animationSpec = tween(MeloXMotion.ContentEnterMillis, easing = FastOutSlowInEasing),
                     initialOffsetY = { -(it * 0.42f).toInt() },
                 )
             ) togetherWith (
-            fadeOut(tween(240)) +
+            fadeOut(tween(MeloXMotion.ContentExitMillis, easing = FastOutSlowInEasing)) +
                 slideOutVertically(
-                    animationSpec = tween(240, easing = FastOutSlowInEasing),
+                    animationSpec = tween(MeloXMotion.ContentExitMillis, easing = FastOutSlowInEasing),
                     targetOffsetY = { -(it * 0.42f).toInt() },
                 )
             )
 
         MeloXNowPlayingPage.Lyrics -> (
-            fadeIn(tween(340, delayMillis = 110)) +
+            fadeIn(tween(MeloXMotion.ContentEnterMillis, easing = FastOutSlowInEasing)) +
                 slideInVertically(
-                    animationSpec = tween(340, delayMillis = 110, easing = FastOutSlowInEasing),
+                    animationSpec = tween(MeloXMotion.ContentEnterMillis, easing = FastOutSlowInEasing),
                     initialOffsetY = { (it * 0.58f).toInt() },
                 )
             ) togetherWith (
-            fadeOut(tween(240)) +
+            fadeOut(tween(MeloXMotion.ContentExitMillis, easing = FastOutSlowInEasing)) +
                 slideOutVertically(
-                    animationSpec = tween(240, easing = FastOutSlowInEasing),
+                    animationSpec = tween(MeloXMotion.ContentExitMillis, easing = FastOutSlowInEasing),
                     targetOffsetY = { (it * 0.58f).toInt() },
                 )
             )
 
         MeloXNowPlayingPage.Queue -> (
-            fadeIn(tween(220, delayMillis = 70)) +
+            fadeIn(tween(MeloXMotion.ContentEnterMillis, easing = FastOutSlowInEasing)) +
                 slideInVertically(
-                    animationSpec = tween(220, delayMillis = 70, easing = FastOutSlowInEasing),
+                    animationSpec = tween(MeloXMotion.ContentEnterMillis, easing = FastOutSlowInEasing),
                     initialOffsetY = { (it * 0.58f).toInt() },
                 )
             ) togetherWith (
-            fadeOut(tween(240)) +
+            fadeOut(tween(MeloXMotion.ContentExitMillis, easing = FastOutSlowInEasing)) +
                 slideOutVertically(
-                    animationSpec = tween(240, easing = FastOutSlowInEasing),
+                    animationSpec = tween(MeloXMotion.ContentExitMillis, easing = FastOutSlowInEasing),
                     targetOffsetY = { (it * 0.58f).toInt() },
                 )
             )

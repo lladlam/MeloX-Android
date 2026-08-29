@@ -126,6 +126,8 @@ import com.lladlam.melox.ui.glass.MeloXGlassDialog
 import com.lladlam.melox.ui.glass.MeloXGlassButton
 import com.lladlam.melox.ui.glass.MeloXGlassButtonStyle
 import com.lladlam.melox.ui.theme.isMeloXDarkTheme
+import com.lladlam.melox.ui.animation.meloXContentEnter
+import com.lladlam.melox.ui.animation.meloXContentExit
 import com.lladlam.melox.ui.glass.meloXLiquidBottomBar
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import com.lladlam.melox.ui.glass.meloXLiquidTabSelection
@@ -450,7 +452,7 @@ fun MeloXApp(
                 ) {
                     AnimatedContent(
                         targetState = selectedTab,
-                        transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
+                        transitionSpec = { meloXContentEnter() togetherWith meloXContentExit() },
                         modifier = Modifier.fillMaxSize(),
                         label = "melox-page-transition",
                     ) { tab ->

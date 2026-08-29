@@ -61,6 +61,8 @@ import com.lladlam.melox.ui.glass.MeloXPinnedListPage
 import com.lladlam.melox.ui.glass.MeloXShapes
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSymbolIcon
+import com.lladlam.melox.ui.animation.meloXPageEnter
+import com.lladlam.melox.ui.animation.meloXPageExit
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -90,11 +92,9 @@ fun MeloXPodcastScreen(
         targetState = selectedPodcast,
         transitionSpec = {
             if (targetState != null) {
-                (slideInHorizontally(tween(300)) { it } + fadeIn(tween(220))) togetherWith
-                    (slideOutHorizontally(tween(260)) { -it / 4 } + fadeOut(tween(180)))
+                meloXPageEnter(fromRight = true) togetherWith meloXPageExit(toRight = false)
             } else {
-                (slideInHorizontally(tween(300)) { -it / 4 } + fadeIn(tween(220))) togetherWith
-                    (slideOutHorizontally(tween(260)) { it } + fadeOut(tween(180)))
+                meloXPageEnter(fromRight = false) togetherWith meloXPageExit(toRight = true)
             }
         },
         label = "podcast-page-navigation",

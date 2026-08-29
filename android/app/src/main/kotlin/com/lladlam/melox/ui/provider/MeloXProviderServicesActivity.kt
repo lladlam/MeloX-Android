@@ -18,6 +18,7 @@ import com.lladlam.melox.core.music.provider.MusicProviderSelectionStore
 import com.lladlam.melox.ui.prepareMeloXPagePredictiveBack
 import com.lladlam.melox.ui.account.NeteaseLoginScreen
 import com.lladlam.melox.ui.theme.MeloXTheme
+import com.lladlam.melox.ui.MeloXPredictiveBackPage
 
 class MeloXProviderServicesActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -25,8 +26,10 @@ class MeloXProviderServicesActivity : ComponentActivity() {
         enableEdgeToEdge()
         prepareMeloXPagePredictiveBack()
         setContent {
-            MeloXTheme {
-                ProviderServicesPage()
+            MeloXPredictiveBackPage(onBack = ::finish) {
+                MeloXTheme {
+                    ProviderServicesPage()
+                }
             }
         }
     }

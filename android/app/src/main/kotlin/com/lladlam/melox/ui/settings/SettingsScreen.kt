@@ -77,6 +77,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lladlam.melox.ui.animation.meloXPageEnter
+import com.lladlam.melox.ui.animation.meloXPageExit
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
@@ -282,8 +284,8 @@ fun SettingsScreen(
 
     AnimatedVisibility(
         visible = route != null,
-        enter = slideInHorizontally(tween(300)) { it } + fadeIn(tween(220)),
-        exit = slideOutHorizontally(tween(260)) { it / 4 } + fadeOut(tween(180)),
+        enter = meloXPageEnter(fromRight = true),
+        exit = meloXPageExit(toRight = true),
         modifier = Modifier.fillMaxSize().zIndex(1f),
     ) {
         route?.let { selectedRoute ->
@@ -306,8 +308,8 @@ fun SettingsScreen(
         // Keep the destination underneath the detail page so predictive back
         // reveals real Settings content instead of the Scaffold background.
         visible = true,
-        enter = slideInHorizontally(tween(300)) { -it / 4 } + fadeIn(tween(220)),
-        exit = slideOutHorizontally(tween(260)) { -it / 4 } + fadeOut(tween(180)),
+        enter = meloXPageEnter(fromRight = false),
+        exit = meloXPageExit(toRight = false),
         modifier = Modifier.fillMaxSize().zIndex(0f),
     ) {
     val normalized = search.trim().lowercase()

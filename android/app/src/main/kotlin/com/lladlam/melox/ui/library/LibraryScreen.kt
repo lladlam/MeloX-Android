@@ -17,6 +17,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import com.lladlam.melox.ui.animation.MeloXMotion
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -329,13 +330,13 @@ fun LibraryScreen(
                 (
                     fadeIn(
                         animationSpec = tween(
-                            durationMillis = 320,
-                            delayMillis = 55,
+                            durationMillis = MeloXMotion.ContentEnterMillis,
+                            delayMillis = 0,
                             easing = FastOutSlowInEasing,
                         ),
                     ) togetherWith fadeOut(
                         animationSpec = tween(
-                            durationMillis = 360,
+                            durationMillis = MeloXMotion.ContentExitMillis,
                             easing = FastOutSlowInEasing,
                         ),
                     )

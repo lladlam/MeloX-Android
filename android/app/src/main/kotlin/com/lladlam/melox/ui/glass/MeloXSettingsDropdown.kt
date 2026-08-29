@@ -60,6 +60,7 @@ import com.kyant.backdrop.shadow.Shadow
 import com.kyant.capsule.ContinuousRoundedRectangle
 import com.lladlam.melox.ui.glass.publicdemo.PublicInteractiveHighlight
 import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
+import com.lladlam.melox.ui.animation.MeloXMotion
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.max
@@ -156,12 +157,12 @@ private fun <T> MeloXPopupSelector(
             popupAlive = true
             progress.animateTo(
                 targetValue = 1f,
-                animationSpec = spring(dampingRatio = 0.72f, stiffness = 260f, visibilityThreshold = 0.001f),
+                animationSpec = spring(dampingRatio = 0.82f, stiffness = MeloXMotion.DropdownStiffness, visibilityThreshold = 0.001f),
             )
         } else {
             progress.animateTo(
                 targetValue = 0f,
-                animationSpec = spring(dampingRatio = 0.74f, stiffness = 280f, visibilityThreshold = 0.001f),
+                animationSpec = spring(dampingRatio = 0.82f, stiffness = MeloXMotion.DropdownStiffness, visibilityThreshold = 0.001f),
             )
             popupAlive = false
         }
