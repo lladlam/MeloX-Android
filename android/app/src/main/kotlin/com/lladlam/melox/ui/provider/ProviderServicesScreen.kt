@@ -1,5 +1,9 @@
 package com.lladlam.melox.ui.provider
 
+import android.Manifest
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -44,6 +48,9 @@ import com.lladlam.melox.core.provider.lxuser.LxUserSourceStore
 import com.lladlam.melox.core.provider.lxuser.ChkszApiKeyStore
 import com.lladlam.melox.core.provider.jellyfin.JellyfinApiClient
 import com.lladlam.melox.core.provider.jellyfin.JellyfinSessionStore
+import com.lladlam.melox.core.provider.local.LocalMediaScanner
+import com.lladlam.melox.core.provider.local.LocalMusicRepository
+import com.lladlam.melox.core.provider.local.LocalScanRoot
 import com.lladlam.melox.ui.MeloXBottomContentClearance
 import com.lladlam.melox.ui.account.KugouLoginScreen
 import com.lladlam.melox.ui.account.KuwoLoginScreen
@@ -109,7 +116,49 @@ fun ProviderServicesScreen(
     var jellyfinPassword by remember { mutableStateOf("") }
     var jellyfinError by remember { mutableStateOf<String?>(null) }
     var jellyfinBusy by remember { mutableStateOf(false) }
+    val localRepository = remember(context) { LocalMusicRepository(context) }
+    var localTrackCount by remember { mutableStateOf(localRepository.tracks().size) }
+    var localScanBusy by remember { mutableStateOf(false) }
+    var localScanMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val localScanner = remember(context) { LocalMediaScanner(context, localRepository) }
+    fun scanLocalMusic() {
+        if (localScanBusy) return
+        localScanBusy = true
+        localScanMessage = null
+        scope.launch {
+            runCatching { localScanner.scanAll() }
+                .onSuccess { records ->
+                    localTrackCount = records.size
+                    localScanMessage = "已扫描 ${records.size} 首本地歌曲"
+                }
+                .onFailure { localScanMessage = it.message ?: "本地音乐扫描失败" }
+            localScanBusy = false
+        }
+    }
+    val localPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) scanLocalMusic() else localScanMessage = "需要音乐文件权限才能扫描设备歌曲"
+    }
+    val localTreeLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        runCatching {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            context.contentResolver.takePersistableUriPermission(uri, flags)
+            localRepository.addScanRoot(LocalScanRoot(uri.toString(), flags))
+        }.onFailure { localScanMessage = it.message ?: "目录授权失败" }
+        scanLocalMusic()
+    }
+    fun requestLocalScan() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            localPermissionLauncher.launch(Manifest.permission.READ_MEDIA_AUDIO)
+        } else {
+            localPermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
     val lxFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         scope.launch {
@@ -239,10 +288,11 @@ fun ProviderServicesScreen(
         Spacer(Modifier.size(24.dp))
         ServicesSectionLabel("当前账号")
         MeloXIosGroupedList(surfaceColor = MaterialTheme.colorScheme.surface) {
-            MeloXIosListRow(
-                title = currentSource.displayName,
-                subtitle = when {
-                    currentAccount.loggedIn && !currentAccount.accountId.isNullOrBlank() -> "已登录 · ${currentAccount.accountId}"
+                MeloXIosListRow(
+                    title = currentSource.displayName,
+                    subtitle = when {
+                        currentSource == MusicSource.Local -> "本地音乐库 · 无需登录"
+                        currentAccount.loggedIn && !currentAccount.accountId.isNullOrBlank() -> "已登录 · ${currentAccount.accountId}"
                     currentAccount.loggedIn -> "已登录"
                     else -> "未登录 · 点击登录"
                 },
@@ -258,6 +308,7 @@ fun ProviderServicesScreen(
                             MusicSource.Bilibili -> showBilibiliLogin = true
                             MusicSource.Spotify -> showSpotifyLogin = true
                             MusicSource.Jellyfin -> { jellyfinError = null; showJellyfinDialog = true }
+                            MusicSource.Local -> Unit
                         }
                     }
                 },
@@ -280,6 +331,49 @@ fun ProviderServicesScreen(
         }
 
         Spacer(Modifier.size(24.dp))
+        if (currentSource == MusicSource.Local) {
+            ServicesSectionLabel("本地音乐库")
+            MeloXIosGroupedList(surfaceColor = MaterialTheme.colorScheme.surface) {
+                MeloXIosListRow(
+                    title = if (localScanBusy) "正在扫描本地音乐…" else "扫描设备音乐",
+                    subtitle = "扫描 MediaStore 中的音频文件（已找到 ${localTrackCount} 首）",
+                    leading = { MeloXSymbolIcon(MeloXSymbol.Search, Modifier.size(24.dp), MeloXSystemColors.Red) },
+                    onClick = { requestLocalScan() },
+                    showTopSeparator = false,
+                )
+                MeloXIosListRow(
+                    title = "添加音乐目录",
+                    subtitle = "选择一个目录并授予持久读取权限",
+                    leading = { MeloXSymbolIcon(MeloXSymbol.Storage, Modifier.size(24.dp), MeloXSystemColors.Red) },
+                    onClick = { localTreeLauncher.launch(null) },
+                    showTopSeparator = true,
+                )
+                localScanMessage?.let { message ->
+                    MeloXIosListRow(
+                        title = message,
+                        subtitle = "本地文件仍由设备直接播放，不会上传音频",
+                        leading = { Spacer(Modifier.width(25.dp)) },
+                        onClick = null,
+                        showTopSeparator = true,
+                    )
+                }
+                localRepository.scanRoots().forEach { root ->
+                    MeloXIosListRow(
+                        title = "已授权目录",
+                        subtitle = root.uri,
+                        leading = { Spacer(Modifier.width(25.dp)) },
+                        detail = "移除",
+                        onClick = {
+                            localRepository.removeScanRoot(root.uri)
+                            runCatching { context.contentResolver.releasePersistableUriPermission(Uri.parse(root.uri), root.persistedFlags) }
+                            scanLocalMusic()
+                        },
+                        showTopSeparator = true,
+                    )
+                }
+            }
+            Spacer(Modifier.size(24.dp))
+        }
         ServicesSectionLabel("第三方音乐源")
         MeloXIosGroupedList(surfaceColor = MaterialTheme.colorScheme.surface) {
             MeloXIosListRow(
@@ -428,6 +522,7 @@ fun ProviderServicesScreen(
                                 MusicSource.Bilibili -> showBilibiliLogin = true
                                 MusicSource.Spotify -> showSpotifyLogin = true
                                 MusicSource.Jellyfin -> Unit
+                                MusicSource.Local -> Unit
                             }
                         }
                     },

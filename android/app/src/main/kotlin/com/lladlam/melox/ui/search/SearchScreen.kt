@@ -311,7 +311,7 @@ fun SearchScreen(source: MusicSource = MusicSource.Netease) {
                 providerPlaylists = emptyList()
                 providerAlbums = emptyList()
                 providerArtists = emptyList()
-                if (unifiedEnabled) {
+                if (unifiedEnabled && unifiedSources.size > 1) {
                     songs = emptyList()
                     runCatching {
                         withContext(Dispatchers.IO) {

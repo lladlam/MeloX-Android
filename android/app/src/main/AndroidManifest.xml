@@ -17,6 +17,8 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
 
@@ -57,8 +59,8 @@
         </activity>
         <activity android:name=".ui.collection.MeloXCollectionDetailActivity" android:exported="false" android:theme="@style/Theme.MeloX.TransparentActivity" />
         <activity android:name=".ui.song.MeloXSongWikiActivity" android:exported="false" android:theme="@style/Theme.MeloX.TransparentActivity" />
-        <activity android:name=".ui.player.MeloXListenTogetherInviteActivity" android:exported="false" />
-        <activity android:name=".ui.sharing.MeloXNeteaseResourceShareActivity" android:exported="true">
+        <activity android:name=".ui.player.MeloXListenTogetherInviteActivity" android:exported="false" android:theme="@style/Theme.MeloX.TransparentActivity" />
+        <activity android:name=".ui.sharing.MeloXNeteaseResourceShareActivity" android:exported="true" android:theme="@style/Theme.MeloX.TransparentActivity">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />

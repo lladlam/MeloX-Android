@@ -17,6 +17,8 @@ internal object MeloXMotion {
     const val PageExitMillis = 220
     const val ContentEnterMillis = 320
     const val ContentExitMillis = 240
+    const val IconEnterMillis = 180
+    const val IconExitMillis = 120
     const val PanelEnterStiffness = 420f
     const val PanelExitStiffness = 500f
     const val DropdownStiffness = 320f

@@ -1406,8 +1406,8 @@ private fun PlaybackSettings(context: android.content.Context) {
             context,
             "播放器展开/收回时长",
             "player_transition_duration_ms",
-            575,
-            listOf(300, 400, 575, 700, 900),
+             360,
+             listOf(240, 300, 360, 460, 600),
             grouped = true,
         ) { "${it}ms" }
     }

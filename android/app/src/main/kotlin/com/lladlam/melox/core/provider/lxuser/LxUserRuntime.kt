@@ -94,9 +94,11 @@ class LxUserRuntime(
         return info
     }
 
-    /** Invokes the registered request handler or a global musicUrl export and returns its URL result. */
+    /** Invokes a V5 action (musicUrl, lyric, or pic) and returns its raw result. */
     fun callAction(action: String, args: Map<String, Any?>): Any? {
-        if (action != "musicUrl") throw IllegalArgumentException("Unsupported LX action: $action")
+        require(action == "musicUrl" || action == "lyric" || action == "pic") {
+            "Unsupported LX action: $action"
+        }
         val source = args["source"]?.toString() ?: "kw"
         val info = mapOf(
             "type" to (args["type"] ?: "128k"),
@@ -137,6 +139,11 @@ class LxUserRuntime(
         drainUntil(done)
         errorRef.get()?.let { throw it }
         val resolved = resultRef.get()
+        if (action != "musicUrl") {
+            val hostResolved = if (resolved is QuickJSObject) resolved.toMap() else resolved
+            Log.d(TAG, "action done source=$source action=$action result=${responseShape(hostResolved)}")
+            return hostResolved
+        }
         val url = if (resolved is String) resolved else urlFrom(resolved)
         Log.d(TAG, "action done source=$source result=${if (url.isNullOrBlank()) "empty" else "url"}")
         return url

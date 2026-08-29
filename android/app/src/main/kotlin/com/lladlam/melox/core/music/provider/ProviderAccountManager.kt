@@ -82,6 +82,7 @@ class ProviderAccountManager(
         MusicSource.Jellyfin -> JellyfinSessionStore.read(appContext).let { session ->
             AccountState(source, session.isLoggedIn, session.userName.takeIf(String::isNotBlank))
         }
+        MusicSource.Local -> AccountState(source = source, loggedIn = true, accountId = "local")
     }
 
     fun allStates(): List<AccountState> = MusicSource.entries.map(::state)
@@ -103,6 +104,7 @@ class ProviderAccountManager(
             MusicSource.Bilibili -> BilibiliSessionStore.clear(appContext, clearWebCookies = true)
             MusicSource.Spotify -> SpotifySessionStore.clear(appContext)
             MusicSource.Jellyfin -> JellyfinSessionStore.clear(appContext)
+            MusicSource.Local -> Unit
         }
     }
 

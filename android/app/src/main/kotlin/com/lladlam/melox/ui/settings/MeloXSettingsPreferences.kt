@@ -83,7 +83,7 @@ object MeloXSettingsRuntime {
         internal set
     var artworkMotionEnabled by mutableStateOf(true)
         internal set
-    var playerTransitionDurationMs by mutableStateOf(575)
+    var playerTransitionDurationMs by mutableStateOf(360)
         internal set
     var playerBackgroundIsolationEnabled by mutableStateOf(true)
         internal set
@@ -392,7 +392,8 @@ object MeloXSettingsRuntime {
             MeloXPlayerShell.valueOf(MeloXSettingsPreferences.string(app, "player_shell", MeloXPlayerShell.AppleMusic.name))
         }.getOrDefault(MeloXPlayerShell.AppleMusic)
         artworkMotionEnabled = MeloXSettingsPreferences.boolean(app, "player_artwork_motion", true)
-        playerTransitionDurationMs = MeloXSettingsPreferences.int(app, "player_transition_duration_ms", 575)
+        playerTransitionDurationMs = MeloXSettingsPreferences.int(app, "player_transition_duration_ms", 360)
+            .let { stored -> if (stored == 575) 360 else stored }
             .coerceIn(200, 1_200)
         playerBackgroundIsolationEnabled = MeloXSettingsPreferences.boolean(app, "player_background_isolation", true)
         frostedGlassEnabled = MeloXSettingsPreferences.boolean(app, "player_frosted_glass", false)

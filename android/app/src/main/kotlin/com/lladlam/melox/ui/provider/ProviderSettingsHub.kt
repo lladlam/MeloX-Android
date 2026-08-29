@@ -216,6 +216,7 @@ fun ProviderSettingsHub(
                     ProviderSimpleCard(
                         currentSource.displayName,
                         when {
+                            currentSource == MusicSource.Local -> "本地音乐库 · 无需登录"
                             currentAccount.loggedIn && !currentAccount.accountId.isNullOrBlank() ->
                                 "已登录 · ${currentAccount.accountId}"
                             currentAccount.loggedIn -> "已登录"
@@ -233,6 +234,7 @@ fun ProviderSettingsHub(
                                     MusicSource.Bilibili -> showBilibiliLogin = true
                                     MusicSource.Spotify -> showSpotifyLogin = true
                                     MusicSource.Jellyfin -> Unit
+                                    MusicSource.Local -> Unit
                                 }
                             }
                         },
@@ -251,6 +253,7 @@ fun ProviderSettingsHub(
                                 MusicSource.Bilibili -> "清除当前 Bilibili 登录态后重新登录"
                                 MusicSource.Spotify -> "清除 OAuth token 后重新在浏览器授权"
                                 MusicSource.Jellyfin -> "清除当前 Jellyfin 服务器登录态后重新连接"
+                                MusicSource.Local -> "本地音乐库无需登录"
                             },
                             onClick = {
                                 showServiceDialog = false
@@ -371,6 +374,7 @@ fun ProviderSettingsHub(
                                 MusicSource.Bilibili -> showBilibiliLogin = true
                                 MusicSource.Spotify -> showSpotifyLogin = true
                                 MusicSource.Jellyfin -> Unit
+                                MusicSource.Local -> Unit
                             }
                         }
                     },

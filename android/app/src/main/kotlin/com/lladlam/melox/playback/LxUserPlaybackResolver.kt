@@ -9,6 +9,8 @@ import com.lladlam.melox.core.provider.lxuser.LxUserRuntime
 import com.lladlam.melox.core.provider.lxuser.LxUserScript
 import com.lladlam.melox.core.provider.lxuser.LxUserSourceStore
 import com.lladlam.melox.core.network.NeteaseSearchClient
+import com.lladlam.melox.core.lyrics.LrcLyricsParser
+import com.lladlam.melox.core.lyrics.LyricsDocument
 import com.lladlam.melox.core.music.model.MusicArtistRef
 import com.lladlam.melox.core.music.model.MusicResourceId
 import com.lladlam.melox.core.music.model.ProviderTrackMetadata
@@ -28,6 +30,56 @@ class LxUserPlaybackResolver(
     private val appContext = context.applicationContext
 
     fun cacheIdentity(): String = LxUserSourceStore.list(appContext).joinToString("|") { it.id }
+
+    internal fun resolveArtwork(track: MusicTrack): String? =
+        resolveAction(track, "pic")?.let { value ->
+            when (value) {
+                is String -> value
+                is Map<*, *> -> sequenceOf("url", "picUrl", "artworkUrl")
+                    .mapNotNull { value[it]?.toString() }.firstOrNull { it.startsWith("http") }
+                else -> null
+            }
+        }?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+
+    internal fun resolveLyrics(track: MusicTrack): LyricsDocument? {
+        val value = resolveAction(track, "lyric") ?: return null
+        val data = (value as? Map<*, *>) ?: return (value as? String)?.let(LrcLyricsParser::parse)
+        val lyric = data["lyric"]?.toString().orEmpty().ifBlank { data["lrc"]?.toString().orEmpty() }
+        if (lyric.isBlank()) return null
+        return LrcLyricsParser.parse(
+            lrc = lyric,
+            translation = data["tlyric"]?.toString().orEmpty().ifBlank { data["translation"]?.toString().orEmpty() },
+            romanization = data["rlyric"]?.toString().orEmpty().ifBlank { data["romalrc"]?.toString().orEmpty() },
+        )
+    }
+
+    private fun resolveAction(track: MusicTrack, action: String): Any? {
+        val sourceCode = when (track.id.source) {
+            MusicSource.QQMusic -> "tx"
+            MusicSource.Kugou -> "kg"
+            MusicSource.Kuwo -> "kw"
+            MusicSource.Netease -> "wy"
+            else -> return null
+        }
+        val song = standardMusicInfo(track, sourceCode, AudioQualityTier.Standard.toLxQuality())
+        for (record in LxUserSourceStore.list(appContext)) {
+            val script = LxUserSourceStore.script(appContext, record.id) ?: continue
+            val result = runCatching {
+                LxUserRuntime().use { runtime ->
+                    runtime.load(LxUserScript(script))
+                    runtime.callAction(action, song + mapOf(
+                        "source" to sourceCode,
+                        "type" to "128k",
+                        "musicInfo" to song,
+                    ))
+                }
+            }.onFailure { error ->
+                Log.w(TAG, "LX $action failed script=${record.id} detail=${error.safeLogMessage()}")
+            }.getOrNull()
+            if (result != null) return result
+        }
+        return null
+    }
 
     internal fun resolve(
         songId: Long,

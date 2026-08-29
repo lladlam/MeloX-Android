@@ -179,7 +179,7 @@ internal class KugouCatalogClient(
         return MusicPlaylistSummary(
             id = MusicResourceId(MusicSource.Kugou, id),
             title = firstString(item, "specialname", "special_name", "name", "title").ifBlank { "酷狗歌单" },
-            artworkUrl = normalizeKugouArtworkUrl(firstString(item, "img", "imgurl", "image", "sizable_cover", "cover")),
+            artworkUrl = kugouArtworkUrl(item),
             creatorName = firstString(item, "nickname", "author_name", "username", "creator").takeIf(String::isNotBlank),
             description = firstString(item, "intro", "desc", "description").takeIf(String::isNotBlank),
             trackCount = firstLong(item, "songcount", "song_count", "count").takeIf { it >= 0 }?.toInt(),
@@ -196,7 +196,7 @@ internal class KugouCatalogClient(
         return MusicAlbumSummary(
             id = MusicResourceId(MusicSource.Kugou, id),
             title = firstString(item, "album_name", "albumname", "name", "title").ifBlank { "酷狗专辑" },
-            artworkUrl = normalizeKugouArtworkUrl(firstString(item, "sizable_cover", "img", "imgurl", "image", "cover")),
+            artworkUrl = kugouArtworkUrl(item),
             artists = artistName.takeIf(String::isNotBlank)?.let {
                 listOf(
                     MusicArtistRef(
@@ -219,7 +219,7 @@ internal class KugouCatalogClient(
         return MusicArtistSummary(
             id = MusicResourceId(MusicSource.Kugou, id),
             name = name,
-            artworkUrl = normalizeKugouArtworkUrl(firstString(item, "sizable_avatar", "avatar", "img", "imgurl", "image")),
+            artworkUrl = kugouArtworkUrl(item),
             description = firstString(item, "intro", "desc", "description").takeIf(String::isNotBlank),
             songCount = firstLong(item, "songcount", "song_count", "audio_count", "music_count").takeIf { it >= 0 },
             albumCount = firstLong(item, "albumcount", "album_count").takeIf { it >= 0 },
@@ -241,7 +241,7 @@ internal class KugouCatalogClient(
             .map { MusicArtistRef(name = it) }
         val albumName = firstString(item, "album_name", "AlbumName", "albumname")
         val albumId = firstString(item, "album_id", "AlbumID", "albumid").takeIf(String::isNotBlank)
-        val artwork = normalizeKugouArtworkUrl(firstString(item, "sizable_cover", "Image", "image", "img", "album_img"))
+        val artwork = kugouArtworkUrl(item)
         val durationRaw = firstLong(item, "duration", "Duration", "time_length")
         val durationMs = durationRaw.takeIf { it > 0 }?.let { if (it > 100_000L) it else it * 1_000L }
         val albumAudioId = firstLong(item, "album_audio_id", "MixSongID", "mixsongid", "AlbumAudioID", "audio_id", "audioid")

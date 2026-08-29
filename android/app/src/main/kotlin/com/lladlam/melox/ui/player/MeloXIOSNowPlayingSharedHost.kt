@@ -82,10 +82,12 @@ fun MeloXIOSNowPlayingSharedHost(
     onDismiss: () -> Unit,
     onNavigateSearch: (String, MeloXSearchKind) -> Unit = { _, _ -> },
     onOpenPlaybackSettings: () -> Unit,
+    onLocalMetadataChanged: () -> Unit = {},
     onSeekCollapse: suspend (Float) -> Unit,
     onSettleCollapse: suspend (Boolean) -> Unit,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
+    onArtworkPageChanged: (Boolean) -> Unit = {},
 ) {
     // A track transition updates the content inside the existing player. It must
     // not recreate the page/gesture state or send the shared element back to its
@@ -116,6 +118,9 @@ fun MeloXIOSNowPlayingSharedHost(
     val hostView = LocalView.current
     LaunchedEffect(isLandscape) {
         if (!isLandscape) showLandscapeSkyline = false else lyricsInterfaceHidden = false
+    }
+    LaunchedEffect(page) {
+        onArtworkPageChanged(page == MeloXNowPlayingPage.Artwork)
     }
     val skylineVisible = isLandscape && page == MeloXNowPlayingPage.Lyrics && showLandscapeSkyline
     DisposableEffect(
@@ -161,21 +166,18 @@ fun MeloXIOSNowPlayingSharedHost(
     } else {
         0f
     }
-    val fullPlayerAlpha = smoothStep(expansionProgress, 0f, 0.35f)
+    val fullPlayerAlpha = smoothStep(expansionProgress, 0.04f, 0.52f)
     val collapseProgress = (1f - expansionProgress).coerceIn(0f, 1f)
     val latestCollapseProgress = rememberUpdatedState(collapseProgress)
     val latestPage = rememberUpdatedState(page)
     val cornerRadius = (24f + 8f * smoothStep(collapseProgress, 0f, 1f)).dp
-
-    val sharedContainerModifier = with(sharedTransitionScope) {
+    val sharedShellModifier = with(sharedTransitionScope) {
         Modifier.sharedBounds(
-            sharedContentState = rememberSharedContentState(
-                key = sharedPlayerContainerKey(),
-            ),
+            sharedContentState = rememberSharedContentState(key = sharedPlayerShellKey()),
             animatedVisibilityScope = animatedVisibilityScope,
             enter = EnterTransition.None,
             exit = ExitTransition.None,
-            boundsTransform = MeloXPlayerLinearBoundsTransform,
+            boundsTransform = MeloXPlayerShellBoundsTransform,
             resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
         )
     }
@@ -294,8 +296,9 @@ fun MeloXIOSNowPlayingSharedHost(
                 .layerBackdrop(actionsBackdrop),
         ) {
             Box(
-                modifier = sharedContainerModifier
+                modifier = Modifier
                     .fillMaxSize()
+                    .then(sharedShellModifier)
                     .clip(RoundedCornerShape(cornerRadius))
                     .nestedScroll(alternatePageCollapseConnection)
                     .draggable(
@@ -396,15 +399,20 @@ fun MeloXIOSNowPlayingSharedHost(
                     }
                 }
 
-                if (MeloXSettingsRuntime.playerShell != MeloXPlayerShell.Classic) {
-                    SharedArtworkDestination(
-                        state = state,
-                        page = page,
-                        expansionProgress = expansionProgress,
-                        hidden = showLandscapeSkyline,
-                    )
-                }
             }
+        }
+
+        // Keep the artwork outside the player surface's clip and stacking
+        // layer so the shared flight remains above the expanding backdrop.
+        if (MeloXSettingsRuntime.playerShell != MeloXPlayerShell.Classic) {
+                SharedArtworkDestination(
+                    state = state,
+                    page = page,
+                    expansionProgress = expansionProgress,
+                    hidden = showLandscapeSkyline,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
+                )
         }
 
         CompositionLocalProvider(LocalMeloXBackdrop provides actionsBackdrop) {
@@ -413,6 +421,7 @@ fun MeloXIOSNowPlayingSharedHost(
                 visible = showActions,
                 onDismiss = { showActions = false },
                 onNavigateSearch = onNavigateSearch,
+                onLocalMetadataChanged = onLocalMetadataChanged,
             )
             MeloXQualitySelectionOverlay(
                 state = state,
@@ -431,6 +440,8 @@ private fun SharedArtworkDestination(
     page: MeloXNowPlayingPage,
     expansionProgress: Float,
     hidden: Boolean = false,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
@@ -519,11 +530,23 @@ private fun SharedArtworkDestination(
         val targetX = lerpDp(fullX, 0.dp, pageFrameProgress)
         val targetY = lerpDp(fullY, contentTop, pageFrameProgress)
         val targetRadius = 12.dp
+        val sharedArtworkModifier = with(sharedTransitionScope) {
+            Modifier.sharedElement(
+                sharedContentState = rememberSharedContentState(
+                    key = sharedPlayerArtworkKey(state.mediaId),
+                ),
+                animatedVisibilityScope = animatedVisibilityScope,
+                boundsTransform = MeloXArtworkBoundsTransform,
+                renderInOverlayDuringTransition = true,
+                zIndexInOverlay = 100f,
+            )
+        }
 
         Box(
             modifier = Modifier
                 .offset(x = targetX, y = targetY)
                 .size(targetSize)
+                .then(sharedArtworkModifier)
                 .graphicsLayer { alpha = if (hidden) 0f else 1f }
         ) {
             Artwork(
@@ -536,7 +559,9 @@ private fun SharedArtworkDestination(
                         scaleY = effectiveScale
                     }
                     .shadow(
-                        elevation = shadowElevation * (1f - pageFrameProgress * 0.55f),
+                        elevation = shadowElevation *
+                            fullScreenScaleBlend *
+                            (1f - pageFrameProgress * 0.55f),
                         shape = RoundedCornerShape(targetRadius),
                         clip = false,
                         ambientColor = Color.Black.copy(alpha = 0.28f),

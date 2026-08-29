@@ -9,12 +9,19 @@ import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 // seekable transition that makes different children advance by different
 // apparent amounts. Use one child timeline and animate only the master
 // SeekableTransitionState fraction when the gesture is released.
-internal const val MeloXPlayerTransitionDurationMillis = 575
+internal const val MeloXPlayerTransitionDurationMillis = 360
 
 internal val meloXPlayerTransitionDurationMillis: Int
     get() = MeloXSettingsRuntime.playerTransitionDurationMs
 
-internal val MeloXPlayerLinearBoundsTransform = BoundsTransform { _, _ ->
+internal val MeloXArtworkBoundsTransform = BoundsTransform { _, _ ->
+    tween(
+        durationMillis = 300,
+        easing = FastOutSlowInEasing,
+    )
+}
+
+internal val MeloXPlayerShellBoundsTransform = BoundsTransform { _, _ ->
     tween(
         durationMillis = meloXPlayerTransitionDurationMillis,
         easing = FastOutSlowInEasing,

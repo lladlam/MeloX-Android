@@ -39,17 +39,35 @@ class KugouApiClient(
         val safeSize = pageSize.coerceIn(1, 50)
         if (normalized.isBlank()) return MusicPage(emptyList(), safePage, safeSize, 0)
         val response = requests.get(
-            path = "/v3/search/song",
+            path = "/complexsearch/v3/search/song",
             params = mapOf(
-                "albumhide" to "0",
-                "iscorrection" to "1",
-                "keyword" to normalized,
-                "nocollect" to "0",
+                "userid" to "0",
+                "area_code" to "1",
+                "appid" to "1005",
+                "dopicfull" to "1",
                 "page" to safePage.toString(),
+                "token" to "0",
+                "privilegefilter" to "0",
+                "requestid" to "0",
                 "pagesize" to safeSize.toString(),
+                "user_labels" to "",
+                "clienttime" to "0",
+                "sec_aggre" to "1",
+                "iscorrection" to "1",
+                "uuid" to "0",
+                "mid" to "0",
+                "keyword" to normalized,
+                "dfid" to "-",
+                "clientver" to "11409",
                 "platform" to "AndroidFilter",
+                "tag" to "",
             ),
-            headers = mapOf("x-router" to "complexsearch.kugou.com"),
+            headers = mapOf(
+                "x-router" to "complexsearch.kugou.com",
+                "Referer" to "https://kugou.com",
+                "User-Agent" to "Mozilla/5.0 (iPhone; CPU iPhone OS 9_1 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) Version/9.0 Mobile/13B143 Safari/601.1",
+            ),
+            includeDefaults = false,
         )
         val data = response.optJSONObject("data") ?: response
         val list = data.optJSONArray("lists")
@@ -58,9 +76,14 @@ class KugouApiClient(
             ?: JSONArray()
         val tracks = buildList {
             for (index in 0 until list.length()) {
-                list.optJSONObject(index)?.let(::parseSearchTrack)?.let(::add)
+                val item = list.optJSONObject(index) ?: continue
+                parseSearchTrack(item)?.let(::add)
+                val groups = item.optJSONArray("Grp") ?: item.optJSONArray("grp")
+                for (groupIndex in 0 until (groups?.length() ?: 0)) {
+                    groups?.optJSONObject(groupIndex)?.let(::parseSearchTrack)?.let(::add)
+                }
             }
-        }
+        }.distinctBy { it.id.value }
         val total = firstLong(data, "total", "total_count", "totalnum").takeIf { it >= 0L }
         return MusicPage(
             items = tracks,
@@ -251,9 +274,7 @@ class KugouApiClient(
             "audio_id",
         ).takeIf { it > 0L }
         val durationSeconds = firstLong(item, "Duration", "duration", "time_length").takeIf { it > 0L }
-        val artwork = normalizeKugouArtworkUrl(
-            firstString(item, "Image", "image", "img", "album_img", "AlbumImage", "sizable_cover", "cover"),
-        )
+        val artwork = kugouArtworkUrl(item)
         return MusicTrack(
             id = MusicResourceId(MusicSource.Kugou, hash),
             title = title,

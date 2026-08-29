@@ -66,6 +66,7 @@ import com.lladlam.melox.ui.glass.MeloXSymbolVariant
 import com.lladlam.melox.ui.glass.rememberMeloXLiquidInteraction
 import com.lladlam.melox.playback.MeloXAudioReactiveRuntime
 import com.lladlam.melox.playback.MeloXAudioReactiveSample
+import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -76,6 +77,7 @@ fun MeloXIOSMiniPlayer(
     dynamicGlassEnabled: Boolean = true,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
+    applyPlayerArtworkScale: Boolean = true,
 ) {
     if (!state.hasMedia) return
 
@@ -99,13 +101,6 @@ fun MeloXIOSMiniPlayer(
         }
     }
 
-    LaunchedEffect(state.mediaId, state.isPlaying) {
-        while (true) {
-            reactiveSample = MeloXAudioReactiveRuntime.sample(state.mediaId)
-            kotlinx.coroutines.delay(50L)
-        }
-    }
-
     val expansionProgress = if (animatedVisibilityScope != null) {
         val value by animatedVisibilityScope.transition.animateFloat(
             transitionSpec = { meloXPlayerLinearFloatSpec() },
@@ -118,26 +113,46 @@ fun MeloXIOSMiniPlayer(
         0f
     }
 
+    // The mini visualizer is hidden during expansion. Stop its 20 Hz state
+    // updates so the shared-bound transition can spend its frame budget on
+    // layout and glass rendering instead.
+    LaunchedEffect(state.mediaId, state.isPlaying, expansionProgress > 0.01f) {
+        if (expansionProgress > 0.01f) {
+            reactiveSample = MeloXAudioReactiveSample.Idle
+            return@LaunchedEffect
+        }
+        while (true) {
+            reactiveSample = MeloXAudioReactiveRuntime.sample(state.mediaId)
+            kotlinx.coroutines.delay(50L)
+        }
+    }
+
     // All source chrome is driven by the same reversible expansion progress as
     // the full-player destination. The source fades as real composited content,
     // rather than only lowering text/icon colors, so the reverse transition is
     // equally visible when returning to the mini player.
     val miniChromeAlpha = 1f - smoothStep(expansionProgress, 0.10f, 0.58f)
     val miniSurfaceAlpha = 1f - smoothStep(expansionProgress, 0.02f, 0.48f)
-
-    // Fade the source artwork according to the shared container's physical
-    // height, not an arbitrary time fraction. The fade starts at MiniPlayer
-    // height and completes at three times that height; collapse reverses it.
-    val configuration = LocalConfiguration.current
-    val miniPlayerHeight = 56f
-    val fullPlayerHeight = configuration.screenHeightDp.toFloat().coerceAtLeast(miniPlayerHeight + 1f)
-    val artworkFadeEnd = (miniPlayerHeight * 2f / (fullPlayerHeight - miniPlayerHeight))
-        .coerceIn(0.001f, 1f)
-    val miniArtworkAlpha = 1f - smoothStep(
-        expansionProgress / artworkFadeEnd,
-        0f,
-        1f,
-    )
+    val playerArtworkScale = if (
+        !applyPlayerArtworkScale || !MeloXSettingsRuntime.artworkMotionEnabled || state.isPlaying
+    ) 1f else 0.74f
+    val sharedArtworkScale = 1f +
+        (playerArtworkScale - 1f) * smoothStep(expansionProgress, 0.30f, 0.88f)
+    val sharedShellModifier =
+        if (sharedTransitionScope != null && animatedVisibilityScope != null) {
+            with(sharedTransitionScope) {
+                Modifier.sharedBounds(
+                    sharedContentState = rememberSharedContentState(key = sharedPlayerShellKey()),
+                    animatedVisibilityScope = animatedVisibilityScope,
+                    enter = EnterTransition.None,
+                    exit = ExitTransition.None,
+                    boundsTransform = MeloXPlayerShellBoundsTransform,
+                    resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
+                )
+            }
+        } else {
+            Modifier
+        }
 
     val compact = compactProgress.coerceIn(0f, 1f)
     val artworkSize = lerpDp(40.dp, 30.dp, compact)
@@ -163,29 +178,11 @@ fun MeloXIOSMiniPlayer(
     val dragProgress = (kotlin.math.abs(contentOffset.value) / swipeWidth.coerceAtLeast(1f)).coerceIn(0f, 1f)
     val adjacentAlpha = smoothStep(dragProgress, 0.15f, 0.85f)
 
-    val sharedContainerModifier =
-        if (sharedTransitionScope != null && animatedVisibilityScope != null) {
-            with(sharedTransitionScope) {
-                Modifier.sharedBounds(
-                    sharedContentState = rememberSharedContentState(
-                        key = sharedPlayerContainerKey(),
-                    ),
-                    animatedVisibilityScope = animatedVisibilityScope,
-                    enter = EnterTransition.None,
-                    exit = ExitTransition.None,
-                    boundsTransform = MeloXPlayerLinearBoundsTransform,
-                    resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
-                )
-            }
-        } else {
-            Modifier
-        }
-
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 3.dp)
-            .then(sharedContainerModifier),
+            .then(sharedShellModifier),
     ) {
         Box(
             modifier = Modifier
@@ -281,14 +278,31 @@ fun MeloXIOSMiniPlayer(
                     verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(lerpDp(10.dp, 8.dp, compact)),
                 ) {
-                // The artwork stays in the shared container. Applying a second
-                // sharedElement here gives it a separate timeline from the
-                // container and makes the cover visibly detach during expansion.
+                val sharedArtworkModifier =
+                    if (sharedTransitionScope != null && animatedVisibilityScope != null) {
+                        with(sharedTransitionScope) {
+                            Modifier.sharedElement(
+                                sharedContentState = rememberSharedContentState(
+                                    key = sharedPlayerArtworkKey(state.mediaId),
+                                ),
+                                animatedVisibilityScope = animatedVisibilityScope,
+                                boundsTransform = MeloXArtworkBoundsTransform,
+                                renderInOverlayDuringTransition = true,
+                                zIndexInOverlay = 100f,
+                            )
+                        }
+                    } else {
+                        Modifier
+                    }
                 Artwork(
                     url = state.artworkUrl,
                     modifier = Modifier
                         .size(artworkSize)
-                        .graphicsLayer { alpha = miniArtworkAlpha }
+                        .then(sharedArtworkModifier)
+                        .graphicsLayer {
+                            scaleX = sharedArtworkScale
+                            scaleY = sharedArtworkScale
+                        }
                         .clip(RoundedCornerShape(artworkRadius)),
                 )
 

@@ -111,6 +111,7 @@ import com.lladlam.melox.core.music.provider.loadAllPlaylistTracks
 import com.lladlam.melox.core.music.provider.AlbumCapability
 import com.lladlam.melox.core.music.provider.PlaylistCapability
 import com.lladlam.melox.core.music.provider.UserLibraryCapability
+import com.lladlam.melox.core.music.provider.LocalAggregationCapability
 import com.lladlam.melox.core.network.NeteaseMusicOperationsClient
 import com.lladlam.melox.core.network.NeteaseCollectionDetailsClient
 import com.lladlam.melox.core.network.NeteaseSearchClient
@@ -162,6 +163,7 @@ private enum class MeloXLibraryPage(val title: String) {
  */
 private fun MeloXLibraryPage.isEnabled(source: MusicSource): Boolean = when {
     source == MusicSource.Bilibili -> this == MeloXLibraryPage.Playlists || this == MeloXLibraryPage.Downloads
+    source == MusicSource.Local -> this == MeloXLibraryPage.Songs
     source != MusicSource.Netease -> this == MeloXLibraryPage.Playlists
     this == MeloXLibraryPage.Podcasts -> MeloXSettingsRuntime.podcastsEnabled && MeloXSettingsRuntime.podcastsLibraryPlacement
     this == MeloXLibraryPage.History -> MeloXSettingsRuntime.listeningHistoryEnabled
@@ -202,7 +204,7 @@ fun LibraryScreen(
     }
 
     val initialLibraryPage = remember(source, forcedPageName) {
-        val fallback = if (source == MusicSource.Netease) MeloXLibraryPage.Songs else MeloXLibraryPage.Playlists
+        val fallback = if (source == MusicSource.Netease || source == MusicSource.Local) MeloXLibraryPage.Songs else MeloXLibraryPage.Playlists
         val name = forcedPageName ?: if (MeloXSettingsRuntime.rememberLibraryPage) {
             MeloXSettingsPreferences.string(appContext, libraryPagePreferenceKey, fallback.name)
         } else fallback.name
@@ -241,6 +243,34 @@ fun LibraryScreen(
                 }
                 .onFailure { errorMessage = it.message ?: "音乐库加载失败" }
         } else {
+            if (source == MusicSource.Local) {
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        val tracks = (provider as? LocalAggregationCapability)
+                            ?.aggregationTracks(page = 1, pageSize = 200)
+                            ?.items
+                            ?: error("本地音乐库能力不可用")
+                        providerAccount = MusicAccountSummary(
+                            source = MusicSource.Local,
+                            id = "local",
+                            displayName = "本地音乐库",
+                            subtitle = "本地媒体文件",
+                        )
+                        snapshot = NeteaseLibrarySnapshot(
+                            likedSongs = tracks.map(MeloXLegacyUiBridge::track),
+                            playlists = emptyList(),
+                            recentSongs = emptyList(),
+                            likedPlaylistId = null,
+                        )
+                    }
+                }.onFailure {
+                    providerAccount = null
+                    snapshot = null
+                    errorMessage = it.message ?: "本地音乐库加载失败"
+                }
+                loading = false
+                return
+            }
             val capability = providerLibrary
             if (capability == null) {
                 providerAccount = null
@@ -297,7 +327,7 @@ fun LibraryScreen(
         MeloXSettingsRuntime.downloadsEnabled,
     ) {
         if (forcedPageName == null && !selectedPage.isEnabled(source)) {
-            selectedPage = if (source == MusicSource.Netease) MeloXLibraryPage.Songs else MeloXLibraryPage.Playlists
+            selectedPage = if (source == MusicSource.Netease || source == MusicSource.Local) MeloXLibraryPage.Songs else MeloXLibraryPage.Playlists
         }
     }
 
@@ -309,7 +339,7 @@ fun LibraryScreen(
         MeloXLibraryLoginUnavailable(onLogin, source)
         return
     }
-    if (source != MusicSource.Netease && !loading && providerAccount == null && errorMessage == null) {
+    if (source != MusicSource.Netease && source != MusicSource.Local && !loading && providerAccount == null && errorMessage == null) {
         MeloXLibraryLoginUnavailable(onLogin, source)
         return
     }

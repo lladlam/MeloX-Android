@@ -1,5 +1,9 @@
 package com.lladlam.melox.ui.player
 
-internal data object MeloXPlayerContainerKey
+internal data class MeloXPlayerArtworkKey(val mediaId: String?)
 
-internal fun sharedPlayerContainerKey(): MeloXPlayerContainerKey = MeloXPlayerContainerKey
+internal data object MeloXPlayerShellKey
+
+internal fun sharedPlayerArtworkKey(mediaId: String?): MeloXPlayerArtworkKey = MeloXPlayerArtworkKey(mediaId)
+
+internal fun sharedPlayerShellKey(): MeloXPlayerShellKey = MeloXPlayerShellKey

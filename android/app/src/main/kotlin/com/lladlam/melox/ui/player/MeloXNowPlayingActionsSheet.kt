@@ -32,6 +32,7 @@ fun MeloXNowPlayingActionsSheet(
     visible: Boolean,
     onDismiss: () -> Unit,
     onNavigateSearch: ((String, MeloXSearchKind) -> Unit)? = null,
+    onLocalMetadataChanged: () -> Unit = {},
 ) {
     val context = LocalContext.current.applicationContext
     val identity = state.mediaId?.let(PlaybackTrackIdentity::decode)
@@ -115,6 +116,7 @@ fun MeloXNowPlayingActionsSheet(
                 visible = visible,
                 onDismiss = onDismiss,
                 onNavigateSearch = onNavigateSearch,
+                onLocalMetadataChanged = onLocalMetadataChanged,
             )
         }
     }

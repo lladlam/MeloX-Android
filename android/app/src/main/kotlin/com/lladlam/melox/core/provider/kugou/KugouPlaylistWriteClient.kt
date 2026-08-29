@@ -136,9 +136,7 @@ class KugouPlaylistWriteClient(
         return MusicPlaylistSummary(
             id = MusicResourceId(MusicSource.Kugou, listId.toString()),
             title = title,
-            artworkUrl = normalizeKugouArtworkUrl(
-                firstString(item, "imgurl", "img_url", "image", "pic", "cover", "cover_url", "sizable_cover"),
-            ),
+            artworkUrl = kugouArtworkUrl(item),
             creatorName = firstString(item, "nickname", "nick_name", "username", "author_name")
                 .takeIf(String::isNotBlank),
             trackCount = firstLong(item, "song_count", "songcount", "song_num", "count")

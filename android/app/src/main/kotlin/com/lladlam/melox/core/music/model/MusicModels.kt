@@ -12,7 +12,8 @@ enum class MusicSource(
     AppleMusic("apple_music", "Apple Music"),
     Bilibili("bilibili", "Bilibili"),
     Spotify("spotify", "Spotify"),
-    Jellyfin("jellyfin", "Jellyfin");
+    Jellyfin("jellyfin", "Jellyfin"),
+    Local("local", "本地音乐");
 
     companion object {
         fun fromStorageValue(value: String?): MusicSource =
@@ -124,6 +125,11 @@ sealed interface ProviderTrackMetadata {
     data class Spotify(
         val trackId: String,
         val isrc: String? = null,
+    ) : ProviderTrackMetadata
+
+    data class Local(
+        val contentUri: String,
+        val fileKey: String,
     ) : ProviderTrackMetadata
 }
 

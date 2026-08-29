@@ -57,6 +57,7 @@ object ProviderPlaybackRuntime {
             MusicSource.Jellyfin -> com.lladlam.melox.core.provider.jellyfin.JellyfinSessionStore.read(context).let { session ->
                 listOf(session.serverUrl, session.accessToken, session.userId).joinToString("|")
             }
+            MusicSource.Local -> "local"
         }
         return MessageDigest.getInstance("SHA-256").digest(credential.toByteArray())
             .joinToString("") { "%02x".format(it) }

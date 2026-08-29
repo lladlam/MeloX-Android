@@ -51,8 +51,9 @@ object TtmlLyricsParser {
         } else emptyList()
         val inlineRoman = directSpans.firstOrNull { it.hasRole("x-roman") }?.allText()?.trim()
         val romanization = inlineRoman ?: romanizationSyllables.joinToString(" ") { it.text }.takeIf(String::isNotBlank)
-        val inlineTranslation = directSpans.firstOrNull { it.hasRole("x-translation") && !it.hasRole("x-bg") }
-            ?.allText()?.trim()
+        val inlineTranslation = directSpans.firstOrNull {
+            it.hasRole("x-translation") && !it.hasRole("x-bg") && it.isChineseTranslation()
+        }?.allText()?.trim()
         val translation = inlineTranslation ?: translations[key]?.splitTranslation()?.first
         val accompaniment = directSpans.filter { it.hasRole("x-bg") }.mapNotNull { background ->
             parseBackground(background, key, agent, translations)
@@ -95,8 +96,9 @@ object TtmlLyricsParser {
         val syllables = parseSyllables(element)
         if (syllables.isEmpty()) return null
         val key = element.attr("itunes:key", "key") ?: parentKey
-        val translation = element.directElements("span").firstOrNull { it.hasRole("x-translation") }
-            ?.allText()?.trim()
+        val translation = element.directElements("span").firstOrNull {
+            it.hasRole("x-translation") && it.isChineseTranslation()
+        }?.allText()?.trim()
             ?: translations[key]?.splitTranslation()?.let { it.second ?: it.first }
         val start = element.attr("begin")?.parseTime() ?: syllables.first().startTimeMs
         val end = element.attr("end")?.parseTime() ?: syllables.last().endTimeMs
@@ -143,7 +145,7 @@ object TtmlLyricsParser {
             for (textIndex in 0 until texts.length) {
                 val text = texts.item(textIndex) as? Element ?: continue
                 val key = text.attr("for") ?: continue
-                text.allText().trim().takeIf(String::isNotBlank)?.let { put(key, it) }
+                if (text.isChineseTranslation()) put(key, text.allText().trim())
             }
         }
     }
@@ -204,6 +206,16 @@ object TtmlLyricsParser {
         val start = lastIndexOf('（')
         if (start < 0) return trim() to null
         return substring(0, start).trim() to substring(start + 1, lastIndex).trim().takeIf(String::isNotBlank)
+    }
+
+    /** AMLL publishes alternate translations together with an explicit TTML language tag. */
+    private fun Element.isChineseTranslation(): Boolean {
+        val language = attr("xml:lang", "lang")?.trim()?.lowercase() ?: return false
+        return language == "zh" ||
+            language == "cmn" ||
+            language.startsWith("zh-") ||
+            language == "cmn-hans" ||
+            language == "cmn-hant"
     }
 
     private fun String.decodeEntities(): String = replace("&amp;", "&").replace("&lt;", "<")

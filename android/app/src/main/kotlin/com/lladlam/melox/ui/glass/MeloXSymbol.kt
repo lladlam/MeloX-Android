@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import com.lladlam.melox.R
+import com.lladlam.melox.ui.animation.MeloXMotion
 
 /**
  * Semantic icon inventory aligned with SF Symbols names. The bundled SF font is
@@ -192,7 +193,10 @@ fun MeloXSearchBackMorphIcon(
 ) {
     AnimatedContent(
         targetState = focused,
-        transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+        transitionSpec = {
+            fadeIn(tween(MeloXMotion.IconEnterMillis)) togetherWith
+                fadeOut(tween(MeloXMotion.IconExitMillis))
+        },
         modifier = modifier,
         label = "search-back-sf-transition",
     ) { isFocused ->

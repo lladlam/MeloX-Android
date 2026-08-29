@@ -146,6 +146,24 @@ object MusicExperiences {
         ),
     )
 
+    val local = MusicExperience(
+        source = MusicSource.Local,
+        tabs = listOf(
+            ExperienceTab(ExperienceTabId.Library, "音乐库"),
+            ExperienceTab(ExperienceTabId.Settings, "设置"),
+            ExperienceTab(ExperienceTabId.Search, "搜索"),
+        ),
+        homeSections = emptyList(),
+        providerNativeCapabilities = setOf(
+            MusicCapability.Search,
+            MusicCapability.Playback,
+            MusicCapability.Library,
+            MusicCapability.Playlists,
+            MusicCapability.PlaylistWrite,
+            MusicCapability.Favorites,
+        ),
+    )
+
     fun forSource(source: MusicSource): MusicExperience = when (source) {
         MusicSource.Netease -> netease
         MusicSource.QQMusic -> qqMusic
@@ -155,5 +173,6 @@ object MusicExperiences {
         MusicSource.Bilibili -> bilibili
         MusicSource.Spotify -> spotify
         MusicSource.Jellyfin -> jellyfin
+        MusicSource.Local -> local
     }
 }

@@ -68,7 +68,7 @@ class KugouRankingClient(
         val albumId = firstString(item, "AlbumID", "album_id", "albumid").takeIf(String::isNotBlank)
         val albumAudioId = firstLong(item, "album_audio_id", "MixSongID", "mixsongid", "AlbumAudioID", "Audioid", "audio_id")
             .takeIf { it > 0 }
-        val artwork = normalizeKugouArtworkUrl(firstString(item, "Image", "image", "img", "album_img", "sizable_cover"))
+        val artwork = kugouArtworkUrl(item)
         val artists = singer
             .split(Regex("\\s*(?:、|/|&|,|;|；)\\s*"))
             .map(String::trim)

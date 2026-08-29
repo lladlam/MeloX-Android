@@ -259,6 +259,10 @@ class ProviderPlaybackResolver(
             uri.getQueryParameter(SpotifyIsrcQuery)?.takeIf(String::isNotBlank),
         )
         MusicSource.Jellyfin -> ProviderTrackMetadata.Empty
+        MusicSource.Local -> ProviderTrackMetadata.Local(
+            contentUri = uri.getQueryParameter("localContentUri").orEmpty(),
+            fileKey = id.value,
+        )
     }
 
     companion object {
@@ -332,6 +336,9 @@ class ProviderPlaybackResolver(
                         metadata.isrc?.takeIf(String::isNotBlank)?.let {
                             appendQueryParameter(SpotifyIsrcQuery, it)
                         }
+                    }
+                    is ProviderTrackMetadata.Local -> {
+                        appendQueryParameter("localContentUri", metadata.contentUri)
                     }
                     else -> Unit
                 }

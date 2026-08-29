@@ -40,6 +40,7 @@ import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.core.network.MeloXWikiSection
 import com.lladlam.melox.core.network.NeteaseMusicOperationsClient
 import com.lladlam.melox.ui.MeloXBottomContentClearance
+import com.lladlam.melox.ui.MeloXPredictiveBackPage
 import com.lladlam.melox.ui.finishMeloXPage
 import com.lladlam.melox.ui.prepareMeloXPagePredictiveBack
 import com.lladlam.melox.ui.startMeloXPage
@@ -60,8 +61,10 @@ class MeloXSongWikiActivity : ComponentActivity() {
         enableEdgeToEdge()
         prepareMeloXPagePredictiveBack()
         setContent {
-            MeloXTheme {
-                MeloXSongWikiScreen(song, ::finishMeloXPage)
+            MeloXPredictiveBackPage(onBack = ::finishMeloXPage) {
+                MeloXTheme {
+                    MeloXSongWikiScreen(song, ::finishMeloXPage)
+                }
             }
         }
     }

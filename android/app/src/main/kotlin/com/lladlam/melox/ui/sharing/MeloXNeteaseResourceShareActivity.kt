@@ -34,6 +34,7 @@ import com.lladlam.melox.core.network.NeteaseSocialExtrasClient
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import com.lladlam.melox.ui.glass.MeloXActionIcon
 import com.lladlam.melox.ui.prepareMeloXPagePredictiveBack
+import com.lladlam.melox.ui.MeloXPredictiveBackPage
 import com.lladlam.melox.ui.theme.MeloXTheme
 import kotlinx.coroutines.launch
 
@@ -51,7 +52,7 @@ class MeloXNeteaseResourceShareActivity : ComponentActivity() {
         val incoming = if (intent.action == Intent.ACTION_SEND) parseText(intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()) else null
         val resource = direct ?: incoming
         if (resource == null || resource.type !in setOf("song", "playlist", "album")) { finish(); return }
-        setContent { MeloXTheme { ShareScreen(resource, ::finish) } }
+         setContent { MeloXPredictiveBackPage(onBack = ::finish) { MeloXTheme { ShareScreen(resource, ::finish) } } }
     }
 
     companion object {

@@ -75,14 +75,27 @@ import com.lladlam.melox.playback.MeloXPlaybackModePreferences
 import com.lladlam.melox.playback.MeloXPlaybackModeRuntime
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.playback.PlaybackTrackIdentity
+import com.lladlam.melox.playback.LxUserPlaybackResolver
+import com.lladlam.melox.core.music.model.MusicArtistRef
+import com.lladlam.melox.core.music.model.MusicAlbumRef
+import com.lladlam.melox.core.music.model.MusicResourceId
 import com.lladlam.melox.core.music.model.MusicSource
+import com.lladlam.melox.core.music.model.MusicTrack
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
 import com.lladlam.melox.ui.settings.MeloXVolumeControlMode
+import com.lladlam.melox.ui.animation.meloXContentEnter
+import com.lladlam.melox.ui.animation.meloXContentExit
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import com.lladlam.melox.ui.glass.MeloXSymbolVariant
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToLong
 
 enum class MeloXNowPlayingPage {
@@ -111,6 +124,9 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
     private var pendingMediaClearRunnable: Runnable? = null
     private var recordedMediaId: String? = null
     private var recordedCompletion = false
+    private val artworkScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var artworkLookupJob: Job? = null
+    private var artworkLookupMediaId: String? = null
 
     var mediaId by mutableStateOf<String?>(null)
         private set
@@ -178,6 +194,9 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
 
     internal fun unbind() {
         cancelPendingMediaClear()
+        artworkLookupJob?.cancel()
+        artworkLookupJob = null
+        artworkLookupMediaId = null
         controller?.removeListener(listener)
         controller?.release()
         controller = null
@@ -223,6 +242,7 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
         artworkUrl = currentSongId?.let(downloadStore::localArtworkUri)?.toString()
             ?: metadata.artworkUri?.toString()
             ?: extras?.getString(PlaybackTrackIdentity.ArtworkExtra)?.takeIf(String::isNotBlank)
+        resolveMissingLxArtwork(item, providerSource)
         isPlaying = player.isPlaying
         positionMs = player.currentPosition.coerceAtLeast(0L)
         durationMs = player.duration
@@ -261,6 +281,60 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
         if (rebuildQueue || queue.size != player.mediaItemCount) {
             queue = buildQueue(player)
         }
+    }
+
+    private fun resolveMissingLxArtwork(item: MediaItem, source: MusicSource?) {
+        if (artworkUrl != null || source == null || source == MusicSource.Local ||
+            artworkLookupMediaId == item.mediaId || title.isBlank() || artist.isBlank()) return
+        val identity = PlaybackTrackIdentity.decode(item.mediaId) ?: return
+        artworkLookupMediaId = item.mediaId
+        artworkLookupJob?.cancel()
+        artworkLookupJob = artworkScope.launch {
+            val artwork = runCatching {
+                LxUserPlaybackResolver(appContext).resolveArtwork(
+                    MusicTrack(
+                        id = MusicResourceId(source, identity.value),
+                        title = title,
+                        artists = artist.split(" /").filter(String::isNotBlank).map { name -> MusicArtistRef(name = name) },
+                        album = album.takeIf(String::isNotBlank)?.let { MusicAlbumRef(name = it) },
+                        durationMs = durationMs.takeIf { it > 0L },
+                    ),
+                )
+            }.getOrNull() ?: return@launch
+            withContext(Dispatchers.Main) {
+                val active = controller ?: return@withContext
+                if (active.currentMediaItem?.mediaId != item.mediaId) return@withContext
+                val updated = item.buildUpon().setMediaMetadata(
+                    item.mediaMetadata.buildUpon().setArtworkUri(Uri.parse(artwork)).build(),
+                ).build()
+                active.replaceMediaItem(active.currentMediaItemIndex, updated)
+                refresh(rebuildQueue = true)
+            }
+        }
+    }
+
+    internal fun refreshCurrentLocalMetadata() {
+        val active = controller ?: return
+        val item = active.currentMediaItem ?: return
+        val identity = PlaybackTrackIdentity.fromMediaItem(item) ?: return
+        if (identity.source != MusicSource.Local) return
+        val record = com.lladlam.melox.core.provider.local.LocalMusicRepository(appContext)
+            .track(identity.value) ?: return
+        val title = record.recognizedTitle ?: record.title.ifBlank { record.displayName }
+        val artist = record.recognizedArtist ?: record.artist.ifBlank { "未知歌手" }
+        val album = record.recognizedAlbum ?: record.album
+        val artwork = record.recognizedArtworkUrl ?: record.artworkUri
+        val metadata = item.mediaMetadata.buildUpon()
+            .setTitle(title)
+            .setArtist(artist)
+            .setAlbumTitle(album)
+            .apply { artwork?.let { setArtworkUri(Uri.parse(it)) } }
+            .build()
+        active.replaceMediaItem(
+            active.currentMediaItemIndex,
+            item.buildUpon().setMediaMetadata(metadata).build(),
+        )
+        refresh(rebuildQueue = true)
     }
 
     /**
@@ -704,7 +778,7 @@ fun MeloXNowPlaying(
             AnimatedContent(
                 targetState = page,
                 transitionSpec = {
-                    fadeIn(tween(220)) togetherWith fadeOut(tween(180))
+                    meloXContentEnter() togetherWith meloXContentExit()
                 },
                 modifier = Modifier
                     .fillMaxWidth()

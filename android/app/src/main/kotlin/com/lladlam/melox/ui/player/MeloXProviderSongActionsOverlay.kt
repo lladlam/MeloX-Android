@@ -61,6 +61,7 @@ import com.lladlam.melox.core.music.provider.PlaylistWriteCapability
 import com.lladlam.melox.core.music.provider.ProviderAccountManager
 import com.lladlam.melox.core.network.MeloXSearchKind
 import com.lladlam.melox.core.provider.bilibili.BilibiliLyricOffsetStore
+import com.lladlam.melox.core.provider.local.LocalRecognitionCoordinator
 import com.lladlam.melox.ui.glass.MeloXActionIcon
 import com.lladlam.melox.ui.animation.meloXPanelEnter
 import com.lladlam.melox.ui.animation.meloXPanelExit
@@ -90,6 +91,7 @@ internal fun MeloXProviderSongActionsOverlay(
     visible: Boolean,
     onDismiss: () -> Unit,
     onNavigateSearch: ((String, MeloXSearchKind) -> Unit)? = null,
+    onLocalMetadataChanged: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -126,6 +128,7 @@ internal fun MeloXProviderSongActionsOverlay(
     var playlistWriteWorking by remember(identity) { mutableStateOf(false) }
     var actionStatus by remember(identity) { mutableStateOf<String?>(null) }
     var actionError by remember(identity) { mutableStateOf<String?>(null) }
+    var recognitionWorking by remember(identity) { mutableStateOf(false) }
     val bilibiliOffsetState = if (identity.source == MusicSource.Bilibili) {
         BilibiliLyricOffsetStore.state(context, identity.value)
     } else null
@@ -176,6 +179,30 @@ internal fun MeloXProviderSongActionsOverlay(
                         MeloXIosGroupedList(surfaceColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
                         when (target) {
                             ProviderSongActionPage.Main -> {
+                                if (identity.source == MusicSource.Local) {
+                                    ProviderActionItem(
+                                        title = if (recognitionWorking) "正在识别本地歌曲…" else "识别并补全封面、歌手和歌词",
+                                        symbol = "⌁",
+                                        enabled = !recognitionWorking,
+                                    ) {
+                                        recognitionWorking = true
+                                        actionStatus = null
+                                        actionError = null
+                                        scope.launch {
+                                            runCatching {
+                                                LocalRecognitionCoordinator(context).recognize(identity.value)
+                                            }.onSuccess { outcome ->
+                                                actionStatus = outcome.matched?.let {
+                                                    "已匹配：${it.name} · ${it.artists}"
+                                                } ?: "未找到匹配歌曲，已保留本地信息"
+                                                onLocalMetadataChanged()
+                                            }.onFailure {
+                                                actionError = it.message ?: "本地歌曲识别失败"
+                                            }
+                                            recognitionWorking = false
+                                        }
+                                    }
+                                }
                                 if (favoriteCapability != null) {
                                     ProviderActionItem(
                                         title = when {
@@ -457,6 +484,7 @@ private fun shareProviderSong(
         }
         MusicSource.Spotify -> "https://open.spotify.com/track/${identity.value}"
         MusicSource.Jellyfin -> null
+        MusicSource.Local -> null
     }
     val text = buildString {
         append(state.title.ifBlank { "正在播放" })

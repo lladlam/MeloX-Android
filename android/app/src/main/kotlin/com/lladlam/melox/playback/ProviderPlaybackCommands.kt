@@ -2,6 +2,7 @@ package com.lladlam.melox.playback
 
 import android.content.ComponentName
 import android.content.Context
+import android.net.Uri
 import android.os.Bundle
 import androidx.core.content.ContextCompat
 import androidx.media3.common.C
@@ -16,6 +17,7 @@ import com.lladlam.melox.core.music.model.AudioQualityTier
 import com.lladlam.melox.core.music.model.MusicResourceId
 import com.lladlam.melox.core.music.model.MusicSource
 import com.lladlam.melox.core.music.model.MusicTrack
+import com.lladlam.melox.core.music.model.ProviderTrackMetadata
 import com.lladlam.melox.core.provider.applemusic.AppleMusicSdkBridge
 import com.lladlam.melox.core.provider.applemusic.AppleMusicSessionStore
 import java.util.concurrent.Executor
@@ -125,10 +127,14 @@ object ProviderPlaybackCommands {
 
         val neteaseId = id.value.toLongOrNull()
             ?.takeIf { id.source == MusicSource.Netease && it > 0L }
+        val localUri = (providerMetadata as? ProviderTrackMetadata.Local)
+            ?.contentUri?.takeIf(String::isNotBlank)
         return MediaItem.Builder()
             .setMediaId(neteaseId?.toString() ?: PlaybackTrackIdentity.encode(id))
             .setUri(
-                if (neteaseId != null) {
+                if (localUri != null) {
+                    Uri.parse(localUri)
+                } else if (neteaseId != null) {
                     NeteasePlaybackResolver.uriForSong(
                         songId = neteaseId,
                         quality = neteaseQuality,

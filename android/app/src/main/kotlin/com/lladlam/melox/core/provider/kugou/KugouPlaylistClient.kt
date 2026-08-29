@@ -90,7 +90,7 @@ class KugouPlaylistClient(
         return MusicPlaylistSummary(
             id = MusicResourceId(MusicSource.Kugou, id),
             title = title,
-            artworkUrl = normalizeKugouArtworkUrl(firstString(item, "imgurl", "image", "pic", "cover", "sizable_cover")),
+            artworkUrl = kugouArtworkUrl(item),
             creatorName = firstString(item, "nickname", "username", "author_name").takeIf(String::isNotBlank),
             description = firstString(item, "intro", "description", "desc").takeIf(String::isNotBlank),
             trackCount = firstLong(item, "song_count", "songcount", "song_num", "count").takeIf { it >= 0 }?.toInt(),
@@ -110,7 +110,7 @@ class KugouPlaylistClient(
         val albumId = firstString(item, "AlbumID", "album_id", "albumid").takeIf(String::isNotBlank)
         val albumAudioId = firstLong(item, "album_audio_id", "MixSongID", "mixsongid", "AlbumAudioID", "Audioid", "audio_id")
             .takeIf { it > 0 }
-        val artwork = normalizeKugouArtworkUrl(firstString(item, "Image", "image", "img", "album_img", "AlbumImage", "sizable_cover"))
+        val artwork = kugouArtworkUrl(item)
         val artists = singer
             .split(Regex("\\s*(?:、|/|&|,|;|；)\\s*"))
             .map(String::trim)

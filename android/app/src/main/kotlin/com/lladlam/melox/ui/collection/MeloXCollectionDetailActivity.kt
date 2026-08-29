@@ -43,6 +43,7 @@ import com.lladlam.melox.ui.library.MeloXBatchDownloadSheet
 import com.lladlam.melox.ui.library.MeloXUnifiedAlbumDetailScreen
 import com.lladlam.melox.ui.podcast.MeloXPodcastScreen
 import com.lladlam.melox.ui.sharing.MeloXNeteaseResourceShareActivity
+import com.lladlam.melox.ui.MeloXPredictiveBackPage
 import com.lladlam.melox.ui.theme.MeloXTheme
 import kotlinx.coroutines.launch
 
@@ -60,7 +61,8 @@ class MeloXCollectionDetailActivity : ComponentActivity() {
         prepareMeloXPagePredictiveBack()
         val onExit: () -> Unit = ::finish
         setContent {
-            MeloXTheme {
+            MeloXPredictiveBackPage(onBack = onExit) {
+              MeloXTheme {
                 val page: @Composable () -> Unit = {
                     when {
                         isProgram -> PodcastProgramScreen(id, onExit)
@@ -74,6 +76,7 @@ class MeloXCollectionDetailActivity : ComponentActivity() {
                     }
                 }
                 page()
+              }
             }
         }
     }

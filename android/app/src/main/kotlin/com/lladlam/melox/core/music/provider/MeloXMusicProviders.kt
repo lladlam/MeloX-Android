@@ -18,6 +18,7 @@ import com.lladlam.melox.core.provider.bilibili.BilibiliApiCache
 import com.lladlam.melox.core.provider.spotify.SpotifyProvider
 import com.lladlam.melox.core.provider.jellyfin.JellyfinProvider
 import com.lladlam.melox.core.provider.jellyfin.JellyfinSessionStore
+import com.lladlam.melox.core.provider.local.LocalProvider
 import com.lladlam.melox.BuildConfig
 import com.lladlam.melox.core.network.MeloXHttpClient
 import okhttp3.OkHttpClient
@@ -57,6 +58,7 @@ object MeloXMusicProviders {
                     { BilibiliSessionStore.revision(appContext) },
                 ),
                 JellyfinProvider({ JellyfinSessionStore.read(appContext) }, httpClient),
+                LocalProvider(appContext),
         )
         return MusicProviderRegistry(
             nativeProviders + SpotifyProvider(
@@ -95,6 +97,7 @@ object MeloXMusicProviders {
                     sessionRevisionProvider = { BilibiliSessionStore.revision(context) },
                 ),
                 JellyfinProvider({ JellyfinSessionStore.read(context) }, httpClient),
+                LocalProvider(context),
         )
         return MusicProviderRegistry(
             nativeProviders + SpotifyProvider(

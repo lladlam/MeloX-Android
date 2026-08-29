@@ -5,6 +5,7 @@ import android.content.Context
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.net.Uri
 import android.util.Base64
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
@@ -48,6 +49,16 @@ class SongRecognitionClient(
         val samples = capture(durationSeconds)
         val fingerprint = fingerprintRuntime.generate(samples)
         return match(fingerprint, durationSeconds)
+    }
+
+    suspend fun recognizeLocal(uri: Uri, durationMs: Long, segmentStartMs: Long? = null): List<SongRecognitionResult> {
+        // Keep local requests the same size as the reliable microphone flow. A
+        // 15-second fingerprint makes the GET query unnecessarily large and is
+        // commonly reset by the HTTP/2 endpoint.
+        val seconds = 9
+        val samples = LocalAudioSegmentExtractor.extract(context, uri, durationMs, seconds * 1_000L, segmentStartMs)
+        val fingerprint = fingerprintRuntime.generate(samples)
+        return match(fingerprint, seconds)
     }
 
     override fun close() {
@@ -136,6 +147,10 @@ class SongRecognitionClient(
         val id = value.optLong("id", -1L)
         if (id <= 0L) return null
         val album = value.optJSONObject("al") ?: value.optJSONObject("album")
+        val artwork = album?.optString("picUrl")
+            ?.takeIf(String::isNotBlank)
+            ?: album?.optString("blurPicUrl")?.takeIf(String::isNotBlank)
+            ?: value.optString("picUrl").takeIf(String::isNotBlank)
         val artistArray = value.optJSONArray("ar") ?: value.optJSONArray("artists") ?: JSONArray()
         val artists = buildList {
             for (index in 0 until artistArray.length()) {
@@ -147,7 +162,7 @@ class SongRecognitionClient(
             name = value.optString("name").ifBlank { "未知歌曲" },
             artists = artists,
             album = album?.optString("name").orEmpty(),
-            artworkUrl = album?.optString("picUrl")?.takeIf(String::isNotBlank)?.replace("http://", "https://"),
+            artworkUrl = artwork?.replace("http://", "https://"),
             durationMs = value.optLong("dt", value.optLong("duration", 0L)).coerceAtLeast(0L),
         )
     }

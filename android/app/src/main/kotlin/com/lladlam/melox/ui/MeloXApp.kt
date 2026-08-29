@@ -18,6 +18,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.SeekableTransitionState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateDpAsState
@@ -136,6 +137,7 @@ import com.lladlam.melox.ui.player.MeloXImmersivePlaybackEffect
 import com.lladlam.melox.ui.player.MeloXIOSMiniPlayer
 import com.lladlam.melox.ui.player.MeloXProviderLyricsLoader
 import com.lladlam.melox.ui.player.MeloXIOSNowPlayingSharedHost
+import com.lladlam.melox.ui.player.meloXPlayerTransitionDurationMillis
 import com.lladlam.melox.ui.player.rememberMeloXPlaybackUiState
 import com.lladlam.melox.ui.provider.ProviderExploreScreen
 import com.lladlam.melox.ui.provider.ProviderHomeScreen
@@ -243,6 +245,7 @@ fun MeloXApp(
         transitionState = playerTransitionState,
         label = "melox-player-transition",
     )
+    var playerArtworkPageUsesScale by remember { mutableStateOf(false) }
     val playerScope = rememberCoroutineScope()
     val clipboardTarget = remember(clipboardLinkRequest, selectedSource) {
         if (selectedSource == MusicSource.Netease) {
@@ -552,10 +555,11 @@ fun MeloXApp(
                                 state = playbackState,
                                 onExpand = openPlayer,
                                 compactProgress = compactProgress,
-                                dynamicGlassEnabled = true,
-                                sharedTransitionScope = sharedScope,
-                                animatedVisibilityScope = this,
-                            )
+                                 dynamicGlassEnabled = true,
+                                 sharedTransitionScope = sharedScope,
+                                 animatedVisibilityScope = this,
+                                 applyPlayerArtworkScale = playerArtworkPageUsesScale,
+                             )
                         }
                     },
                 )
@@ -611,6 +615,7 @@ fun MeloXApp(
                             selectedTab = AppTab.Settings
                             closePlayer()
                         },
+                        onLocalMetadataChanged = { playbackState.refreshCurrentLocalMetadata() },
                         onSeekCollapse = { fraction ->
                             playerTransitionState.seekTo(
                                 fraction = fraction.coerceIn(0f, 0.999f),
@@ -623,13 +628,14 @@ fun MeloXApp(
                                 animationSpec = playerGestureSettleSpec(),
                             )
                         },
-                        sharedTransitionScope = sharedScope,
-                        animatedVisibilityScope = fullPlayerAnimatedVisibilityScope,
-                    )
-                }
-            }
+                         sharedTransitionScope = sharedScope,
+                         animatedVisibilityScope = fullPlayerAnimatedVisibilityScope,
+                         onArtworkPageChanged = { playerArtworkPageUsesScale = it },
+                     )
+                 }
+             }
 
-        }
+         }
 
         if (showNeteaseLogin) {
             NeteaseLoginScreen(
@@ -1255,8 +1261,8 @@ private fun RootGlyphIcon(
 }
 
 private fun playerAutomaticFractionSpec() = tween<Float>(
-    durationMillis = 460,
-    easing = FastOutSlowInEasing,
+    durationMillis = meloXPlayerTransitionDurationMillis,
+    easing = LinearEasing,
 )
 
 private fun playerGestureSettleSpec() = spring<Float>(

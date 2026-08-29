@@ -91,6 +91,7 @@ object TrackAggregation {
             // native playable result must remain the aggregation recommendation.
             com.lladlam.melox.core.music.model.MusicSource.Spotify -> -1
             com.lladlam.melox.core.music.model.MusicSource.Jellyfin -> 0
+            com.lladlam.melox.core.music.model.MusicSource.Local -> 0
         }
         return AggregatedTrackCandidate(track, identity, version, quality, sourceBonus, identity + version + quality + sourceBonus, "版本 ${key.version} · ${track.id.source.displayName}")
     }

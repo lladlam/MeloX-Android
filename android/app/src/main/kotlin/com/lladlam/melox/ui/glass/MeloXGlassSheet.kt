@@ -22,7 +22,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -31,6 +35,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.lladlam.melox.ui.theme.isMeloXDarkTheme
 import com.lladlam.melox.ui.animation.meloXPanelEnter
+import com.lladlam.melox.ui.animation.meloXPanelExit
+import kotlinx.coroutines.delay
 
 /**
  * Floating iOS 26-style Action Sheet / Context Menu surface.
@@ -45,6 +51,27 @@ fun MeloXGlassSheet(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    var renderedVisible by remember { mutableStateOf(visible) }
+    var dismissing by remember { mutableStateOf(false) }
+    LaunchedEffect(visible) {
+        if (visible) {
+            dismissing = false
+            renderedVisible = true
+        } else {
+            renderedVisible = false
+        }
+    }
+    LaunchedEffect(dismissing) {
+        if (dismissing) {
+            delay(500L)
+            onDismiss()
+        }
+    }
+    val requestDismiss = {
+        if (!dismissing) {
+            dismissing = true
+        }
+    }
     val dark = isMeloXDarkTheme()
     val hasBackdrop = LocalMeloXBackdrop.current != null
     // Regular pages deliberately do not expose a recursive RenderNode
@@ -64,17 +91,18 @@ fun MeloXGlassSheet(
         dark -> Color.Black
         else -> Color.White
     }
-    if (visible) {
+    if (renderedVisible) {
         Dialog(
-            onDismissRequest = onDismiss,
+            onDismissRequest = requestDismiss,
             properties = DialogProperties(
                 usePlatformDefaultWidth = false,
                 decorFitsSystemWindows = false,
             ),
         ) {
             AnimatedVisibility(
-                visible = true,
+                visible = visible && !dismissing,
                 enter = meloXPanelEnter(initialScale = 0.97f),
+                exit = meloXPanelExit(),
             ) {
                 Box(
                     modifier = Modifier
@@ -83,7 +111,7 @@ fun MeloXGlassSheet(
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
-                            onClick = onDismiss,
+                            onClick = requestDismiss,
                         )
                         .padding(horizontal = 18.dp)
                         .navigationBarsPadding(),
@@ -122,6 +150,27 @@ fun MeloXGlassDialog(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    var renderedVisible by remember { mutableStateOf(visible) }
+    var dismissing by remember { mutableStateOf(false) }
+    LaunchedEffect(visible) {
+        if (visible) {
+            dismissing = false
+            renderedVisible = true
+        } else {
+            renderedVisible = false
+        }
+    }
+    LaunchedEffect(dismissing) {
+        if (dismissing) {
+            delay(500L)
+            onDismiss()
+        }
+    }
+    val requestDismiss = {
+        if (!dismissing) {
+            dismissing = true
+        }
+    }
     val dark = isMeloXDarkTheme()
     val hasBackdrop = LocalMeloXBackdrop.current != null
     val dialogTint = when {
@@ -133,17 +182,18 @@ fun MeloXGlassDialog(
     // Confirmation/prompt content must remain fully opaque. Only the empty
     // area around the dialog uses a translucent modal scrim.
     val dialogSurface = if (dark) Color.Black else Color.White
-    if (visible) {
+    if (renderedVisible) {
         Dialog(
-            onDismissRequest = onDismiss,
+            onDismissRequest = requestDismiss,
             properties = DialogProperties(
                 usePlatformDefaultWidth = false,
                 decorFitsSystemWindows = false,
             ),
         ) {
             AnimatedVisibility(
-                visible = true,
+                visible = visible && !dismissing,
                 enter = meloXPanelEnter(),
+                exit = meloXPanelExit(),
             ) {
                 Box(
                     modifier = Modifier
@@ -152,7 +202,7 @@ fun MeloXGlassDialog(
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
-                            onClick = onDismiss,
+                            onClick = requestDismiss,
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
