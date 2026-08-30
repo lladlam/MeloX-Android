@@ -347,6 +347,12 @@ fun MeloXIOSNowPlayingSharedHost(
                             artworkUrl = state.artworkUrl,
                             isPlaying = state.isPlaying && expansionProgress > 0.72f,
                         )
+                    } else if (MeloXSettingsRuntime.playerBackgroundMode == MeloXPlayerBackgroundMode.MeiMesh) {
+                        MeloXMeiMeshBackdrop(
+                            artworkUrl = state.artworkUrl,
+                            isPlaying = state.isPlaying && expansionProgress > 0.72f,
+                            volume = state.volume,
+                        )
                     } else if (MeloXSettingsRuntime.playerBackgroundMode == MeloXPlayerBackgroundMode.FlowingLight) {
                         MeloXFlowingLightBackdrop(
                             mediaId = state.mediaId,
