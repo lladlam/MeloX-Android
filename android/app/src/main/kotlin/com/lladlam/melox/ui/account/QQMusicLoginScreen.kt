@@ -1,68 +1,90 @@
 package com.lladlam.melox.ui.account
 
-import android.annotation.SuppressLint
-import android.graphics.Color as AndroidColor
-import android.os.SystemClock
-import android.util.Log
-import android.webkit.CookieManager
-import android.webkit.WebChromeClient
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.Manifest
+import android.content.ContentValues
+import android.content.Context
+import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
+import android.media.MediaScannerConnection
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import com.lladlam.melox.core.provider.qqmusic.QQMusicApiClient
-import com.lladlam.melox.core.provider.qqmusic.QQMusicPhoneAuthClient
-import com.lladlam.melox.core.provider.qqmusic.QQMusicSecurityChallengeException
-import com.lladlam.melox.core.provider.qqmusic.QQMusicSessionStore
+import androidx.core.content.ContextCompat
 import com.lladlam.melox.core.music.provider.PlaybackAccountSlot
-import com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigPolicy
+import com.lladlam.melox.core.provider.qqmusic.QQMusicApiClient
+import com.lladlam.melox.core.provider.qqmusic.QQMusicQrLoginClient
+import com.lladlam.melox.core.provider.qqmusic.QQMusicQrLoginMethod
+import com.lladlam.melox.core.provider.qqmusic.QQMusicQrLoginSession
+import com.lladlam.melox.core.provider.qqmusic.QQMusicQrLoginState
+import com.lladlam.melox.core.provider.qqmusic.QQMusicSessionStore
+import com.lladlam.melox.ui.glass.MeloXSymbol
+import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import com.lladlam.melox.ui.glass.meloXLiquidButton
-import com.lladlam.melox.ui.glass.MeloXGlassButton
-import com.lladlam.melox.ui.glass.MeloXGlassButtonStyle
-import com.lladlam.melox.ui.glass.MeloXGlassDialog
 import com.lladlam.melox.ui.legal.MeloXLegalLinks
+import java.io.File
+import java.io.FileOutputStream
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-private const val QQ_MUSIC_LOGIN_URL = "https://y.qq.com/"
-private const val COOKIE_POLL_INTERVAL_MS = 500L
-private const val COOKIE_STABLE_POLLS_BEFORE_VERIFY = 3
-private const val VERIFY_RETRY_COOLDOWN_MS = 8_000L
-private const val TAG = "MeloXQQLogin"
-
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun QQMusicLoginScreen(
     onDismiss: () -> Unit,
@@ -70,147 +92,110 @@ fun QQMusicLoginScreen(
     targetSlot: PlaybackAccountSlot = PlaybackAccountSlot.Main,
 ) {
     val context = LocalContext.current.applicationContext
-    val phoneAuthClient = remember { QQMusicPhoneAuthClient() }
+    val client = remember { QQMusicQrLoginClient() }
     val scope = rememberCoroutineScope()
-    var pendingPhone by rememberSaveable { mutableStateOf("") }
-    var resumeAtCodeStep by rememberSaveable { mutableStateOf(false) }
-    var useWebLogin by remember { mutableStateOf(true) }
-    var showQrLoginTip by rememberSaveable { mutableStateOf(true) }
-    var webLoginUrl by remember { mutableStateOf(QQ_MUSIC_LOGIN_URL) }
-    var securityChallengeActive by remember { mutableStateOf(false) }
-    var webView by remember { mutableStateOf<WebView?>(null) }
-    var pageLoading by remember { mutableStateOf(true) }
-    var verifying by remember { mutableStateOf(false) }
-    var securityRetrying by remember { mutableStateOf(false) }
-    var verificationError by remember { mutableStateOf<String?>(null) }
+    var methodName by rememberSaveable { mutableStateOf(QQMusicQrLoginMethod.QQ.name) }
+    val method = QQMusicQrLoginMethod.valueOf(methodName)
+    var qrSession by remember { mutableStateOf<QQMusicQrLoginSession?>(null) }
+    var stateText by remember { mutableStateOf(method.loadingText()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var actionMessage by remember { mutableStateOf<String?>(null) }
+    var actionFailed by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf(false) }
+    var refreshToken by remember { mutableStateOf(0) }
 
-    LaunchedEffect(Unit) {
-        QQMusicSessionStore.clearWebLoginCookies()
+    BackHandler(onBack = onDismiss)
+
+    fun saveCurrentQr() {
+        val current = qrSession ?: return
+        saving = true
+        actionMessage = null
+        scope.launch {
+            runCatchingCancellable {
+                withContext(Dispatchers.IO) { saveQrImageToGallery(context, current) }
+            }.onSuccess { location ->
+                actionFailed = false
+                actionMessage = "二维码已保存到 $location"
+            }.onFailure { failure ->
+                actionFailed = true
+                actionMessage = failure.message ?: "二维码保存失败，请稍后重试"
+            }
+            saving = false
+        }
     }
 
-    BackHandler(enabled = useWebLogin) {
-        val view = webView
-        if (view?.canGoBack() == true) view.goBack() else onDismiss()
+    val storagePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            saveCurrentQr()
+        } else {
+            actionFailed = true
+            actionMessage = "未获得存储权限，无法保存二维码"
+        }
     }
 
-    LaunchedEffect(webView) {
-        if (webView == null) return@LaunchedEffect
+    LaunchedEffect(method, refreshToken) {
+        sessionLoop@ while (true) {
+            qrSession = null
+            error = null
+            actionMessage = null
+            stateText = method.loadingText()
+            val created = runCatchingCancellable { client.createSession(method) }
+                .onFailure { error = qrErrorMessage(it, "获取${method.displayName()}登录二维码失败") }
+                .getOrNull() ?: return@LaunchedEffect
+            qrSession = created
+            stateText = method.waitingText()
 
-        var previousSessionFingerprint = ""
-        var stablePolls = 0
-        var lastAttemptFingerprint: String? = null
-        var lastAttemptAt = 0L
-
-        while (true) {
-            val candidate = collectQQMusicCookieHeader()
-            val session = QQMusicSessionStore.parse(candidate)
-
-            val sessionFingerprint = if (session.isLoggedIn) "${session.uin}:${session.musicKey}" else ""
-            if (sessionFingerprint != previousSessionFingerprint) {
-                Log.d(TAG, "QQ Music WebView session state changed: available=${sessionFingerprint.isNotBlank()}")
-            }
-            if (sessionFingerprint.isNotBlank() && sessionFingerprint == previousSessionFingerprint) {
-                stablePolls += 1
-            } else {
-                previousSessionFingerprint = sessionFingerprint
-                stablePolls = if (sessionFingerprint.isBlank()) 0 else 1
-            }
-
-            if (!securityChallengeActive && session.isLoggedIn && stablePolls >= COOKIE_STABLE_POLLS_BEFORE_VERIFY && !verifying) {
-                val fingerprint = "${session.uin}:${session.musicKey}"
-                val now = SystemClock.elapsedRealtime()
-                val shouldAttempt =
-                    fingerprint != lastAttemptFingerprint || now - lastAttemptAt >= VERIFY_RETRY_COOLDOWN_MS
-
-                if (shouldAttempt) {
-                    lastAttemptFingerprint = fingerprint
-                    lastAttemptAt = now
-                    verifying = true
-                    verificationError = null
-
-                    val result = runCatching {
-                        QQMusicApiClient(sessionProvider = { session }).accountProfile(session)
+            delay(500)
+            while (true) {
+                val state = runCatchingCancellable { client.checkSession(created) }
+                    .onFailure { error = qrErrorMessage(it, "检查${method.displayName()}扫码状态失败") }
+                    .getOrNull() ?: return@LaunchedEffect
+                when (state) {
+                    QQMusicQrLoginState.Waiting -> stateText = method.waitingText()
+                    QQMusicQrLoginState.Scanned -> stateText = "已扫码，请在${method.displayName()}中确认"
+                    QQMusicQrLoginState.Expired -> {
+                        qrSession = null
+                        stateText = method.loadingText()
+                        delay(250)
+                        continue@sessionLoop
                     }
-
-                    verifying = false
-                    if (result.isSuccess) {
-                        QQMusicSessionStore.write(context, candidate, playback = targetSlot == PlaybackAccountSlot.Playback)
-                        CookieManager.getInstance().flush()
+                    QQMusicQrLoginState.Rejected -> {
+                        stateText = "你已取消授权"
+                        return@LaunchedEffect
+                    }
+                    is QQMusicQrLoginState.Authorized -> {
+                        stateText = "正在验证 QQ音乐登录状态…"
+                        val session = QQMusicSessionStore.parse(state.cookie)
+                        val verified = runCatchingCancellable {
+                            QQMusicApiClient(sessionProvider = { session }).accountProfile(session)
+                        }.onFailure {
+                            error = it.message ?: "QQ音乐登录状态验证失败"
+                        }.isSuccess
+                        if (!verified) return@LaunchedEffect
+                        QQMusicSessionStore.write(
+                            context = context,
+                            cookie = state.cookie,
+                            playback = targetSlot == PlaybackAccountSlot.Playback,
+                        )
+                        stateText = "登录成功"
                         onLoggedIn()
                         return@LaunchedEffect
                     }
-
-                    verificationError = result.exceptionOrNull()?.message
-                        ?: "QQ音乐登录状态验证失败，请稍后重试"
-                    Log.w(TAG, "QQ Music WebView session verification failed", result.exceptionOrNull())
                 }
+                delay(1_100)
             }
-
-            delay(COOKIE_POLL_INTERVAL_MS)
         }
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            webView?.stopLoading()
-            webView?.destroy()
-        }
+    LaunchedEffect(actionMessage) {
+        if (actionMessage == null) return@LaunchedEffect
+        delay(4_000)
+        actionMessage = null
     }
 
-    if (!useWebLogin) {
-        MeloXPhoneCodeLoginScreen(
-            serviceName = "QQ音乐",
-            brandColor = Color(0xFF20C573),
-            description = "使用手机号登录 QQ音乐，访问你的收藏与歌单。",
-            onClose = onDismiss,
-            onSendCode = { countryCode, phone ->
-                try {
-                    phoneAuthClient.sendCode(countryCode, phone)
-                    Result.success(Unit)
-                } catch (challenge: QQMusicSecurityChallengeException) {
-                    webLoginUrl = challenge.securityUrl
-                    securityChallengeActive = true
-                    useWebLogin = true
-                    Result.failure(challenge)
-                } catch (error: Exception) {
-                    Result.failure(error)
-                }
-            },
-            onSubmitCode = { countryCode, phone, code ->
-                try {
-                    val cookie = phoneAuthClient.login(countryCode, phone, code)
-                    val parsedSession = QQMusicSessionStore.parse(cookie)
-                    QQMusicApiClient(sessionProvider = { parsedSession }).accountProfile()
-                    QQMusicSessionStore.write(
-                        context,
-                        cookie,
-                        playback = targetSlot == PlaybackAccountSlot.Playback,
-                    )
-                    onLoggedIn()
-                    Result.success(Unit)
-                } catch (challenge: QQMusicSecurityChallengeException) {
-                    webLoginUrl = challenge.securityUrl
-                    securityChallengeActive = true
-                    useWebLogin = true
-                    Result.failure(challenge)
-                } catch (error: Exception) {
-                    Result.failure(error)
-                }
-            },
-            onWebLogin = {
-                webLoginUrl = QQ_MUSIC_LOGIN_URL
-                securityChallengeActive = false
-                useWebLogin = true
-            },
-            webFallbackEmphasis = true,
-            initialPhone = pendingPhone,
-            startAtCodeStep = resumeAtCodeStep,
-            onPhoneChanged = {
-                pendingPhone = it
-                resumeAtCodeStep = false
-            },
-        )
-    } else Column(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
@@ -219,197 +204,397 @@ fun QQMusicLoginScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 12.dp),
+                .padding(horizontal = 10.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (securityChallengeActive) "返回" else "取消",
+                text = "取消",
                 modifier = Modifier
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                     .meloXLiquidButton(
-                        shape = RoundedCornerShape(18.dp),
+                        shape = RoundedCornerShape(24.dp),
                         tint = Color(0xFFFF3147),
                         surfaceColor = Color(0xFFFF3147).copy(alpha = 0.08f),
                         lensRadius = 7.dp,
                         refractionHeight = 11.dp,
                     )
-                    .clickable {
-                        onDismiss()
-                    }
-                    .padding(8.dp),
+                    .clickable(onClick = onDismiss)
+                    .padding(horizontal = 10.dp, vertical = 13.dp),
                 color = Color(0xFFFF3147),
                 fontSize = 16.sp,
+                textAlign = TextAlign.Center,
             )
             Text(
-                text = if (securityChallengeActive) "QQ音乐安全验证" else "登录 QQ音乐",
-                fontSize = 17.sp,
+                text = "登录 QQ音乐",
                 color = MaterialTheme.colorScheme.onBackground,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Medium,
             )
-            Text(
-                text = if (securityChallengeActive) "验证完成" else "取消",
-                modifier = Modifier
-                    .clip(RoundedCornerShape(18.dp))
-                    .clickable(enabled = securityChallengeActive && !securityRetrying) {
-                        scope.launch {
-                            securityRetrying = true
-                            verificationError = null
-                            runCatching {
-                                phoneAuthClient.sendCode("86", pendingPhone.filter(Char::isDigit))
-                            }.onSuccess {
-                                webView?.stopLoading()
-                                webView?.destroy()
-                                webView = null
-                                securityChallengeActive = false
-                                webLoginUrl = QQ_MUSIC_LOGIN_URL
-                                resumeAtCodeStep = true
-                                useWebLogin = false
-                            }.onFailure { error ->
-                                verificationError = error.message ?: "安全验证尚未生效，请稍后重试"
-                            }
-                            securityRetrying = false
-                        }
-                    }
-                    .padding(8.dp),
-                color = if (securityChallengeActive) Color(0xFF20C573) else Color.Transparent,
-                fontSize = 16.sp,
-            )
+            Spacer(Modifier.size(48.dp))
         }
 
-        if (pageLoading) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        QQMusicLoginMethodSelector(
+            selectedMethod = method,
+            onSelect = { selected ->
+                if (selected != method) methodName = selected.name
+            },
+            modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp),
+        )
 
-        Box(modifier = Modifier.weight(1f)) {
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { viewContext ->
-                    WebView(viewContext).apply {
-                        webView = this
-                        setBackgroundColor(AndroidColor.TRANSPARENT)
-
-                        val cookieManager = CookieManager.getInstance()
-                        cookieManager.setAcceptCookie(true)
-                        cookieManager.setAcceptThirdPartyCookies(this, true)
-
-                        settings.javaScriptEnabled = true
-                        settings.domStorageEnabled = true
-                        settings.databaseEnabled = true
-                        settings.useWideViewPort = true
-                        settings.loadWithOverviewMode = true
-                        settings.userAgentString =
-                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-                                "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                                "Chrome/124.0.0.0 Safari/537.36"
-
-                        webChromeClient = WebChromeClient()
-                        webViewClient = object : WebViewClient() {
-                            private var firstVisiblePageCommitted = false
-
-                            override fun onPageCommitVisible(view: WebView?, url: String?) {
-                                if (!firstVisiblePageCommitted) {
-                                    firstVisiblePageCommitted = true
-                                    pageLoading = false
-                                }
-                                super.onPageCommitVisible(view, url)
-                            }
-
-                            override fun onPageFinished(view: WebView?, url: String?) {
-                                if (!firstVisiblePageCommitted) {
-                                    firstVisiblePageCommitted = true
-                                    pageLoading = false
-                                }
-                                super.onPageFinished(view, url)
-                            }
-                        }
-                        loadUrl(webLoginUrl)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 28.dp, vertical = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                val currentSession = qrSession
+                if (currentSession == null) {
+                    Box(
+                        modifier = Modifier
+                            .size(240.dp)
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator()
                     }
-                },
-            )
-
-            if (verifying || securityRetrying) {
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 12.dp)
-                        .background(
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-                            shape = RoundedCornerShape(18.dp),
+                } else {
+                    val bitmap = remember(currentSession) {
+                        BitmapFactory.decodeByteArray(
+                            currentSession.imageBytes,
+                            0,
+                            currentSession.imageBytes.size,
                         )
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(9.dp),
+                    }
+                    if (bitmap != null) {
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = "QQ音乐${method.displayName()}登录二维码",
+                            modifier = Modifier
+                                .size(240.dp)
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(Color.White)
+                                .padding(12.dp),
+                        )
+                    }
+                }
+
+                Spacer(Modifier.size(16.dp))
+                val actionsEnabled = currentSession != null
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    QrActionButton(
+                        onClick = { refreshToken += 1 },
+                        icon = MeloXSymbol.Refresh,
+                        label = "刷新二维码",
+                        tint = method.accentColor(),
+                        modifier = Modifier.weight(1f),
+                    )
+                    QrActionButton(
+                        onClick = {
+                            if (
+                                Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
+                                ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                                ) != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                            } else {
+                                saveCurrentQr()
+                            }
+                        },
+                        icon = MeloXSymbol.Download,
+                        label = if (saving) "正在保存…" else "保存到相册",
+                        tint = method.accentColor(),
+                        enabled = actionsEnabled && !saving,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                Spacer(Modifier.size(20.dp))
+                Text(
+                    text = stateText,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    text = method.instructionText(),
+                    modifier = Modifier.heightIn(min = 40.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    text = "登录凭证仅保存在本机，不会上传到 MeloX 服务器。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    textAlign = TextAlign.Center,
+                )
+                actionMessage?.let { message ->
+                    Spacer(Modifier.size(12.dp))
                     Text(
-                        text = if (securityRetrying) "正在重新发送验证码…" else "正在验证 QQ音乐登录状态…",
-                        color = MaterialTheme.colorScheme.onSurface,
+                        text = message,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        color = if (actionFailed) MaterialTheme.colorScheme.error else Color(0xFF168A4A),
                         fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+                error?.let { message ->
+                    Spacer(Modifier.size(14.dp))
+                    Text(
+                        text = message,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 13.sp,
+                        lineHeight = 20.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+                if (
+                    stateText == "你已取消授权" ||
+                    error != null
+                ) {
+                    Spacer(Modifier.size(18.dp))
+                    QrActionButton(
+                        onClick = { refreshToken += 1 },
+                        icon = MeloXSymbol.Refresh,
+                        label = "重新生成二维码",
+                        tint = method.accentColor(),
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
-
-            verificationError?.let { message ->
-                Text(
-                    text = message,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(16.dp)
-                        .background(
-                            color = MaterialTheme.colorScheme.errorContainer,
-                            shape = MaterialTheme.shapes.medium,
-                        )
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                    fontSize = 13.sp,
-                )
-            }
         }
+
         MeloXLegalLinks(
             modifier = Modifier.padding(vertical = 6.dp),
             tint = Color(0xFF20C573),
         )
     }
-    if (showQrLoginTip) {
-        MeloXGlassDialog(visible = true, onDismiss = { showQrLoginTip = false }) {
-            Text("QQ 登录提示", style = MaterialTheme.typography.titleLarge)
-            Text(
-                "如果使用 QQ 扫码登录，请先截图二维码，再把 MeloX 挂到小窗，然后前往 QQ 扫描截图中的二维码，否则可能无法完成登录。",
-                modifier = Modifier.padding(top = 10.dp),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-                lineHeight = 21.sp,
+}
+
+@Composable
+private fun QQMusicLoginMethodSelector(
+    selectedMethod: QQMusicQrLoginMethod,
+    onSelect: (QQMusicQrLoginMethod) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .meloXLiquidButton(
+                shape = RoundedCornerShape(24.dp),
+                surfaceColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.08f),
+                lensRadius = 12.dp,
+                refractionHeight = 14.dp,
             )
-            MeloXGlassButton(
-                onClick = { showQrLoginTip = false },
-                modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
-                style = MeloXGlassButtonStyle.BorderedProminent,
-            ) { Text("知道了") }
+            .padding(4.dp),
+    ) {
+        val segmentWidth = maxWidth / 2
+        val indicatorOffset by animateDpAsState(
+            targetValue = if (selectedMethod == QQMusicQrLoginMethod.QQ) 0.dp else segmentWidth,
+            animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
+            label = "QQMusicLoginMethodIndicatorOffset",
+        )
+        val indicatorColor by animateColorAsState(
+            targetValue = selectedMethod.accentColor(),
+            animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+            label = "QQMusicLoginMethodIndicatorColor",
+        )
+
+        Box(
+            modifier = Modifier
+                .width(segmentWidth)
+                .fillMaxHeight()
+                .graphicsLayer { translationX = indicatorOffset.toPx() }
+                .meloXLiquidButton(
+                    shape = RoundedCornerShape(20.dp),
+                    tint = indicatorColor,
+                    surfaceColor = indicatorColor.copy(alpha = 0.10f),
+                    lensRadius = 8.dp,
+                    refractionHeight = 10.dp,
+                )
+        )
+
+        Row(modifier = Modifier.fillMaxSize()) {
+            QQMusicQrLoginMethod.entries.forEach { method ->
+                val selected = method == selectedMethod
+                val accent = method.accentColor()
+                val labelColor by animateColorAsState(
+                    targetValue = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                    label = "${method.name}LoginMethodLabelColor",
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .selectable(
+                            selected = selected,
+                            role = Role.Tab,
+                            onClick = { onSelect(method) },
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "${method.displayName()}扫码",
+                        color = labelColor,
+                        fontSize = 15.sp,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    )
+                }
+            }
         }
     }
 }
 
-private fun collectQQMusicCookieHeader(): String {
-    val manager = CookieManager.getInstance()
-    val values = linkedMapOf<String, String>()
-    val urls = listOf(
-        "https://y.qq.com/",
-        "https://u.y.qq.com/",
-        "https://c.y.qq.com/",
-        "https://c6.y.qq.com/",
-        "https://ssl.ptlogin2.qq.com/",
-        "https://ptlogin2.qq.com/",
-        "https://ptlogin2.music.qq.com/",
-        "https://ui.ptlogin2.qq.com/",
-        "https://xui.ptlogin2.qq.com/",
-        "https://music.qq.com/",
-        "https://qq.com/",
-    )
-    urls.forEach { url ->
-        manager.getCookie(url)
-            ?.split(';')
-            ?.forEach { item ->
-                val parts = item.trim().split('=', limit = 2)
-                if (parts.size == 2 && parts[0].isNotBlank()) {
-                    values[parts[0].trim()] = parts[1].trim()
-                }
-            }
+@Composable
+private fun QrActionButton(
+    onClick: () -> Unit,
+    icon: MeloXSymbol,
+    label: String,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Row(
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .meloXLiquidButton(
+                shape = RoundedCornerShape(18.dp),
+                enabled = enabled,
+                tint = tint,
+                surfaceColor = tint.copy(alpha = 0.08f),
+                lensRadius = 9.dp,
+                refractionHeight = 12.dp,
+            )
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MeloXSymbolIcon(
+            symbol = icon,
+            modifier = Modifier.size(16.dp),
+            color = tint.copy(alpha = if (enabled) 1f else 0.42f),
+            iconSize = 16.sp,
+            contentDescription = label,
+        )
+        Spacer(Modifier.size(6.dp))
+        Text(
+            text = label,
+            color = tint.copy(alpha = if (enabled) 1f else 0.42f),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+        )
     }
-    return values.toSortedMap().entries.joinToString("; ") { (key, value) -> "$key=$value" }
+}
+
+private fun QQMusicQrLoginMethod.displayName(): String = when (this) {
+    QQMusicQrLoginMethod.QQ -> "QQ"
+    QQMusicQrLoginMethod.WeChat -> "微信"
+}
+
+private fun QQMusicQrLoginMethod.loadingText(): String = "正在获取${displayName()}登录二维码…"
+
+private fun QQMusicQrLoginMethod.waitingText(): String = when (this) {
+    QQMusicQrLoginMethod.QQ -> "请使用手机 QQ 扫码"
+    QQMusicQrLoginMethod.WeChat -> "请使用微信扫一扫扫码"
+}
+
+private fun QQMusicQrLoginMethod.instructionText(): String = when (this) {
+    QQMusicQrLoginMethod.QQ -> "扫码并在 QQ 中确认即可登录。也可以保存二维码，再从 QQ 扫一扫的相册中选择。"
+    QQMusicQrLoginMethod.WeChat -> "扫码并在微信中确认即可登录。也可以保存二维码，再从微信扫一扫的相册中选择。"
+}
+
+private fun QQMusicQrLoginMethod.accentColor(): Color = when (this) {
+    QQMusicQrLoginMethod.QQ -> Color(0xFF1096C2)
+    QQMusicQrLoginMethod.WeChat -> Color(0xFF168A4A)
+}
+
+private suspend fun <T> runCatchingCancellable(block: suspend () -> T): Result<T> = try {
+    Result.success(block())
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (failure: Throwable) {
+    Result.failure(failure)
+}
+
+private fun qrErrorMessage(error: Throwable, fallback: String): String {
+    val message = error.message?.trim().orEmpty()
+    return when {
+        message.equals("timeout", ignoreCase = true) -> "网络请求超时，请点击刷新二维码重试"
+        message.isBlank() -> fallback
+        else -> message
+    }
+}
+
+private fun saveQrImageToGallery(
+    context: Context,
+    session: QQMusicQrLoginSession,
+): String {
+    val extension = if (session.imageMimeType == "image/jpeg") "jpg" else "png"
+    val methodName = if (session.method == QQMusicQrLoginMethod.WeChat) "WeChat" else "QQ"
+    val fileName = "MeloX-QQMusic-$methodName-${System.currentTimeMillis()}.$extension"
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+            put(MediaStore.Images.Media.MIME_TYPE, session.imageMimeType)
+            put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/MeloX")
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        }
+        val resolver = context.contentResolver
+        val target = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            ?: error("无法创建系统图片")
+        runCatching {
+            resolver.openOutputStream(target)?.use { output -> output.write(session.imageBytes) }
+                ?: error("无法写入系统图片")
+            resolver.update(
+                target,
+                ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) },
+                null,
+                null,
+            )
+        }.getOrElse { failure ->
+            resolver.delete(target, null, null)
+            throw failure
+        }
+    } else {
+        @Suppress("DEPRECATION")
+        val directory = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+            "MeloX",
+        )
+        check(directory.exists() || directory.mkdirs()) { "无法创建 Pictures/MeloX 文件夹" }
+        val target = File(directory, fileName)
+        FileOutputStream(target).use { output -> output.write(session.imageBytes) }
+        MediaScannerConnection.scanFile(
+            context,
+            arrayOf(target.absolutePath),
+            arrayOf(session.imageMimeType),
+            null,
+        )
+    }
+    return "Pictures/MeloX"
 }
