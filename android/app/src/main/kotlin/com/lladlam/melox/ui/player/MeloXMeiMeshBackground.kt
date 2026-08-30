@@ -5,10 +5,12 @@ import android.graphics.Bitmap
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
 import android.opengl.GLUtils
+import android.app.ActivityManager
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -18,6 +20,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import coil3.ImageLoader
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
+import coil3.request.allowHardware
+import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import coil3.toBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -99,24 +103,78 @@ internal class MeloXMeiMeshRenderer : GLSurfaceView.Renderer {
     private fun createProgram(v: String, f: String): Int { fun compile(t:Int,s:String):Int { val x=GLES30.glCreateShader(t); GLES30.glShaderSource(x,s); GLES30.glCompileShader(x); val ok=IntArray(1); GLES30.glGetShaderiv(x,GLES30.GL_COMPILE_STATUS,ok,0); if(ok[0]==0){GLES30.glDeleteShader(x);return 0};return x }; val a=compile(GLES30.GL_VERTEX_SHADER,v); val b=compile(GLES30.GL_FRAGMENT_SHADER,f); if(a==0||b==0)return 0; val p=GLES30.glCreateProgram();GLES30.glAttachShader(p,a);GLES30.glAttachShader(p,b);GLES30.glLinkProgram(p);GLES30.glDeleteShader(a);GLES30.glDeleteShader(b);val ok=IntArray(1);GLES30.glGetProgramiv(p,GLES30.GL_LINK_STATUS,ok,0);return if(ok[0]==1)p else 0 }
 }
 
-internal class MeloXMeiMeshBackgroundView(context: Context) : GLSurfaceView(context) { private val renderer = MeloXMeiMeshRenderer(); init { setEGLContextClientVersion(3); setEGLConfigChooser(8,8,8,8,0,0); setRenderer(renderer); renderMode=RENDERMODE_CONTINUOUSLY }; fun setBitmap(b:Bitmap)=queueEvent{renderer.setBitmap(b)}; fun setPlaying(v:Boolean){renderer.playing=v}; fun setVolume(v:Float){renderer.volume=v}; override fun onDetachedFromWindow(){queueEvent{renderer.release()};super.onDetachedFromWindow()} }
+internal class MeloXMeiMeshBackgroundView(context: Context) : GLSurfaceView(context) {
+    private val renderer = MeloXMeiMeshRenderer()
+    private var lastBitmap: Bitmap? = null
+
+    init {
+        setEGLContextClientVersion(3)
+        setEGLConfigChooser(8, 8, 8, 8, 0, 0)
+        setRenderer(renderer)
+        renderMode = RENDERMODE_CONTINUOUSLY
+        preserveEGLContextOnPause = true
+    }
+
+    fun setBitmap(value: Bitmap) {
+        if (value === lastBitmap || value.isRecycled) return
+        lastBitmap = value
+        queueEvent { renderer.setBitmap(value) }
+    }
+
+    fun setPlaying(value: Boolean) {
+        renderer.playing = value
+        renderMode = if (value) RENDERMODE_CONTINUOUSLY else RENDERMODE_WHEN_DIRTY
+        if (!value) requestRender()
+    }
+
+    fun setVolume(value: Float) {
+        renderer.volume = value
+        if (renderMode == RENDERMODE_WHEN_DIRTY) requestRender()
+    }
+
+    override fun onDetachedFromWindow() {
+        queueEvent { renderer.release() }
+        super.onDetachedFromWindow()
+    }
+}
 
 @Composable
 internal fun MeloXMeiMeshBackdrop(artworkUrl: String?, isPlaying: Boolean, volume: Float, modifier: Modifier = Modifier) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var bitmap by remember(artworkUrl) { mutableStateOf<Bitmap?>(null) }
+    val supportsGles = remember(context) {
+        context.getSystemService(ActivityManager::class.java)
+            ?.deviceConfigurationInfo?.reqGlEsVersion?.let { it >= 0x30000 } == true
+    }
+
     LaunchedEffect(artworkUrl) {
         bitmap = withContext(Dispatchers.IO) {
             artworkUrl?.takeIf(String::isNotBlank)?.let { request ->
                 (ImageLoader(context).execute(
-                    ImageRequest.Builder(context).data(request).size(256, 256).build(),
+                    ImageRequest.Builder(context)
+                        .data(request)
+                        .size(256, 256)
+                        .allowHardware(false)
+                        .build(),
                 ) as? SuccessResult)?.image?.toBitmap()
             }
         }
     }
     Box(modifier.fillMaxSize()) {
-        MeloXBlurredArtworkBackdrop(artworkUrl)
-        if (bitmap != null) AndroidView(factory={ MeloXMeiMeshBackgroundView(it) }, update={ view -> view.setBitmap(bitmap!!); view.setPlaying(isPlaying); view.setVolume(volume) }, modifier=Modifier.fillMaxSize())
+        if (!supportsGles || bitmap == null || MeloXSettingsRuntime.reduceMotion) {
+            MeloXBlurredArtworkBackdrop(artworkUrl)
+        } else {
+            val currentBitmap = bitmap ?: return@Box
+            AndroidView(
+                factory = { MeloXMeiMeshBackgroundView(it) },
+                update = { view ->
+                    view.setBitmap(currentBitmap)
+                    view.setPlaying(isPlaying)
+                    view.setVolume(volume)
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }
 
