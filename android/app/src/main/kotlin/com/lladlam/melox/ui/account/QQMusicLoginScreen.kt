@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -75,6 +76,7 @@ import com.lladlam.melox.core.provider.qqmusic.QQMusicQrLoginState
 import com.lladlam.melox.core.provider.qqmusic.QQMusicSessionStore
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSymbolIcon
+import com.lladlam.melox.ui.glass.MeloXIosTopBar
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import com.lladlam.melox.ui.legal.MeloXLegalLinks
 import java.io.File
@@ -201,38 +203,21 @@ fun QQMusicLoginScreen(
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding(),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "取消",
-                modifier = Modifier
-                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                    .meloXLiquidButton(
-                        shape = RoundedCornerShape(24.dp),
-                        tint = Color(0xFFFF3147),
-                        surfaceColor = Color(0xFFFF3147).copy(alpha = 0.08f),
-                        lensRadius = 7.dp,
-                        refractionHeight = 11.dp,
-                    )
-                    .clickable(onClick = onDismiss)
-                    .padding(horizontal = 10.dp, vertical = 13.dp),
-                color = Color(0xFFFF3147),
-                fontSize = 16.sp,
-                textAlign = TextAlign.Center,
-            )
-            Text(
-                text = "登录 QQ音乐",
-                color = MaterialTheme.colorScheme.onBackground,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Medium,
-            )
-            Spacer(Modifier.size(48.dp))
-        }
+        MeloXIosTopBar(
+            title = "登录 QQ音乐",
+            contentPadding = PaddingValues(horizontal = 10.dp),
+            navigation = {
+                MeloXSymbolIcon(
+                    symbol = MeloXSymbol.ChevronLeft,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clickable(onClick = onDismiss),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    iconSize = 24.sp,
+                    contentDescription = "返回",
+                )
+            },
+        )
 
         QQMusicLoginMethodSelector(
             selectedMethod = method,
