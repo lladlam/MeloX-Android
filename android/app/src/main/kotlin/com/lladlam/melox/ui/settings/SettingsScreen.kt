@@ -1632,7 +1632,7 @@ private fun PlayerAppearanceSettings(context: android.content.Context) {
         )
         SettingsToggleRow(context, "流动光影背景", "player_flowing_backdrop", true, "关闭后使用模糊封面背景。", grouped = true)
         SettingsToggleRow(context, "播放器背景隔离", "player_background_isolation", true, "开启后播放器独立覆盖首页；关闭后恢复原始透明背景，可能透出下层页面。", grouped = true)
-        LyricsChoiceSetting(context, "动态背景帧率", "lyrics_background_frame_rate", 60, listOf(15, 24, 30, 45, 60), grouped = true) { value ->
+        LyricsChoiceSetting(context, "动态背景帧率", "lyrics_background_frame_rate", 24, listOf(15, 24, 30, 45, 60), grouped = true) { value ->
             when (value) {
                 15 -> "15 FPS · 省电"
                 24 -> "24 FPS · 省电"

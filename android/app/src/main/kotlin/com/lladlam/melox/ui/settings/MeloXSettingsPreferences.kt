@@ -426,7 +426,7 @@ object MeloXSettingsRuntime {
         lyricAdvanceAppliesToWordByWord = MeloXSettingsPreferences.boolean(app, "lyrics_advance_word_by_word", false)
         lyricRefreshRate = MeloXSettingsPreferences.int(app, "lyrics_refresh_rate", 60)
             .takeIf { it in setOf(30, 60, 90, 120) } ?: 60
-        lyricBackgroundFrameRate = MeloXSettingsPreferences.int(app, "lyrics_background_frame_rate", 60)
+        lyricBackgroundFrameRate = MeloXSettingsPreferences.int(app, "lyrics_background_frame_rate", 24)
             .takeIf { it in setOf(15, 24, 30, 45, 60) } ?: 24
         lyricRenderingQuality = runCatching {
             MeloXLyricsRenderingQuality.valueOf(
