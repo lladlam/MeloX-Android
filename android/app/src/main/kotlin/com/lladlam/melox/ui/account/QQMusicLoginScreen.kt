@@ -440,12 +440,7 @@ private fun QQMusicLoginMethodSelector(
         Row(modifier = Modifier.fillMaxSize()) {
             QQMusicQrLoginMethod.entries.forEach { method ->
                 val selected = method == selectedMethod
-                val accent = method.accentColor()
-                val labelColor by animateColorAsState(
-                    targetValue = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant,
-                    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-                    label = "${method.name}LoginMethodLabelColor",
-                )
+                val labelColor = Color.Black
                 Box(
                     modifier = Modifier
                         .weight(1f)
