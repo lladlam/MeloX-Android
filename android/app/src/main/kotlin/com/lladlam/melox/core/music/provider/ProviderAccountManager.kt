@@ -15,7 +15,7 @@ import com.lladlam.melox.core.provider.jellyfin.JellyfinSessionStore
  * Small provider-neutral account facade used by settings/experience UI.
  *
  * It intentionally handles only local session state. Login flows remain
- * provider-specific because QQ Music uses WebView auth while Kugou uses QR auth.
+ * provider-specific because QQ Music and Kugou use different QR authorization protocols.
  */
 class ProviderAccountManager(
     context: Context,
