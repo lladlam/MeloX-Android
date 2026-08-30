@@ -1623,6 +1623,7 @@ private fun PlayerAppearanceSettings(context: android.content.Context) {
                 MeloXPlayerBackgroundMode.FlowingLight to "取色流动光影（原版）",
                 MeloXPlayerBackgroundMode.AppleLyrics to "Apple 三层歌词背景",
                 MeloXPlayerBackgroundMode.BlurredArtwork to "静态模糊封面",
+                MeloXPlayerBackgroundMode.MeiMesh to "Mei GPU Mesh 背景",
             ),
             onSelected = {
                 MeloXSettingsPreferences.setString(context, "player_background_mode", it.name)

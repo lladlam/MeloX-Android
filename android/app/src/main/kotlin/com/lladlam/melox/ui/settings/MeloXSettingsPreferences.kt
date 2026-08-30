@@ -12,7 +12,7 @@ enum class MeloXSwipeFullAction { PlayNext, AddToQueue }
 enum class MeloXLyricAnnotationDisplayMode { FocusedLine, AllLines }
 enum class MeloXLyricsStyle { AppleMusic, Eva, TextPV }
 enum class MeloXLyricsRenderingQuality { Low, Balanced, High }
-enum class MeloXPlayerBackgroundMode { FlowingLight, AppleLyrics, BlurredArtwork }
+enum class MeloXPlayerBackgroundMode { FlowingLight, AppleLyrics, BlurredArtwork, MeiMesh }
 enum class MeloXPlayerShell { AppleMusic, Classic }
 enum class MeloXTextPVStyle {
     BlueBold, KineticSplit, BluePlane, CyberGrunge, Geometric, RainCity,

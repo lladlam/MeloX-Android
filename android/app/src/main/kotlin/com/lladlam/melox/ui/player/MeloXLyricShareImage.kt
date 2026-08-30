@@ -67,6 +67,18 @@ internal suspend fun shareLyricImage(
             canvas.drawColor(Color.rgb(28, 28, 30))
             cover?.let { source -> drawCenterCrop(canvas, source, RectF(0f, 0f, width.toFloat(), height.toFloat()), 145) }
         }
+        MeloXPlayerBackgroundMode.MeiMesh -> {
+            canvas.drawColor(palette.average.toArgb())
+            palette.cells.take(4).forEachIndexed { index, color ->
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    this.color = color.toArgb()
+                    alpha = 120
+                }
+                val x = width * ((index % 2) + .5f) / 2f
+                val y = height * ((index / 2) + .5f) / 2f
+                canvas.drawCircle(x, y, width * .62f, paint)
+            }
+        }
     }
     val overlay = Paint().apply { shader = android.graphics.LinearGradient(0f, 0f, 0f, height.toFloat(), Color.argb(25, 255, 255, 255), Color.argb(185, 0, 0, 0), android.graphics.Shader.TileMode.CLAMP) }
     canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), overlay)
