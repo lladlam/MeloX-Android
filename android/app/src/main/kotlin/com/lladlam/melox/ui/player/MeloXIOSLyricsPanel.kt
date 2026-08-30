@@ -729,7 +729,8 @@ private fun MeloXAppleMusicLyricsPanel(
             }
 
             val baseDurationMs = sourceFocusAnimationDurationMs(nextIndex, lines)
-            val isAdjacentForward = nextIndex == previousIndex + 1
+            val skippedLineCount = (nextIndex - previousIndex).coerceAtLeast(1)
+            val isAdjacentForward = skippedLineCount == 1
             val effectivePosition = renderedPositionState.longValue + lyricAdvanceMs
             val remainingMs = sourceRemainingFocusDurationMs(nextIndex, effectivePosition, lines)
 
@@ -745,7 +746,7 @@ private fun MeloXAppleMusicLyricsPanel(
             val desiredTop = -targetOffset.toFloat()
             val targetItem = listState.layoutInfo.visibleItemsInfo
                 .firstOrNull { it.index == nextIndex + 1 }
-            if (!isAdjacentForward || cascadeDurationMs <= 0f || targetItem == null) {
+            if (cascadeDurationMs <= 0f || targetItem == null) {
                 clearCascadePresentation(nextIndex)
                 coroutineScope {
                     launch { handOffFocusScale(previousIndex, nextIndex) }
@@ -753,7 +754,40 @@ private fun MeloXAppleMusicLyricsPanel(
                         if (cascadeDurationMs <= 0f) {
                             listState.scrollToItem(nextIndex + 1, targetOffset)
                         } else {
-                            listState.animateScrollToItem(nextIndex + 1, targetOffset)
+                            listState.animateScrollToItem(
+                                nextIndex + 1,
+                                targetOffset,
+                            )
+                        }
+                    }
+                }
+                return@LaunchedEffect
+            }
+
+            if (!isAdjacentForward) {
+                // Several lines can finish at the same timestamp. Move the
+                // whole visible stack as one body: duration scales with the
+                // distance, preserving the normal single-line velocity.
+                val uniformDurationMs = (cascadeDurationMs * skippedLineCount)
+                    .coerceAtMost(1_200f)
+                clearCascadePresentation(nextIndex)
+                coroutineScope {
+                    launch { handOffFocusScale(previousIndex, nextIndex) }
+                    launch {
+                        val distance = targetItem.offset - desiredTop
+                        listState.scroll {
+                            var previousProgress = 0f
+                            Animatable(0f).animateTo(
+                                targetValue = 1f,
+                                animationSpec = tween(
+                                    durationMillis = uniformDurationMs.roundToInt().coerceAtLeast(1),
+                                    easing = SourceSmoothStepEasing,
+                                ),
+                            ) {
+                                val delta = (value - previousProgress) * distance
+                                scrollBy(delta)
+                                previousProgress = value
+                            }
                         }
                     }
                 }
