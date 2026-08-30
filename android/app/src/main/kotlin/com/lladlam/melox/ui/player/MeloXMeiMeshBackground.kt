@@ -308,13 +308,15 @@ internal class MeloXMeiMeshRenderer : GLSurfaceView.Renderer {
             bitmap = null
             return
         }
+        val processed = processMeiAlbumTexture(pending)
         if (texture == 0) texture = IntArray(1).also { GLES30.glGenTextures(1, it, 0) }[0]
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texture)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MIN_FILTER, GLES30.GL_LINEAR)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_MAG_FILTER, GLES30.GL_LINEAR)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_S, GLES30.GL_MIRRORED_REPEAT)
         GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_MIRRORED_REPEAT)
-        GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, pending, 0)
+        GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, processed, 0)
+        processed.recycle()
         bitmap = null
         mesh = MeiMesh(generateMeiPoints())
     }
@@ -399,6 +401,60 @@ internal class MeloXMeiMeshRenderer : GLSurfaceView.Renderer {
         if (status[0] == 0) GLES30.glDeleteProgram(result)
         return if (status[0] == 1) result else 0
     }
+}
+
+private fun processMeiAlbumTexture(source: Bitmap): Bitmap {
+    if (source.isRecycled) return Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+    var image = Bitmap.createScaledBitmap(source, 32, 32, true)
+    val pixels = IntArray(32 * 32)
+    image.getPixels(pixels, 0, 32, 0, 0, 32, 32)
+    pixels.indices.forEach { index ->
+        var red = Color.red(pixels[index]).toFloat()
+        var green = Color.green(pixels[index]).toFloat()
+        var blue = Color.blue(pixels[index]).toFloat()
+        val alpha = Color.alpha(pixels[index])
+        red = (red - 128f) * .4f + 128f
+        green = (green - 128f) * .4f + 128f
+        blue = (blue - 128f) * .4f + 128f
+        val gray = red * .3f + green * .59f + blue * .11f
+        red = ((gray * -2f + red * 3f) - 128f) * 1.7f + 128f
+        green = ((gray * -2f + green * 3f) - 128f) * 1.7f + 128f
+        blue = ((gray * -2f + blue * 3f) - 128f) * 1.7f + 128f
+        pixels[index] = Color.argb(
+            alpha,
+            (red * .75f).toInt().coerceIn(0, 255),
+            (green * .75f).toInt().coerceIn(0, 255),
+            (blue * .75f).toInt().coerceIn(0, 255),
+        )
+    }
+    image.recycle()
+    image = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888).apply {
+        setPixels(pixels, 0, 32, 0, 0, 32, 32)
+    }
+    repeat(4) { image = blurMeiTexture(image, 2) }
+    return image
+}
+
+private fun blurMeiTexture(source: Bitmap, radius: Int): Bitmap {
+    val width = source.width
+    val height = source.height
+    val input = IntArray(width * height)
+    val output = IntArray(width * height)
+    source.getPixels(input, 0, width, 0, 0, width, height)
+    val divisor = (radius * 2 + 1) * (radius * 2 + 1)
+    for (y in 0 until height) for (x in 0 until width) {
+        var alpha = 0; var red = 0; var green = 0; var blue = 0
+        for (dy in -radius..radius) for (dx in -radius..radius) {
+            val pixel = input[(y + dy).coerceIn(0, height - 1) * width + (x + dx).coerceIn(0, width - 1)]
+            alpha += Color.alpha(pixel); red += Color.red(pixel)
+            green += Color.green(pixel); blue += Color.blue(pixel)
+        }
+        output[y * width + x] = Color.argb(alpha / divisor, red / divisor, green / divisor, blue / divisor)
+    }
+    val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    result.setPixels(output, 0, width, 0, 0, width, height)
+    source.recycle()
+    return result
 }
 
 internal class MeloXMeiMeshBackgroundView(context: Context) : GLSurfaceView(context) {

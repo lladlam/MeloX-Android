@@ -765,31 +765,36 @@ private fun MeloXAppleMusicLyricsPanel(
             }
 
             if (!isAdjacentForward) {
-                // Several lines can finish at the same timestamp. Move the
-                // whole visible stack as one body: duration scales with the
-                // distance, preserving the normal single-line velocity.
-                val uniformDurationMs = (cascadeDurationMs * skippedLineCount)
-                    .coerceAtMost(1_200f)
+                // Several lines can finish at the same timestamp. Advance one
+                // row at a time so intermediate lyrics are visibly promoted
+                // with the same cadence as an ordinary adjacent transition.
+                val singleStepDurationMs = fullCascadeMs.coerceAtLeast(1f)
                 clearCascadePresentation(nextIndex)
-                coroutineScope {
-                    launch { handOffFocusScale(previousIndex, nextIndex) }
-                    launch {
-                        val distance = targetItem.offset - desiredTop
-                        listState.scroll {
-                            var previousProgress = 0f
-                            Animatable(0f).animateTo(
-                                targetValue = 1f,
-                                animationSpec = tween(
-                                    durationMillis = uniformDurationMs.roundToInt().coerceAtLeast(1),
-                                    easing = SourceSmoothStepEasing,
-                                ),
-                            ) {
-                                val delta = (value - previousProgress) * distance
-                                scrollBy(delta)
-                                previousProgress = value
-                            }
+                handOffFocusScale(previousIndex, nextIndex)
+                for (stepIndex in (previousIndex + 1)..nextIndex) {
+                    val stepOffset = focusItemScrollOffset(stepIndex)
+                    val stepItem = listState.layoutInfo.visibleItemsInfo
+                        .firstOrNull { it.index == stepIndex + 1 }
+                    if (stepItem == null) {
+                        listState.scrollToItem(stepIndex + 1, stepOffset)
+                        continue
+                    }
+                    val stepDesiredTop = -stepOffset.toFloat()
+                    val stepDistance = stepItem.offset - stepDesiredTop
+                    listState.scroll {
+                        var previousProgress = 0f
+                        Animatable(0f).animateTo(
+                            targetValue = 1f,
+                            animationSpec = tween(
+                                durationMillis = singleStepDurationMs.roundToInt(),
+                                easing = SourceSmoothStepEasing,
+                            ),
+                        ) {
+                            scrollBy((value - previousProgress) * stepDistance)
+                            previousProgress = value
                         }
                     }
+                    visualFocusIndex = stepIndex
                 }
                 return@LaunchedEffect
             }
