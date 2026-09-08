@@ -106,7 +106,6 @@ import com.lladlam.melox.ui.account.KugouLoginScreen
 import com.lladlam.melox.ui.account.NeteaseLoginScreen
 import com.lladlam.melox.playback.ProviderPlaybackQualityRuntime
 import com.lladlam.melox.playback.CrossProviderPlaybackPreferences
-import com.lladlam.melox.playback.MeloXAudioAnalysisRuntime
 import com.lladlam.melox.core.audio.MusicQuality
 import com.lladlam.melox.core.audio.MusicQualityPreferences
 import com.lladlam.melox.core.download.MeloXDownloadStore
@@ -836,161 +835,6 @@ private fun ExperimentalSettings(context: android.content.Context, source: Music
         mutableStateOf(MeloXSettingsPreferences.boolean(context, "bilibili_lyric_audio_alignment", false))
     }
     var refreshRevision by remember { mutableIntStateOf(0) }
-    var persistentAnalysis by remember { mutableStateOf(MeloXAudioAnalysisPreferences.persistentEnabled(context)) }
-    var independentAnalysis by remember { mutableStateOf(MeloXAudioAnalysisPreferences.independentLineEnabled(context)) }
-    var showPersistentAnalysisConfirmation by remember { mutableStateOf(false) }
-    var showIndependentAnalysisConfirmation by remember { mutableStateOf(false) }
-    var showAnalysisPlaylistPicker by remember { mutableStateOf(false) }
-    var analysisPlaylists by remember(source) { mutableStateOf<List<MusicPlaylistSummary>>(emptyList()) }
-    var analysisPlaylistsLoading by remember(source) { mutableStateOf(false) }
-    val analysisProgress by MeloXAudioAnalysisRuntime.progress.collectAsState()
-
-    LaunchedEffect(showAnalysisPlaylistPicker, source, session.cookie, session.profile?.userId) {
-        if (!showAnalysisPlaylistPicker) return@LaunchedEffect
-        analysisPlaylistsLoading = true
-        analysisPlaylists = runCatching {
-            if (source == MusicSource.Netease) {
-                val userId = session.profile?.userId ?: 0L
-                if (userId <= 0L) emptyList() else {
-                    NeteaseLibraryClient(
-                        cookieProvider = { session.cookie },
-                    ).snapshot(userId).playlists.map { playlist ->
-                        MusicPlaylistSummary(
-                            id = MusicResourceId(MusicSource.Netease, playlist.id.toString()),
-                            title = playlist.name,
-                            artworkUrl = playlist.coverUrl,
-                            creatorName = playlist.creatorName,
-                            description = playlist.description,
-                            trackCount = playlist.trackCount,
-                            playCount = playlist.playCount,
-                        )
-                    }
-                }
-            } else {
-                val provider = MeloXMusicProviders.create(context.applicationContext).require(source)
-                (provider as? UserLibraryCapability)?.userPlaylists(page = 1, pageSize = 100)?.items.orEmpty()
-            }
-        }.getOrDefault(emptyList())
-        analysisPlaylistsLoading = false
-    }
-
-    SettingsGlassGroup {
-        SettingsExternalToggleRow(
-            title = "持久化音频分析缓存",
-            value = persistentAnalysis,
-            note = "保存 BPM、节拍、能量和边界信息，不保留分析用音频。",
-            grouped = true,
-        ) { enabled ->
-            if (enabled) showPersistentAnalysisConfirmation = true else {
-                persistentAnalysis = false
-                MeloXAudioAnalysisPreferences.setPersistentEnabled(context, false)
-            }
-        }
-    }
-    if (persistentAnalysis) {
-        Spacer(Modifier.height(10.dp))
-        if (analysisProgress.total > 0) {
-            val remaining = (analysisProgress.total - analysisProgress.completed).coerceAtLeast(0)
-            SettingsGlassGroup {
-                Text(
-                    if (analysisProgress.running) {
-                        "正在分析：已完成 ${analysisProgress.completed} 首，还剩 $remaining 首"
-                    } else {
-                        "分析完成：${analysisProgress.completed} 首，失败 ${analysisProgress.failed} 首"
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                LinearProgressIndicator(
-                    progress = {
-                        if (analysisProgress.total == 0) 0f
-                        else analysisProgress.completed.toFloat() / analysisProgress.total
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-                )
-            }
-            Spacer(Modifier.height(10.dp))
-        }
-        SettingsActionButton("现在分析音频信息") { showAnalysisPlaylistPicker = true }
-        Spacer(Modifier.height(10.dp))
-        SettingsGlassGroup {
-            SettingsExternalToggleRow(
-                title = "使用独立线路分析音频",
-                value = independentAnalysis,
-                note = "新歌曲分析时优先获取标准音质，分析完成后删除临时音频。",
-                grouped = true,
-            ) { enabled ->
-                if (enabled) showIndependentAnalysisConfirmation = true else {
-                    independentAnalysis = false
-                    MeloXAudioAnalysisPreferences.setIndependentLineEnabled(context, false)
-                }
-            }
-        }
-    }
-    if (showPersistentAnalysisConfirmation) {
-        MeloXGlassDialog(visible = true, onDismiss = { showPersistentAnalysisConfirmation = false }) {
-            Text("打开后音频信息会缓存到本地，有助于更好的智能过渡，但是可能会占用部分空间，是否开启？")
-            Row(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SettingsActionButton("取消", Modifier.weight(1f)) { showPersistentAnalysisConfirmation = false }
-                SettingsActionButton("同意", Modifier.weight(1f)) {
-                    persistentAnalysis = true
-                    MeloXAudioAnalysisPreferences.setPersistentEnabled(context, true)
-                    showPersistentAnalysisConfirmation = false
-                }
-            }
-        }
-    }
-    if (showIndependentAnalysisConfirmation) {
-        MeloXGlassDialog(visible = true, onDismiss = { showIndependentAnalysisConfirmation = false }) {
-            Text("打开此功能后，新音频分析更快，但会消耗少量流量，是否打开？")
-            Row(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SettingsActionButton("取消", Modifier.weight(1f)) { showIndependentAnalysisConfirmation = false }
-                SettingsActionButton("同意", Modifier.weight(1f)) {
-                    independentAnalysis = true
-                    MeloXAudioAnalysisPreferences.setIndependentLineEnabled(context, true)
-                    showIndependentAnalysisConfirmation = false
-                }
-            }
-        }
-    }
-    if (showAnalysisPlaylistPicker) {
-        MeloXGlassDialog(visible = true, onDismiss = { showAnalysisPlaylistPicker = false }) {
-            Text("选择要分析的${source.displayName}歌单", style = MaterialTheme.typography.titleLarge)
-            if (analysisProgress.total > 0) {
-                val remaining = (analysisProgress.total - analysisProgress.completed).coerceAtLeast(0)
-                Text(
-                    if (analysisProgress.running) {
-                        "已分析 ${analysisProgress.completed} 首，还剩 $remaining 首"
-                    } else {
-                        "分析完成：${analysisProgress.completed} 首，失败 ${analysisProgress.failed} 首"
-                    },
-                    Modifier.padding(top = 10.dp),
-                )
-            }
-            if (analysisPlaylistsLoading) {
-                CircularProgressIndicator(Modifier.padding(24.dp))
-            } else if (analysisPlaylists.isEmpty()) {
-                Text("当前音乐源没有可用歌单。", Modifier.padding(top = 12.dp))
-            } else {
-                LazyColumn(Modifier.fillMaxWidth().height(420.dp)) {
-                    items(analysisPlaylists, key = { it.id.value }) { playlist ->
-                        MeloXIosListRow(
-                            title = playlist.title,
-                            subtitle = "${playlist.trackCount ?: 0} 首歌曲",
-                            onClick = {
-                                context.startService(
-                                    Intent(context, MeloXPlaybackService::class.java)
-                                        .setAction(MeloXPlaybackService.ACTION_ANALYZE_PLAYLIST)
-                                        .putExtra(MeloXPlaybackService.EXTRA_ANALYSIS_SOURCE, source.storageValue)
-                                        .putExtra(MeloXPlaybackService.EXTRA_ANALYSIS_PLAYLIST_ID, playlist.id.value),
-                                )
-                                showAnalysisPlaylistPicker = false
-                            },
-                        )
-                    }
-                }
-            }
-        }
-    }
 
     if (source == MusicSource.Bilibili) {
         SettingsGlassGroup {
@@ -1398,6 +1242,14 @@ private fun PlaybackSettings(context: android.content.Context) {
         SettingsToggleRow(context, "记住播放器上次页面", "playback_remember_page", true, grouped = true)
         SettingsToggleRow(
             context,
+            "退出时保存播放队列",
+            "playback_save_queue",
+            true,
+            "重新打开软件时恢复退出前的播放列表、当前歌曲和进度。",
+            grouped = true,
+        )
+        SettingsToggleRow(
+            context,
             "记录上次播放到哪个音乐",
             "playback_remember_last_song",
             true,
@@ -1406,6 +1258,14 @@ private fun PlaybackSettings(context: android.content.Context) {
         )
         SettingsToggleRow(context, "登录后以心动模式开始播放", "playback_heart_mode_on_launch", false, grouped = true)
         SettingsToggleRow(context, "播放超过 5 秒时上一首先回到开头", "playback_previous_restarts", true, grouped = true)
+        SettingsToggleRow(
+            context,
+            "显示播放音质提示",
+            "player_show_quality_tip",
+            true,
+            "控制进度条下方的音质提示。",
+            grouped = true,
+        )
         LyricsChoiceSetting(
             context,
             "播放器展开/收回时长",
@@ -1419,6 +1279,8 @@ private fun PlaybackSettings(context: android.content.Context) {
     EqualizerSettings(context)
     Spacer(Modifier.height(10.dp))
     AutoMixSettings(context)
+    Spacer(Modifier.height(10.dp))
+    AnalysisCacheSettings(context)
 }
 
 @Composable
@@ -1477,6 +1339,7 @@ private fun EqualizerSettings(context: android.content.Context) {
 private fun AutoMixSettings(context: android.content.Context) {
     var settings by remember { mutableStateOf(MeloXAutoMixSettings.read(context)) }
     fun refresh() { settings = MeloXAutoMixSettings.read(context) }
+    var showSmartQueueIntro by remember { mutableStateOf(false) }
 
     val legacyAutoMix = remember { MeloXSettingsPreferences.boolean(context, "playback_auto_mix", false) }
     var autoMixEnabled by remember {
@@ -1498,7 +1361,34 @@ private fun AutoMixSettings(context: android.content.Context) {
             autoMixEnabled = it
             MeloXPlaybackModePreferences.setAutoMix(context, it)
         }
-        MeloXSettingsDropdown(
+        SettingsExternalToggleRow(
+            title = "过渡动画",
+            value = MeloXSettingsRuntime.transitionUiEnabled,
+            grouped = true,
+        ) { enabled ->
+            MeloXSettingsPreferences.setBoolean(context, "transition_ui_enabled", enabled)
+            MeloXSettingsRuntime.transitionUiEnabled = enabled
+        }
+    }
+    if (autoMixEnabled) {
+        Spacer(Modifier.height(10.dp))
+        if (settings.mode == MeloXAutoMixMode.Smart) SettingsGlassGroup {
+            SettingsExternalToggleRow(
+                title = "智能队列",
+                value = MeloXSettingsRuntime.smartQueueEnabled,
+                grouped = true,
+            ) { enabled ->
+                if (enabled && !MeloXSettingsPreferences.boolean(context, "smart_queue_intro_shown", false)) {
+                    showSmartQueueIntro = true
+                } else {
+                    MeloXPlaybackModePreferences.setSmartQueue(context, enabled)
+                    MeloXSettingsRuntime.smartQueueEnabled = enabled
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        SettingsGlassGroup {
+            MeloXSettingsDropdown(
             title = "混音模式",
             selected = settings.mode,
             items = listOf(MeloXAutoMixMode.Smart to "智能", MeloXAutoMixMode.Fixed to "固定时长"),
@@ -1580,7 +1470,7 @@ private fun AutoMixSettings(context: android.content.Context) {
             refresh()
         }
         if (settings.tempoMatching) {
-            val adjustmentOptions = listOf(.02f, .05f, .08f)
+            val adjustmentOptions = listOf(.02f, .05f, .08f, .10f)
             MeloXSettingsDropdown(
                 title = "最大速度调整",
                 selected = adjustmentOptions.minByOrNull { kotlin.math.abs(settings.maxTempoAdjustment - it) } ?: .05f,
@@ -1588,6 +1478,49 @@ private fun AutoMixSettings(context: android.content.Context) {
                 onSelected = { MeloXPlaybackModePreferences.setAutoMixFloat(context, "automix_max_tempo_adjustment", it); refresh() },
                 grouped = true,
             )
+        }
+    }
+    }
+    if (showSmartQueueIntro) {
+        MeloXGlassDialog(visible = true, onDismiss = { showSmartQueueIntro = false }) {
+            Text("智能队列", style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.height(12.dp))
+            Text("开启后，播放歌单时会根据 BPM（节拍速度）自动排列后续歌曲，让过渡更流畅自然。")
+            Spacer(Modifier.height(8.dp))
+            Text("匹配规则：", fontWeight = FontWeight.Bold)
+            Text("· 优先选择 BPM 最接近的歌曲")
+            Text("· 已匹配过的歌曲不会重复匹配")
+            Text("· 歌曲分析在后台自动完成，无需等待")
+            Spacer(Modifier.height(18.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SettingsActionButton("取消", Modifier.weight(1f)) { showSmartQueueIntro = false }
+                SettingsActionButton("开启", Modifier.weight(1f)) {
+                    MeloXPlaybackModePreferences.setSmartQueue(context, true)
+                    MeloXSettingsRuntime.smartQueueEnabled = true
+                    MeloXSettingsPreferences.setBoolean(context, "smart_queue_intro_shown", true)
+                    showSmartQueueIntro = false
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnalysisCacheSettings(context: android.content.Context) {
+    var showClearConfirmation by remember { mutableStateOf(false) }
+    SettingsGlassGroup {
+        SettingsActionButton("清空歌曲分析缓存") { showClearConfirmation = true }
+    }
+    if (showClearConfirmation) {
+        MeloXGlassDialog(visible = true, onDismiss = { showClearConfirmation = false }) {
+            Text("确定清空所有歌曲的分析数据（BPM、节拍、能量等）？清空后智能过渡将重新分析。")
+            Row(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SettingsActionButton("取消", Modifier.weight(1f)) { showClearConfirmation = false }
+                SettingsActionButton("清空", Modifier.weight(1f)) {
+                    MeloXAudioAnalysisPreferences.clearAll(context)
+                    showClearConfirmation = false
+                }
+            }
         }
     }
 }
@@ -2338,6 +2271,7 @@ private fun StorageSettings(context: android.content.Context) {
                 temporary = context.cacheDir.resolve("automix_analysis").treeByteCount(),
                 localData = listOf(
                     context.filesDir.resolve("automix_analysis_index.json"),
+                    context.filesDir.resolve("automix_analysis"),
                     context.filesDir.resolve("netease_library_cache"),
                 ).sumOf { it.treeByteCount() },
                 deviceTotal = stats.totalBytes,
@@ -2656,6 +2590,14 @@ private fun GeneralSettings(context: android.content.Context) {
         )
         SettingsToggleRow(context, "识别剪贴板中的网易云链接", "general_clipboard_links", true, "每次回到前台只读取一次；识别歌曲或歌单后会先询问是否打开。", grouped = true)
         SettingsToggleRow(context, "触感", "general_haptic_feedback", true, grouped = true)
+        SettingsToggleRow(
+            context,
+            "跟随系统字体",
+            "system_font",
+            false,
+            "歌词始终使用小米兰亭 Pro；其他界面使用系统字体。",
+            grouped = true,
+        )
         SettingsToggleRow(
             context,
             "不自动缩小底栏",

@@ -19,11 +19,11 @@
 
 > MeloX Android 是非官方开源项目，与网易云音乐、小米、Apple 及其关联公司不存在隶属、合作或授权关系。
 
-## 当前版本：0.5.2
+## 当前版本：0.5.3
 
-`0.5.2` 完善本地音乐识别与 LX Music V5 音乐源兼容：支持 9 秒本地音频识别、多位置识别重试、识别后的封面与歌词持久化，以及 V5 音乐源的播放地址、歌词和封面动作；同时继续改进第三方播放诊断与播放器元数据刷新。
+`0.5.3` 完善 Smart AutoMix 过渡规划：分析提前到歌曲开始后执行，第二个实际播放播放器只在剩余 90 秒内准备；第一首过渡起点不早于全曲 75%，第二首降落点不晚于全曲 25%，第二首本次过渡实际内容限制在 45 秒内，速度变化上限放宽到 ±10%，并优先避开高能量/高潮候选点；同时修复队列恢复、后台分析与播放器稳定性问题。
 
-- 下载与完整更新日志：[GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.5.2)
+- 下载与完整更新日志：[GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.5.3)
 - 详细版本记录：[CHANGELOG.md](CHANGELOG.md)
 - 本次版本说明：[CHANGELOG.md](CHANGELOG.md)
 
@@ -217,7 +217,7 @@ DF:CC:A9:86:5B:87:A4:02:D3:41:98:5A:48:EB:13:2B:D8:67:9D:FA:6D:9D:50:2F:36:5D:D1
 可使用 Android SDK Build Tools 验证：
 
 ```bash
-apksigner verify --verbose --print-certs MeloX-Android-0.5.2.apk
+apksigner verify --verbose --print-certs MeloX-Android-0.5.3.apk
 ```
 
 ## 项目结构

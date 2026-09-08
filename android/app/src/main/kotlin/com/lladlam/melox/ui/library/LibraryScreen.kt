@@ -2,6 +2,7 @@ package com.lladlam.melox.ui.library
 
 import android.Manifest
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.BackHandler
@@ -110,6 +111,7 @@ import com.lladlam.melox.core.music.provider.MeloXMusicProviders
 import com.lladlam.melox.core.music.provider.loadAllPlaylistTracks
 import com.lladlam.melox.core.music.provider.AlbumCapability
 import com.lladlam.melox.core.music.provider.PlaylistCapability
+import com.lladlam.melox.playback.MeloXPlaybackService
 import com.lladlam.melox.core.music.provider.UserLibraryCapability
 import com.lladlam.melox.core.music.provider.LocalAggregationCapability
 import com.lladlam.melox.core.network.NeteaseMusicOperationsClient
@@ -1915,6 +1917,22 @@ private fun MeloXPlaylistDetailScreen(
                 onDismiss = { showPlaylistActions = false },
                 onRefresh = { scope.launch { refreshPlaylist() } },
                 onBatchDownload = { showBatchDownload = true },
+                onAnalyzePlaylist = {
+                    ContextCompat.startForegroundService(
+                        context,
+                        Intent(context, MeloXPlaybackService::class.java).apply {
+                            action = MeloXPlaybackService.ACTION_ANALYZE_PLAYLIST
+                            putExtra(
+                                MeloXPlaybackService.EXTRA_ANALYSIS_SOURCE,
+                                MusicSource.Netease.storageValue,
+                            )
+                            putExtra(
+                                MeloXPlaybackService.EXTRA_ANALYSIS_PLAYLIST_ID,
+                                displayed.id.toString(),
+                            )
+                        },
+                    )
+                },
             )
             MeloXBatchDownloadSheet(
                 songs = songs,

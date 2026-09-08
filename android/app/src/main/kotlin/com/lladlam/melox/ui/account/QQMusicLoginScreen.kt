@@ -79,6 +79,7 @@ import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import com.lladlam.melox.ui.glass.MeloXIosTopBar
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import com.lladlam.melox.ui.legal.MeloXLegalLinks
+import com.lladlam.melox.ui.theme.isMeloXDarkTheme
 import java.io.File
 import java.io.FileOutputStream
 import kotlinx.coroutines.CancellationException
@@ -425,7 +426,7 @@ private fun QQMusicLoginMethodSelector(
         Row(modifier = Modifier.fillMaxSize()) {
             QQMusicQrLoginMethod.entries.forEach { method ->
                 val selected = method == selectedMethod
-                val labelColor = Color.Black
+                val labelColor = if (isMeloXDarkTheme()) Color.White else Color.Black
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -458,6 +459,7 @@ private fun QrActionButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
+    val controlColor = if (isMeloXDarkTheme()) Color.White else Color.Black
     Row(
         modifier = modifier
             .heightIn(min = 48.dp)
@@ -477,14 +479,14 @@ private fun QrActionButton(
         MeloXSymbolIcon(
             symbol = icon,
             modifier = Modifier.size(16.dp),
-            color = tint.copy(alpha = if (enabled) 1f else 0.42f),
+            color = controlColor.copy(alpha = if (enabled) 1f else 0.42f),
             iconSize = 16.sp,
             contentDescription = label,
         )
         Spacer(Modifier.size(6.dp))
         Text(
             text = label,
-            color = tint.copy(alpha = if (enabled) 1f else 0.42f),
+            color = controlColor.copy(alpha = if (enabled) 1f else 0.42f),
             fontSize = 14.sp,
             fontWeight = FontWeight.Medium,
         )

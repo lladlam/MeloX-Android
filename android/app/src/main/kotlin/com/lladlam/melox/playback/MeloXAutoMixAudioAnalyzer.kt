@@ -158,6 +158,11 @@ class MeloXAutoMixAudioAnalyzer(private val context: Context) {
             persistentStore.get("$ANALYSIS_VERSION|$songId|-30000|30000") != null
     }
 
+    fun hasPersistentFullAnalysis(songId: Long): Boolean {
+        if (!MeloXAudioAnalysisPreferences.persistentEnabled(context)) return false
+        return persistentStore.get("$ANALYSIS_VERSION|$songId|0|${Long.MAX_VALUE}") != null
+    }
+
     fun clear() {
         synchronized(cacheLock) { cache.clear() }
         MeloXAutoMixDiagnostics.cleared()
@@ -459,7 +464,7 @@ class MeloXAutoMixAudioAnalyzer(private val context: Context) {
         private const val FRAME_DURATION_MS = HOP_SIZE * 1_000L / TARGET_SAMPLE_RATE
         private const val MIN_ANALYSIS_FRAMES = 32
         private const val AUDIBLE_THRESHOLD = .035f
-        private const val MAX_CACHE_ENTRIES = 4
+        private const val MAX_CACHE_ENTRIES = 1
         private const val ANALYSIS_VERSION = "v2"
 
         private fun estimateTempo(frames: List<MeloXAutoMixFrame>): TempoEstimate {
@@ -636,13 +641,22 @@ object MeloXAutoMixTransitionScorer {
         val incomingBeatMs = 60_000.0 / rates.alignedIncomingBpm
         val requestedDurationMs = (settings.transitionBars * 4 * (outgoingBeatMs + incomingBeatMs) / 2.0).toLong()
         val tailCutMs = (settings.tailCutBars * 4 * outgoingBeatMs).toLong()
+        val outgoingSpan = (outgoing.lastAudibleMs - outgoing.firstAudibleMs).coerceAtLeast(1L)
+        val incomingSpan = (incoming.lastAudibleMs - incoming.firstAudibleMs).coerceAtLeast(1L)
+        val earliestOutgoingStart = outgoing.firstAudibleMs + outgoingSpan * 75L / 100L
+        val latestIncomingStart = incoming.firstAudibleMs + incomingSpan * 25L / 100L
+        val minimumOutgoingEnd = earliestOutgoingStart + requestedDurationMs
         val desiredOutgoingEnd = (outgoing.lastAudibleMs - tailCutMs)
-            .coerceIn(outgoing.firstAudibleMs + 1_000L, outgoing.lastAudibleMs)
+            .coerceAtLeast(minimumOutgoingEnd)
+            .coerceAtMost(outgoing.lastAudibleMs)
         val maximumDuration = min(
             32_000L,
             min(
-                (desiredOutgoingEnd - outgoing.firstAudibleMs - 500L).coerceAtLeast(0L),
-                (incoming.lastAudibleMs - incoming.firstAudibleMs - 500L).coerceAtLeast(0L),
+                min(
+                    (desiredOutgoingEnd - earliestOutgoingStart - 500L).coerceAtLeast(0L),
+                    (incoming.lastAudibleMs - incoming.firstAudibleMs - 500L).coerceAtLeast(0L),
+                ),
+                (MAX_INCOMING_CONTENT_MS / max(rates.incomingStart, 1f)).toLong(),
             ),
         )
         val durationMs = requestedDurationMs
@@ -651,22 +665,14 @@ object MeloXAutoMixTransitionScorer {
         if (durationMs < MeloXAutoMixPlanner.MIN_DURATION_MS) return null
 
         val targetOutgoingStart = desiredOutgoingEnd - durationMs
-        val earliestOutgoingStart = max(
-            outgoing.firstAudibleMs,
-            max((outgoing.lastAudibleMs * .52).toLong(), targetOutgoingStart - max(durationMs * 2, 24_000L)),
-        )
         var outgoingCandidates = outgoing.beatTimesMs.withIndex()
             .filter { it.value in earliestOutgoingStart..(targetOutgoingStart + 80L) }
             .takeLast(48)
         if (outgoingCandidates.isEmpty()) {
             outgoingCandidates = outgoing.beatTimesMs.withIndex()
-                .filter { it.value <= targetOutgoingStart + 80L }
+                .filter { it.value in earliestOutgoingStart..(targetOutgoingStart + 80L) }
                 .takeLast(48)
         }
-        val latestIncomingStart = min(
-            (incoming.lastAudibleMs * .25).toLong(),
-            min(48_000L, incoming.lastAudibleMs - durationMs - 250L),
-        ).coerceAtLeast(incoming.firstAudibleMs)
         var incomingCandidates = incoming.beatTimesMs.withIndex()
             .filter { it.value in incoming.firstAudibleMs..(latestIncomingStart + 80L) }
             .take(48)
@@ -732,6 +738,7 @@ object MeloXAutoMixTransitionScorer {
             ) / 2.0
         val outgoingContour = contourPenalty(outgoing, outgoingStart, expectsRise = false)
         val incomingContour = contourPenalty(incoming, incomingStart, expectsRise = true)
+        val climax = (climaxPenalty(outgoing, outgoingStart) + climaxPenalty(incoming, incomingStart)) / 2.0
         val quietIncoming = if (skipsQuietOpening) {
             ((.20 - meanEnergy(incoming, incomingStart, 1_500L)) / .20).coerceIn(0.0, 1.0)
         } else 0.0
@@ -739,10 +746,10 @@ object MeloXAutoMixTransitionScorer {
         val overlap = overlapPenalty(
             outgoingStart, incomingStart, durationMs, outgoingRate, incomingRate, outgoing, incoming,
         )
-        val tempo = (abs(incomingRate - 1f) / .08f).coerceIn(0f, 1f)
+        val tempo = (abs(incomingRate - 1f) / .10f).coerceIn(0f, 1f)
         return timing * .25 + phrase * .08 + boundary * .19 +
             (outgoingContour + incomingContour) / 2.0 * .13 + quietIncoming * .09 +
-            quietOutgoing * .05 + overlap * .17 + tempo * .04
+            quietOutgoing * .05 + overlap * .17 + tempo * .04 + climax * .18
     }
 
     private fun overlapPenalty(
@@ -803,6 +810,14 @@ object MeloXAutoMixTransitionScorer {
         return if (samples.isEmpty()) analysis.frameAt(startMs)?.energy?.toDouble() ?: 0.0 else samples.average()
     }
 
+    private fun climaxPenalty(analysis: MeloXAutoMixTrackAnalysis, timeMs: Long): Double {
+        val frame = analysis.frameAt(timeMs) ?: return 0.0
+        val energy = ((frame.energy - .72f) / .28f).coerceIn(0f, 1f)
+        val novelty = ((frame.novelty - .68f) / .32f).coerceIn(0f, 1f)
+        val onset = ((frame.onset - .68f) / .32f).coerceIn(0f, 1f)
+        return (energy * .55f + novelty * .25f + onset * .20f).toDouble()
+    }
+
     private fun boundaryStrength(analysis: MeloXAutoMixTrackAnalysis, timeMs: Long): Double {
         val frame = analysis.frameAt(timeMs) ?: return 0.0
         return (frame.novelty * .58f + frame.onset * .42f).coerceIn(0f, 1f).toDouble()
@@ -832,8 +847,8 @@ object MeloXAutoMixTransitionScorer {
         }
         return TempoRates(
             alignedIncomingBpm = alignedIncoming,
-            outgoingEnd = (alignedIncoming / outgoingBpm).coerceIn(.92, 1.08).toFloat(),
-            incomingStart = incomingStart.coerceIn(.92, 1.08).toFloat(),
+            outgoingEnd = (alignedIncoming / outgoingBpm).coerceIn(1.0 - settings.maxTempoAdjustment, 1.0 + settings.maxTempoAdjustment).toFloat(),
+            incomingStart = incomingStart.coerceIn(1.0 - settings.maxTempoAdjustment, 1.0 + settings.maxTempoAdjustment).toFloat(),
         )
     }
 
@@ -842,6 +857,8 @@ object MeloXAutoMixTransitionScorer {
         val outgoingEnd: Float,
         val incomingStart: Float,
     )
+
+    private const val MAX_INCOMING_CONTENT_MS = 45_000L
 
     private data class Candidate(
         val score: Double,

@@ -78,7 +78,19 @@ object ProviderPlaybackCommands {
                     // without knowing which service owns the track.
                     PlaybackCommands.adoptController(controller)
                     controller.shuffleModeEnabled = false
-                    controller.setMediaItems(items, startIndex, startPositionMs)
+                    val smartQueue = MeloXPlaybackModePreferences.autoMix(appContext) &&
+                        MeloXPlaybackModePreferences.smartQueue(appContext) &&
+                        items.size > 1
+                    if (smartQueue) {
+                        controller.setMediaItems(
+                            listOf(MeloXSmartQueueBuilder.begin(items, startIndex)),
+                            0,
+                            startPositionMs,
+                        )
+                    } else {
+                        MeloXSmartQueueBuilder.reset()
+                        controller.setMediaItems(items, startIndex, startPositionMs)
+                    }
                     controller.prepare()
                     controller.play()
                 }.onFailure { onFailure?.invoke(it) }

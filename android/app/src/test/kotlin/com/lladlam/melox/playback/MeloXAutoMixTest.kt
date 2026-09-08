@@ -119,9 +119,10 @@ class MeloXAutoMixTest {
         assertTrue(plan.usedSmartAnalysis)
         assertTrue(plan.durationMs in 3_000L..32_000L)
         assertTrue(plan.outgoingStartMs > 90_000L)
-        assertTrue(plan.incomingStartMs in 0L..48_000L)
-        assertTrue(plan.outgoingStartRate in .92f..1.08f)
-        assertTrue(plan.incomingStartRate in .92f..1.08f)
+        assertTrue(plan.incomingStartMs in 0L..45_000L)
+        assertTrue(plan.outgoingStartMs >= 135_000L)
+        assertTrue(plan.outgoingStartRate in .90f..1.10f)
+        assertTrue(plan.incomingStartRate in .90f..1.10f)
     }
 
     @Test

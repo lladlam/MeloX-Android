@@ -247,7 +247,10 @@ internal fun MeloXFlowingLightBackdrop(
         while (true) {
             val frameNanos = withFrameNanos { it }
             if (!MeloXAppVisibility.isForeground) continue
-            if (lastRenderNanos != 0L && frameNanos - lastRenderNanos < frameDelayMs * 1_000_000L) continue
+            val effectiveDelayMs = if (com.lladlam.melox.playback.MeloXAudioAnalysisLoad.isBusy) {
+                frameDelayMs.coerceAtLeast(66L)
+            } else frameDelayMs
+            if (lastRenderNanos != 0L && frameNanos - lastRenderNanos < effectiveDelayMs * 1_000_000L) continue
             val elapsedMs = if (lastRenderNanos == 0L) frameDelayMs.toFloat()
             else ((frameNanos - lastRenderNanos) / 1_000_000f).coerceIn(1f, 100f)
             lastRenderNanos = frameNanos
@@ -333,7 +336,7 @@ private fun fillFlowingMeshPixels(
 ) {
     val radiusNormalized = (0.58f + energy.coerceIn(0f, 1f) * .08f + beatPulse * .035f)
         .coerceAtLeast(.01f)
-    colors.indices.forEach { index ->
+    for (index in colors.indices) {
         val row = index / 3
         val column = index % 3
         val baseX = when (column) { 0 -> .08f; 1 -> .50f; else -> .92f }
@@ -358,7 +361,7 @@ private fun fillFlowingMeshPixels(
             var red = average.red * baseWeight
             var green = average.green * baseWeight
             var blue = average.blue * baseWeight
-            colors.indices.forEach { colorIndex ->
+            for (colorIndex in colors.indices) {
                 val dx = (u - centersX[colorIndex]) * widthScale / radiusNormalized
                 val dy = (v - centersY[colorIndex]) * heightScale / radiusNormalized
                 val distanceSquared = dx * dx + dy * dy

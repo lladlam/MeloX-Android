@@ -114,7 +114,10 @@ object PlaybackCommands {
                     val selectedItemIndex = originalQueue.indexOfFirst {
                         it.mediaMetadata.extras?.getInt(QUEUE_ORIGINAL_INDEX_KEY) == selectedPair.first
                     }.coerceAtLeast(0)
-                    val useShuffle = MeloXPlaybackModePreferences.shuffle(appContext)
+                    val smartQueue = MeloXPlaybackModePreferences.autoMix(appContext) &&
+                        MeloXPlaybackModePreferences.smartQueue(appContext) &&
+                        originalQueue.size > 1
+                    val useShuffle = MeloXPlaybackModePreferences.shuffle(appContext) && !smartQueue
                     val queue = if (useShuffle) {
                         val selected = originalQueue[selectedItemIndex]
                         listOf(selected) + originalQueue.filterIndexed { index, _ -> index != selectedItemIndex }.shuffled()
@@ -122,17 +125,24 @@ object PlaybackCommands {
                         originalQueue
                     }
                     val startIndex = if (useShuffle) 0 else selectedItemIndex
+                    val dispatchedQueue = if (smartQueue) {
+                        listOf(MeloXSmartQueueBuilder.begin(queue, startIndex))
+                    } else {
+                        MeloXSmartQueueBuilder.reset()
+                        queue
+                    }
+                    val dispatchedStartIndex = if (smartQueue) 0 else startIndex
 
                     adoptController(controller)
                     controller.shuffleModeEnabled = false
-                    controller.setMediaItems(queue, startIndex, startPositionMs)
+                    controller.setMediaItems(dispatchedQueue, dispatchedStartIndex, startPositionMs)
                     MeloXPlaybackModeRuntime.heartModeActive = heartMode
                     controller.prepare()
                     controller.play()
 
                     Log.d(
                         TAG,
-                        "Playback queue dispatched: size=${queue.size}, start=$startIndex, offline=$offline, quality=${quality.apiLevel}",
+                        "Playback queue dispatched: size=${dispatchedQueue.size}, smart=$smartQueue, start=$dispatchedStartIndex, offline=$offline, quality=${quality.apiLevel}",
                     )
                 } catch (error: Throwable) {
                     Log.e(TAG, "Unable to connect MediaController", error)

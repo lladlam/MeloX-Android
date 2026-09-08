@@ -19,7 +19,8 @@ val LocalMeloXFontFamily = compositionLocalOf<FontFamily> { MeloXLanTingProFontF
 
 @Composable
 fun rememberMeloXFontFamily(context: Context): FontFamily {
-    return remember(context) {
-        MeloXLanTingProFontFamily
+    val useSystemFont = com.lladlam.melox.ui.settings.MeloXSettingsRuntime.systemFontEnabled
+    return remember(context, useSystemFont) {
+        if (useSystemFont) FontFamily.Default else MeloXLanTingProFontFamily
     }
 }

@@ -72,6 +72,7 @@ import com.lladlam.melox.core.recommendation.LocalRecommendationEngine
 import com.lladlam.melox.core.recommendation.LocalRecommendationStore
 import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.playback.MeloXPlaybackModePreferences
+import com.lladlam.melox.playback.MeloXAutoMixTransitionRuntime
 import com.lladlam.melox.playback.MeloXPlaybackModeRuntime
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.playback.PlaybackTrackIdentity
@@ -161,6 +162,26 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
         private set
     var autoMixEnabled by mutableStateOf(MeloXPlaybackModePreferences.autoMix(appContext))
         private set
+    var smartQueueEnabled by mutableStateOf(MeloXPlaybackModePreferences.smartQueue(appContext))
+        private set
+    var isInTransition by mutableStateOf(false)
+        internal set
+    var transitionProgress by mutableFloatStateOf(0f)
+        internal set
+    var transitionHandedOff by mutableStateOf(false)
+        internal set
+    var outgoingArtworkUrl by mutableStateOf<String?>(null)
+        internal set
+    var incomingPositionMs by mutableLongStateOf(0L)
+        internal set
+    var incomingDurationMs by mutableLongStateOf(0L)
+        internal set
+    var incomingTitle by mutableStateOf("")
+        internal set
+    var incomingArtist by mutableStateOf("")
+        internal set
+    var incomingArtworkUrl by mutableStateOf<String?>(null)
+        internal set
     var volume by mutableFloatStateOf(1f)
         private set
     var sleepTimerEndRealtimeMs by mutableLongStateOf(0L)
@@ -267,6 +288,7 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
         shuffleEnabled = MeloXPlaybackModePreferences.shuffle(appContext)
         autoplayEnabled = MeloXPlaybackModePreferences.autoplay(appContext)
         autoMixEnabled = MeloXPlaybackModePreferences.autoMix(appContext)
+        smartQueueEnabled = MeloXPlaybackModePreferences.smartQueue(appContext)
         volume = if (MeloXSettingsRuntime.volumeControlMode == MeloXVolumeControlMode.Player) {
             player.volume
         } else {
@@ -532,6 +554,11 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
         MeloXPlaybackModePreferences.setAutoMix(appContext, autoMixEnabled)
     }
 
+    fun toggleSmartQueue() {
+        smartQueueEnabled = !smartQueueEnabled
+        MeloXPlaybackModePreferences.setSmartQueue(appContext, smartQueueEnabled)
+    }
+
     fun changeVolume(value: Float) {
         if (MeloXSettingsRuntime.volumeControlMode == MeloXVolumeControlMode.Player) {
             controller?.volume = value.coerceIn(0f, 1f)
@@ -675,6 +702,37 @@ fun rememberMeloXPlaybackUiState(
             }
             delay(if (transitionActive) 300L else if (state.isPlaying) 500L else 1_000L)
         }
+    }
+
+    val mixActive = MeloXAutoMixTransitionRuntime.active
+    val mixProgress = MeloXAutoMixTransitionRuntime.progress
+    val mixHandedOff = MeloXAutoMixTransitionRuntime.handedOff
+    val mixOutgoingArtwork = MeloXAutoMixTransitionRuntime.outgoingArtworkUrl
+    val mixIncomingPosition = MeloXAutoMixTransitionRuntime.incomingPositionMs
+    val mixIncomingDuration = MeloXAutoMixTransitionRuntime.incomingDurationMs
+    val mixIncomingTitle = MeloXAutoMixTransitionRuntime.incomingTitle
+    val mixIncomingArtist = MeloXAutoMixTransitionRuntime.incomingArtist
+    val mixIncomingArtwork = MeloXAutoMixTransitionRuntime.incomingArtworkUrl
+    LaunchedEffect(
+        mixActive,
+        mixProgress,
+        mixHandedOff,
+        mixOutgoingArtwork,
+        mixIncomingTitle,
+        mixIncomingArtist,
+        mixIncomingArtwork,
+        mixIncomingPosition,
+        mixIncomingDuration,
+    ) {
+        state.isInTransition = mixActive
+        state.transitionProgress = mixProgress
+        state.transitionHandedOff = mixHandedOff
+        state.outgoingArtworkUrl = mixOutgoingArtwork
+        state.incomingTitle = mixIncomingTitle
+        state.incomingArtist = mixIncomingArtist
+        state.incomingArtworkUrl = mixIncomingArtwork
+        state.incomingPositionMs = mixIncomingPosition
+        state.incomingDurationMs = mixIncomingDuration
     }
 
     return state

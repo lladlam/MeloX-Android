@@ -62,6 +62,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -77,6 +78,7 @@ import com.lladlam.melox.playback.ProviderPlaybackQualityRuntime
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSymbolIcon
+import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import kotlinx.coroutines.delay
 import kotlin.math.roundToLong
 
@@ -113,8 +115,12 @@ private fun SceneProgressControl(
     state: MeloXPlaybackUiState,
     onShowQuality: () -> Unit,
 ) {
-    val sourceProgress = if (state.durationMs > 0L) {
-        (state.positionMs.toFloat() / state.durationMs.toFloat()).coerceIn(0f, 1f)
+    val displayedDurationMs = if (state.isInTransition && state.incomingDurationMs > 0L) {
+        state.incomingDurationMs
+    } else state.durationMs
+    val displayedPositionMs = if (state.isInTransition) state.incomingPositionMs else state.positionMs
+    val sourceProgress = if (displayedDurationMs > 0L) {
+        (displayedPositionMs.toFloat() / displayedDurationMs.toFloat()).coerceIn(0f, 1f)
     } else {
         0f
     }
@@ -139,6 +145,7 @@ private fun SceneProgressControl(
         verticalArrangement = Arrangement.Center,
     ) {
         Slider(
+            enabled = !state.isInTransition,
             value = localProgress,
             onValueChange = {
                 if (!scrubbing) {
@@ -185,27 +192,31 @@ private fun SceneProgressControl(
             val shownPosition = if (scrubbing) {
                 (state.durationMs * localProgress).roundToLong()
             } else {
-                state.positionMs
+                displayedPositionMs
             }
             Text(
                 text = sceneFormatDuration(shownPosition),
                 modifier = Modifier.align(Alignment.CenterStart),
                 color = Color.White.copy(alpha = 0.50f),
                 fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Medium,
             )
 
-            SceneQualityChip(
-                state = state,
-                onShowQuality = onShowQuality,
-                modifier = Modifier.align(Alignment.Center),
-            )
+            if (MeloXSettingsRuntime.showPlayerQualityTip) {
+                SceneQualityChip(
+                    state = state,
+                    onShowQuality = onShowQuality,
+                    modifier = Modifier.align(Alignment.Center),
+                )
+            }
 
             Text(
-                text = "−${sceneFormatDuration((state.durationMs - shownPosition).coerceAtLeast(0L))}",
+                text = "−${sceneFormatDuration((displayedDurationMs - shownPosition).coerceAtLeast(0L))}",
                 modifier = Modifier.align(Alignment.CenterEnd),
                 color = Color.White.copy(alpha = 0.50f),
                 fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Medium,
             )
         }

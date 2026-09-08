@@ -37,3 +37,12 @@ object MeloXAudioAnalysisRuntime {
         }
     }
 }
+
+/** Lets expensive visual backdrops yield memory/CPU while full-track analysis runs. */
+object MeloXAudioAnalysisLoad {
+    private val active = java.util.concurrent.atomic.AtomicInteger()
+    val isBusy: Boolean get() = active.get() > 0
+
+    fun begin() { active.incrementAndGet() }
+    fun end() { active.updateAndGet { value -> (value - 1).coerceAtLeast(0) } }
+}

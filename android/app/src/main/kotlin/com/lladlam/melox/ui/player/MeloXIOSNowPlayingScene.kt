@@ -311,7 +311,7 @@ internal fun MeloXIOSNowPlayingScene(
                         Text("心动模式", color = Color(0xFFFF7BA5), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
                     Text(
-                        text = state.title.ifBlank { "正在播放" },
+                        text = state.transitionDisplayTitle(),
                         color = Color.White,
                         fontSize = 20.sp,
                         lineHeight = 24.sp,
@@ -320,7 +320,7 @@ internal fun MeloXIOSNowPlayingScene(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = state.artist,
+                        text = state.transitionDisplayArtist(),
                         color = Color.White.copy(alpha = 0.64f),
                         fontSize = 18.sp,
                         lineHeight = 22.sp,
@@ -592,7 +592,7 @@ private fun LandscapeSongHeader(
                 Text("心动模式", color = Color(0xFFFF7BA5), fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
             Text(
-                text = state.title.ifBlank { "正在播放" },
+                text = state.transitionDisplayTitle(),
                 color = Color.White,
                 fontSize = 19.sp,
                 lineHeight = 23.sp,
@@ -601,7 +601,7 @@ private fun LandscapeSongHeader(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = state.artist,
+                text = state.transitionDisplayArtist(),
                 color = Color.White.copy(alpha = .58f),
                 fontSize = 15.sp,
                 lineHeight = 19.sp,
@@ -696,7 +696,7 @@ private fun ArtworkDetailsWithoutArtwork(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = state.title.ifBlank { "正在播放" },
+                        text = state.transitionDisplayTitle(),
                         color = Color.White,
                         fontSize = 20.sp,
                         lineHeight = 24.sp,
@@ -705,7 +705,7 @@ private fun ArtworkDetailsWithoutArtwork(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = state.artist,
+                        text = state.transitionDisplayArtist(),
                         color = Color.White.copy(alpha = 0.64f),
                         fontSize = 20.sp,
                         lineHeight = 24.sp,
@@ -737,3 +737,10 @@ private fun isDirectLyricsQueueTransition(
 ): Boolean =
     (source == MeloXNowPlayingPage.Lyrics && target == MeloXNowPlayingPage.Queue) ||
         (source == MeloXNowPlayingPage.Queue && target == MeloXNowPlayingPage.Lyrics)
+
+private fun MeloXPlaybackUiState.transitionDisplayTitle(): String =
+    if (isInTransition) incomingTitle.ifBlank { title.ifBlank { "正在播放" } }
+    else title.ifBlank { "正在播放" }
+
+private fun MeloXPlaybackUiState.transitionDisplayArtist(): String =
+    if (isInTransition) incomingArtist.ifBlank { artist } else artist

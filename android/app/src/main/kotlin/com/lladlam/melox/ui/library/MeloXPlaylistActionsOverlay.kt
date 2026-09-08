@@ -63,6 +63,7 @@ internal fun MeloXPlaylistActionsOverlay(
     onDismiss: () -> Unit,
     onRefresh: () -> Unit,
     onBatchDownload: () -> Unit,
+    onAnalyzePlaylist: () -> Unit,
 ) {
     val context=LocalContext.current; val app=context.applicationContext; val scope=rememberCoroutineScope()
     val client=remember(app){NeteaseLibraryClient(cookieProvider = { NeteaseSessionStore.readCookie(app) })}
@@ -97,6 +98,7 @@ internal fun MeloXPlaylistActionsOverlay(
             MeloXIosGroupedList(surfaceColor = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 PlaylistActionRow("分享歌单", MeloXSymbol.Share, false) { sharePlaylist(context, playlist); onDismiss() }
                 PlaylistActionRow("批量下载", MeloXSymbol.Download, true) { onDismiss(); onBatchDownload() }
+                PlaylistActionRow("提前分析歌曲", MeloXSymbol.Refresh, true) { onDismiss(); onAnalyzePlaylist() }
                 PlaylistActionRow(if (subscribed == true) "取消收藏歌单" else "收藏歌单", if (subscribed == true) MeloXSymbol.Check else MeloXSymbol.Plus, true) {
                     if (busy) return@PlaylistActionRow
                     val desired = subscribed != true

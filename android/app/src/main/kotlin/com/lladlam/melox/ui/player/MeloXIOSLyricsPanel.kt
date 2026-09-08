@@ -10,6 +10,7 @@ import android.os.SystemClock
 import java.text.BreakIterator
 import java.util.Locale
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -55,6 +56,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -464,6 +466,16 @@ private fun MeloXAppleMusicLyricsPanel(
     var cascadeDestinationOffsets by remember(document) {
         mutableStateOf<Map<Int, Float>>(emptyMap())
     }
+    // Per-line disappearing animation state: tracks lines that are sliding
+    // up and fading out while other lines remain visible.
+    val disappearingLineStates = remember(document) { mutableStateMapOf<Int, DisappearingLineState>() }
+    val hiddenLineIndexes = remember(document) { mutableStateSetOf<Int>() }
+    // Per-line offset used to smoothly close the gap after a line disappears.
+    // When a line is hidden, lines below get a downward offset equal to the
+    // hidden line's height, then this offset animates to 0.
+    val gapCloseOffsets = remember(document) { mutableStateMapOf<Int, Animatable<Float, AnimationVector1D>>() }
+    var isTransitioning by remember(document) { mutableStateOf(false) }
+    var previousFocusForDetection by remember(document) { mutableIntStateOf(-1) }
     val rowHeightsPx = remember(
         document,
         MeloXSettingsRuntime.lyricFontScale,
@@ -530,6 +542,9 @@ private fun MeloXAppleMusicLyricsPanel(
     }
 
     fun currentMovementOffset(index: Int): Float {
+        // Disappearing lines should not participate in cascade movement;
+        // they only apply their own slide-up offset in the rendering layer.
+        if (index in disappearingLineStates || index in hiddenLineIndexes) return 0f
         val initial = cascadeInitialOffsets[index]
             ?: return settledMovementOffset(index, visualFocusIndex)
         val destination = cascadeDestinationOffsets[index] ?: 0f
@@ -547,8 +562,39 @@ private fun MeloXAppleMusicLyricsPanel(
         cascadeScrollProgress.snapTo(1f)
     }
 
+    // After a line disappears, smoothly close the gap by offsetting lines
+    // below the hidden line downward, then animating those offsets to 0.
+    suspend fun animateGapClose(hiddenIndex: Int) {
+        val gapHeight = estimatedHeight(hiddenIndex)
+        if (gapHeight <= 0f) return
+        val affectedLines = mutableMapOf<Int, Animatable<Float, AnimationVector1D>>()
+        for (i in hiddenIndex + 1..lines.lastIndex) {
+            if (i in hiddenLineIndexes) continue
+            val anim = Animatable(gapHeight)
+            gapCloseOffsets[i] = anim
+            affectedLines[i] = anim
+        }
+        if (affectedLines.isEmpty()) return
+        coroutineScope {
+            affectedLines.values.forEach { anim ->
+                launch {
+                    anim.animateTo(
+                        targetValue = 0f,
+                        animationSpec = tween(
+                            durationMillis = 350,
+                            easing = SourceSpringEasing(MeloXSettingsRuntime.lyricCascadeBounce),
+                        ),
+                    )
+                }
+            }
+        }
+        affectedLines.keys.forEach { gapCloseOffsets.remove(it) }
+    }
+
     suspend fun handOffFocusColor(targetIndexes: Set<Int>) = coroutineScope {
         focusProgress.forEachIndexed { index, anim ->
+            // Disappearing lines keep their current color; do not transition.
+            if (index in disappearingLineStates || index in hiddenLineIndexes) return@forEachIndexed
             val target = if (index in targetIndexes) 1f else 0f
             if (abs(anim.value - target) > 0.0001f) {
                 launch {
@@ -570,7 +616,9 @@ private fun MeloXAppleMusicLyricsPanel(
             scaleProgress.forEachIndexed { index, anim -> anim.snapTo(if (index == nextIndex) 1f else 0f) }
             return@coroutineScope
         }
-        if (previousIndex in scaleProgress.indices && previousIndex != nextIndex) {
+        if (previousIndex in scaleProgress.indices && previousIndex != nextIndex
+            && previousIndex !in disappearingLineStates && previousIndex !in hiddenLineIndexes
+        ) {
             launch {
                 scaleProgress[previousIndex].animateTo(
                     0f,
@@ -609,11 +657,56 @@ private fun MeloXAppleMusicLyricsPanel(
         }
     }
 
+    // Detect single-line disappearance: when a line goes from active to
+    // inactive while the focus stays on the same line, that line should
+    // slide up and fade out like a backing vocal.
+    var previousActiveTimedLineIndexes by remember(document) { mutableStateOf(emptySet<Int>()) }
+    LaunchedEffect(activeTimedLineIndexes, document) {
+        val disappeared = previousActiveTimedLineIndexes - activeTimedLineIndexes
+        val currentFocus = visualFocusIndex
+        for (dIndex in disappeared) {
+            if (dIndex !in lines.indices || dIndex == currentFocus) continue
+            if (disappearingLineStates.containsKey(dIndex)) continue
+            val state = DisappearingLineState(
+                offsetY = Animatable(0f),
+                opacity = Animatable(1f),
+            )
+            disappearingLineStates[dIndex] = state
+            launch {
+                coroutineScope {
+                    launch {
+                        state.offsetY.animateTo(
+                            targetValue = -estimatedHeight(dIndex) * 0.85f,
+                            animationSpec = tween(
+                                durationMillis = 400,
+                                easing = SourceSpringEasing(MeloXSettingsRuntime.lyricCascadeBounce),
+                            ),
+                        )
+                    }
+                    launch {
+                        state.opacity.animateTo(
+                            targetValue = 0f,
+                            animationSpec = tween(
+                                durationMillis = 320,
+                                easing = SourceSpringEasing(MeloXSettingsRuntime.lyricCascadeBounce * 0.5f),
+                            ),
+                        )
+                    }
+                }
+                disappearingLineStates.remove(dIndex)
+                hiddenLineIndexes.add(dIndex)
+                animateGapClose(dIndex)
+            }
+        }
+        previousActiveTimedLineIndexes = activeTimedLineIndexes
+    }
+
     val scrollHideThresholdPx = with(density) { MeloXSettingsRuntime.lyricScrollHideThresholdDp.dp.toPx() }
     val lyricInteractionConnection = remember(document, scrollHideThresholdPx) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (source != NestedScrollSource.UserInput) return Offset.Zero
+                if (isTransitioning) return Offset.Zero
                 val offsetDelta = -available.y
                 if (kotlin.math.abs(offsetDelta) < 0.01f) return Offset.Zero
 
@@ -648,7 +741,20 @@ private fun MeloXAppleMusicLyricsPanel(
     }
 
     LaunchedEffect(isBrowsingLyrics, document) {
-        if (isBrowsingLyrics) clearCascadePresentation(visualFocusIndex)
+        if (isBrowsingLyrics) {
+            clearCascadePresentation(visualFocusIndex)
+            disappearingLineStates.clear()
+            hiddenLineIndexes.clear()
+            gapCloseOffsets.clear()
+        }
+    }
+
+    // Clear per-line animation state when the document changes (new song).
+    LaunchedEffect(document) {
+        disappearingLineStates.clear()
+        hiddenLineIndexes.clear()
+        gapCloseOffsets.clear()
+        previousActiveTimedLineIndexes = emptySet()
     }
 
     Box(
@@ -765,13 +871,57 @@ private fun MeloXAppleMusicLyricsPanel(
             }
 
             if (!isAdjacentForward) {
-                // Several lines can finish at the same timestamp. Advance one
-                // row at a time so intermediate lyrics are visibly promoted
-                // with the same cadence as an ordinary adjacent transition.
+                // Multiple lines ended simultaneously. The new focus line
+                // takes over with a normal cascade scroll, while intermediate
+                // lines slide up and fade out like backing vocals.
+                val disappearingIndexes = (previousIndex + 1 until nextIndex).toSet()
                 val singleStepDurationMs = fullCascadeMs.coerceAtLeast(1f)
                 clearCascadePresentation(nextIndex)
                 handOffFocusScale(previousIndex, nextIndex)
+                // Trigger disappearing animation for intermediate lines.
+                isTransitioning = true
+                for (dIndex in disappearingIndexes) {
+                    if (dIndex !in lines.indices) continue
+                    val existing = disappearingLineStates[dIndex]
+                    if (existing != null) continue
+                    val state = DisappearingLineState(
+                        offsetY = Animatable(0f),
+                        opacity = Animatable(1f),
+                    )
+                    disappearingLineStates[dIndex] = state
+                    val disappearBounce = sourceCascadeBounce(
+                        (dIndex - previousIndex).coerceAtLeast(0),
+                        (nextIndex - previousIndex).coerceAtLeast(1),
+                    )
+                    launch {
+                        coroutineScope {
+                            launch {
+                                state.offsetY.animateTo(
+                                    targetValue = -estimatedHeight(dIndex) * 0.85f,
+                                    animationSpec = tween(
+                                        durationMillis = 400,
+                                        easing = SourceSpringEasing(disappearBounce),
+                                    ),
+                                )
+                            }
+                            launch {
+                                state.opacity.animateTo(
+                                    targetValue = 0f,
+                                    animationSpec = tween(
+                                        durationMillis = 320,
+                                        easing = SourceSpringEasing(disappearBounce * 0.5f),
+                                    ),
+                                )
+                            }
+                        }
+                        disappearingLineStates.remove(dIndex)
+                        hiddenLineIndexes.add(dIndex)
+                        animateGapClose(dIndex)
+                    }
+                }
+                // Scroll the new focus line into position normally.
                 for (stepIndex in (previousIndex + 1)..nextIndex) {
+                    if (stepIndex in disappearingIndexes) continue
                     val stepOffset = focusItemScrollOffset(stepIndex)
                     val stepItem = listState.layoutInfo.visibleItemsInfo
                         .firstOrNull { it.index == stepIndex + 1 }
@@ -796,6 +946,7 @@ private fun MeloXAppleMusicLyricsPanel(
                     }
                     visualFocusIndex = stepIndex
                 }
+                isTransitioning = false
                 return@LaunchedEffect
             }
 
@@ -939,6 +1090,17 @@ private fun MeloXAppleMusicLyricsPanel(
                         items = lines,
                         key = { index, line -> "${line.timeMs}:$index" },
                     ) { index, line ->
+                        // If this line has finished its disappearing animation,
+                        // collapse it to zero height so LazyColumn can reflow.
+                        if (index in hiddenLineIndexes) {
+                            Spacer(Modifier.height(0.dp).fillMaxWidth())
+                            return@itemsIndexed
+                        }
+                        val disappearState = disappearingLineStates[index]
+                        if (disappearState != null && disappearState.opacity.value <= 0.01f) {
+                            Spacer(Modifier.height(0.dp).fillMaxWidth())
+                            return@itemsIndexed
+                        }
                         val interlude = interludeByLyricIndex[index]
                         // Reserve the interlude's space as soon as the document
                         // is laid out.  Inserting it only after playback reaches
@@ -948,7 +1110,11 @@ private fun MeloXAppleMusicLyricsPanel(
                             interlude != null
                         val interludeHeightPx = if (showsInterlude) with(density) { 56.dp.toPx() } else 0f
                         val height = estimatedHeight(index) + interludeHeightPx
-                        val visualOffset = currentMovementOffset(index)
+                        val cascadeOffset = currentMovementOffset(index)
+                        val disappearOffset = disappearState?.offsetY?.value ?: 0f
+                        val gapCloseOffset = gapCloseOffsets[index]?.value ?: 0f
+                        val visualOffset = cascadeOffset + disappearOffset + gapCloseOffset
+                        val disappearAlpha = disappearState?.opacity?.value ?: 1f
                         val frameMinY = visibleItemsByIndex[index + 1]?.offset?.toFloat()
                             ?: focusAnchorY + (index - visualFocusIndex) * lyricStridePx
                         val visualMidY = frameMinY + visualOffset + height * 0.5f
@@ -985,7 +1151,7 @@ private fun MeloXAppleMusicLyricsPanel(
                             effectiveFocus,
                         )
                         val emphasis = sourceEmphasis(effectiveFocus, MeloXSettingsRuntime.lyricDimAmount)
-                        val rowAlpha = (distanceOpacity * emphasis).coerceIn(0f, 1f)
+                        val rowAlpha = (distanceOpacity * emphasis * disappearAlpha).coerceIn(0f, 1f)
                         val followingLineAlpha = sourceDistanceOpacity(
                             lyricStridePx,
                             lyricStridePx,
@@ -1102,6 +1268,11 @@ private fun MeloXAppleMusicLyricsPanel(
         )
     }
 }
+
+private data class DisappearingLineState(
+    val offsetY: Animatable<Float, AnimationVector1D>,
+    val opacity: Animatable<Float, AnimationVector1D>,
+)
 
 /** Three staggered instrumental bars, matching the report's 750ms wave entry. */
 @Composable
@@ -1608,7 +1779,7 @@ private fun MeloXGlyphLyricText(
         val widthPx = with(density) { maxWidth.roundToPx().coerceAtLeast(1) }
         val style = TextStyle(
             color = Color.White,
-            fontFamily = LocalMeloXFontFamily.current,
+            fontFamily = MeloXLanTingProFontFamily,
             fontSize = (UpstreamLyrics.FONT_SIZE_SP * fontScale).sp,
             lineHeight = (UpstreamLyrics.LINE_HEIGHT_SP * fontScale).sp,
             fontWeight = lyricWeight,

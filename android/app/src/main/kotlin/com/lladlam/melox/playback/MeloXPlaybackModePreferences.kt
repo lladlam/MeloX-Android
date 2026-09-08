@@ -14,6 +14,8 @@ object MeloXPlaybackModeRuntime {
         internal set
     var autoMixEnabled by mutableStateOf(false)
         internal set
+    var smartQueueEnabled by mutableStateOf(false)
+        internal set
 }
 
 object MeloXPlaybackModePreferences {
@@ -21,6 +23,7 @@ object MeloXPlaybackModePreferences {
     private const val KEY_SHUFFLE = "shuffle"
     private const val KEY_AUTOPLAY = "autoplay"
     private const val KEY_AUTOMIX = "auto_mix"
+    private const val KEY_SMART_QUEUE = "smart_queue"
 
     internal fun preferences(context: Context) =
         context.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
@@ -31,6 +34,7 @@ object MeloXPlaybackModePreferences {
         MeloXPlaybackModeRuntime.shuffleEnabled = preferences.getBoolean(KEY_SHUFFLE, false)
         MeloXPlaybackModeRuntime.autoplayEnabled = preferences.getBoolean(KEY_AUTOPLAY, false)
         MeloXPlaybackModeRuntime.autoMixEnabled = preferences.getBoolean(KEY_AUTOMIX, false)
+        MeloXPlaybackModeRuntime.smartQueueEnabled = preferences.getBoolean(KEY_SMART_QUEUE, false)
     }
 
     fun shuffle(context: Context): Boolean =
@@ -63,6 +67,16 @@ object MeloXPlaybackModePreferences {
             .edit().putBoolean(KEY_AUTOMIX, enabled).apply()
     }
 
+    fun smartQueue(context: Context): Boolean =
+        preferences(context)
+            .getBoolean(KEY_SMART_QUEUE, false)
+
+    fun setSmartQueue(context: Context, enabled: Boolean) {
+        MeloXPlaybackModeRuntime.smartQueueEnabled = enabled
+        preferences(context)
+            .edit().putBoolean(KEY_SMART_QUEUE, enabled).apply()
+    }
+
     fun setAutoMixString(context: Context, key: String, value: String) {
         preferences(context).edit().putString(key, value).apply()
     }
@@ -87,6 +101,7 @@ object MeloXPlaybackModePreferences {
         MeloXPlaybackModeRuntime.shuffleEnabled = false
         MeloXPlaybackModeRuntime.autoplayEnabled = false
         MeloXPlaybackModeRuntime.autoMixEnabled = false
+        MeloXPlaybackModeRuntime.smartQueueEnabled = false
         preferences(context).edit().clear().apply()
     }
 }

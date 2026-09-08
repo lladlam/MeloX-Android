@@ -8,6 +8,7 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
@@ -58,6 +59,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import coil3.request.ImageRequest
 import coil3.size.Precision
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -461,6 +463,19 @@ private fun SharedArtworkDestination(
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
 ) {
+    var transitionAnimationEligible by remember { mutableStateOf(false) }
+    var previousTransitionActive by remember { mutableStateOf(false) }
+    LaunchedEffect(state.isInTransition, page, MeloXSettingsRuntime.transitionUiEnabled) {
+        if (state.isInTransition && !previousTransitionActive) {
+            transitionAnimationEligible =
+                page == MeloXNowPlayingPage.Artwork && MeloXSettingsRuntime.transitionUiEnabled
+        } else if (state.isInTransition && page != MeloXNowPlayingPage.Artwork) {
+            transitionAnimationEligible = false
+        } else if (!state.isInTransition) {
+            transitionAnimationEligible = false
+        }
+        previousTransitionActive = state.isInTransition
+    }
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
     // Upstream keeps one artwork alive and animates its frame for 0.48s when
@@ -565,7 +580,9 @@ private fun SharedArtworkDestination(
                 .offset(x = targetX, y = targetY)
                 .size(targetSize)
                 .then(sharedArtworkModifier)
-                .graphicsLayer { alpha = if (hidden) 0f else 1f }
+                .graphicsLayer {
+                    alpha = if (hidden || transitionAnimationEligible) 0f else 1f
+                }
         ) {
             Artwork(
                 url = state.artworkUrl,
@@ -588,6 +605,17 @@ private fun SharedArtworkDestination(
                     .clip(RoundedCornerShape(targetRadius)),
             )
         }
+
+        // Transition overlay: dual cover slide animation
+        if (state.isInTransition && transitionAnimationEligible) {
+            TransitionOverlay(
+                state = state,
+                fullArtworkSize = fullArtworkSize,
+                targetX = targetX,
+                targetY = targetY,
+                targetRadius = targetRadius,
+            )
+        }
     }
 }
 
@@ -601,4 +629,75 @@ private fun smoothStep(value: Float, start: Float, end: Float): Float {
     if (end <= start) return if (value >= end) 1f else 0f
     val t = ((value - start) / (end - start)).coerceIn(0f, 1f)
     return t * t * (3f - 2f * t)
+}
+
+@Composable
+private fun TransitionOverlay(
+    state: MeloXPlaybackUiState,
+    fullArtworkSize: androidx.compose.ui.unit.Dp,
+    targetX: androidx.compose.ui.unit.Dp,
+    targetY: androidx.compose.ui.unit.Dp,
+    targetRadius: androidx.compose.ui.unit.Dp,
+) {
+    val exitProgress by animateFloatAsState(
+        targetValue = if (state.transitionHandedOff) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = 620,
+            easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f),
+        ),
+        label = "automix-cover-handoff",
+    )
+    val entryFraction = (state.transitionProgress / 0.28f).coerceIn(0f, 1f)
+    // Pronounced ease-out-back: covers separate quickly, overshoot slightly,
+    // then settle into the symmetric paired layout.
+    val split = easeOutBack(entryFraction)
+    val gap = 16.dp
+    val pairedSize = (fullArtworkSize - gap) / 2f
+    val outgoingSize = lerp(fullArtworkSize, pairedSize, split)
+    val outgoingX = targetX - (pairedSize + gap) * exitProgress
+    val outgoingY = targetY + (fullArtworkSize - outgoingSize) / 2f
+    val incomingSize = lerp(pairedSize, fullArtworkSize, exitProgress)
+    val incomingPairedX = targetX + pairedSize + gap
+    val incomingX = lerp(
+        targetX + fullArtworkSize + gap,
+        incomingPairedX,
+        split,
+    ).let { pairedX -> lerp(pairedX, targetX, exitProgress) }
+    val incomingY = targetY + (fullArtworkSize - incomingSize) / 2f
+
+    if (exitProgress < 0.999f) {
+        Box(
+            modifier = Modifier
+                .offset(x = outgoingX, y = outgoingY)
+                .size(outgoingSize)
+                .clip(RoundedCornerShape(targetRadius))
+                .graphicsLayer { alpha = 1f - exitProgress },
+        ) {
+            Artwork(
+                url = state.outgoingArtworkUrl ?: state.artworkUrl,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+
+    if (split > 0.01f) {
+        Box(
+            modifier = Modifier
+                .offset(x = incomingX, y = incomingY)
+                .size(incomingSize)
+                .clip(RoundedCornerShape(targetRadius)),
+        ) {
+            Artwork(
+                url = state.incomingArtworkUrl,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
+
+private fun easeOutBack(value: Float): Float {
+    val t = value.coerceIn(0f, 1f) - 1f
+    val overshoot = 1.24f
+    return (1f + (overshoot + 1f) * t * t * t + overshoot * t * t)
+        .coerceIn(0f, 1.08f)
 }

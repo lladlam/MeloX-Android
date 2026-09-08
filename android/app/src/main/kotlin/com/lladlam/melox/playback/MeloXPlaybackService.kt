@@ -3,6 +3,7 @@ package com.lladlam.melox.playback
 import android.app.PendingIntent
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.Service
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.os.Bundle
@@ -11,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.content.pm.ServiceInfo
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -114,8 +116,12 @@ class MeloXPlaybackService : MediaSessionService() {
     private var mixSessionOnIncoming = false
     private var cancellingMix = false
     private var playlistAnalysisJob: Job? = null
+    private var analysisForegroundStarted = false
     private var backgroundAnalysisJob: Job? = null
     private var backgroundAnalysisScheduledId: String? = null
+    private var smartQueueJob: Job? = null
+    private var smartQueueSourceId: String? = null
+    private var smartQueueGeneration = -1L
     private var mixSettings = MeloXAutoMixSettings()
     private var cachedAutoMixSettings = MeloXAutoMixSettings()
     private var cachedAutoMixSettingsAt = 0L
@@ -193,6 +199,10 @@ class MeloXPlaybackService : MediaSessionService() {
             MeloXAudioReactiveRuntime.select(mediaItem?.mediaId)
             mediaItem?.let(downloadStore::recordPlayback)
             mediaItem?.let(::scheduleBackgroundAnalysis)
+            // Smart Queue starts with one visible item and appends exactly one
+            // analyzed match at a time. It must also run for the initial item,
+            // not only after a Media3 automatic transition.
+            mediaItem?.let { scheduleSmartQueueNext(it.mediaId) }
             val active = player
             if (transitionedId != systemLyricsSongId) {
                 active?.let(::restoreSystemLyricsMetadata)
@@ -218,7 +228,7 @@ class MeloXPlaybackService : MediaSessionService() {
             // An active crossfade owns the handoff. Do not destroy the incoming
             // deck if the outgoing deck reaches its boundary a few milliseconds
             // before the monitor promotes the already-playing incoming deck.
-            if (mixStartedAt == 0L) cancelPreparedMix()
+            if (mixStartedAt == 0L && hasPreparedMix()) cancelPreparedMix()
         }
 
         override fun onAudioSessionIdChanged(audioSessionId: Int) {
@@ -298,6 +308,7 @@ class MeloXPlaybackService : MediaSessionService() {
                 val uiTransitionActive = MeloXPlayerTransitionState.isActive
                 runCatching {
                     active.currentMediaItem?.let(::ensureBackgroundAnalysisScheduled)
+                    active.currentMediaItem?.mediaId?.let(::scheduleSmartQueueNext)
                     maybePrepareAutoplay(active)
                     maybeRunAutoMix(active)
                     if (!uiTransitionActive) {
@@ -454,6 +465,7 @@ class MeloXPlaybackService : MediaSessionService() {
             .setSessionActivity(sessionActivity)
             .setCallback(sessionCallback)
             .build()
+        handler.post { restorePersistedQueue(active) }
         createLyricsNotificationChannel()
         handler.post(modeMonitor)
         handler.postDelayed({
@@ -472,6 +484,19 @@ class MeloXPlaybackService : MediaSessionService() {
 
     private fun startPlaylistAnalysis(source: MusicSource, playlistId: String) {
         if (playlistAnalysisJob?.isActive == true) return
+        if (player?.isPlaying != true) {
+            val notification = buildPlaylistAnalysisNotification()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    ANALYSIS_NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+                )
+            } else {
+                startForeground(ANALYSIS_NOTIFICATION_ID, notification)
+            }
+            analysisForegroundStarted = true
+        }
         playlistAnalysisJob = serviceScope.launch(Dispatchers.IO) {
             runCatching {
                 val items = if (source == MusicSource.Netease) {
@@ -493,35 +518,104 @@ class MeloXPlaybackService : MediaSessionService() {
                     }
                 }
                 val pendingItems = items.filterNot { item ->
-                    autoMixAnalyzer.hasPersistentAnalysis(item.analysisSongId())
+                    autoMixAnalyzer.hasPersistentFullAnalysis(item.analysisSongId())
                 }
                 MeloXAudioAnalysisRuntime.start(items.size, items.size - pendingItems.size)
+                postPlaylistAnalysisNotification()
                 val permits = Semaphore(2)
                 coroutineScope {
                     pendingItems.map { item ->
                         async(Dispatchers.IO) {
                             permits.withPermit {
                                 val failed = runCatching {
-                                    mediaPrefetcher.cache(item)
-                                    val file = mediaPrefetcher.materialize(item)
+                                    val standardItem = item.copyWithStandardAnalysisUri()
+                                    mediaPrefetcher.cache(standardItem)
+                                    val file = mediaPrefetcher.materialize(standardItem)
+                                    MeloXAudioAnalysisLoad.begin()
                                     try {
                                         val uri = android.net.Uri.fromFile(file)
-                                        autoMixAnalyzer.analyze(item.analysisSongId(), uri, 0L, ANALYSIS_WINDOW_MS)
-                                        autoMixAnalyzer.analyze(item.analysisSongId(), uri, -ANALYSIS_WINDOW_MS, ANALYSIS_WINDOW_MS)
+                                        autoMixAnalyzer.analyze(item.analysisSongId(), uri, 0L, Long.MAX_VALUE)
                                     } finally {
+                                        MeloXAudioAnalysisLoad.end()
                                         file.delete()
                                     }
                                 }.onFailure { Log.w(TAG, "Playlist analysis failed: ${item.mediaMetadata.title}", it) }.isFailure
                                 MeloXAudioAnalysisRuntime.advance(failed)
                                 val progress = MeloXAudioAnalysisRuntime.progress.value
                                 Log.i(TAG, "Playlist analysis progress: ${progress.completed}/${items.size}")
+                                postPlaylistAnalysisNotification()
                             }
                         }
                     }.awaitAll()
                 }
-            }.onFailure { Log.e(TAG, "Playlist audio analysis failed", it) }
+            }.onFailure {
+                Log.e(TAG, "Playlist audio analysis failed", it)
+                postPlaylistAnalysisNotification(failed = true)
+            }
+            if (MeloXAudioAnalysisRuntime.progress.value.total > 0) {
+                postPlaylistAnalysisNotification(completed = true)
+            }
+            withContext(Dispatchers.Main.immediate) {
+            if (analysisForegroundStarted && player?.isPlaying != true) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    stopForeground(Service.STOP_FOREGROUND_DETACH)
+                } else {
+                    @Suppress("DEPRECATION")
+                    stopForeground(false)
+                }
+                analysisForegroundStarted = false
+            }
             playlistAnalysisJob = null
+            }
         }
+    }
+
+    private fun postPlaylistAnalysisNotification(
+        completed: Boolean = false,
+        failed: Boolean = false,
+    ) {
+        getSystemService(NotificationManager::class.java).notify(
+            ANALYSIS_NOTIFICATION_ID,
+            buildPlaylistAnalysisNotification(completed, failed),
+        )
+    }
+
+    private fun buildPlaylistAnalysisNotification(
+        completed: Boolean = false,
+        failed: Boolean = false,
+    ): android.app.Notification {
+        val progress = MeloXAudioAnalysisRuntime.progress.value
+        val title = when {
+            failed -> "歌曲分析失败"
+            completed -> "歌曲分析完成"
+            else -> "正在提前分析歌曲"
+        }
+        val detail = if (completed || failed) {
+            "已完成 ${progress.completed}/${progress.total} 首${if (progress.failed > 0) "，失败 ${progress.failed} 首" else ""}"
+        } else {
+            "正在并列分析 2 首 · ${progress.completed}/${progress.total}"
+        }
+        val intent = PendingIntent.getActivity(
+            this,
+            ANALYSIS_NOTIFICATION_ID,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return NotificationCompat.Builder(this, ANALYSIS_NOTIFICATION_CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_popup_sync)
+                .setContentTitle(title)
+                .setContentText(detail)
+                .setContentIntent(intent)
+                .setOnlyAlertOnce(true)
+                .setSilent(true)
+                .setOngoing(!completed && !failed)
+                .setAutoCancel(completed || failed)
+                .setProgress(
+                    progress.total.coerceAtLeast(1),
+                    progress.completed.coerceIn(0, progress.total.coerceAtLeast(1)),
+                    false,
+                )
+                .build()
     }
 
     private fun scheduleBackgroundAnalysis(item: MediaItem) {
@@ -550,6 +644,117 @@ class MeloXPlaybackService : MediaSessionService() {
                 }
             }.onSuccess { Log.i(TAG, "Background audio analysis ready: ${item.mediaId}") }
                 .onFailure { Log.w(TAG, "Background audio analysis failed: ${item.mediaId}", it) }
+        }
+    }
+
+    private fun scheduleSmartQueueNext(sourceId: String) {
+        if (!MeloXPlaybackModePreferences.smartQueue(this)) return
+        if (!MeloXPlaybackModePreferences.autoMix(this)) return
+        val active = player ?: return
+        // ExoPlayer may only be queried from its application thread. Capture
+        // immutable MediaItem snapshots here on main before starting IO work.
+        val currentItem = active.currentMediaItem ?: return
+        if (currentItem.mediaId != sourceId) return
+        val snapshot = MeloXSmartQueueBuilder.snapshot()
+        if (snapshot.items.isEmpty()) return
+        if (smartQueueGeneration != snapshot.generation) {
+            smartQueueJob?.cancel()
+            smartQueueGeneration = snapshot.generation
+            smartQueueJob = serviceScope.launch(Dispatchers.IO) {
+                val limiter = Semaphore(SMART_QUEUE_ANALYSIS_CONCURRENCY)
+                coroutineScope {
+                    (listOf(currentItem) + snapshot.items)
+                        .distinctBy(MediaItem::mediaId)
+                        .forEachIndexed { index, item ->
+                            launch {
+                                limiter.withPermit {
+                                    runCatching { analyzeSmartQueueItem(item) }
+                                        .onSuccess { analysis ->
+                                            MeloXSmartQueueBuilder.recordAnalysis(
+                                                snapshot.generation,
+                                                item.mediaId,
+                                                analysis,
+                                            )
+                                            val role = if (index == 0) "source" else "candidate"
+                                            Log.i(
+                                                TAG,
+                                                "Smart Queue $role ready: ${item.mediaId}, " +
+                                                    "bpm=${"%.1f".format(analysis.bpm)}, " +
+                                                    "confidence=${"%.3f".format(analysis.confidence)}",
+                                            )
+                                            withContext(Dispatchers.Main.immediate) {
+                                                commitSmartQueueChain(snapshot.generation, sourceId)
+                                            }
+                                        }
+                                        .onFailure {
+                                            if (it is kotlinx.coroutines.CancellationException) throw it
+                                            MeloXSmartQueueBuilder.recordFailure(snapshot.generation, item.mediaId)
+                                            Log.w(TAG, "Smart Queue analysis failed: ${item.mediaId}", it)
+                                        }
+                                }
+                        }
+                    }
+                }
+                withContext(Dispatchers.Main.immediate) {
+                    commitSmartQueueChain(snapshot.generation, sourceId)
+                }
+            }
+        }
+        smartQueueSourceId = sourceId
+        commitSmartQueueChain(snapshot.generation, sourceId)
+        val duration = active.duration
+        if (!active.hasNextMediaItem() && duration != C.TIME_UNSET && duration > 0L &&
+            duration - active.currentPosition <= 30_000L && mixStartedAt == 0L
+        ) {
+            val selected = MeloXSmartQueueBuilder.emergencyCandidate(snapshot.generation) ?: return
+            val consumed = MeloXSmartQueueBuilder.consume(snapshot.generation, selected.mediaId) ?: return
+            active.addMediaItem(consumed)
+            Log.w(TAG, "Smart Queue emergency append: source=$sourceId target=${consumed.mediaId}, remaining=${duration - active.currentPosition}, reason=no scored chain available")
+        }
+    }
+
+    private fun commitSmartQueueChain(expectedGeneration: Long, initialSourceId: String) {
+        val active = player ?: return
+        if (!MeloXPlaybackModePreferences.smartQueue(this) || !MeloXPlaybackModePreferences.autoMix(this)) return
+        if (MeloXSmartQueueBuilder.snapshot().generation != expectedGeneration) return
+        if (active.mediaItemCount == 0 || mixStartedAt > 0L) return
+        var sourceId = active.getMediaItemAt(active.mediaItemCount - 1).mediaId
+        while (true) {
+            val match = MeloXSmartQueueBuilder.bestAnalyzedMatch(expectedGeneration, sourceId) ?: break
+            val consumed = MeloXSmartQueueBuilder.consume(expectedGeneration, match.item.mediaId) ?: break
+            active.addMediaItem(consumed)
+            if (preparedMixSourceId != null) incomingPlayer?.addMediaItem(consumed)
+            Log.i(
+                TAG,
+                "Smart Queue appended ${match.reason} match immediately: ${consumed.mediaId}, " +
+                    "source=$sourceId bpm=${"%.1f".format(match.analysis.bpm)}, " +
+                    "tempoDistance=${"%.1f".format(match.tempoDistance)}, " +
+                    "confidence=${"%.3f".format(match.analysis.confidence)}",
+            )
+            sourceId = consumed.mediaId
+        }
+    }
+
+    private suspend fun analyzeSmartQueueItem(item: MediaItem): MeloXAutoMixTrackAnalysis {
+        val standardItem = item.copyWithStandardAnalysisUri()
+        val songId = standardItem.analysisSongId()
+        MeloXAudioAnalysisLoad.begin()
+        val file = try {
+            mediaPrefetcher.materialize(standardItem)
+        } catch (error: Throwable) {
+            MeloXAudioAnalysisLoad.end()
+            throw error
+        }
+        return try {
+            autoMixAnalyzer.analyze(
+                songId = songId,
+                uri = android.net.Uri.fromFile(file),
+                windowStartMs = 0L,
+                windowDurationMs = Long.MAX_VALUE,
+            )
+        } finally {
+            file.delete()
+            MeloXAudioAnalysisLoad.end()
         }
     }
 
@@ -600,6 +805,7 @@ class MeloXPlaybackService : MediaSessionService() {
     }
 
     private fun maybePrepareAutoplay(active: ExoPlayer) {
+        if (MeloXPlaybackModePreferences.smartQueue(this)) return
         if (!MeloXPlaybackModePreferences.autoplay(this)) return
         if (active.mediaItemCount <= 0 || active.currentMediaItemIndex < 0) return
         val atTail = active.currentMediaItemIndex >= active.mediaItemCount - 1
@@ -617,6 +823,7 @@ class MeloXPlaybackService : MediaSessionService() {
     }
 
     private fun ensureAutoplayRecommendations() {
+        if (MeloXPlaybackModePreferences.smartQueue(this)) return
         if (!MeloXNetworkAvailability.isOnline(this)) return
         if (!MeloXPlaybackModePreferences.autoplay(this)) return
         val active = player ?: return
@@ -749,7 +956,9 @@ class MeloXPlaybackService : MediaSessionService() {
         }
         if (!active.hasNextMediaItem()) {
             Log.d(TAG, "AutoMix skipped: no next media item")
-            if (MeloXPlaybackModePreferences.autoplay(this)) maybePrepareAutoplay(active)
+            if (!MeloXPlaybackModePreferences.smartQueue(this) &&
+                MeloXPlaybackModePreferences.autoplay(this)
+            ) maybePrepareAutoplay(active)
             return
         }
         val duration = active.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: run {
@@ -771,6 +980,13 @@ class MeloXPlaybackService : MediaSessionService() {
         }
         val settings = currentAutoMixSettings()
         Log.d(TAG, "AutoMix evaluate: source=$sourceId, remaining=$remaining, preload=${settings.preloadLeadMs}, prepared=$preparedMixSourceId")
+        if (settings.mode == MeloXAutoMixMode.Smart &&
+            mixAnalysisSourceId != sourceId &&
+            mixAnalysisJob?.isActive != true
+        ) {
+            Log.i(TAG, "AutoMix starting analysis: source=$sourceId")
+            startAutoMixAnalysis(active, sourceId, settings)
+        }
         if (preparedMixSourceId == null && remaining <= settings.preloadLeadMs) {
             Log.i(TAG, "AutoMix preparing incoming: source=$sourceId, remaining=$remaining")
             PlaybackCommands.prioritizeManualQueue(active)
@@ -781,16 +997,15 @@ class MeloXPlaybackService : MediaSessionService() {
             return
         }
         if (preparedMixSourceId != sourceId) {
+            if (preparedMixSourceId == null) {
+                // A standby deck can exist from a previous handoff while the
+                // next preload has not started yet. Do not cancel and destroy
+                // that deck on every monitor tick; wait for preloadLeadMs.
+                return
+            }
             Log.d(TAG, "AutoMix prepared source mismatch: prepared=$preparedMixSourceId, current=$sourceId")
             if (mixStartedAt > 0L) completeAutoMix(active, incoming) else cancelPreparedMix()
             return
-        }
-        if (settings.mode == MeloXAutoMixMode.Smart &&
-            mixAnalysisSourceId != sourceId &&
-            mixAnalysisJob?.isActive != true
-        ) {
-            Log.i(TAG, "AutoMix starting analysis: source=$sourceId")
-            startAutoMixAnalysis(active, sourceId, settings)
         }
         val candidate = when (settings.mode) {
             MeloXAutoMixMode.Fixed -> MeloXAutoMixPlanner.plan(settings, remaining)
@@ -865,6 +1080,7 @@ class MeloXPlaybackService : MediaSessionService() {
                 mixOutgoingStartPositionMs = active.currentPosition.coerceAtLeast(0L)
                 mixIncomingStartPositionMs = incoming.currentPosition.coerceAtLeast(0L)
                 mixLastProgress = 0.0
+                MeloXAutoMixTransitionRuntime.begin(active.currentMediaItem, incoming.currentMediaItem)
                 handler.removeCallbacks(mixEnvelope)
                 handler.post(mixEnvelope)
             }.onFailure { error ->
@@ -1029,6 +1245,17 @@ class MeloXPlaybackService : MediaSessionService() {
                 enableVibration(false)
             },
         )
+        manager.createNotificationChannel(
+            NotificationChannel(
+                ANALYSIS_NOTIFICATION_CHANNEL,
+                "歌曲分析",
+                NotificationManager.IMPORTANCE_LOW,
+            ).apply {
+                description = "显示歌单歌曲的音频分析进度"
+                setSound(null, null)
+                enableVibration(false)
+            },
+        )
     }
 
     private fun postLyricsNotification(line: String, nextLine: String, metadata: MediaMetadata) {
@@ -1106,6 +1333,11 @@ class MeloXPlaybackService : MediaSessionService() {
             minOf(outgoingProgress, incomingProgress),
         ).coerceIn(0.0, 1.0)
         mixLastProgress = progress
+        MeloXAutoMixTransitionRuntime.update(
+            value = progress,
+            positionMs = incoming.currentPosition,
+            durationMs = incoming.duration.takeUnless { it == C.TIME_UNSET || it < 0L } ?: 0L,
+        )
 
         val gains = MeloXAutoMixEnvelope.gains(progress, mixSettings.fadeCurve)
         active.volume = mixBaseVolume * gains.outgoing
@@ -1170,6 +1402,8 @@ class MeloXPlaybackService : MediaSessionService() {
         if (currentIndex !in 0 until active.mediaItemCount || nextIndex !in 0 until active.mediaItemCount) return
         val outgoingItem = active.getMediaItemAt(currentIndex)
         val incomingItem = active.getMediaItemAt(nextIndex)
+        val outgoingAnalysisItem = outgoingItem.copyWithStandardAnalysisUri()
+        val incomingAnalysisItem = incomingItem.copyWithStandardAnalysisUri()
         val outgoingId = outgoingItem.mediaId.toLongOrNull() ?: return
         val incomingId = incomingItem.mediaId.toLongOrNull() ?: return
         mixAnalysisSourceId = sourceId
@@ -1179,26 +1413,26 @@ class MeloXPlaybackService : MediaSessionService() {
                 runCatching {
                     withTimeout(20_000L) {
                         Log.i(TAG, "AutoMix materializing analysis sources: outgoing=$outgoingId, incoming=$incomingId")
-                        val outgoingFile = mediaPrefetcher.materialize(outgoingItem)
-                        val incomingFile = mediaPrefetcher.materialize(incomingItem)
+                        val outgoingFile = mediaPrefetcher.materialize(outgoingAnalysisItem)
+                        val incomingFile = mediaPrefetcher.materialize(incomingAnalysisItem)
                         Log.i(TAG, "AutoMix materialized analysis sources: outgoingBytes=${outgoingFile.length()}, incomingBytes=${incomingFile.length()}")
                         try {
                             val (outgoing, incomingAnalysis) = coroutineScope {
                                 val outgoingDeferred = async {
-                                    autoMixAnalyzer.analyze(
-                                        outgoingId,
-                                        android.net.Uri.fromFile(outgoingFile),
-                                        windowStartMs = -ANALYSIS_WINDOW_MS,
-                                        windowDurationMs = ANALYSIS_WINDOW_MS,
-                                    )
+                                        autoMixAnalyzer.analyze(
+                                            outgoingId,
+                                            android.net.Uri.fromFile(outgoingFile),
+                                            windowStartMs = 0L,
+                                            windowDurationMs = Long.MAX_VALUE,
+                                        )
                                 }
                                 val incomingDeferred = async {
-                                    autoMixAnalyzer.analyze(
-                                        incomingId,
-                                        android.net.Uri.fromFile(incomingFile),
-                                        windowStartMs = 0L,
-                                        windowDurationMs = ANALYSIS_WINDOW_MS,
-                                    )
+                                        autoMixAnalyzer.analyze(
+                                            incomingId,
+                                            android.net.Uri.fromFile(incomingFile),
+                                            windowStartMs = 0L,
+                                            windowDurationMs = Long.MAX_VALUE,
+                                        )
                                 }
                                 outgoingDeferred.await() to incomingDeferred.await()
                             }
@@ -1220,7 +1454,7 @@ class MeloXPlaybackService : MediaSessionService() {
             }
             val analysisState = "prepared=$preparedMixSourceId, analysisSource=$mixAnalysisSourceId, current=$sourceId"
             result.onSuccess { (plan, outgoing, _) ->
-                if (preparedMixSourceId == sourceId && mixAnalysisSourceId == sourceId) {
+                if (mixAnalysisSourceId == sourceId) {
                     MeloXAudioReactiveRuntime.attach(sourceId, outgoing)
                     analyzedMixPlan = plan
                     Log.i(
@@ -1232,7 +1466,7 @@ class MeloXPlaybackService : MediaSessionService() {
                     Log.w(TAG, "AutoMix analysis result discarded: $analysisState")
                 }
             }.onFailure { error ->
-                if (preparedMixSourceId == sourceId && mixAnalysisSourceId == sourceId) {
+                if (mixAnalysisSourceId == sourceId) {
                     analyzedMixPlan = null
                     Log.w(TAG, "AutoMix smart analysis unavailable for $sourceId: ${error.message}")
                 } else {
@@ -1283,6 +1517,7 @@ class MeloXPlaybackService : MediaSessionService() {
         mixOutgoingStartPositionMs = 0L
         mixIncomingStartPositionMs = 0L
         mixLastProgress = 0.0
+        MeloXAutoMixTransitionRuntime.handoff()
         runCatching { old.removeListener(playerListener) }
         runCatching { old.pause() }
         runCatching { old.stop() }
@@ -1292,6 +1527,7 @@ class MeloXPlaybackService : MediaSessionService() {
         runCatching { old.setPlaybackSpeed(1f) }
         runCatching { old.volume = 0f }
         runCatching { applyLocalArtworkMetadata(incoming) }
+        incoming.currentMediaItem?.mediaId?.let(::scheduleSmartQueueNext)
     }
 
     private fun applyLocalArtworkMetadata(active: ExoPlayer) {
@@ -1396,6 +1632,7 @@ class MeloXPlaybackService : MediaSessionService() {
             mixOutgoingStartPositionMs = 0L
             mixIncomingStartPositionMs = 0L
             mixLastProgress = 0.0
+            MeloXAutoMixTransitionRuntime.clear()
             mixSettings = MeloXAutoMixSettings()
             mixPlan = MeloXAutoMixPlan(0L, 0L)
         } finally {
@@ -1409,6 +1646,7 @@ class MeloXPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        persistQueueIfEnabled()
         historySongId?.let { playbackHistoryReporter.recordDuration(it, elapsedMs = listenedTimeTracker.elapsedMs(SystemClock.elapsedRealtime())) }
         historySongId = null
         playbackHistoryReporter.close()
@@ -1416,6 +1654,7 @@ class MeloXPlaybackService : MediaSessionService() {
         recommendationJob?.cancel()
         playlistAnalysisJob?.cancel()
         backgroundAnalysisJob?.cancel()
+        smartQueueJob?.cancel()
         systemLyricsJob?.cancel()
         getSystemService(NotificationManager::class.java).cancel(LYRICS_NOTIFICATION_ID)
         serviceScope.cancel()
@@ -1432,6 +1671,26 @@ class MeloXPlaybackService : MediaSessionService() {
         super.onDestroy()
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        persistQueueIfEnabled()
+        super.onTaskRemoved(rootIntent)
+    }
+
+    private fun persistQueueIfEnabled() {
+        if (!MeloXSettingsPreferences.boolean(this, "playback_save_queue", true)) return
+        player?.let { MeloXPlaybackQueueStore.save(this, it) }
+    }
+
+    private fun restorePersistedQueue(active: ExoPlayer) {
+        if (!MeloXSettingsPreferences.boolean(this, "playback_save_queue", true)) return
+        val saved = MeloXPlaybackQueueStore.read(this) ?: return
+        if (active.mediaItemCount > 0) return
+        active.setMediaItems(saved.items, saved.index, saved.positionMs)
+        active.prepare()
+        active.pause()
+        Log.i(TAG, "Restored persisted playback queue: ${saved.items.size} items, index=${saved.index}")
+    }
+
     companion object {
         const val ACTION_ANALYZE_PLAYLIST = "com.lladlam.melox.action.ANALYZE_PLAYLIST"
         const val EXTRA_ANALYSIS_SOURCE = "analysis_source"
@@ -1443,6 +1702,7 @@ class MeloXPlaybackService : MediaSessionService() {
         const val PLAYBACK_MAINTENANCE_INTERVAL_MS = 1_000L
         const val AUTOMIX_ENVELOPE_INTERVAL_MS = 20L
         const val AUTOMIX_FAILURE_COOLDOWN_MS = 30_000L
+        const val SMART_QUEUE_ANALYSIS_CONCURRENCY = 2
         const val ANALYSIS_FALLBACK_GUARD_MS = 1_200L
         const val ANALYSIS_WINDOW_MS = 30_000L
         const val ACTIVE_MONITOR_INTERVAL_MS = 100L
@@ -1454,6 +1714,8 @@ class MeloXPlaybackService : MediaSessionService() {
         const val SYSTEM_ORIGINAL_ARTIST_KEY = "melox.system.original_artist"
         const val LYRICS_NOTIFICATION_CHANNEL = "melox_lyrics"
         const val LYRICS_NOTIFICATION_ID = 1702
+        const val ANALYSIS_NOTIFICATION_CHANNEL = "melox_analysis"
+        const val ANALYSIS_NOTIFICATION_ID = 1004
     }
 }
 

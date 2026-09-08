@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "0.*"
+  workflow_dispatch:
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x android/gradlew
+
+      - name: Assemble signed release APK
+        env:
+          MELOX_RELEASE_STORE_FILE: ${{ secrets.MELOX_RELEASE_STORE_FILE }}
+          MELOX_RELEASE_STORE_PASSWORD: ${{ secrets.MELOX_RELEASE_STORE_PASSWORD }}
+          MELOX_RELEASE_KEY_ALIAS: ${{ secrets.MELOX_RELEASE_KEY_ALIAS }}
+          MELOX_RELEASE_KEY_PASSWORD: ${{ secrets.MELOX_RELEASE_KEY_PASSWORD }}
+        run: |
+          cd android
+          ./gradlew :app:assembleRelease \
+            -PmeloxReleaseStoreFile="$MELOX_RELEASE_STORE_FILE" \
+            -PmeloxReleaseStorePassword="$MELOX_RELEASE_STORE_PASSWORD" \
+            -PmeloxReleaseKeyAlias="$MELOX_RELEASE_KEY_ALIAS" \
+            -PmeloxReleaseKeyPassword="$MELOX_RELEASE_KEY_PASSWORD" \
+            --no-daemon --max-workers=2 --stacktrace
+
+      - name: Prepare release artifact
+        shell: bash
+        run: |
+          VERSION_NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' android/app/build.gradle.kts)
+          mkdir -p release-artifacts
+          cp android/app/build/outputs/apk/release/app-release.apk "release-artifacts/MeloX-Android-${VERSION_NAME}.apk"
+          ls -la release-artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || '0.5.3' }}
+          name: MeloX Android ${{ github.ref_type == 'tag' && github.ref_name || '0.5.3' }}
+          files: release-artifacts/*.apk
+          generate_release_notes: true
+          make_latest: true

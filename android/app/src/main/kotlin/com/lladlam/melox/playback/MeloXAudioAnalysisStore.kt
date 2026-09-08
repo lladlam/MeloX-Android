@@ -14,38 +14,45 @@ object MeloXAudioAnalysisPreferences {
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
-    fun persistentEnabled(context: Context): Boolean = prefs(context).getBoolean(PERSISTENT, false)
+    fun persistentEnabled(context: Context): Boolean = prefs(context).getBoolean(PERSISTENT, true)
     fun independentLineEnabled(context: Context): Boolean = prefs(context).getBoolean(INDEPENDENT, false)
     fun setPersistentEnabled(context: Context, value: Boolean) = prefs(context).edit().putBoolean(PERSISTENT, value).apply()
     fun setIndependentLineEnabled(context: Context, value: Boolean) = prefs(context).edit().putBoolean(INDEPENDENT, value).apply()
+    fun clearAll(context: Context) {
+        prefs(context).edit().clear().apply()
+        File(context.applicationContext.filesDir, "automix_analysis_index.json").delete()
+        File(context.applicationContext.filesDir, "automix_analysis").deleteRecursively()
+        File(context.applicationContext.cacheDir, "automix_analysis").deleteRecursively()
+    }
 }
 
 /** Durable index for completed AutoMix analysis; audio files are never retained here. */
 class MeloXAudioAnalysisStore(context: Context) {
-    private val file = File(context.applicationContext.filesDir, "automix_analysis_index.json")
+    private val legacyFile = File(context.applicationContext.filesDir, "automix_analysis_index.json")
+    private val directory = File(context.applicationContext.filesDir, "automix_analysis").apply { mkdirs() }
     private val lock = Any()
 
     fun get(key: String): MeloXAutoMixTrackAnalysis? = synchronized(lock) {
-        val root = readRoot() ?: return@synchronized null
-        root.optJSONObject(digest(key))?.toAnalysis()
+        val id = digest(key)
+        val entry = File(directory, "$id.json")
+        runCatching { if (entry.isFile) JSONObject(entry.readText()).toAnalysis() else null }.getOrNull()
     }
 
     fun put(key: String, analysis: MeloXAutoMixTrackAnalysis) = synchronized(lock) {
-        val root = readRoot() ?: JSONObject()
-        root.put(digest(key), analysis.toJson())
-        val temporary = File(file.parentFile, "${file.name}.part")
-        temporary.writeText(root.toString())
-        if (!temporary.renameTo(file)) {
-            file.delete()
-            check(temporary.renameTo(file)) { "Unable to publish audio analysis index" }
+        directory.mkdirs()
+        val entry = File(directory, "${digest(key)}.json")
+        val temporary = File(directory, "${entry.name}.part")
+        temporary.writeText(analysis.toJson().toString())
+        if (!temporary.renameTo(entry)) {
+            entry.delete()
+            check(temporary.renameTo(entry)) { "Unable to publish audio analysis entry" }
         }
     }
 
-    fun clear() = synchronized(lock) { file.delete() }
-
-    private fun readRoot(): JSONObject? = runCatching {
-        if (file.isFile) JSONObject(file.readText()) else null
-    }.getOrNull()
+    fun clear() = synchronized(lock) {
+        legacyFile.delete()
+        directory.deleteRecursively()
+    }
 
     private fun digest(value: String): String = MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray())
