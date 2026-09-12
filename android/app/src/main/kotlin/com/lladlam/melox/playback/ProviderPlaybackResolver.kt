@@ -30,6 +30,7 @@ import kotlinx.coroutines.runBlocking
 class ProviderPlaybackResolver(
     private val neteaseResolver: NeteasePlaybackResolver,
     private val providers: MusicProviderRegistry,
+    private val localSourceProvider: (MusicResourceId) -> Uri? = { null },
     private val authKeyProvider: (MusicSource) -> String = { "" },
     private val providerPlaybackEnabled: (MusicSource) -> Boolean = { true },
     private val chkszPlayback: ChkszPlaybackResolver? = null,
@@ -111,6 +112,12 @@ class ProviderPlaybackResolver(
                 durationMs = uri.getQueryParameter(TrackDurationQuery)?.toLongOrNull(),
                 providerMetadata = providerMetadata(uri, id),
             )
+            localSourceProvider(id)?.let { local ->
+                val result = ResolvedRequest(local, emptyMap())
+                synchronized(cacheLock) { resolvedUris[key] = result }
+                pending.complete(result)
+                return result
+            }
             Log.d(TAG, "resolve detail source=${source.storageValue} id=${resourceValue.take(8)} title=${track.title.take(40)} " +
                 "artists=${track.artistText.take(60)} durationMs=${track.durationMs} metadata=${track.providerMetadata.javaClass.simpleName}")
             Log.i(TAG, "Resolve start source=${source.storageValue} quality=${quality.name} thirdParty=${thirdPartySourcesEnabled()}")
@@ -258,6 +265,7 @@ class ProviderPlaybackResolver(
             id.value,
             uri.getQueryParameter(SpotifyIsrcQuery)?.takeIf(String::isNotBlank),
         )
+        MusicSource.YouTubeMusic -> ProviderTrackMetadata.Empty
         MusicSource.Jellyfin -> ProviderTrackMetadata.Empty
         MusicSource.Local -> ProviderTrackMetadata.Local(
             contentUri = uri.getQueryParameter("localContentUri").orEmpty(),

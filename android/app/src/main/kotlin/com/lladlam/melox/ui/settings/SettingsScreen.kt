@@ -2974,9 +2974,13 @@ private fun AboutSettings(context: android.content.Context) {
                     "WXRIW/Lyricify-Lyrics-Helper：网易云 YRC 解析参考\n" +
                     "neteasecloudmusicapienhanced/api-enhanced：听歌识曲与音频指纹运行时\n" +
                     "DanteAlighieri13210914/pv-tool：文字 PV 原始实现（Non-Commercial License）\n" +
-                    "mjhydri/BeatNet：自动混音节拍/重拍/速度分析（CC BY 4.0）\n" +
-                    "NEORUAA/MeiloX：基于 Mei 的仿 Apple Music 网易云音乐客户端，提供 UI 参考\n" +
-                    "thlucas1/SpotifyWebApiPython：Spotify Web API 客户端，提供 Spotify API 参考\n" +
+                     "mjhydri/BeatNet：自动混音节拍/重拍/速度分析（CC BY 4.0）\n" +
+                     "NEORUAA/MeiloX：基于 Mei 的仿 Apple Music 网易云音乐客户端，提供 UI 参考\n" +
+                     "lladlam/Square：Spotify 与 YouTube Music 双后端架构参考\n" +
+                     "YouTube Music：基于 Square 架构，使用 vendored Metrolist InnerTube（GPL-3.0）与 NewPipeExtractor\n" +
+                     "Spotify：参考 Square Spotify backend，使用 librespot-java（Apache-2.0）\n" +
+                     "vivo OriginOS：自动尝试原子岛通知适配，不提供单独开关\n" +
+                     "thlucas1/SpotifyWebApiPython：Spotify Web API 客户端，提供 Spotify API 参考\n" +
                     "bromothymolb/bilibili-api-zoku：Bilibili API 调用整合项目，提供 Bilibili API 参考\n" +
                     "Kyant0 AndroidLiquidGlass / Backdrop：Android 液态玻璃渲染基础",
                 modifier = Modifier.padding(top = 10.dp),

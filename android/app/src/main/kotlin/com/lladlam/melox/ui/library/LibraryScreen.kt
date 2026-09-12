@@ -50,10 +50,13 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -95,6 +98,7 @@ import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.audio.MusicQualityPreferences
 import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.core.download.MeloXDownloadPlaylistRef
+import com.lladlam.melox.core.download.MeloXProviderDownloadStore
 import com.lladlam.melox.core.library.NeteaseLibraryClient
 import com.lladlam.melox.core.library.NeteaseLibraryCache
 import com.lladlam.melox.core.library.NeteaseLibrarySnapshot
@@ -541,6 +545,7 @@ private enum class MeloXLocalBrowseMode(val title: String) {
 @Composable
 private fun MeloXLibraryDownloadsPage(downloads: MeloXDownloadStore) {
     val context = LocalContext.current
+    val providerDownloads = remember(context) { MeloXProviderDownloadStore.get(context) }
     var page by remember { mutableStateOf(MeloXDownloadsPage.Root) }
     var selectedPlaylistId by remember { mutableStateOf<Long?>(null) }
     var selecting by remember { mutableStateOf(false) }
@@ -551,6 +556,7 @@ private fun MeloXLibraryDownloadsPage(downloads: MeloXDownloadStore) {
 
     val active = downloads.activeDownloads.values.toList()
     val completed = downloads.downloads.toList()
+    val providerCompleted = providerDownloads.downloads.toList()
     val groups = downloads.downloadedPlaylists
     val browseGroups = remember(completed, browseMode) {
         when (browseMode) {
@@ -771,7 +777,39 @@ private fun MeloXLibraryDownloadsPage(downloads: MeloXDownloadStore) {
       }
   }
 
-  if (active.isEmpty() && completed.isEmpty()) {
+  if (providerCompleted.isNotEmpty()) {
+      item {
+          Text("Spotify / YouTube Music", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 18.dp, bottom = 8.dp))
+      }
+      items(providerCompleted, key = { "provider-download-${it.track.id.source.storageValue}:${it.track.id.value}" }) { item ->
+          Row(
+              Modifier.fillMaxWidth().height(62.dp).clickable {
+                  ProviderPlaybackCommands.playQueue(context, providerCompleted.map { it.track }, item.track.id)
+              },
+              verticalAlignment = Alignment.CenterVertically,
+          ) {
+              AsyncImage(
+                  model = item.track.artworkUrl,
+                  contentDescription = null,
+                  contentScale = ContentScale.Crop,
+                  modifier = Modifier.size(48.dp).clip(RoundedCornerShape(9.dp)),
+              )
+              Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                  Text(item.track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                  Text(
+                      "${item.track.artistText} · ${item.track.id.source.displayName}",
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis,
+                      color = MaterialTheme.colorScheme.onBackground.copy(alpha = .48f),
+                      fontSize = 12.sp,
+                  )
+              }
+              Text("删除", color = MaterialTheme.colorScheme.error, modifier = Modifier.clickable { providerDownloads.remove(item.track.id) }.padding(10.dp))
+          }
+      }
+  }
+
+  if (active.isEmpty() && completed.isEmpty() && providerCompleted.isEmpty()) {
       item {
           Box(Modifier.fillMaxWidth().height(260.dp), contentAlignment = Alignment.Center) {
               Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1547,6 +1585,7 @@ private fun MeloXPlaylistDetailScreen(
     var currentUserId by remember(initialPlaylist.id) { mutableStateOf<Long?>(null) }
     var savingPlaylist by remember(initialPlaylist.id) { mutableStateOf(false) }
     var palette by remember(initialPlaylist.coverUrl) { mutableStateOf(MeloXDetailPalette.LightFallback) }
+    var sortMode by remember(initialPlaylist.id) { mutableStateOf(MeloXPlaylistSortMode.Original) }
 
     DisposableEffect(showPlaylistActions, showBatchDownload, selectedTrackAction) {
         val visible = !isProviderCollection && (showPlaylistActions || showBatchDownload || selectedTrackAction != null)
@@ -1671,9 +1710,17 @@ private fun MeloXPlaylistDetailScreen(
 
     val foreground = if (palette.prefersDarkAppearance) Color.White else Color.Black
     val secondary = foreground.copy(alpha = 0.48f)
-    val filteredSongs = remember(songs, searchQuery) {
+    val orderedSongs = remember(songs, sortMode) {
+        when (sortMode) {
+            MeloXPlaylistSortMode.Original -> songs
+            MeloXPlaylistSortMode.Title -> songs.sortedBy { it.name.lowercase() }
+            MeloXPlaylistSortMode.Artist -> songs.sortedWith(compareBy({ it.artists.lowercase() }, { it.name.lowercase() }))
+            MeloXPlaylistSortMode.Album -> songs.sortedWith(compareBy({ it.album.lowercase() }, { it.name.lowercase() }))
+        }
+    }
+    val filteredSongs = remember(orderedSongs, searchQuery) {
         val query = searchQuery.trim().lowercase()
-        if (query.isEmpty()) songs else songs.filter { song ->
+        if (query.isEmpty()) orderedSongs else orderedSongs.filter { song ->
             song.name.lowercase().contains(query) ||
                 song.artists.lowercase().contains(query) ||
                 song.album.lowercase().contains(query)
@@ -1734,16 +1781,10 @@ private fun MeloXPlaylistDetailScreen(
                 showMore = !isProviderCollection && !isAlbum,
                 onMore = { showPlaylistActions = true },
             )
-            MeloXPlaylistSearchField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                foreground = foreground,
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
-            )
-
             LazyVerticalGrid(
                 columns = GridCells.Fixed(if (detailWindow.supportsTwoPane) 2 else 1),
                 modifier = Modifier.fillMaxSize(),
+                state = rememberLazyGridState(),
                 contentPadding = PaddingValues(
                     start = if (detailWindow.supportsTwoPane) detailWindow.gutter else 0.dp,
                     end = if (detailWindow.supportsTwoPane) detailWindow.gutter else 0.dp,
@@ -1751,26 +1792,62 @@ private fun MeloXPlaylistDetailScreen(
                 ),
             ) {
                 item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                    MeloXPlaylistSearchField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        foreground = foreground,
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+                    )
+                }
+                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                    var sortMenuVisible by remember { mutableStateOf(false) }
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 2.dp)) {
+                        Text(
+                            "排序：${sortMode.label}",
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable { sortMenuVisible = true }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            color = secondary,
+                            fontSize = 13.sp,
+                        )
+                        DropdownMenu(
+                            expanded = sortMenuVisible,
+                            onDismissRequest = { sortMenuVisible = false },
+                        ) {
+                            MeloXPlaylistSortMode.entries.forEach { candidate ->
+                                DropdownMenuItem(
+                                    text = { Text(candidate.label) },
+                                    onClick = {
+                                        sortMode = candidate
+                                        sortMenuVisible = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                     MeloXStandardPlaylistHero(
                         playlist = displayed,
-                        tracks = songs,
+                        tracks = filteredSongs,
                         foreground = foreground,
                         secondary = secondary,
                         sourceLabel = providerAlbum?.id?.source?.displayName
                             ?: displayed.providerPlaylist?.id?.source?.displayName
                             ?: "网易云音乐",
                         onPlay = {
-                            songs.firstOrNull()?.let { first ->
+                            filteredSongs.firstOrNull()?.let { first ->
                                 PlaybackCommands.playQueue(
                                     context = context,
-                                    songs = songs,
+                                    songs = filteredSongs,
                                     selectedSongId = first.id,
                                     onFailure = { errorMessage = it.message ?: "播放失败" },
                                 )
                             }
                         },
                         onShuffle = {
-                            val shuffled = songs.shuffled()
+                            val shuffled = filteredSongs.shuffled()
                             shuffled.firstOrNull()?.let { first ->
                                 PlaybackCommands.playQueue(
                                     context = context,
@@ -2288,13 +2365,11 @@ private fun MeloXPlaylistTrackRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(
-                    text = "${index + 1}",
-                    modifier = Modifier.width(40.dp),
-                    color = foreground.copy(alpha = 0.48f),
-                    fontSize = 20.sp,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
+                AsyncImage(
+                    model = song.artworkUrl,
+                    contentDescription = song.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)),
                 )
                 Text(
                     text = song.name,
@@ -2308,6 +2383,13 @@ private fun MeloXPlaylistTrackRow(
             }
         }
     }
+}
+
+private enum class MeloXPlaylistSortMode(val label: String) {
+    Original("原歌单顺序"),
+    Title("歌曲名称"),
+    Artist("歌手"),
+    Album("专辑"),
 }
 
 @Composable

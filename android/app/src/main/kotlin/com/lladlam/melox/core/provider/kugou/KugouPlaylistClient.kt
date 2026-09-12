@@ -44,32 +44,44 @@ class KugouPlaylistClient(
             )
         }.getOrNull()
 
-        val songsResponse = requests.get(
-            path = "/pubsongs/v2/get_other_list_file_nofilt",
-            params = mapOf(
-                "area_code" to "1",
-                "begin_idx" to ((safePage - 1) * safeSize).toString(),
-                "plat" to "1",
-                "type" to "1",
-                "mode" to "1",
-                "personal_switch" to "1",
-                "extend_fields" to "abtags,hot_cmt,popularization",
-                "pagesize" to safeSize.toString(),
-                "global_collection_id" to playlist.id.value,
-            ),
-        )
-        val tracks = flattenObjects(songsResponse)
-            .mapNotNull(::parseTrack)
-            .distinctBy { it.id.value }
-            .take(safeSize)
+        // The endpoint silently caps a request at 150 items while still reporting that
+        // the first page is complete. Use a conservative wire page size and exhaust pages
+        // from the first request so large playlists are not truncated at that boundary.
+        val wirePageSize = safeSize.coerceAtMost(50)
+        val allTracks = linkedMapOf<String, MusicTrack>()
+        var reportedTotal = -1L
+        val pagesToLoad = if (safePage == 1) 100 else 1
+        for (offset in 0 until pagesToLoad) {
+            val pageNumber = safePage + offset
+            val songsResponse = requests.get(
+                path = "/pubsongs/v2/get_other_list_file_nofilt",
+                params = mapOf(
+                    "area_code" to "1",
+                    "begin_idx" to ((pageNumber - 1) * wirePageSize).toString(),
+                    "plat" to "1",
+                    "type" to "1",
+                    "mode" to "1",
+                    "personal_switch" to "1",
+                    "extend_fields" to "abtags,hot_cmt,popularization",
+                    "pagesize" to wirePageSize.toString(),
+                    "global_collection_id" to playlist.id.value,
+                ),
+            )
+            val pageTracks = flattenObjects(songsResponse)
+                .mapNotNull(::parseTrack)
+                .distinctBy { it.id.value }
+            reportedTotal = maxOf(reportedTotal, findFirstLong(songsResponse, "total", "total_count", "count", "filesize"))
+            val before = allTracks.size
+            pageTracks.forEach { allTracks.putIfAbsent(it.id.value, it) }
+            if (pageTracks.isEmpty() || allTracks.size == before || safePage != 1) break
+        }
+        val tracks = allTracks.values.toList()
         val summary = detail
             ?.let(::flattenObjects)
             ?.mapNotNull(::parseSummary)
             ?.firstOrNull()
             ?: playlist
-        val total = findFirstLong(songsResponse, "total", "total_count", "count", "filesize")
-            .takeIf { it >= 0 }
-            ?: tracks.size.toLong()
+        val total = maxOf(reportedTotal, tracks.size.toLong()).takeIf { it >= 0 }
         return MusicPlaylistDetail(
             summary = summary,
             tracks = tracks,
@@ -99,16 +111,16 @@ class KugouPlaylistClient(
     }
 
     private fun parseTrack(item: JSONObject): MusicTrack? {
-        val hash = firstString(item, "FileHash", "Hash", "hash", "filehash").uppercase()
+        val hash = kugouFirstString(item, "FileHash", "Hash", "hash", "filehash").uppercase()
         if (hash.isBlank()) return null
         val (title, singer) = recoverKugouTrackText(
-            firstString(item, "SongName", "songname", "AudioName", "audio_name", "FileName", "filename", "name"),
+            kugouFirstString(item, "SongName", "songname", "AudioName", "audio_name", "FileName", "filename", "name"),
             kugouSingerName(item, "SingerName", "singername", "author_name", "AuthorName"),
         )
         if (title.isBlank()) return null
-        val albumName = firstString(item, "AlbumName", "album_name", "albumname")
-        val albumId = firstString(item, "AlbumID", "album_id", "albumid").takeIf(String::isNotBlank)
-        val albumAudioId = firstLong(item, "album_audio_id", "MixSongID", "mixsongid", "AlbumAudioID", "Audioid", "audio_id")
+        val albumName = kugouFirstString(item, "AlbumName", "album_name", "albumname")
+        val albumId = kugouFirstString(item, "AlbumID", "album_id", "albumid").takeIf(String::isNotBlank)
+        val albumAudioId = kugouFirstLong(item, "album_audio_id", "MixSongID", "mixsongid", "AlbumAudioID", "Audioid", "audio_id")
             .takeIf { it > 0 }
         val artwork = kugouArtworkUrl(item)
         val artists = singer
@@ -129,7 +141,7 @@ class KugouPlaylistClient(
                 )
             },
             artworkUrl = artwork,
-            durationMs = firstLong(item, "Duration", "duration", "time_length").takeIf { it > 0 }?.times(1_000L),
+            durationMs = kugouFirstLong(item, "Duration", "duration", "time_length").takeIf { it > 0 }?.let { if (it > 100_000L) it else it * 1_000L },
             providerMetadata = ProviderTrackMetadata.Kugou(
                 hash = hash,
                 albumAudioId = albumAudioId,

@@ -50,7 +50,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -95,8 +94,8 @@ internal fun MeloXIOSNowPlayingScene(
     grabberDragModifier: Modifier = Modifier,
     lyricsActive: Boolean = true,
 ) {
-    val configuration = LocalConfiguration.current
-    if (configuration.screenWidthDp > configuration.screenHeightDp) {
+    val window = rememberMeloXWindowInfo()
+    if (window.isLandscape) {
         MeloXIOSLandscapeNowPlayingScene(
             state = state,
             page = page,
@@ -495,7 +494,7 @@ private fun MeloXIOSLandscapeNowPlayingScene(
 
                 AnimatedContent(
                     targetState = page,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
                     transitionSpec = { meloXContentEnter() togetherWith meloXContentExit() },
                     label = "landscape-player-page",
                 ) { destination ->

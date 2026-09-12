@@ -12,6 +12,7 @@ import com.lladlam.melox.core.provider.qqmusic.QQMusicSessionStore
 import com.lladlam.melox.core.provider.bilibili.BilibiliSessionStore
 import com.lladlam.melox.core.provider.bilibili.BilibiliPlaybackAssociationStore
 import com.lladlam.melox.core.provider.spotify.SpotifySessionStore
+import com.lladlam.melox.core.provider.youtubemusic.YouTubeSessionStore
 import java.security.MessageDigest
 
 /**
@@ -53,6 +54,7 @@ object ProviderPlaybackRuntime {
             MusicSource.Spotify -> SpotifySessionStore.read(context).let { session ->
                 listOf(session.accountId, session.expiresAtEpochMs).joinToString("|")
             }
+            MusicSource.YouTubeMusic -> YouTubeSessionStore.authFingerprint(context)
             MusicSource.Kuwo -> ""
             MusicSource.Jellyfin -> com.lladlam.melox.core.provider.jellyfin.JellyfinSessionStore.read(context).let { session ->
                 listOf(session.serverUrl, session.accessToken, session.userId).joinToString("|")

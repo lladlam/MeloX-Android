@@ -134,6 +134,12 @@ object MusicExperiences {
         ),
     )
 
+    val youtubeMusic = MusicExperience(
+        source = MusicSource.YouTubeMusic,
+        homeSections = emptyList(),
+        providerNativeCapabilities = setOf(MusicCapability.Search, MusicCapability.Playback),
+    )
+
     val jellyfin = MusicExperience(
         source = MusicSource.Jellyfin,
         homeSections = emptyList(),
@@ -172,6 +178,7 @@ object MusicExperiences {
         MusicSource.AppleMusic -> appleMusic
         MusicSource.Bilibili -> bilibili
         MusicSource.Spotify -> spotify
+        MusicSource.YouTubeMusic -> youtubeMusic
         MusicSource.Jellyfin -> jellyfin
         MusicSource.Local -> local
     }

@@ -3,6 +3,7 @@ package com.lladlam.melox.ui
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -459,6 +460,54 @@ fun MeloXApp(
                         .fillMaxSize()
                         .padding(innerPadding),
                 ) {
+                    val searchTabBackClear = remember { mutableStateOf(com.lladlam.melox.ui.search.SearchBackAction.SwitchToHome) }
+                    var searchTabAction by remember { mutableStateOf(com.lladlam.melox.ui.search.SearchBackAction.SwitchToHome) }
+                    val isHomeRoot = selectedTab == AppTab.Home &&
+                        !messagesVisible &&
+                        !fullPlayerVisible &&
+                        onboardingPage < 0 &&
+                        !showNeteaseLogin &&
+                        cloudControlChoicePending.not() &&
+                        availableUpdate == null &&
+                        clipboardTarget == null
+                    val exitConfirmThresholdMs = 2_000L
+                    var pendingExitAtMs by remember { mutableStateOf(0L) }
+                    BackHandler {
+                        if (selectedTab != AppTab.Home) {
+                            if (selectedTab == AppTab.Search) {
+                                if (searchTabAction != com.lladlam.melox.ui.search.SearchBackAction.SwitchToHome) {
+                                    searchTabBackClear.value = searchTabAction
+                                    return@BackHandler
+                                }
+                            }
+                            // Any non-home root page returns to the default launch
+                            // page first. System back from the search page or any
+                            // other tab no longer exits the app directly.
+                            tabBarMinimized = false
+                            selectedTab = AppTab.Home
+                            return@BackHandler
+                        }
+                        if (!isHomeRoot) {
+                            // An overlay such as the player, messages or login is
+                            // visible. Dismiss it instead of exiting.
+                            when {
+                                messagesVisible -> messagesVisible = false
+                                showNeteaseLogin -> showNeteaseLogin = false
+                                cloudControlChoicePending -> cloudControlChoicePending = false
+                                availableUpdate != null -> availableUpdate = null
+                                clipboardTarget != null -> onClipboardLinkConsumed()
+                                else -> { /* no-op, let the system handle it */ }
+                            }
+                            return@BackHandler
+                        }
+                        val now = System.currentTimeMillis()
+                        if (now - pendingExitAtMs < exitConfirmThresholdMs) {
+                            (hostContext as? Activity)?.finish()
+                        } else {
+                            pendingExitAtMs = now
+                            Toast.makeText(hostContext, "再按一次退出 MeloX", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                     AnimatedContent(
                         targetState = selectedTab,
                         transitionSpec = { meloXContentEnter() togetherWith meloXContentExit() },
@@ -466,7 +515,14 @@ fun MeloXApp(
                         label = "melox-page-transition",
                     ) { tab ->
                     rootPageState.SaveableStateProvider(tab.name) { when (tab) {
-                        AppTab.Search -> if (selectedSource == MusicSource.Netease) SearchScreen() else ProviderSearchScreen(selectedSource)
+                         AppTab.Search -> if (selectedSource == MusicSource.Netease) SearchScreen(
+                             backClearSignal = searchTabBackClear,
+                             onSearchBackState = { searchTabAction = it },
+                             onSearchExit = {
+                                 tabBarMinimized = false
+                                 selectedTab = AppTab.Home
+                             },
+                         ) else ProviderSearchScreen(selectedSource)
                         AppTab.Home -> MeloXHomeScreen(
                             source = selectedSource,
                             onOpenTool = { route ->

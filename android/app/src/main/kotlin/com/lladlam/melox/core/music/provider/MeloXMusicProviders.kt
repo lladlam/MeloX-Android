@@ -16,6 +16,7 @@ import com.lladlam.melox.core.provider.bilibili.BilibiliSessionStore
 import com.lladlam.melox.core.provider.bilibili.BilibiliPlaybackAssociationStore
 import com.lladlam.melox.core.provider.bilibili.BilibiliApiCache
 import com.lladlam.melox.core.provider.spotify.SpotifyProvider
+import com.lladlam.melox.core.provider.youtubemusic.YouTubeMusicProvider
 import com.lladlam.melox.core.provider.jellyfin.JellyfinProvider
 import com.lladlam.melox.core.provider.jellyfin.JellyfinSessionStore
 import com.lladlam.melox.core.provider.local.LocalProvider
@@ -59,6 +60,7 @@ object MeloXMusicProviders {
                 ),
                 JellyfinProvider({ JellyfinSessionStore.read(appContext) }, httpClient),
                 LocalProvider(appContext),
+                YouTubeMusicProvider(appContext, httpClient),
         )
         return MusicProviderRegistry(
             nativeProviders + SpotifyProvider(
@@ -98,6 +100,7 @@ object MeloXMusicProviders {
                 ),
                 JellyfinProvider({ JellyfinSessionStore.read(context) }, httpClient),
                 LocalProvider(context),
+                YouTubeMusicProvider(context, httpClient),
         )
         return MusicProviderRegistry(
             nativeProviders + SpotifyProvider(

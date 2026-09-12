@@ -55,7 +55,6 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource.Companion.UserI
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -70,6 +69,7 @@ import com.lladlam.melox.ui.settings.MeloXPlayerBackgroundMode
 import com.lladlam.melox.ui.settings.MeloXPlayerShell
 import com.lladlam.melox.ui.settings.MeloXScreenAwakeMode
 import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
+import com.lladlam.melox.ui.layout.rememberMeloXWindowInfo
 import com.lladlam.melox.core.network.MeloXSearchKind
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -112,8 +112,7 @@ fun MeloXIOSNowPlayingSharedHost(
     var showQuality by remember { mutableStateOf(false) }
     var showLandscapeSkyline by remember { mutableStateOf(false) }
     var lyricsInterfaceHidden by remember { mutableStateOf(false) }
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
+    val isLandscape = rememberMeloXWindowInfo().isLandscape
     var gestureCollapseProgress by remember { mutableFloatStateOf(0f) }
     var settleJob by remember { mutableStateOf<Job?>(null) }
     var seekJob by remember { mutableStateOf<Job?>(null) }
@@ -476,8 +475,7 @@ private fun SharedArtworkDestination(
         }
         previousTransitionActive = state.isInTransition
     }
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
+    val isLandscape = rememberMeloXWindowInfo().isLandscape
     // Upstream keeps one artwork alive and animates its frame for 0.48s when
     // switching between artwork and alternate pages.
     val headerProgress by animateFloatAsState(
@@ -530,9 +528,9 @@ private fun SharedArtworkDestination(
         val portraitContentHeight = (maxHeight - contentTop - MeloXNowPlayingControlsHeight.dp)
             .coerceAtLeast(1.dp)
         val fullArtworkSize = if (isLandscape) {
-            maxOf(170.dp, minOf(460.dp, maxHeight - 42.dp, maxWidth * .43f))
+            minOf(460.dp, (maxHeight - 42.dp).coerceAtLeast(1.dp), maxWidth * .43f).coerceAtLeast(1.dp)
         } else {
-            maxOf(170.dp, minOf(maxWidth, portraitContentHeight - 92.dp))
+            minOf(maxWidth, portraitContentHeight - 92.dp).coerceAtLeast(1.dp)
         }
         val context = LocalContext.current
         val density = LocalDensity.current.density
@@ -552,12 +550,16 @@ private fun SharedArtworkDestination(
         } else {
             ((maxWidth - fullArtworkSize) / 2f).coerceAtLeast(0.dp)
         }
-        val fullY = if (isLandscape) {
+        val rawFullY = if (isLandscape) {
             contentTop + ((maxHeight - contentTop - fullArtworkSize) / 2f).coerceAtLeast(0.dp)
         } else {
             contentTop + (portraitContentHeight - fullArtworkSize - artworkFooterHeight)
                 .coerceAtLeast(0.dp)
         }
+        val fullY = rawFullY.coerceIn(
+            contentTop,
+            (maxHeight - fullArtworkSize).coerceAtLeast(contentTop),
+        )
 
         val targetSize = lerpDp(fullArtworkSize, 72.dp, pageFrameProgress)
         val targetX = lerpDp(fullX, 0.dp, pageFrameProgress)

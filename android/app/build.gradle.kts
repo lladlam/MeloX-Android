@@ -73,10 +73,12 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        resources.excludes += "/google/protobuf/**"
     }
 
     testOptions {
@@ -85,12 +87,16 @@ android {
 }
 
 kotlin {
-    compilerOptions {
-        optIn.add("androidx.compose.material3.ExperimentalMaterial3Api")
+        compilerOptions {
+            optIn.add("androidx.compose.material3.ExperimentalMaterial3Api")
+        }
     }
-}
 
 dependencies {
+    implementation("xyz.gianlu.librespot:librespot-lib:1.6.5")
+    implementation(project(":innertube"))
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
+
     // Optional official Apple MusicKit for Android AARs. Download them from
     // Apple Developer and place only these two files in app/libs/:
     // musickitauth-release-*.aar and mediaplayback-release-*.aar.
@@ -103,6 +109,7 @@ dependencies {
     implementation(composeBom)
 
     implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")

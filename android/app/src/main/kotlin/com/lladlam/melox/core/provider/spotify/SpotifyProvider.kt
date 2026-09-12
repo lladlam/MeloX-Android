@@ -16,6 +16,7 @@ import com.lladlam.melox.core.music.model.PlaybackResolution
 import com.lladlam.melox.core.music.provider.AlbumCapability
 import com.lladlam.melox.core.music.provider.ArtistCapability
 import com.lladlam.melox.core.music.provider.CatalogSearchCapability
+import com.lladlam.melox.core.music.provider.DownloadCapability
 import com.lladlam.melox.core.music.provider.FavoriteCapability
 import com.lladlam.melox.core.music.provider.MusicCapability
 import com.lladlam.melox.core.music.provider.MusicProvider
@@ -24,20 +25,29 @@ import com.lladlam.melox.core.music.provider.PlaylistCapability
 import com.lladlam.melox.core.music.provider.PlaylistWriteCapability
 import com.lladlam.melox.core.music.provider.SearchCapability
 import com.lladlam.melox.core.music.provider.UserLibraryCapability
+import android.net.Uri
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import okhttp3.OkHttpClient
 
+/**
+ * Spotify provider. Metadata still comes from the official Web API; real
+ * playback now goes through [SpotifyLibrespotPlayback] (librespot-java) over
+ * Spotify's Access Point, because the Web API has no streaming endpoint.
+ */
 class SpotifyProvider(
     context: Context,
     clientId: String,
     httpClient: OkHttpClient,
     private val playbackProviders: () -> List<MusicProvider>,
-) : MusicProvider, SearchCapability, CatalogSearchCapability, PlaybackCapability,
+) : MusicProvider, SearchCapability, CatalogSearchCapability, PlaybackCapability, DownloadCapability,
     FavoriteCapability, UserLibraryCapability, PlaylistCapability, PlaylistWriteCapability,
     AlbumCapability, ArtistCapability {
+    private val appContext = context.applicationContext
     private val api = SpotifyApiClient(context, clientId, httpClient)
+    private val librespot = SpotifyLibrespotPlayback(appContext, clientId)
+    private val oauth = SpotifyOAuth(appContext, clientId, httpClient)
 
     override val source = MusicSource.Spotify
     override val displayName = source.displayName
@@ -69,18 +79,72 @@ class SpotifyProvider(
     override suspend fun addTrackToPlaylist(track: MusicTrack, playlist: MusicPlaylistSummary) =
         api.addTrackToPlaylist(track, playlist)
 
-    override suspend fun resolvePlayback(track: MusicTrack, quality: AudioQualityTier): PlaybackResolution = coroutineScope {
+    /**
+     * Real Spotify playback through librespot. Falls back to the existing
+     * cross-source matching only when the Access Point is unavailable.
+     */
+    override suspend fun resolvePlayback(track: MusicTrack, quality: AudioQualityTier): PlaybackResolution =
+        coroutineScope {
+            if (track.id.source != MusicSource.Spotify) {
+                return@coroutineScope PlaybackResolution.Unavailable("Spotify provider 只能解析 Spotify 曲目")
+            }
+            val spSession = SpotifySessionStore.read(appContext)
+            if (!spSession.isLoggedIn) {
+                return@coroutineScope PlaybackResolution.LoginRequired
+            }
+            // Ensure the librespot session is connected.
+            runCatching { librespot.connect(spSession.accessToken) }
+                .onFailure { /* will fall through to the cross-source fallback */ }
+            if (librespot.isConnected) {
+                val result = runCatching {
+                    librespot.resolveToFile(track.id.value).getOrThrow()
+                }
+                result.onSuccess { file ->
+                    return@coroutineScope PlaybackResolution.Playable(
+                        url = Uri.fromFile(file).toString(),
+                        requestedQuality = quality,
+                        actualQuality = quality,
+                        format = "ogg",
+                        bitrate = null,
+                    )
+                }
+            }
+            // Fallback: match against other sources.
+            resolveFallback(track, quality)
+        }
+
+    override suspend fun resolveDownload(track: MusicTrack, quality: AudioQualityTier): PlaybackResolution {
+        if (track.id.source != MusicSource.Spotify) {
+            return PlaybackResolution.Unavailable("Spotify provider 只能下载 Spotify 曲目")
+        }
+        val session = SpotifySessionStore.read(appContext)
+        if (!session.isLoggedIn) return PlaybackResolution.LoginRequired
+        val file = runCatching {
+            librespot.connect(session.accessToken)
+            librespot.resolveToFile(track.id.value).getOrThrow()
+        }.getOrElse { return PlaybackResolution.Unavailable(it.message ?: "Spotify 下载失败") }
+        return PlaybackResolution.Playable(
+            url = android.net.Uri.fromFile(file).toString(),
+            requestedQuality = quality,
+            actualQuality = quality,
+            format = "ogg",
+        )
+    }
+
+    private suspend fun resolveFallback(track: MusicTrack, quality: AudioQualityTier): PlaybackResolution {
         if (track.title.isBlank() || track.artists.isEmpty()) {
-            return@coroutineScope PlaybackResolution.Unavailable("Spotify fallback 缺少曲目标题或艺人信息")
+            return PlaybackResolution.Unavailable("Spotify fallback 缺少曲目标题或艺人信息")
         }
         val query = "${track.title} ${track.artists.first().name}"
         val providers = playbackProviders().filter {
             it.source != MusicSource.Spotify && it is SearchCapability && it is PlaybackCapability
         }
-        val candidates = providers.map { provider ->
-            async {
-                val search = provider as? SearchCapability ?: return@async emptyList<MusicTrack>()
-                runCatching { search.searchSongs(query, 1, 10).items }.getOrDefault(emptyList())
+        val candidates = coroutineScope {
+            providers.map { provider ->
+                async {
+                    val search = provider as? SearchCapability ?: return@async emptyList<MusicTrack>()
+                    runCatching { search.searchSongs(query, 1, 10).items }.getOrDefault(emptyList())
+                }
             }
         }.awaitAll().flatten()
         val ranked = SpotifyTrackMatcher.rank(track, candidates)
@@ -88,10 +152,10 @@ class SpotifyProvider(
             val provider = providers.firstOrNull { it.source == match.candidate.id.source }
             val playback = provider as? PlaybackCapability ?: continue
             when (val resolution = runCatching { playback.resolvePlayback(match.candidate, quality) }.getOrNull()) {
-                is PlaybackResolution.Playable, is PlaybackResolution.Preview -> return@coroutineScope resolution
+                is PlaybackResolution.Playable, is PlaybackResolution.Preview -> return resolution
                 else -> Unit
             }
         }
-        PlaybackResolution.Unavailable("未找到可可靠匹配的非 Spotify 音源")
+        return PlaybackResolution.Unavailable("未找到可可靠匹配的非 Spotify 音源")
     }
 }

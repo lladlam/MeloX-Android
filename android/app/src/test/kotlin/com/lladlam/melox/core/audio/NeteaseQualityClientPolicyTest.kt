@@ -3,6 +3,7 @@ package com.lladlam.melox.core.audio
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONObject
 
 class NeteaseQualityClientPolicyTest {
     @Test
@@ -27,5 +28,14 @@ class NeteaseQualityClientPolicyTest {
         )
 
         assertNull(error)
+    }
+
+    @Test
+    fun freeTrialSourceIsNotAcceptedAsFullPlayback() {
+        assertTrue(
+            NeteaseQualityClient.isPreviewSource(
+                JSONObject("""{"freeTrialInfo":{"start":0,"end":30000}}"""),
+            ),
+        )
     }
 }

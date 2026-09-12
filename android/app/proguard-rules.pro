@@ -21,3 +21,8 @@
 -keep class rikka.shizuku.** { *; }
 -dontwarn rikka.shizuku.**
 -dontwarn com.apple.android.music.**
+
+## Rules for NewPipeExtractor
+-keep class org.mozilla.javascript.** { *; }
+-keep class org.mozilla.classfile.ClassFileWriter
+-dontwarn org.mozilla.javascript.tools.**
