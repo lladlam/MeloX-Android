@@ -72,6 +72,11 @@ android {
     } else null
 
     buildTypes {
+        getByName("debug") {
+            // The debug APK is signed with the debug key and must be able to sit
+            // beside the release build, which uses the project release key.
+            applicationIdSuffix = ".dev"
+        }
         getByName("release") {
             meloxReleaseSigning?.let { signingConfig = it }
             isMinifyEnabled = true
