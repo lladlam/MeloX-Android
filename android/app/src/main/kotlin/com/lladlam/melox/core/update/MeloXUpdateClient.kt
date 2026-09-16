@@ -21,6 +21,14 @@ data class MeloXRelease(
     val publishedAt: String,
 )
 
+/** Latest commit on the default branch, for development-build update checks. */
+data class MeloXDevCommit(
+    val sha: String,
+    val message: String,
+    val author: String,
+    val committedAt: String,
+)
+
 class MeloXUpdateClient(
     context: Context? = null,
     private val httpClient: OkHttpClient = MeloXHttpClient.shared,
@@ -71,6 +79,16 @@ class MeloXUpdateClient(
         val router = requireNotNull(routing) { "Context is required for update requests" }
         val source = router.candidates().firstOrNull() ?: return@withContext original
         router.routedUrl(source, original)
+    }
+
+    /**
+     * Development-build download page, routed through the same mirror selection as
+     * release downloads so the request does not have to reach github.com directly.
+     */
+    suspend fun devBuildUrl(): String = withContext(Dispatchers.IO) {
+        val router = requireNotNull(routing) { "Context is required for update requests" }
+        val source = router.candidates().firstOrNull() ?: return@withContext DevBuildPageUrl
+        router.routedUrl(source, DevBuildPageUrl)
     }
 
     internal fun parseManifest(body: String): MeloXRelease {
@@ -143,6 +161,42 @@ class MeloXUpdateClient(
         return false
     }
 
+    /**
+     * Latest commit on the default branch, for development-build update checks.
+     * The commit subject is the "what changed" note shown to the user; nothing is
+     * downloaded or installed from here.
+     */
+    suspend fun latestDevCommit(): MeloXDevCommit = withContext(Dispatchers.IO) {
+        val router = requireNotNull(routing) { "Context is required for update requests" }
+        var lastError: Throwable? = null
+        for (source in router.candidates()) {
+            val request = Request.Builder()
+                .url(router.routedUrl(source, GitHubBranchUrl))
+                .header("Accept", "application/vnd.github+json")
+                .header("User-Agent", "MeloX-Android")
+                .build()
+            val result = runCatching {
+                router.client(source).newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) throw IOException("${source.label} HTTP ${response.code}")
+                    val commit = JSONObject(response.body.string()).optJSONObject("commit")
+                        ?: throw IOException("${source.label} 响应缺少 commit")
+                    val sha = commit.optString("sha").takeIf(String::isNotBlank)
+                        ?: throw IOException("${source.label} 响应缺少 commit sha")
+                    val detail = commit.optJSONObject("commit")
+                    MeloXDevCommit(
+                        sha = sha,
+                        message = detail?.optString("message").orEmpty().substringBefore('\n').trim(),
+                        author = commit.optJSONObject("author")?.optString("login").orEmpty(),
+                        committedAt = detail?.optJSONObject("author")?.optString("date").orEmpty(),
+                    )
+                }
+            }
+            result.getOrNull()?.let { return@withContext it }
+            lastError = result.exceptionOrNull()
+        }
+        throw IOException("获取最新 commit 失败：${lastError?.message ?: "所有源均不可用"}")
+    }
+
     private fun versionParts(value: String): List<Int>? {
         val match = VERSION_PATTERN.matchEntire(value.trim()) ?: return null
         return match.groupValues.drop(1).map { it.toIntOrNull() ?: return null }
@@ -150,6 +204,8 @@ class MeloXUpdateClient(
 
     private companion object {
         const val GitHubReleasesUrl = "https://api.github.com/repos/lladlam/MeloX-Android/releases?per_page=100"
+        const val GitHubBranchUrl = "https://api.github.com/repos/lladlam/MeloX-Android/branches/main"
+        const val DevBuildPageUrl = "https://github.com/lladlam/MeloX-Android/actions/workflows/build.yml"
         const val ReleasePagePrefix = "https://github.com/lladlam/MeloX-Android/releases/"
         const val ReleaseDownloadPrefix = "https://github.com/lladlam/MeloX-Android/releases/download/"
         val VERSION_PATTERN = Regex(

@@ -19,6 +19,19 @@ fun String.asKotlinStringLiteral(): String = buildString {
     append('"')
 }
 
+fun currentGitSha(): String {
+    fun exec(vararg args: String): String = try {
+        val process = ProcessBuilder(*args).redirectErrorStream(true).start()
+        process.waitFor()
+        process.inputStream.bufferedReader().readText().trim()
+    } catch (_: Throwable) {
+        ""
+    }
+    return listOf("git", "rev-parse", "HEAD").let { exec(*it.toTypedArray()) }
+        .ifBlank { "" }
+        .take(40)
+}
+
 android {
     namespace = "com.lladlam.melox"
     compileSdk = 37
@@ -33,6 +46,11 @@ android {
             "String",
             "SPOTIFY_CLIENT_ID",
             providers.gradleProperty("meloxSpotifyClientId").orNull.orEmpty().asKotlinStringLiteral(),
+        )
+        buildConfigField(
+            "String",
+            "GIT_SHA",
+            currentGitSha().asKotlinStringLiteral(),
         )
     }
 

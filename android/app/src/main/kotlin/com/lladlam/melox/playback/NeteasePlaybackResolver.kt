@@ -17,6 +17,7 @@ import java.io.IOException
 import java.util.LinkedHashMap
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 @OptIn(UnstableApi::class)
 class NeteasePlaybackResolver(
@@ -86,7 +87,7 @@ class NeteasePlaybackResolver(
         cached(key)?.let { return it }
         val pending = CompletableFuture<ResolvedRequest>()
         val existing = inFlight.putIfAbsent(key, pending)
-        if (existing != null) return runCatching { existing.get() }
+        if (existing != null) return runCatching { existing.get(45L, TimeUnit.SECONDS) }
             .getOrElse { throw IOException("Unable to resolve playback source", it.cause ?: it) }
         return try {
             val resolved = try {

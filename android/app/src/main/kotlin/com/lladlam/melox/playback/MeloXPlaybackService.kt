@@ -1658,7 +1658,10 @@ class MeloXPlaybackService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
         Log.d(TAG, "Controller connected: ${controllerInfo.packageName}")
-        return mediaSession
+        val allowed = controllerInfo.packageName == packageName ||
+            controllerInfo.packageName == "com.google.android.projection.gearhead" ||
+            controllerInfo.packageName == "com.android.bluetooth"
+        return mediaSession.takeIf { allowed }
     }
 
     override fun onDestroy() {

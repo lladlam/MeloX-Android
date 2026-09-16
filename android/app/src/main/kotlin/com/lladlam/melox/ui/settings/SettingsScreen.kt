@@ -123,6 +123,7 @@ import com.lladlam.melox.core.recommendation.LocalRecommendationStore
 import com.lladlam.melox.core.recognition.SongRecognitionClient
 import com.lladlam.melox.core.recognition.SongRecognitionResult
 import com.lladlam.melox.core.update.MeloXRelease
+import com.lladlam.melox.core.update.MeloXDevCommit
 import com.lladlam.melox.core.update.MeloXUpdateClient
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.playback.MeloXAutoMixFadeCurve
@@ -2939,6 +2940,51 @@ private fun AboutSettings(context: android.content.Context) {
                 .onFailure { updateStatus = it.message ?: "更新检查失败" }
             checking = false
         }
+    }
+    val currentCommit = BuildConfig.GIT_SHA.take(7)
+    if (currentCommit.isNotBlank()) {
+        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = "当前构建 commit $currentCommit（开发版）",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = .42f),
+        )
+    }
+    var devCommit by remember { mutableStateOf<MeloXDevCommit?>(null) }
+    SettingsActionButton("检查开发版更新") {
+        if (!checking) scope.launch {
+            checking = true
+            runCatching { updateClient.latestDevCommit() }
+                .onSuccess { latest ->
+                    devCommit = latest
+                    updateStatus = if (latest.sha == BuildConfig.GIT_SHA) {
+                        "已经是最新提交 ${latest.sha.take(7)}"
+                    } else {
+                        "main 有新提交 ${latest.sha.take(7)}：${latest.message}"
+                    }
+                }
+                .onFailure { updateStatus = it.message ?: "检查最新提交失败" }
+            checking = false
+        }
+    }
+    devCommit?.takeIf { it.sha != BuildConfig.GIT_SHA }?.let { latest ->
+        Spacer(Modifier.height(10.dp))
+        SettingsActionButton("下载最新开发版 APK") {
+            scope.launch {
+                val target = runCatching { updateClient.devBuildUrl() }.getOrNull()
+                    ?: "https://github.com/lladlam/MeloX-Android/actions/workflows/build.yml"
+                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target))) }
+                    .onFailure { updateStatus = it.message ?: "无法打开下载页" }
+            }
+        }
+        Text(
+            text = "新提交 ${latest.sha.take(7)}（${latest.author}）：${latest.message}",
+            modifier = Modifier.padding(top = 8.dp),
+            fontSize = 12.sp,
+            lineHeight = 18.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f),
+        )
     }
     updateStatus?.let { message ->
         Spacer(Modifier.height(10.dp))

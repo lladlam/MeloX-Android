@@ -24,13 +24,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.lladlam.melox.BuildConfig
 import com.lladlam.melox.core.network.MeloXHttpClient
+import com.lladlam.melox.core.provider.spotify.SpotifyClientConfig
 import com.lladlam.melox.core.provider.spotify.SpotifyOAuth
 import com.lladlam.melox.core.provider.spotify.SpotifySessionStore
 import com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigPolicy
 import com.lladlam.melox.ui.glass.MeloXGlassButton
 import com.lladlam.melox.ui.glass.MeloXGlassButtonStyle
+import com.lladlam.melox.ui.glass.MeloXGlassTextField
 import com.lladlam.melox.ui.glass.MeloXSystemColors
 import com.lladlam.melox.ui.legal.MeloXLegalLinks
 import kotlinx.coroutines.delay
@@ -56,7 +57,8 @@ fun SpotifyLoginScreen(onDismiss: () -> Unit, onLoggedIn: () -> Unit) {
         return
     }
     var error by remember { mutableStateOf(SpotifySessionStore.consumeOAuthError(context)) }
-    val configured = BuildConfig.SPOTIFY_CLIENT_ID.isNotBlank()
+    var clientIdInput by remember { mutableStateOf(SpotifyClientConfig.read(context)) }
+    var configured by remember { mutableStateOf(SpotifyClientConfig.isConfigured(context)) }
 
     BackHandler(onBack = onDismiss)
     LaunchedEffect(Unit) {
@@ -90,17 +92,34 @@ fun SpotifyLoginScreen(onDismiss: () -> Unit, onLoggedIn: () -> Unit) {
         )
         if (!configured) {
             Text(
-                "Spotify Client ID 未配置。请在 Gradle property 中设置 meloxSpotifyClientId，然后重新构建应用；并在 Spotify Dashboard 注册 ${SpotifyOAuth.RedirectUri}。",
-                color = MaterialTheme.colorScheme.error,
+                "请提供 Spotify Developer App 的 Client ID；需在 Spotify Dashboard 注册 ${SpotifyOAuth.RedirectUri}。该值会保存在本机，之后可直接修改。",
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = .62f),
                 fontSize = 13.sp,
                 lineHeight = 19.sp,
             )
+            MeloXGlassTextField(
+                value = clientIdInput,
+                onValueChange = { clientIdInput = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("输入你的 Spotify Client ID", maxLines = 1) },
+                singleLine = true,
+            )
+            if (clientIdInput.isNotBlank()) {
+                MeloXGlassButton(
+                    onClick = {
+                        SpotifyClientConfig.write(context, clientIdInput)
+                        configured = true
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MeloXGlassButtonStyle.Plain,
+                ) { Text("保存 Client ID") }
+            }
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
         MeloXGlassButton(
             onClick = {
                 runCatching {
-                    val uri = SpotifyOAuth(context, BuildConfig.SPOTIFY_CLIENT_ID, MeloXHttpClient.shared)
+                    val uri = SpotifyOAuth(context, SpotifyClientConfig.effective(context), MeloXHttpClient.shared)
                         .authorizationUri()
                     context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 }.onFailure { error = it.message ?: "无法启动 Spotify 授权" }

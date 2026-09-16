@@ -55,8 +55,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -1781,6 +1779,13 @@ private fun MeloXPlaylistDetailScreen(
                 showMore = !isProviderCollection && !isAlbum,
                 onMore = { showPlaylistActions = true },
             )
+            MeloXPlaylistSearchField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                foreground = foreground,
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+            )
+
             LazyVerticalGrid(
                 columns = GridCells.Fixed(if (detailWindow.supportsTwoPane) 2 else 1),
                 modifier = Modifier.fillMaxSize(),
@@ -1791,42 +1796,6 @@ private fun MeloXPlaylistDetailScreen(
                     bottom = MeloXBottomContentClearance,
                 ),
             ) {
-                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                    MeloXPlaylistSearchField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        foreground = foreground,
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
-                    )
-                }
-                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                    var sortMenuVisible by remember { mutableStateOf(false) }
-                    Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 2.dp)) {
-                        Text(
-                            "排序：${sortMode.label}",
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
-                                .clickable { sortMenuVisible = true }
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            color = secondary,
-                            fontSize = 13.sp,
-                        )
-                        DropdownMenu(
-                            expanded = sortMenuVisible,
-                            onDismissRequest = { sortMenuVisible = false },
-                        ) {
-                            MeloXPlaylistSortMode.entries.forEach { candidate ->
-                                DropdownMenuItem(
-                                    text = { Text(candidate.label) },
-                                    onClick = {
-                                        sortMode = candidate
-                                        sortMenuVisible = false
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
                 item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                     MeloXStandardPlaylistHero(
                         playlist = displayed,
@@ -2010,6 +1979,8 @@ private fun MeloXPlaylistDetailScreen(
                         },
                     )
                 },
+                sortMode = sortMode,
+                onSortModeChanged = { sortMode = it },
             )
             MeloXBatchDownloadSheet(
                 songs = songs,
@@ -2365,11 +2336,13 @@ private fun MeloXPlaylistTrackRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                AsyncImage(
-                    model = song.artworkUrl,
-                    contentDescription = song.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)),
+                Text(
+                    text = "${index + 1}",
+                    modifier = Modifier.width(40.dp),
+                    color = foreground.copy(alpha = 0.48f),
+                    fontSize = 20.sp,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
                 )
                 Text(
                     text = song.name,
@@ -2383,13 +2356,6 @@ private fun MeloXPlaylistTrackRow(
             }
         }
     }
-}
-
-private enum class MeloXPlaylistSortMode(val label: String) {
-    Original("原歌单顺序"),
-    Title("歌曲名称"),
-    Artist("歌手"),
-    Album("专辑"),
 }
 
 @Composable

@@ -2,6 +2,8 @@ package com.lladlam.melox.core.account
 
 import android.content.Context
 import android.webkit.CookieManager
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -16,7 +18,7 @@ class NeteaseSessionStore(
     context: Context,
 ) {
     private val appContext = context.applicationContext
-    private val preferences = appContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+    private val preferences = encryptedPreferences(appContext, PREFERENCES_NAME)
 
     var cookie by mutableStateOf(preferences.getString(KEY_COOKIE, "").orEmpty())
         private set
@@ -42,7 +44,7 @@ class NeteaseSessionStore(
         isRefreshing = true
         errorMessage = null
         return runCatching {
-            val account = NeteaseSearchClient().accountProfile(normalized)
+            val account = NeteaseSearchClient(cookieProvider = { normalized }).accountProfile()
             if (persist) {
                 preferences.edit().putString(KEY_COOKIE, normalized).apply()
                 cookie = normalized
@@ -67,7 +69,7 @@ class NeteaseSessionStore(
         isRefreshing = true
         errorMessage = null
         runCatching {
-            NeteaseSearchClient().accountProfile(cookie)
+            NeteaseSearchClient(cookieProvider = { cookie }).accountProfile()
         }.onSuccess { account ->
             profile = account
         }.onFailure { error ->
@@ -88,25 +90,27 @@ class NeteaseSessionStore(
         private const val PREFERENCES_NAME = "netease_session"
         private const val KEY_COOKIE = "cookie_header"
 
+        private fun encryptedPreferences(context: Context, name: String) =
+            SecureSessionPreferences.open(context, name)
+
         fun readCookie(context: Context): String =
-            context.applicationContext
-                .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            encryptedPreferences(context, PREFERENCES_NAME)
                 .getString(KEY_COOKIE, "")
                 .orEmpty()
 
         fun readPlaybackCookie(context: Context): String =
-            context.applicationContext.getSharedPreferences("netease_playback_session", Context.MODE_PRIVATE)
+            encryptedPreferences(context, "netease_playback_session")
                 .getString(KEY_COOKIE, "").orEmpty()
 
         fun writePlaybackCookie(context: Context, cookieHeader: String) {
             val normalized = normalizeCookie(cookieHeader)
             require(containsMusicU(normalized)) { "未检测到 MUSIC_U 登录 Cookie" }
-            context.applicationContext.getSharedPreferences("netease_playback_session", Context.MODE_PRIVATE)
+            encryptedPreferences(context, "netease_playback_session")
                 .edit().putString(KEY_COOKIE, normalized).apply()
         }
 
         fun clearPlayback(context: Context) {
-            context.applicationContext.getSharedPreferences("netease_playback_session", Context.MODE_PRIVATE)
+            encryptedPreferences(context, "netease_playback_session")
                 .edit().clear().apply()
         }
 

@@ -1,6 +1,9 @@
-name: One-time Debug APK
+name: Build
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -20,21 +23,21 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK 37
+      - name: Install Android SDK packages
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-37" "build-tools;35.0.0"
+          sdkmanager "platforms;android-37.0" "build-tools;37.0.0" "platform-tools"
 
-      - name: Assemble Debug APK
+      - name: Build debug APK
         run: |
           chmod +x android/gradlew
           cd android
           ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --max-workers=2 --stacktrace
 
-      - name: Upload Debug APK
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: MeloX-Android-debug-${{ github.sha }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 14
