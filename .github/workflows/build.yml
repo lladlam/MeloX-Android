@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - debug/one-time-issue-fixes
   workflow_dispatch:
 
 permissions:
