@@ -17,8 +17,9 @@
 
 ### 开发版更新（CI + 镜像源）
 
-- 已恢复 GitHub Actions：`.github/workflows/build.yml`，push 到 `main` 时构建 debug APK，artifact 保留 14 天（`retention-days: 14`）后自动删除。
-- 关键修正：CI 必须安装 `platforms;android-37.0`（不是 `platforms;android-37`）和 `build-tools;37.0.0`，否则 runner 上找不到包。
+- 已恢复 GitHub Actions：`.github/workflows/build.yml`，push 到 `main` 或手动触发时构建 debug APK。
+- 发布方式已改为 GitHub Release 资产（rolling tag `dev-latest`，每次构建覆盖同一文件），原因：Actions artifact 必须登录才能下载，而 release 资产可以匿名下载。
 - App 侧：构建时写入 `BuildConfig.GIT_SHA`；「设置 → 关于 → 检查开发版更新」对比 `main` 最新 commit，显示 commit message，并提供下载入口。
 - 下载地址走 `MeloXGitHubRouting` 的镜像源自动选择，与正式版更新一致。
-- 限制：GitHub Actions artifact 需要登录才能下载，App 目前是打开已路由的 Actions 页面，不是直接下载 APK 文件；若要做成完全自动安装，需要 CI 改为发布到 GitHub Release 资产（不会 14 天自动删除）。
+- 关键修正：CI 必须安装 `platforms;android-37.0`（不是 `platforms;android-37`）和 `build-tools;37.0.0`，否则 runner 上找不到包。
+- debug APK 使用 `applicationIdSuffix = ".dev"`，与正式签名包共存。
