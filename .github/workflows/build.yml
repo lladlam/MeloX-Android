@@ -6,6 +6,9 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-debug:
     runs-on: ubuntu-latest
@@ -36,10 +39,17 @@ jobs:
           cd android
           ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --max-workers=2 --stacktrace
 
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MeloX-Android-debug-${{ github.sha }}
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 14
+      # A release asset downloads without a GitHub login, unlike an Actions artifact.
+      # The fixed tag and fixed file name mean every build replaces the same file, so
+      # nothing accumulates and no retention policy is needed.
+      - name: Publish rolling development release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk /tmp/MeloX-Android-debug.apk
+          gh release view dev-latest --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1 \
+            || gh release create dev-latest --repo "${GITHUB_REPOSITORY}" \
+                 --prerelease --title "Development build" \
+                 --notes "Rolling debug build, overwritten on every push to main."
+          gh release upload dev-latest /tmp/MeloX-Android-debug.apk \
+            --clobber --repo "${GITHUB_REPOSITORY}"
