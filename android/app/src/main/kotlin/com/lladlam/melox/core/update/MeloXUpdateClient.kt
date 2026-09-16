@@ -82,8 +82,9 @@ class MeloXUpdateClient(
     }
 
     /**
-     * Development-build download page, routed through the same mirror selection as
-     * release downloads so the request does not have to reach github.com directly.
+     * Rolling development-build APK, routed through the same mirror selection as
+     * release downloads so the file can be fetched without reaching github.com
+     * directly and without a GitHub login.
      */
     suspend fun devBuildUrl(): String = withContext(Dispatchers.IO) {
         val router = requireNotNull(routing) { "Context is required for update requests" }
@@ -205,7 +206,8 @@ class MeloXUpdateClient(
     private companion object {
         const val GitHubReleasesUrl = "https://api.github.com/repos/lladlam/MeloX-Android/releases?per_page=100"
         const val GitHubBranchUrl = "https://api.github.com/repos/lladlam/MeloX-Android/branches/main"
-        const val DevBuildPageUrl = "https://github.com/lladlam/MeloX-Android/actions/workflows/build.yml"
+        const val DevBuildPageUrl =
+            "https://github.com/lladlam/MeloX-Android/releases/download/dev-latest/MeloX-Android-debug.apk"
         const val ReleasePagePrefix = "https://github.com/lladlam/MeloX-Android/releases/"
         const val ReleaseDownloadPrefix = "https://github.com/lladlam/MeloX-Android/releases/download/"
         val VERSION_PATTERN = Regex(
