@@ -64,6 +64,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
@@ -1251,7 +1253,9 @@ private fun MeloXUpstreamLyricLine(
         if (showTranslation) {
             Text(
                 text = line.translation.orEmpty(),
-                modifier = Modifier.fillMaxWidth().padding(top = UpstreamLyrics.ANNOTATION_SPACING_DP.dp),
+                modifier = Modifier.fillMaxWidth()
+                    .blur(with(LocalDensity.current) { effectiveBlur.toDp() })
+                    .padding(top = UpstreamLyrics.ANNOTATION_SPACING_DP.dp),
                 color = Color.White.copy(alpha = MeloXSettingsRuntime.lyricTranslationOpacity),
                 textAlign = lineTextAlign,
                 fontSize = translationSize.sp,
@@ -1336,8 +1340,8 @@ private fun MeloXRubyLyricText(
                 Text(
                     text = line.romanization.orEmpty(),
                     color = Color.White.copy(alpha = MeloXSettingsRuntime.lyricRomanizationOpacity),
-                    modifier = Modifier.fillMaxWidth().padding(top = UpstreamLyrics.ANNOTATION_SPACING_DP.dp),
-                    fontSize = max(
+                 modifier = Modifier.fillMaxWidth().padding(top = UpstreamLyrics.ANNOTATION_SPACING_DP.dp),
+                     fontSize = max(
                         UpstreamLyrics.FONT_SIZE_SP * fontScale * MeloXSettingsRuntime.lyricRomanizationFontScale,
                         13f,
                     ).sp,
