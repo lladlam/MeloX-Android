@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
+import coil3.request.crossfade
 import com.lladlam.melox.playback.MeloXAudioReactiveRuntime
 import com.lladlam.melox.MeloXAppVisibility
 import com.lladlam.melox.ui.settings.MeloXLyricsRenderingQuality
@@ -48,7 +49,7 @@ internal fun MeloXBlurredArtworkBackdrop(
     val context = LocalContext.current
     val appInForeground = MeloXAppVisibility.isForeground
     val artworkModel = remember(context, artworkUrl) {
-        ImageRequest.Builder(context).data(artworkUrl).size(320, 320).build()
+        ImageRequest.Builder(context).data(artworkUrl).size(320, 320).crossfade(220).build()
     }
     androidx.compose.foundation.layout.Box(modifier.fillMaxSize()) {
         AsyncImage(
@@ -95,17 +96,21 @@ internal fun MeloXLyricsArtworkBackdrop(
     val latestIsPlaying by rememberUpdatedState(isPlaying)
     val elapsedWhilePlayingMs = remember(artworkUrl) { mutableLongStateOf(0L) }
     val artworkModel = remember(context, artworkUrl) {
-        ImageRequest.Builder(context).data(artworkUrl).size(384, 384).build()
+        ImageRequest.Builder(context).data(artworkUrl).size(384, 384).crossfade(220).build()
     }
 
     // The source implementation invalidates its Canvas roughly every 42ms
     // (~24fps). Throttling here is intentional: three blurred planes at 60fps
     // make the lyric page visibly hotter without improving the slow motion.
+    // A track change must keep redrawing briefly even while paused: the lyric
+    // control surface samples this recorded layer, and a layer that stops
+    // drawing keeps the previous track in the blurred controls.
+    val settleUntilMs = remember(artworkUrl) { SystemClock.elapsedRealtime() + 1_600L }
     LaunchedEffect(planeCount, artworkUrl, backgroundFrameRate, appInForeground) {
         var previousFrameAt = SystemClock.elapsedRealtime()
         while (true) {
             val now = SystemClock.elapsedRealtime()
-            if (!latestIsPlaying || !appInForeground) {
+            if ((!latestIsPlaying && now >= settleUntilMs) || !appInForeground) {
                 previousFrameAt = now
                 delay(500L)
                 continue

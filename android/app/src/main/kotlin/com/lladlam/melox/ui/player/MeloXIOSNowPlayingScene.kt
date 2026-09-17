@@ -65,6 +65,7 @@ import com.lladlam.melox.ui.animation.meloXContentExit
 import com.lladlam.melox.ui.layout.rememberMeloXWindowInfo
 import com.lladlam.melox.playback.MeloXPlaybackModeRuntime
 import kotlinx.coroutines.delay
+import androidx.compose.runtime.withFrameNanos
 
 /**
  * The portrait Now Playing scene mirrors the upstream iOS page architecture:
@@ -123,6 +124,18 @@ internal fun MeloXIOSNowPlayingScene(
         onLyricsInterfaceHiddenChange(
             page == MeloXNowPlayingPage.Lyrics && !showsLyricsControls,
         )
+    }
+
+    // The lyric page has no per-frame drawing of its own while it is idle, so a
+    // track switch updated the artwork behind it without repainting the recorded
+    // backdrop the blurred control bar samples from. The bar then kept the old
+    // song's tint until the user scrolled. Pumping a few frames on every artwork
+    // change re-records the layer immediately.
+    LaunchedEffect(state.artworkUrl, page) {
+        if (page == MeloXNowPlayingPage.Artwork) return@LaunchedEffect
+        repeat(10) {
+            withFrameNanos { }
+        }
     }
 
     fun setLyricsControlsVisible(visible: Boolean) {
