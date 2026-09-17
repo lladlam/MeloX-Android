@@ -11,8 +11,8 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
-import com.lladlam.melox.BuildConfig
 import com.lladlam.melox.core.network.MeloXHttpClient
+import com.lladlam.melox.core.provider.spotify.SpotifyClientConfig
 import com.lladlam.melox.core.provider.spotify.SpotifyOAuth
 import com.lladlam.melox.core.provider.spotify.SpotifySessionStore
 import com.lladlam.melox.ui.theme.MeloXTheme
@@ -48,7 +48,7 @@ class SpotifyCallbackActivity : ComponentActivity() {
                 requireNotNull(callback) { "无效的 Spotify 登录回调" }
                 SpotifyOAuth(
                     applicationContext,
-                    BuildConfig.SPOTIFY_CLIENT_ID,
+                    SpotifyClientConfig.effective(applicationContext),
                     MeloXHttpClient.shared,
                 ).handleCallback(callback)
             }

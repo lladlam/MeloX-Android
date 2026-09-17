@@ -123,6 +123,7 @@ import com.lladlam.melox.core.recommendation.LocalRecommendationStore
 import com.lladlam.melox.core.recognition.SongRecognitionClient
 import com.lladlam.melox.core.recognition.SongRecognitionResult
 import com.lladlam.melox.core.update.MeloXRelease
+import com.lladlam.melox.core.update.MeloXDevCommit
 import com.lladlam.melox.core.update.MeloXUpdateClient
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.playback.MeloXAutoMixFadeCurve
@@ -2940,6 +2941,51 @@ private fun AboutSettings(context: android.content.Context) {
             checking = false
         }
     }
+    val currentCommit = BuildConfig.GIT_SHA.take(7)
+    if (currentCommit.isNotBlank()) {
+        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = "当前构建 commit $currentCommit（开发版）",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = .42f),
+        )
+    }
+    var devCommit by remember { mutableStateOf<MeloXDevCommit?>(null) }
+    SettingsActionButton("检查开发版更新") {
+        if (!checking) scope.launch {
+            checking = true
+            runCatching { updateClient.latestDevCommit() }
+                .onSuccess { latest ->
+                    devCommit = latest
+                    updateStatus = if (latest.sha == BuildConfig.GIT_SHA) {
+                        "已经是最新提交 ${latest.sha.take(7)}"
+                    } else {
+                        "main 有新提交 ${latest.sha.take(7)}：${latest.message}"
+                    }
+                }
+                .onFailure { updateStatus = it.message ?: "检查最新提交失败" }
+            checking = false
+        }
+    }
+    devCommit?.takeIf { it.sha != BuildConfig.GIT_SHA }?.let { latest ->
+        Spacer(Modifier.height(10.dp))
+        SettingsActionButton("下载最新开发版 APK") {
+            scope.launch {
+                val target = runCatching { updateClient.devBuildUrl() }.getOrNull()
+                    ?: "https://github.com/lladlam/MeloX-Android/actions/workflows/build.yml"
+                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target))) }
+                    .onFailure { updateStatus = it.message ?: "无法打开下载页" }
+            }
+        }
+        Text(
+            text = "新提交 ${latest.sha.take(7)}（${latest.author}）：${latest.message}",
+            modifier = Modifier.padding(top = 8.dp),
+            fontSize = 12.sp,
+            lineHeight = 18.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f),
+        )
+    }
     updateStatus?.let { message ->
         Spacer(Modifier.height(10.dp))
         Text(message, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f))
@@ -2974,9 +3020,13 @@ private fun AboutSettings(context: android.content.Context) {
                     "WXRIW/Lyricify-Lyrics-Helper：网易云 YRC 解析参考\n" +
                     "neteasecloudmusicapienhanced/api-enhanced：听歌识曲与音频指纹运行时\n" +
                     "DanteAlighieri13210914/pv-tool：文字 PV 原始实现（Non-Commercial License）\n" +
-                    "mjhydri/BeatNet：自动混音节拍/重拍/速度分析（CC BY 4.0）\n" +
-                    "NEORUAA/MeiloX：基于 Mei 的仿 Apple Music 网易云音乐客户端，提供 UI 参考\n" +
-                    "thlucas1/SpotifyWebApiPython：Spotify Web API 客户端，提供 Spotify API 参考\n" +
+                     "mjhydri/BeatNet：自动混音节拍/重拍/速度分析（CC BY 4.0）\n" +
+                     "NEORUAA/MeiloX：基于 Mei 的仿 Apple Music 网易云音乐客户端，提供 UI 参考\n" +
+                     "lladlam/Square：Spotify 与 YouTube Music 双后端架构参考\n" +
+                     "YouTube Music：基于 Square 架构，使用 vendored Metrolist InnerTube（GPL-3.0）与 NewPipeExtractor\n" +
+                     "Spotify：参考 Square Spotify backend，使用 librespot-java（Apache-2.0）\n" +
+                     "vivo OriginOS：自动尝试原子岛通知适配，不提供单独开关\n" +
+                     "thlucas1/SpotifyWebApiPython：Spotify Web API 客户端，提供 Spotify API 参考\n" +
                     "bromothymolb/bilibili-api-zoku：Bilibili API 调用整合项目，提供 Bilibili API 参考\n" +
                     "Kyant0 AndroidLiquidGlass / Backdrop：Android 液态玻璃渲染基础",
                 modifier = Modifier.padding(top = 10.dp),

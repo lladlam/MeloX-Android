@@ -50,7 +50,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -66,6 +65,7 @@ import com.lladlam.melox.ui.animation.meloXContentExit
 import com.lladlam.melox.ui.layout.rememberMeloXWindowInfo
 import com.lladlam.melox.playback.MeloXPlaybackModeRuntime
 import kotlinx.coroutines.delay
+import androidx.compose.runtime.withFrameNanos
 
 /**
  * The portrait Now Playing scene mirrors the upstream iOS page architecture:
@@ -95,8 +95,8 @@ internal fun MeloXIOSNowPlayingScene(
     grabberDragModifier: Modifier = Modifier,
     lyricsActive: Boolean = true,
 ) {
-    val configuration = LocalConfiguration.current
-    if (configuration.screenWidthDp > configuration.screenHeightDp) {
+    val window = rememberMeloXWindowInfo()
+    if (window.isLandscape) {
         MeloXIOSLandscapeNowPlayingScene(
             state = state,
             page = page,
@@ -124,6 +124,18 @@ internal fun MeloXIOSNowPlayingScene(
         onLyricsInterfaceHiddenChange(
             page == MeloXNowPlayingPage.Lyrics && !showsLyricsControls,
         )
+    }
+
+    // The lyric page has no per-frame drawing of its own while it is idle, so a
+    // track switch updated the artwork behind it without repainting the recorded
+    // backdrop the blurred control bar samples from. The bar then kept the old
+    // song's tint until the user scrolled. Pumping a few frames on every artwork
+    // change re-records the layer immediately.
+    LaunchedEffect(state.artworkUrl, page) {
+        if (page == MeloXNowPlayingPage.Artwork) return@LaunchedEffect
+        repeat(10) {
+            withFrameNanos { }
+        }
     }
 
     fun setLyricsControlsVisible(visible: Boolean) {
@@ -495,7 +507,7 @@ private fun MeloXIOSLandscapeNowPlayingScene(
 
                 AnimatedContent(
                     targetState = page,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
                     transitionSpec = { meloXContentEnter() togetherWith meloXContentExit() },
                     label = "landscape-player-page",
                 ) { destination ->

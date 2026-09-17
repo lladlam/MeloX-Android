@@ -10,6 +10,7 @@ import com.lladlam.melox.core.provider.qqmusic.QQMusicSessionStore
 import com.lladlam.melox.core.provider.bilibili.BilibiliSessionStore
 import com.lladlam.melox.core.provider.spotify.SpotifySessionStore
 import com.lladlam.melox.core.provider.jellyfin.JellyfinSessionStore
+import com.lladlam.melox.core.provider.youtubemusic.YouTubeSessionStore
 
 /**
  * Small provider-neutral account facade used by settings/experience UI.
@@ -79,6 +80,9 @@ class ProviderAccountManager(
         MusicSource.Spotify -> SpotifySessionStore.read(appContext).let { session ->
             AccountState(source, session.isLoggedIn, session.accountId.takeIf(String::isNotBlank))
         }
+        MusicSource.YouTubeMusic -> YouTubeSessionStore.read(appContext).let { session ->
+            AccountState(source, session.isLoggedIn, session.accountName.takeIf(String::isNotBlank))
+        }
         MusicSource.Jellyfin -> JellyfinSessionStore.read(appContext).let { session ->
             AccountState(source, session.isLoggedIn, session.userName.takeIf(String::isNotBlank))
         }
@@ -103,6 +107,7 @@ class ProviderAccountManager(
             MusicSource.AppleMusic -> AppleMusicSessionStore.clear(appContext)
             MusicSource.Bilibili -> BilibiliSessionStore.clear(appContext, clearWebCookies = true)
             MusicSource.Spotify -> SpotifySessionStore.clear(appContext)
+            MusicSource.YouTubeMusic -> YouTubeSessionStore.clear(appContext)
             MusicSource.Jellyfin -> JellyfinSessionStore.clear(appContext)
             MusicSource.Local -> Unit
         }

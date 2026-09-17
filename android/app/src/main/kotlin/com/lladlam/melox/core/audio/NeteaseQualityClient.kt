@@ -97,6 +97,10 @@ class NeteaseQualityClient(
                         serverReportedUnavailable = true
                         throw IOException("no source for ${candidate.apiLevel}")
                     }
+                if (isPreviewSource(source)) {
+                    serverReportedUnavailable = true
+                    throw IOException("网易云返回试听音源 ${candidate.apiLevel}")
+                }
                 val rawUrl = source.optString("url").takeIf(::isUsableHttpUrl)
                     ?: run {
                         serverReportedUnavailable = true
@@ -163,6 +167,22 @@ class NeteaseQualityClient(
             )
             loggedIn -> IOException("网易云音频接口请求失败", lastError)
             else -> null
+        }
+
+        /** NetEase may return a valid HTTP URL for a 30-second preview. */
+        fun isPreviewSource(source: JSONObject): Boolean {
+            val freeTrialInfo = source.opt("freeTrialInfo")
+            if (freeTrialInfo != null && freeTrialInfo != JSONObject.NULL) {
+                when (freeTrialInfo) {
+                    is JSONObject -> if (freeTrialInfo.length() > 0) return true
+                    is JSONArray -> if (freeTrialInfo.length() > 0) return true
+                    is String -> if (freeTrialInfo.isNotBlank() && freeTrialInfo != "null") return true
+                }
+            }
+            val privilege = source.optJSONObject("freeTrialPrivilege") ?: return false
+            return privilege.optBoolean("resConsumable", false) ||
+                privilege.optBoolean("userConsumable", false) ||
+                privilege.optInt("listenType", 0) > 0
         }
     }
 

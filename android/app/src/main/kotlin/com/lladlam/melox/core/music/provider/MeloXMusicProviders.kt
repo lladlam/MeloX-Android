@@ -15,11 +15,12 @@ import com.lladlam.melox.core.provider.bilibili.BilibiliProvider
 import com.lladlam.melox.core.provider.bilibili.BilibiliSessionStore
 import com.lladlam.melox.core.provider.bilibili.BilibiliPlaybackAssociationStore
 import com.lladlam.melox.core.provider.bilibili.BilibiliApiCache
+import com.lladlam.melox.core.provider.spotify.SpotifyClientConfig
 import com.lladlam.melox.core.provider.spotify.SpotifyProvider
+import com.lladlam.melox.core.provider.youtubemusic.YouTubeMusicProvider
 import com.lladlam.melox.core.provider.jellyfin.JellyfinProvider
 import com.lladlam.melox.core.provider.jellyfin.JellyfinSessionStore
 import com.lladlam.melox.core.provider.local.LocalProvider
-import com.lladlam.melox.BuildConfig
 import com.lladlam.melox.core.network.MeloXHttpClient
 import okhttp3.OkHttpClient
 
@@ -59,11 +60,12 @@ object MeloXMusicProviders {
                 ),
                 JellyfinProvider({ JellyfinSessionStore.read(appContext) }, httpClient),
                 LocalProvider(appContext),
+                YouTubeMusicProvider(appContext, httpClient),
         )
         return MusicProviderRegistry(
-            nativeProviders + SpotifyProvider(
+                nativeProviders + SpotifyProvider(
                 appContext,
-                BuildConfig.SPOTIFY_CLIENT_ID,
+                SpotifyClientConfig.effective(appContext),
                 httpClient,
                 playbackProviders = { nativeProviders },
             ),
@@ -98,11 +100,12 @@ object MeloXMusicProviders {
                 ),
                 JellyfinProvider({ JellyfinSessionStore.read(context) }, httpClient),
                 LocalProvider(context),
+                YouTubeMusicProvider(context, httpClient),
         )
         return MusicProviderRegistry(
             nativeProviders + SpotifyProvider(
                 context,
-                BuildConfig.SPOTIFY_CLIENT_ID,
+                SpotifyClientConfig.effective(context),
                 httpClient,
                 playbackProviders = { nativeProviders },
             ),

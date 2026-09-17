@@ -31,6 +31,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -60,6 +61,7 @@ import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
 import com.lladlam.melox.R
 import com.lladlam.melox.core.account.NeteaseSessionStore
+import com.lladlam.melox.core.download.MeloXProviderDownloadStore
 import com.lladlam.melox.core.library.NeteaseLibraryClient
 import com.lladlam.melox.core.library.NeteasePlaylistSummary
 import com.lladlam.melox.core.model.SearchSong
@@ -115,6 +117,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+enum class SearchBackAction { ClearOverlay, ClearQuery, SwitchToHome }
 
 data class MeloXSearchLaunch(val query: String, val kind: MeloXSearchKind, val nonce: Long = System.nanoTime())
 object MeloXSearchLaunchBus {
@@ -191,7 +195,12 @@ private sealed interface SearchDetailDestination {
 }
 
 @Composable
-fun SearchScreen(source: MusicSource = MusicSource.Netease) {
+fun SearchScreen(
+    source: MusicSource = MusicSource.Netease,
+    backClearSignal: MutableState<SearchBackAction> = remember { mutableStateOf(SearchBackAction.SwitchToHome) },
+    onSearchBackState: (SearchBackAction) -> Unit = {},
+    onSearchExit: () -> Unit = {},
+) {
     val context = LocalContext.current
     val appContext = context.applicationContext
     val scope = rememberCoroutineScope()
@@ -421,6 +430,44 @@ fun SearchScreen(source: MusicSource = MusicSource.Netease) {
             is SearchDetailDestination.Provider -> destination.value is ProviderSearchDestination.Playlist
         }
     }
+    // The host-level BackHandler always wins over the system back button, so the
+    // search page reports its current back action to the host through
+    // onSearchBackState. The host reads it inside its own BackHandler and either
+    // clears the query/overlay (via backClearSignal) or switches to the home
+    // page. The search page never writes backClearSignal itself, otherwise
+    // reacting to an overlay would clear the overlay and loop forever.
+    LaunchedEffect(query, podcastDiscovery, selectedDetail, categoryTitle, playlistDetail) {
+        onSearchBackState(
+            when {
+                playlistDetail != null || podcastDiscovery || selectedDetail != null || categoryTitle != null ->
+                    SearchBackAction.ClearOverlay
+                query.isNotBlank() -> SearchBackAction.ClearQuery
+                else -> SearchBackAction.SwitchToHome
+            },
+        )
+    }
+    var backActionConsumed by remember { mutableStateOf(SearchBackAction.SwitchToHome) }
+    LaunchedEffect(backClearSignal.value, backActionConsumed) {
+        val action = backClearSignal.value
+        if (action == SearchBackAction.SwitchToHome || action == backActionConsumed) return@LaunchedEffect
+        backActionConsumed = action
+        when (action) {
+            SearchBackAction.ClearOverlay -> {
+                podcastDiscovery = false
+                selectedDetail = null
+                categoryTitle = null
+                categoryPlaylists = emptyList()
+                error = null
+            }
+            SearchBackAction.ClearQuery -> {
+                query = ""
+                skipSearchDebounce = false
+                searchTrigger += 1
+            }
+            SearchBackAction.SwitchToHome -> Unit
+        }
+        backClearSignal.value = SearchBackAction.SwitchToHome
+    }
     PredictiveBackHandler(enabled = playlistDetail != null) {
         try {
             it.collect { event -> playlistBackProgress.snapTo(event.progress) }
@@ -475,6 +522,7 @@ fun SearchScreen(source: MusicSource = MusicSource.Netease) {
             onValueChange = { query = it; skipSearchDebounce = false },
             onSearch = { skipSearchDebounce = true; searchTrigger += 1 },
             source = source,
+            onBack = { if (query.isNotBlank()) query = "" else onSearchExit() },
         )
         if (query.isNotBlank()) {
             SearchScopes(kind = kind, availableKinds = availableKinds, onKind = { kind = it })
@@ -598,6 +646,7 @@ private fun SearchField(
     onValueChange: (String) -> Unit,
     onSearch: () -> Unit,
     source: MusicSource,
+    onBack: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     val clearDescription = stringResource(R.string.search_clear)
@@ -609,7 +658,10 @@ private fun SearchField(
         leadingContent = {
             MeloXSearchBackMorphIcon(
                 focused = focused,
-                modifier = Modifier.size(21.dp),
+                modifier = Modifier
+                    .size(44.dp)
+                    .clickable(role = Role.Button, onClick = onBack)
+                    .padding(11.dp),
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f),
                 contentDescription = stringResource(if (focused) R.string.action_back else R.string.tab_search),
             )
@@ -785,6 +837,8 @@ private fun ProviderSearchSongResults(
     showSource: Boolean,
     onPlay: (MusicTrack) -> Unit,
 ) {
+    val context = LocalContext.current
+    val providerDownloads = remember(context) { MeloXProviderDownloadStore.get(context) }
     LazyColumn(
         contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = MeloXBottomContentClearance),
     ) {
@@ -807,7 +861,9 @@ private fun ProviderSearchSongResults(
                     song = MeloXLegacyUiBridge.track(track),
                     onPlay = { onPlay(track) },
                     onMore = null,
-                    endAction = null,
+                    endAction = MeloXSwipeAction("下载到本机", MeloXSymbol.Download, Color(0xFF0EA5E9)) {
+                        providerDownloads.start(track)
+                    },
                     sourceLabel = track.id.source.displayName.takeIf { showSource },
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = .08f))
@@ -1119,7 +1175,9 @@ private fun SearchCollectionDetail(
                         song = MeloXLegacyUiBridge.track(track),
                         onPlay = { ProviderPlaybackCommands.playQueue(context, providerTracks, track.id) },
                         onMore = null,
-                        endAction = null,
+                        endAction = MeloXSwipeAction("下载到本机", MeloXSymbol.Download, Color(0xFF0EA5E9)) {
+                            MeloXProviderDownloadStore.get(context).start(track)
+                        },
                         sourceLabel = track.id.source.displayName,
                     )
                 }

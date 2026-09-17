@@ -75,6 +75,12 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
     var followed by remember(id) { mutableStateOf<Boolean?>(null) }
     var followBusy by remember(id) { mutableStateOf(false) }
     var selectedSong by remember(id) { mutableStateOf<SearchSong?>(null) }
+    var allSongs by remember(id) { mutableStateOf<List<SearchSong>>(emptyList()) }
+
+    LaunchedEffect(id, detail) {
+        if (detail == null || allSongs.isNotEmpty()) return@LaunchedEffect
+        allSongs = runCatching { client.artistSongs(id, 100, 0) }.getOrDefault(emptyList())
+    }
 
     LaunchedEffect(id) {
         loading = true
@@ -111,7 +117,7 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
                     )
                 }
                 item(key = "songs-title") { ArtistSectionTitle("热门单曲") }
-                items(artist.hotSongs.take(10), key = { "artist-song-${it.id}" }) { song ->
+                items(artist.hotSongs.take(100), key = { "artist-song-${it.id}" }) { song ->
                     ArtistSongRow(
                         song = song,
                         onPlay = { PlaybackCommands.playQueue(context, artist.hotSongs, song.id) },
@@ -123,6 +129,23 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
                             }
                         },
                     )
+                }
+                val fullList = allSongs.ifEmpty { artist.hotSongs }
+                if (allSongs.isNotEmpty()) {
+                    item(key = "all-songs-title") { ArtistSectionTitle("全部歌曲") }
+                    items(allSongs.take(100), key = { "artist-song-all-${it.id}" }) { song ->
+                        ArtistSongRow(
+                            song = song,
+                            onPlay = { PlaybackCommands.playQueue(context, allSongs, song.id) },
+                            onMore = { selectedSong = song },
+                            onLike = {
+                                scope.launch {
+                                    runCatching { operations.setSongLiked(song.id, true) }
+                                        .onFailure { error = it.message ?: "添加到资料库失败" }
+                                }
+                            },
+                        )
+                    }
                 }
                 if (artist.albums.isNotEmpty()) {
                     item(key = "albums-title") { ArtistSectionTitle("专辑") }
@@ -156,7 +179,7 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
         selectedSong?.let { song ->
             MeloXSongActionsOverlay(
                 song = song,
-                queue = detail?.hotSongs.orEmpty(),
+                queue = allSongs.ifEmpty { detail?.hotSongs.orEmpty() },
                 visible = true,
                 onDismiss = { selectedSong = null },
             )

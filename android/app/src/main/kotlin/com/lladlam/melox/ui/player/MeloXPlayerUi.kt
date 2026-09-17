@@ -421,14 +421,21 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
         queue = buildQueue(player)
     }
 
-    private fun buildQueue(player: Player): List<MeloXQueueEntry> =
-        List(player.mediaItemCount) { index ->
+    private fun buildQueue(player: Player): List<MeloXQueueEntry> {
+        // The same track can legitimately sit in the queue more than once (queued
+        // twice by hand, or re-added by the smart queue), which repeats the stored
+        // entry id. LazyColumn keys must be unique or Compose throws at draw time,
+        // so a repeated id is suffixed with its position.
+        val usedEntryIds = HashSet<String>()
+        return List(player.mediaItemCount) { index ->
             val item = player.getMediaItemAt(index)
             val metadata = item.mediaMetadata
+            val rawEntryId = metadata.extras?.getString(PlaybackCommands.QUEUE_ENTRY_ID_KEY)
+                ?: "${item.mediaId}@$index"
+            val entryId = if (usedEntryIds.add(rawEntryId)) rawEntryId else "$rawEntryId@$index"
             MeloXQueueEntry(
                 index = index,
-                entryId = metadata.extras?.getString(PlaybackCommands.QUEUE_ENTRY_ID_KEY)
-                    ?: "${item.mediaId}@$index",
+                entryId = entryId,
                 mediaId = item.mediaId,
                 title = metadata.extras?.getString("melox.system.original_title")
                     ?: metadata.title?.toString().orEmpty().ifBlank { "未知歌曲" },
@@ -446,6 +453,7 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
                 },
             )
         }
+    }
 
     fun togglePlayPause() {
         controller?.let { player ->

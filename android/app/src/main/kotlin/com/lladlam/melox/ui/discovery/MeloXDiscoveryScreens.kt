@@ -209,6 +209,8 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
     var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var selectedCollection by remember { mutableStateOf<DiscoveryCollection?>(null) }
+    var dailySongs by remember { mutableStateOf<List<SearchSong>>(emptyList()) }
+    var showDailySongs by remember { mutableStateOf(false) }
     var activeAction by remember { mutableStateOf<String?>(null) }
     var localRecommendations by remember { mutableStateOf(emptyList<com.lladlam.melox.core.recommendation.LocalRecommendationItem>()) }
     var localCandidates by remember { mutableStateOf(emptyList<MusicTrack>()) }
@@ -216,6 +218,13 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
 
     selectedCollection?.let { collection ->
         DiscoveryCollectionDetail(collection = collection, onBack = { selectedCollection = null })
+        return
+    }
+    if (showDailySongs) {
+        DailyRecommendationScreen(
+            songs = dailySongs,
+            onBack = { showDailySongs = false },
+        )
         return
     }
 
@@ -359,15 +368,71 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
                         else -> emptyList()
                     }
                 }.onSuccess { songs ->
-                    songs.firstOrNull()?.let {
-                        PlaybackCommands.playQueue(context, songs, it.id, heartMode = action == "心动模式")
-                    } ?: run { error = "没有可播放的推荐歌曲" }
+                    if (action == "每日推荐") {
+                        dailySongs = songs
+                        showDailySongs = songs.isNotEmpty()
+                        if (songs.isEmpty()) error = "没有可播放的推荐歌曲"
+                    } else {
+                        songs.firstOrNull()?.let {
+                            PlaybackCommands.playQueue(context, songs, it.id, heartMode = action == "心动模式")
+                        } ?: run { error = "没有可播放的推荐歌曲" }
+                    }
                 }.onFailure { error = it.message ?: "$action 加载失败" }
                 activeAction = null
             }
         },
         onCollection = { selectedCollection = it },
     )
+}
+
+@Composable
+private fun DailyRecommendationScreen(
+    songs: List<SearchSong>,
+    onBack: () -> Unit,
+) {
+    val context = LocalContext.current.applicationContext
+    BackHandler(onBack = onBack)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding(),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MeloXActionIcon("‹", Modifier.size(40.dp).clickable(onClick = onBack), MaterialTheme.colorScheme.onBackground)
+            Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                Text("每日推荐", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text("网易云音乐 · ${songs.size} 首歌曲", fontSize = 12.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = .55f))
+            }
+            MeloXGlassButton(
+                onClick = { songs.firstOrNull()?.let { PlaybackCommands.playQueue(context, songs, it.id) } },
+                style = MeloXGlassButtonStyle.BorderedProminent,
+            ) { Text("播放全部") }
+        }
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = com.lladlam.melox.ui.MeloXBottomContentClearance),
+        ) {
+            itemsIndexed(songs, key = { _, song -> "daily-${song.id}" }) { index, song ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable {
+                        PlaybackCommands.playQueue(context, songs, song.id)
+                    }.padding(horizontal = 20.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("${index + 1}", Modifier.width(34.dp), color = MaterialTheme.colorScheme.onBackground.copy(alpha = .45f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    AsyncImage(song.artworkUrl, song.name, contentScale = ContentScale.Crop, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(9.dp)))
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text(song.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                        Text(song.artists, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = .55f))
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

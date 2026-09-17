@@ -37,6 +37,7 @@ import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.audio.MusicQualityPreferences
 import com.lladlam.melox.core.audio.MusicQuality
 import com.lladlam.melox.core.download.MeloXDownloadStore
+import com.lladlam.melox.core.download.MeloXProviderDownloadStore
 import com.lladlam.melox.core.library.NeteaseLibraryClient
 import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.core.network.MeloXNetworkAvailability
@@ -54,6 +55,7 @@ import com.lladlam.melox.core.music.provider.PlaylistCapability
 import com.lladlam.melox.core.music.provider.UserLibraryCapability
 import com.lladlam.melox.core.music.provider.ThirdPartyMusicSourceConsentStore
 import com.lladlam.melox.platform.xiaomi.HyperOsFocusBridge
+import com.lladlam.melox.platform.vivo.VivoAtomicIslandBridge
 import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.settings.MeloXSystemLyricTitleMode
@@ -80,6 +82,7 @@ class MeloXPlaybackService : MediaSessionService() {
     private lateinit var mediaSourceFactory: DefaultMediaSourceFactory
     private lateinit var mediaPrefetcher: MeloXMediaPrefetcher
     private lateinit var downloadStore: MeloXDownloadStore
+    private lateinit var providerDownloadStore: MeloXProviderDownloadStore
     private lateinit var playbackResolver: NeteasePlaybackResolver
     private lateinit var autoMixAnalyzer: MeloXAutoMixAudioAnalyzer
     private lateinit var equalizerController: MeloXEqualizerController
@@ -390,6 +393,7 @@ class MeloXPlaybackService : MediaSessionService() {
                 ),
             )
         downloadStore = MeloXDownloadStore.get(this)
+        providerDownloadStore = MeloXProviderDownloadStore.get(this)
         equalizerController = MeloXEqualizerController(this)
         playbackHistoryReporter = MeloXPlaybackHistoryReporter(this)
         ProviderPlaybackRuntime.initialize(this)
@@ -421,6 +425,7 @@ class MeloXPlaybackService : MediaSessionService() {
             cookieProvider = cookieProvider,
             client = NeteaseSearchClient(cookieProvider = cookieProvider),
             localSourceProvider = downloadStore::localPlaybackUri,
+            providerLocalSourceProvider = providerDownloadStore::localPlaybackUri,
             crossProviderFallback = crossProviderFallback,
             chkszPlayback = chkszPlayback,
             lxUserPlayback = lxUserPlayback,
@@ -1126,7 +1131,7 @@ class MeloXPlaybackService : MediaSessionService() {
             return
         }
         songId ?: return
-        if (!metadataEnabled && !notificationEnabled) {
+        if (!metadataEnabled && !notificationEnabled && !VivoAtomicIslandBridge.isSupported()) {
             restoreSystemLyricsMetadata(active)
             (getSystemService(NotificationManager::class.java)).cancel(LYRICS_NOTIFICATION_ID)
             return
@@ -1204,6 +1209,7 @@ class MeloXPlaybackService : MediaSessionService() {
     }
 
     private fun resetSystemLyrics(item: MediaItem?) {
+        VivoAtomicIslandBridge.clear(this)
         systemLyricsJob?.cancel()
         systemLyricsJob = null
         systemLyricsSongId = item?.mediaId?.toLongOrNull()
@@ -1295,6 +1301,16 @@ class MeloXPlaybackService : MediaSessionService() {
             if (duration > 0L) builder.setProgress(1_000, ((player?.currentPosition ?: 0L) * 1_000L / duration).toInt().coerceIn(0, 1_000), false)
         }
         val notification = builder.build()
+        VivoAtomicIslandBridge.publish(
+            context = this,
+            line = line,
+            songTitle = metadata.title?.toString().orEmpty(),
+            artist = metadata.artist?.toString().orEmpty(),
+            positionMs = player?.currentPosition ?: 0L,
+            durationMs = player?.duration?.takeIf { it != C.TIME_UNSET } ?: 0L,
+            isPlaying = player?.isPlaying == true,
+            clickIntent = pendingIntent,
+        )
         HyperOsFocusBridge.playbackPayload(
             context = this,
             lyric = line,
@@ -1642,7 +1658,10 @@ class MeloXPlaybackService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
         Log.d(TAG, "Controller connected: ${controllerInfo.packageName}")
-        return mediaSession
+        val allowed = controllerInfo.packageName == packageName ||
+            controllerInfo.packageName == "com.google.android.projection.gearhead" ||
+            controllerInfo.packageName == "com.android.bluetooth"
+        return mediaSession.takeIf { allowed }
     }
 
     override fun onDestroy() {
@@ -1656,6 +1675,7 @@ class MeloXPlaybackService : MediaSessionService() {
         backgroundAnalysisJob?.cancel()
         smartQueueJob?.cancel()
         systemLyricsJob?.cancel()
+        VivoAtomicIslandBridge.clear(this)
         getSystemService(NotificationManager::class.java).cancel(LYRICS_NOTIFICATION_ID)
         serviceScope.cancel()
         cancelPreparedMix(releaseStandby = true)

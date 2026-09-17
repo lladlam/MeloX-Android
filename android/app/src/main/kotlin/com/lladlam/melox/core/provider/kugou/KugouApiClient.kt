@@ -251,10 +251,10 @@ class KugouApiClient(
     }
 
     private fun parseSearchTrack(item: JSONObject): MusicTrack? {
-        val hash = firstString(item, "FileHash", "Hash", "hash", "filehash").uppercase()
+        val hash = kugouFirstString(item, "FileHash", "Hash", "hash", "filehash").uppercase()
         if (hash.isBlank()) return null
         val (title, singerName) = recoverKugouTrackText(
-            firstString(item, "SongName", "songname", "AudioName", "audio_name", "FileName", "filename"),
+            kugouFirstString(item, "SongName", "songname", "AudioName", "audio_name", "FileName", "filename"),
             kugouSingerName(item, "SingerName", "singername", "SingerName2", "author_name", "AuthorName"),
         ).let { (value, singer) -> (value.ifBlank { "未知歌曲" }) to singer }
         val artistNames = singerName
@@ -262,9 +262,9 @@ class KugouApiClient(
             .map(String::trim)
             .filter(String::isNotBlank)
             .ifEmpty { listOf("未知歌手") }
-        val albumName = firstString(item, "AlbumName", "album_name", "albumname")
-        val albumId = firstString(item, "AlbumID", "album_id", "albumid").takeIf(String::isNotBlank)
-        val albumAudioId = firstLong(
+        val albumName = kugouFirstString(item, "AlbumName", "album_name", "albumname")
+        val albumId = kugouFirstString(item, "AlbumID", "album_id", "albumid").takeIf(String::isNotBlank)
+        val albumAudioId = kugouFirstLong(
             item,
             "album_audio_id",
             "MixSongID",
@@ -273,7 +273,7 @@ class KugouApiClient(
             "Audioid",
             "audio_id",
         ).takeIf { it > 0L }
-        val durationSeconds = firstLong(item, "Duration", "duration", "time_length").takeIf { it > 0L }
+        val durationSeconds = kugouFirstLong(item, "Duration", "duration", "time_length").takeIf { it > 0L }
         val artwork = kugouArtworkUrl(item)
         return MusicTrack(
             id = MusicResourceId(MusicSource.Kugou, hash),

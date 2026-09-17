@@ -1,7 +1,6 @@
 package com.lladlam.melox.core.music.provider
 
 import android.content.Context
-import com.lladlam.melox.BuildConfig
 import com.lladlam.melox.core.music.model.MusicSource
 
 /**
@@ -17,12 +16,11 @@ object MusicProviderSelectionStore {
     private const val KeyAutomaticFallback = "automatic_source_fallback"
     private const val KeyUnifiedSources = "unified_sources"
 
-    /** Providers that need build-time credentials remain internal until configured. */
+    /** Keep optional providers visible so their setup/login screen is reachable. */
     fun visibleSources(): List<MusicSource> =
         MusicSource.entries.filter { source ->
             source != MusicSource.AppleMusic &&
-                source != MusicSource.Kuwo &&
-                (source != MusicSource.Spotify || BuildConfig.SPOTIFY_CLIENT_ID.isNotBlank())
+                source != MusicSource.Kuwo
         }
 
     fun selectedSource(context: Context): MusicSource {

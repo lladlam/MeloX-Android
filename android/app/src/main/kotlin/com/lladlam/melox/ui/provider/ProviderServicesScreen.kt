@@ -58,6 +58,7 @@ import com.lladlam.melox.ui.account.QQMusicLoginScreen
 import com.lladlam.melox.ui.account.AppleMusicLoginScreen
 import com.lladlam.melox.ui.account.BilibiliLoginScreen
 import com.lladlam.melox.ui.account.SpotifyLoginScreen
+import com.lladlam.melox.ui.account.YouTubeLoginScreen
 import com.lladlam.melox.ui.glass.MeloXGlassButton
 import com.lladlam.melox.ui.glass.MeloXGlassButtonStyle
 import com.lladlam.melox.ui.glass.MeloXGlassDialog
@@ -96,6 +97,7 @@ fun ProviderServicesScreen(
     var showAppleMusicLogin by remember(currentSource) { mutableStateOf(false) }
     var showBilibiliLogin by remember(currentSource) { mutableStateOf(false) }
     var showSpotifyLogin by remember(currentSource) { mutableStateOf(false) }
+    var showYouTubeLogin by remember(currentSource) { mutableStateOf(false) }
     var loginRevision by remember(currentSource) { mutableStateOf(0) }
     var pendingAction by remember { mutableStateOf<Pair<MusicSource, ServicesAccountAction>?>(null) }
     var unifiedEnabled by remember { mutableStateOf(MusicProviderSelectionStore.unifiedEnabled(context)) }
@@ -229,6 +231,13 @@ fun ProviderServicesScreen(
         )
         return
     }
+    if (showYouTubeLogin && currentSource == MusicSource.YouTubeMusic) {
+        YouTubeLoginScreen(
+            onDismiss = { showYouTubeLogin = false },
+            onLoggedIn = { showYouTubeLogin = false; loginRevision++ },
+        )
+        return
+    }
 
     val currentAccount = remember(loginRevision, currentSource) {
         accountManager.state(currentSource)
@@ -307,6 +316,7 @@ fun ProviderServicesScreen(
                             MusicSource.AppleMusic -> showAppleMusicLogin = true
                             MusicSource.Bilibili -> showBilibiliLogin = true
                             MusicSource.Spotify -> showSpotifyLogin = true
+                            MusicSource.YouTubeMusic -> showYouTubeLogin = true
                             MusicSource.Jellyfin -> { jellyfinError = null; showJellyfinDialog = true }
                             MusicSource.Local -> Unit
                         }
@@ -521,6 +531,7 @@ fun ProviderServicesScreen(
                                 MusicSource.AppleMusic -> showAppleMusicLogin = true
                                 MusicSource.Bilibili -> showBilibiliLogin = true
                                 MusicSource.Spotify -> showSpotifyLogin = true
+                                MusicSource.YouTubeMusic -> showYouTubeLogin = true
                                 MusicSource.Jellyfin -> Unit
                                 MusicSource.Local -> Unit
                             }

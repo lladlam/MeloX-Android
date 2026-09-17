@@ -147,6 +147,18 @@ class NeteaseCollectionDetailsClient(
         Unit
     }
 
+    suspend fun artistSongs(id: Long, limit: Int, offset: Int): List<SearchSong> = withContext(Dispatchers.IO) {
+        val logged = NeteaseSessionStore.containsMusicU(cookieProvider())
+        val response = eapi.post(
+            "/api/v1/artist/songs",
+            JSONObject().put("id", id).put("order", "hot")
+                .put("limit", limit).put("offset", offset).put("total", true),
+            logged,
+        )
+        val songs = response.optJSONArray("songs") ?: JSONArray()
+        parseSongs(songs)
+    }
+
     private fun parseSongs(values: JSONArray?): List<SearchSong> = buildList {
         val songs = values ?: JSONArray()
         for (index in 0 until songs.length()) parseSong(songs.optJSONObject(index))?.let(::add)

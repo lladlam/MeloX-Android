@@ -227,10 +227,10 @@ internal class KugouCatalogClient(
     }
 
     private fun parseTrack(item: JSONObject): MusicTrack? {
-        val hash = firstString(item, "hash", "Hash", "FileHash", "filehash", "audio_hash").uppercase()
+        val hash = kugouFirstString(item, "hash", "Hash", "FileHash", "filehash", "audio_hash").uppercase()
         if (hash.isBlank()) return null
         val (title, singer) = recoverKugouTrackText(
-            firstString(item, "audio_name", "AudioName", "SongName", "songname", "name", "FileName"),
+            kugouFirstString(item, "audio_name", "AudioName", "SongName", "songname", "name", "FileName"),
             kugouSingerName(item, "author_name", "SingerName", "singername", "singer_name"),
         ).let { (value, artist) -> (value.ifBlank { "未知歌曲" }) to artist }
         val artists = singer
@@ -239,12 +239,12 @@ internal class KugouCatalogClient(
             .filter(String::isNotBlank)
             .ifEmpty { listOf("未知歌手") }
             .map { MusicArtistRef(name = it) }
-        val albumName = firstString(item, "album_name", "AlbumName", "albumname")
-        val albumId = firstString(item, "album_id", "AlbumID", "albumid").takeIf(String::isNotBlank)
+        val albumName = kugouFirstString(item, "album_name", "AlbumName", "albumname")
+        val albumId = kugouFirstString(item, "album_id", "AlbumID", "albumid").takeIf(String::isNotBlank)
         val artwork = kugouArtworkUrl(item)
-        val durationRaw = firstLong(item, "duration", "Duration", "time_length")
+        val durationRaw = kugouFirstLong(item, "duration", "Duration", "time_length")
         val durationMs = durationRaw.takeIf { it > 0 }?.let { if (it > 100_000L) it else it * 1_000L }
-        val albumAudioId = firstLong(item, "album_audio_id", "MixSongID", "mixsongid", "AlbumAudioID", "audio_id", "audioid")
+        val albumAudioId = kugouFirstLong(item, "album_audio_id", "MixSongID", "mixsongid", "AlbumAudioID", "audio_id", "audioid")
             .takeIf { it > 0 }
         return MusicTrack(
             id = MusicResourceId(MusicSource.Kugou, hash),

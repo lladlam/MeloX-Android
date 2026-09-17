@@ -1,6 +1,8 @@
 package com.lladlam.melox.core.provider.spotify
 
 import android.content.Context
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 
 data class SpotifySession(
     val accessToken: String = "",
@@ -91,6 +93,6 @@ object SpotifySessionStore {
         preferences(context).edit().clear().apply()
     }
 
-    private fun preferences(context: Context) = context.applicationContext
-        .getSharedPreferences(PreferencesName, Context.MODE_PRIVATE)
+    private fun preferences(context: Context) =
+        com.lladlam.melox.core.account.SecureSessionPreferences.open(context, PreferencesName)
 }

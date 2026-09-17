@@ -90,6 +90,7 @@ object TrackAggregation {
             // Spotify is playable only after a strict cross-provider match. A
             // native playable result must remain the aggregation recommendation.
             com.lladlam.melox.core.music.model.MusicSource.Spotify -> -1
+            com.lladlam.melox.core.music.model.MusicSource.YouTubeMusic -> 0
             com.lladlam.melox.core.music.model.MusicSource.Jellyfin -> 0
             com.lladlam.melox.core.music.model.MusicSource.Local -> 0
         }

@@ -1,6 +1,8 @@
 package com.lladlam.melox.core.provider.kugou
 
 import android.content.Context
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import java.math.BigInteger
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -54,8 +56,7 @@ object KugouSessionStore {
     private const val WebGl = "webgl"
 
     fun read(context: Context, playback: Boolean = false): KugouSession {
-        val preferences = context.applicationContext
-            .getSharedPreferences(if (playback) PlaybackPreferencesName else PreferencesName, Context.MODE_PRIVATE)
+        val preferences = preferences(context, playback)
         val identity = if (playback) read(context).let { DeviceIdentity(it.guid, it.mid, it.dev, it.mac, it.webGl) }
         else ensureIdentity(context)
         return KugouSession(
@@ -82,7 +83,7 @@ object KugouSessionStore {
         playback: Boolean = false,
     ): KugouSession {
         context.applicationContext
-            .getSharedPreferences(if (playback) PlaybackPreferencesName else PreferencesName, Context.MODE_PRIVATE)
+            .let { preferences(context, playback) }
             .edit()
             .putString(Token, token)
             .putLong(UserId, userId)
@@ -98,7 +99,7 @@ object KugouSessionStore {
     fun updateDfid(context: Context, value: String) {
         if (value.isBlank()) return
         context.applicationContext
-            .getSharedPreferences(PreferencesName, Context.MODE_PRIVATE)
+            .let { preferences(context) }
             .edit()
             .putString(Dfid, value)
             .apply()
@@ -106,7 +107,7 @@ object KugouSessionStore {
 
     fun clearLogin(context: Context, playback: Boolean = false) {
         context.applicationContext
-            .getSharedPreferences(if (playback) PlaybackPreferencesName else PreferencesName, Context.MODE_PRIVATE)
+            .let { preferences(context, playback) }
             .edit()
             .remove(Token)
             .remove(UserId)
@@ -117,7 +118,7 @@ object KugouSessionStore {
 
     private fun ensureIdentity(context: Context): DeviceIdentity {
         val preferences = context.applicationContext
-            .getSharedPreferences(PreferencesName, Context.MODE_PRIVATE)
+            .let { preferences(context) }
         val existingGuid = preferences.getString(Guid, null)
         val guid = existingGuid?.takeIf(String::isNotBlank) ?: md5Hex(UUID.randomUUID().toString())
         val mid = preferences.getString(Mid, null)?.takeIf(String::isNotBlank)
@@ -161,4 +162,9 @@ object KugouSessionStore {
         val mac: String,
         val webGl: String,
     )
+
+    private fun preferences(context: Context, playback: Boolean = false) =
+        com.lladlam.melox.core.account.SecureSessionPreferences.open(
+            context, if (playback) PlaybackPreferencesName else PreferencesName,
+        )
 }

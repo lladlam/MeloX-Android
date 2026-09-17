@@ -12,6 +12,7 @@ enum class MusicSource(
     AppleMusic("apple_music", "Apple Music"),
     Bilibili("bilibili", "Bilibili"),
     Spotify("spotify", "Spotify"),
+    YouTubeMusic("youtube_music", "YouTube Music"),
     Jellyfin("jellyfin", "Jellyfin"),
     Local("local", "本地音乐");
 

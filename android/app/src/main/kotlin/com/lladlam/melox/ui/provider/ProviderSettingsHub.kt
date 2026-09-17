@@ -37,6 +37,7 @@ import com.lladlam.melox.ui.account.QQMusicLoginScreen
 import com.lladlam.melox.ui.account.AppleMusicLoginScreen
 import com.lladlam.melox.ui.account.BilibiliLoginScreen
 import com.lladlam.melox.ui.account.SpotifyLoginScreen
+import com.lladlam.melox.ui.account.YouTubeLoginScreen
 import com.lladlam.melox.ui.glass.meloXContentSurface
 import com.lladlam.melox.ui.glass.MeloXGlassDialog
 import com.lladlam.melox.ui.glass.MeloXGlassButton
@@ -86,6 +87,7 @@ fun ProviderSettingsHub(
     var showAppleMusicLogin by remember(currentSource) { mutableStateOf(false) }
     var showBilibiliLogin by remember(currentSource) { mutableStateOf(false) }
     var showSpotifyLogin by remember(currentSource) { mutableStateOf(false) }
+    var showYouTubeLogin by remember(currentSource) { mutableStateOf(false) }
     var loginRevision by remember(currentSource) { mutableStateOf(0) }
     var pendingAccountAction by remember { mutableStateOf<PendingProviderAccountAction?>(null) }
 
@@ -150,6 +152,13 @@ fun ProviderSettingsHub(
         SpotifyLoginScreen(
             onDismiss = { showSpotifyLogin = false },
             onLoggedIn = { showSpotifyLogin = false; loginRevision++ },
+        )
+        return
+    }
+    if (showYouTubeLogin && currentSource == MusicSource.YouTubeMusic) {
+        YouTubeLoginScreen(
+            onDismiss = { showYouTubeLogin = false },
+            onLoggedIn = { showYouTubeLogin = false; loginRevision += 1 },
         )
         return
     }
@@ -232,8 +241,9 @@ fun ProviderSettingsHub(
                                     MusicSource.Kuwo -> showKuwoLogin = true
                                     MusicSource.AppleMusic -> showAppleMusicLogin = true
                                     MusicSource.Bilibili -> showBilibiliLogin = true
-                                    MusicSource.Spotify -> showSpotifyLogin = true
-                                    MusicSource.Jellyfin -> Unit
+                                     MusicSource.Spotify -> showSpotifyLogin = true
+                                     MusicSource.YouTubeMusic -> showYouTubeLogin = true
+                                     MusicSource.Jellyfin -> Unit
                                     MusicSource.Local -> Unit
                                 }
                             }
@@ -252,6 +262,7 @@ fun ProviderSettingsHub(
                                 MusicSource.AppleMusic -> "重新配置 Developer Token / Music User Token"
                                 MusicSource.Bilibili -> "清除当前 Bilibili 登录态后重新登录"
                                 MusicSource.Spotify -> "清除 OAuth token 后重新在浏览器授权"
+                                MusicSource.YouTubeMusic -> "匿名搜索和播放，无需登录"
                                 MusicSource.Jellyfin -> "清除当前 Jellyfin 服务器登录态后重新连接"
                                 MusicSource.Local -> "本地音乐库无需登录"
                             },
@@ -373,6 +384,7 @@ fun ProviderSettingsHub(
                                 MusicSource.AppleMusic -> showAppleMusicLogin = true
                                 MusicSource.Bilibili -> showBilibiliLogin = true
                                 MusicSource.Spotify -> showSpotifyLogin = true
+                                MusicSource.YouTubeMusic -> showYouTubeLogin = true
                                 MusicSource.Jellyfin -> Unit
                                 MusicSource.Local -> Unit
                             }

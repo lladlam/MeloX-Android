@@ -21,7 +21,11 @@ internal object MeloXPlaybackQueueStore {
     private const val POSITION = "position"
 
     fun save(context: Context, player: androidx.media3.common.Player) {
-        if (player.mediaItemCount == 0) return
+        val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (player.mediaItemCount == 0) {
+            preferences.edit().remove(QUEUE).remove(INDEX).remove(POSITION).commit()
+            return
+        }
         val array = JSONArray()
         repeat(player.mediaItemCount) { index ->
             val item = player.getMediaItemAt(index)
@@ -40,11 +44,11 @@ internal object MeloXPlaybackQueueStore {
                 put("durationMs", extras?.getLong(PlaybackTrackIdentity.DurationMsExtra, 0L) ?: 0L)
             })
         }
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        preferences.edit()
             .putString(QUEUE, array.toString())
             .putInt(INDEX, player.currentMediaItemIndex.coerceAtLeast(0))
             .putLong(POSITION, player.currentPosition.coerceAtLeast(0L))
-            .apply()
+            .commit()
     }
 
     fun read(context: Context): MeloXPersistedQueue? {

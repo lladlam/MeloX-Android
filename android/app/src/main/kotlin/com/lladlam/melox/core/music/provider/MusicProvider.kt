@@ -91,6 +91,14 @@ interface PlaybackCapability {
     ): PlaybackResolution
 }
 
+/** Provider-native download resolution. This is deliberately separate from playback fallback. */
+interface DownloadCapability {
+    suspend fun resolveDownload(
+        track: MusicTrack,
+        quality: AudioQualityTier,
+    ): PlaybackResolution
+}
+
 /**
  * Optional account write capability for a provider's native "favorite/liked"
  * collection. Providers must only implement this when the platform exposes a

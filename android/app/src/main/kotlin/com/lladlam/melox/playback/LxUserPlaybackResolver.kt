@@ -137,7 +137,8 @@ class LxUserPlaybackResolver(
                 LxUserRuntime().use { runtime ->
                     runtime.load(LxUserScript(script))
                     phase = "request"
-                    (sourceCode?.let(::listOf) ?: listOf("kw", "kg", "tx", "wy", "mg")).asSequence()
+                    (sourceCode?.let(::listOf) ?: listOf("kw", "kg", "tx", "wy", "mg"))
+                        .filter { runtime.supportsSource(it) }
                         .flatMap { source ->
                             lxQualityFallbacks(lxQuality).asSequence().map { requestedQuality -> source to requestedQuality }
                         }

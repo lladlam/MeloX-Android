@@ -56,12 +56,14 @@ import com.lladlam.melox.core.music.model.MusicSource
 import com.lladlam.melox.core.music.model.MusicTrack
 import com.lladlam.melox.core.music.model.ProviderTrackMetadata
 import com.lladlam.melox.core.music.provider.FavoriteCapability
+import com.lladlam.melox.core.music.provider.DownloadCapability
 import com.lladlam.melox.core.music.provider.MeloXMusicProviders
 import com.lladlam.melox.core.music.provider.PlaylistWriteCapability
 import com.lladlam.melox.core.music.provider.ProviderAccountManager
 import com.lladlam.melox.core.network.MeloXSearchKind
 import com.lladlam.melox.core.provider.bilibili.BilibiliLyricOffsetStore
 import com.lladlam.melox.core.provider.local.LocalRecognitionCoordinator
+import com.lladlam.melox.core.download.MeloXProviderDownloadStore
 import com.lladlam.melox.ui.glass.MeloXActionIcon
 import com.lladlam.melox.ui.animation.meloXPanelEnter
 import com.lladlam.melox.ui.animation.meloXPanelExit
@@ -99,6 +101,8 @@ internal fun MeloXProviderSongActionsOverlay(
         MeloXMusicProviders.create(context).require(identity.source)
     }
     val favoriteCapability = provider as? FavoriteCapability
+    val downloadCapability = provider as? DownloadCapability
+    val downloadStore = remember { MeloXProviderDownloadStore.get(context) }
     val playlistWriteCapability = provider as? PlaylistWriteCapability
     val accountManager = remember { ProviderAccountManager(context) }
     val providerLoggedIn = remember(identity.source, visible) {
@@ -129,6 +133,8 @@ internal fun MeloXProviderSongActionsOverlay(
     var actionStatus by remember(identity) { mutableStateOf<String?>(null) }
     var actionError by remember(identity) { mutableStateOf<String?>(null) }
     var recognitionWorking by remember(identity) { mutableStateOf(false) }
+    val downloaded = downloadStore.isDownloaded(identity)
+    val downloading = downloadStore.isDownloading(identity)
     val bilibiliOffsetState = if (identity.source == MusicSource.Bilibili) {
         BilibiliLyricOffsetStore.state(context, identity.value)
     } else null
@@ -233,6 +239,21 @@ internal fun MeloXProviderSongActionsOverlay(
                                             }
                                             favoriteWorking = false
                                         }
+                                    }
+                                }
+
+                                if (downloadCapability != null) {
+                                    ProviderActionItem(
+                                        title = when {
+                                            downloaded -> "已下载到本机"
+                                            downloading -> "正在下载…"
+                                            else -> "下载到本机"
+                                        },
+                                        symbol = if (downloaded) "✓" else "↓",
+                                        enabled = !downloaded && !downloading,
+                                    ) {
+                                        downloadStore.start(actionTrack)
+                                        actionStatus = "已加入 ${identity.source.displayName} 下载队列"
                                     }
                                 }
 
@@ -483,6 +504,7 @@ private fun shareProviderSong(
             "https://www.bilibili.com/video/$it"
         }
         MusicSource.Spotify -> "https://open.spotify.com/track/${identity.value}"
+        MusicSource.YouTubeMusic -> "https://music.youtube.com/watch?v=${identity.value}"
         MusicSource.Jellyfin -> null
         MusicSource.Local -> null
     }

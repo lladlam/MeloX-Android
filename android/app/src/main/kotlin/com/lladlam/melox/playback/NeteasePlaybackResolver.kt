@@ -10,12 +10,14 @@ import com.lladlam.melox.core.audio.MusicQualityRuntime
 import com.lladlam.melox.core.audio.NeteaseQualityClient
 import com.lladlam.melox.core.audio.NeteasePlaybackUnavailableException
 import com.lladlam.melox.core.music.model.AudioQualityTier
+import com.lladlam.melox.core.music.model.MusicResourceId
 import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.core.music.provider.PlaybackAccountStore
 import java.io.IOException
 import java.util.LinkedHashMap
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 @OptIn(UnstableApi::class)
 class NeteasePlaybackResolver(
@@ -23,6 +25,7 @@ class NeteasePlaybackResolver(
     @Suppress("UNUSED_PARAMETER")
     private val client: NeteaseSearchClient = NeteaseSearchClient(cookieProvider = cookieProvider),
     private val localSourceProvider: (Long) -> Uri? = { null },
+    private val providerLocalSourceProvider: (MusicResourceId) -> Uri? = { null },
     private val crossProviderFallback: CrossProviderPlaybackFallbackResolver? = null,
     private val chkszPlayback: ChkszPlaybackResolver? = null,
     private val lxUserPlayback: LxUserPlaybackResolver? = null,
@@ -84,28 +87,18 @@ class NeteasePlaybackResolver(
         cached(key)?.let { return it }
         val pending = CompletableFuture<ResolvedRequest>()
         val existing = inFlight.putIfAbsent(key, pending)
-        if (existing != null) return runCatching { existing.get() }
+        if (existing != null) return runCatching { existing.get(45L, TimeUnit.SECONDS) }
             .getOrElse { throw IOException("Unable to resolve playback source", it.cause ?: it) }
         return try {
             val resolved = try {
-                val thirdParty = if (thirdPartySourcesEnabled() && !thirdPartyOnlyForMembership()) {
-                    runCatching { chkszPlayback?.resolve(songId, quality.toCommonTier()) }.getOrNull()
-                } else null
-                if (thirdParty != null) {
-                    ResolvedRequest(
-                        uri = Uri.parse(thirdParty.url),
-                        cacheIdentity = "chksz:${chkszPlayback?.cacheIdentity()}",
-                    )
-                } else {
-                    val source = qualityClient.playbackSourceBlocking(
-                        songId = songId,
-                        requestedQuality = quality,
-                    )
-                    if (quality == MusicQualityRuntime.selected) {
-                        CrossProviderPlaybackRuntime.clear(songId)
-                    }
-                    ResolvedRequest(Uri.parse(source.url))
+                val source = qualityClient.playbackSourceBlocking(
+                    songId = songId,
+                    requestedQuality = quality,
+                )
+                if (quality == MusicQualityRuntime.selected) {
+                    CrossProviderPlaybackRuntime.clear(songId)
                 }
+                ResolvedRequest(Uri.parse(source.url))
             } catch (error: NeteasePlaybackUnavailableException) {
                 val fallback = fallbackRequest
                     ?.copy(quality = quality.toCommonTier())
@@ -272,6 +265,7 @@ class NeteasePlaybackResolver(
             providerDelegate ?: ProviderPlaybackResolver(
                 neteaseResolver = this,
                 providers = registry,
+                localSourceProvider = providerLocalSourceProvider,
                 authKeyProvider = ProviderPlaybackRuntime::authKey,
                 providerPlaybackEnabled = providerPlaybackEnabled,
                 chkszPlayback = chkszPlayback,
