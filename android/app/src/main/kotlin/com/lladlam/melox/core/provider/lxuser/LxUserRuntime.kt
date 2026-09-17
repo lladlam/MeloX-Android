@@ -160,6 +160,15 @@ class LxUserRuntime(
             ?: requested
     }
 
+    /**
+     * True when the script declared support for the source. Scripts that never
+     * sent an inited payload keep the old permissive behaviour, but a script that
+     * explicitly lists its sources no longer gets probed on sources it does not
+     * serve, which previously wasted a request per unsupported source.
+     */
+    fun supportsSource(source: String): Boolean =
+        sourceQualities.isEmpty() || sourceQualities.containsKey(source)
+
     fun sentEvents(): List<Pair<String, Any?>> = emptyList()
 
     private fun installGlobals() {
