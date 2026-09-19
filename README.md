@@ -19,11 +19,11 @@
 
 > MeloX Android 是非官方开源项目，与网易云音乐、小米、Apple 及其关联公司不存在隶属、合作或授权关系。
 
-## 当前版本：0.5.3
+## 当前版本：0.6.0
 
-`0.5.3` 完善 Smart AutoMix 过渡规划：分析提前到歌曲开始后执行，第二个实际播放播放器只在剩余 90 秒内准备；第一首过渡起点不早于全曲 75%，第二首降落点不晚于全曲 25%，第二首本次过渡实际内容限制在 45 秒内，速度变化上限放宽到 ±10%，并优先避开高能量/高潮候选点；同时修复队列恢复、后台分析与播放器稳定性问题。
+`0.6.0` 接入 Spotify 与 YouTube Music 两个新音乐源，新增 provider-neutral 下载与离线播放、vivo OriginOS 原子岛适配、基于提交的开发版更新检查；同时集中修复社区反馈的问题（酷狗音源、搜索返回、队列持久化、歌单界面、日推、横屏布局、歌词显示等），并加固账号会话存储与网络安全。
 
-- 下载与完整更新日志：[GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.5.3)
+- 下载与完整更新日志：[GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.6.0)
 - 详细版本记录：[CHANGELOG.md](CHANGELOG.md)
 - 本次版本说明：[CHANGELOG.md](CHANGELOG.md)
 
@@ -129,7 +129,8 @@ Root 权限不是应用正常运行的必要条件；平台增强功能应尽量
 
 - 可在“音乐服务”中单独开启第三方音乐源设置并阅读专用协议；该功能完全由本地开关控制，不属于云控范围。
 - YouTube Music 接入基于 [lladlam/Square](https://github.com/lladlam/Square) 的双后端架构；InnerTube 模块已 vendored 到 `android/innertube/`，其源自 [Metrolist](https://github.com/mostafaalagamy/Metrolist)，并保留 `com.metrolist.innertube` 包名。
-- Spotify 接入参考 [lladlam/Square](https://github.com/lladlam/Square) 的 Spotify backend 设计，播放引擎使用 `librespot-java`，目录和 OAuth 使用 Spotify Web API。
+- Spotify 接入参考 [lladlam/Square](https://github.com/lladlam/Square) 的 Spotify backend 设计，播放引擎使用 `librespot-java`，目录和 OAuth 使用 Spotify Web API；Client ID 由用户在应用内自行填写。
+- Spotify、YouTube Music 与网易云等源共用同一套 provider-neutral 下载与离线播放链路（`MeloXProviderDownloadStore`）。
 - vivo 设备自动尝试接入 OriginOS 原子岛；不提供单独开关，不支持该能力的设备自动保留标准 Android 媒体通知。该适配使用阿里云文档所述的 `notification.superx.*` 本地通知扩展，不依赖 EMAS 远程推送。
 - 支持导入 LX Music 兼容的 JavaScript 音乐源，并在受限 QuickJS 运行时中解析播放地址。
 - 可配置 CHKSZ 个人 API Key，优先解析网易云、QQ音乐和酷狗歌曲；配置前需要前往 `api.chksz.com` 注册，目前仅支持 LinuxDo 用户注册。

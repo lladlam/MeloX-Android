@@ -1,5 +1,62 @@
 # 更新日志
 
+## 0.6.0 — 2026-09-19
+
+### 新音乐源：Spotify
+
+- 接入 Spotify 作为独立音乐源，播放引擎使用 `librespot-java`，目录与 OAuth 使用 Spotify Web API。
+- 支持 OAuth Authorization Code + PKCE 浏览器授权、token 刷新与离线缓存。
+- Spotify Client ID 改为在应用内由用户自行填写，不再依赖构建期 Gradle property。
+
+### 新音乐源：YouTube Music
+
+- 接入 YouTube Music，InnerTube 模块 vendored 到 `android/innertube/`（源自 [Metrolist](https://github.com/mostafaalagamy/Metrolist)，保留 `com.metrolist.innertube` 包名）。
+- 支持匿名搜索与播放；登录使用 Google WebView，仅保存会话 Cookie、`VISITOR_DATA` 与 `DATASYNC_ID`。
+- 支持歌单、专辑、艺人、账号库与歌单写入；播放地址由 NewPipeExtractor 解析。
+
+### 下载与离线
+
+- 新增 provider-neutral 下载仓库 `MeloXProviderDownloadStore`，Spotify / YouTube Music 与网易云共用同一套下载、删除与本地优先播放链路。
+
+### 平台适配
+
+- vivo OriginOS 原子岛：vivo 设备自动尝试接入，无单独开关，不支持时回退标准媒体通知；使用本地 `notification.superx.*` 扩展，不依赖远程推送。
+
+### 更新与构建
+
+- 新增基于提交的开发版更新检查：构建时写入当前 commit，应用内对比远端 `main` 最新提交并展示提交说明，下载走 GitHub 镜像源自动选择。
+- 新增 GitHub Actions：push 到 `main` 或开发分支时构建 debug APK，发布到滚动 release `dev-latest`，可免登录下载。
+- debug APK 使用 `.dev` 后缀包名，可与正式签名包共存。
+
+### 问题修复
+
+- #35 酷狗源：歌单改为连续分页读取，修复歌手/歌名/封面识别与播放。
+- #36 部分 DPI 下播放页横屏 UI 显示异常。
+- #39 搜索页面返回直接回退到桌面。
+- #42 退出应用后队列未持久化 / 被清空。
+- #44 播放器封面位置异常。
+- #45 歌单界面：搜索框固定、排序移入“更多”菜单、歌曲行排版。
+- #46 每日推荐改为进入歌曲列表页。
+- #47 网易云日推 30 秒试听问题：识别试听音源并进入降级链路。
+- #48 歌词翻译未跟随歌词模糊。
+- #49 切歌闪退（队列重复 key）与歌手页只显示热门单曲（新增“全部歌曲”）。
+- #50 歌词界面切歌时控制条底色停留在上一首、封面切换生硬。
+
+### 安全与稳定性
+
+- 网易云、Spotify、酷狗会话迁移到 Keystore 加密存储，并保留旧明文数据的安全迁移。
+- 关闭全局明文 HTTP 与 Android 应用备份。
+- MediaSession 增加控制器白名单；播放解析增加超时；队列持久化改用同步提交并保证 key 唯一。
+
+### LX Music
+
+- 解析器按脚本声明的 `sources` 过滤，避免对未声明音源盲目请求；迁移规划见 `docs/lx-music-migration-plan.md`。
+
+### 版本
+
+- 版本号升级为 `0.6.0`，`versionCode 18`；正式产物名为 `MeloX-Android-0.6.0.apk`。
+- Release APK 使用 MeloX 发布证书签名。
+
 ## 0.5.3 — 2026-09-08
 
 ### Smart AutoMix 过渡规划
