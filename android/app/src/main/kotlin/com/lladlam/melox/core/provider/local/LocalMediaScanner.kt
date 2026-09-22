@@ -104,7 +104,7 @@ class LocalMediaScanner(
                     sizeBytes = cursor.long(projection, MediaStore.Audio.Media.SIZE),
                     lastModifiedMs = cursor.long(projection, MediaStore.Audio.Media.DATE_MODIFIED) * 1_000L,
                     sourceRootUri = rootUri,
-                    artworkUri = readEmbeddedArtwork(contentUri, contentUri.toString()),
+                    artworkUri = null,
                 )
             }
         }

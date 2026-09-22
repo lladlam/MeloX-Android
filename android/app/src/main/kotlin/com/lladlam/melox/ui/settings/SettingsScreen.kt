@@ -789,6 +789,16 @@ private fun SystemPlaybackSettings(context: android.content.Context) {
                 MeloXSettingsPreferences.setBoolean(context, "lyrics_notifications_enabled", enabled)
             }
         }
+        val hyperIsland = remember { mutableStateOf(MeloXSettingsPreferences.boolean(context, "hyperos_super_island_enabled", false)) }
+        SettingsExternalToggleRow(
+            title = "HyperOS 超级岛歌词",
+            value = hyperIsland.value,
+            note = "将歌词同步到 HyperOS Focus / Super Island 卡片；即使关闭独立歌词通知也会发送 Focus 卡片。",
+            grouped = true,
+        ) { enabled ->
+            hyperIsland.value = enabled
+            MeloXSettingsPreferences.setBoolean(context, "hyperos_super_island_enabled", enabled)
+        }
     }
     Spacer(Modifier.height(10.dp))
     SettingsGlassGroup {

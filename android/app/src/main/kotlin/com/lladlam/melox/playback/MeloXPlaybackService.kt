@@ -1123,6 +1123,8 @@ class MeloXPlaybackService : MediaSessionService() {
         val currentItem = active.currentMediaItem ?: return
         val metadataEnabled = MeloXSettingsRuntime.systemLyricsEnabled
         val notificationEnabled = MeloXSettingsRuntime.lyricNotificationsEnabled
+        val hyperIslandEnabled = MeloXSettingsPreferences.boolean(this, "hyperos_super_island_enabled", false)
+        val effectiveNotification = notificationEnabled || hyperIslandEnabled
         val songId = currentItem.mediaId.toLongOrNull()?.takeIf { it > 0L }
         if (shouldClearLegacySystemLyrics(currentItem.mediaId)) {
             restoreSystemLyricsMetadata(active)
@@ -1131,7 +1133,7 @@ class MeloXPlaybackService : MediaSessionService() {
             return
         }
         songId ?: return
-        if (!metadataEnabled && !notificationEnabled && !VivoAtomicIslandBridge.isSupported()) {
+        if (!metadataEnabled && !effectiveNotification && !VivoAtomicIslandBridge.isSupported()) {
             restoreSystemLyricsMetadata(active)
             (getSystemService(NotificationManager::class.java)).cancel(LYRICS_NOTIFICATION_ID)
             return
@@ -1187,7 +1189,7 @@ class MeloXPlaybackService : MediaSessionService() {
         val notificationAllowedByScene =
             (!MeloXSettingsRuntime.lyricNotificationBackgroundOnly || !MeloXAppVisibility.isForeground) &&
                 (!MeloXSettingsRuntime.lyricNotificationDismissWhenPaused || active.isPlaying)
-        if (notificationEnabled && notificationAllowedByScene) postLyricsNotification(line, nextLine, original) else {
+        if (effectiveNotification && notificationAllowedByScene) postLyricsNotification(line, nextLine, original) else {
             getSystemService(NotificationManager::class.java).cancel(LYRICS_NOTIFICATION_ID)
         }
     }

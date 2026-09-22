@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">MeloX</string>
+    <string name="app_name">弥乐</string>
     <string name="tab_home">Home</string>
     <string name="tab_explore">Explore</string>
     <string name="tab_library">Library</string>

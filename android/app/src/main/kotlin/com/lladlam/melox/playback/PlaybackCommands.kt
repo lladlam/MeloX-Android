@@ -22,6 +22,11 @@ import com.lladlam.melox.core.network.MeloXNetworkAvailability
 import java.io.IOException
 import java.util.concurrent.Executor
 import java.util.UUID
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 object PlaybackCommands {
     private const val TAG = "MeloXPlayback"
@@ -35,6 +40,7 @@ object PlaybackCommands {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val mainExecutor = Executor { command -> mainHandler.post(command) }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     @Volatile
     private var activeController: MediaController? = null
@@ -102,7 +108,19 @@ object PlaybackCommands {
                     val selectedPair = playable.firstOrNull { it.first == sourceStartIndex }
                         ?: playable.firstOrNull { it.first > sourceStartIndex }
                         ?: playable.first()
-                    val originalQueue = playable.map { (index, song) ->
+
+                    // Build the remaining queue in the background to avoid freezing the
+                    // UI for large playlists.  The first song starts playing immediately
+                    // and the full queue is assembled and appended afterward.
+                    adoptController(controller)
+                    controller.shuffleModeEnabled = false
+
+                    val smartQueueEnabled = MeloXPlaybackModePreferences.autoMix(appContext) &&
+                        MeloXPlaybackModePreferences.smartQueue(appContext) &&
+                        playable.size > 1
+                    val useShuffle = MeloXPlaybackModePreferences.shuffle(appContext) && !smartQueueEnabled
+
+                    val firstItem = playable[selectedPair.first].let { (index, song) ->
                         song.toMediaItem(
                             quality = quality,
                             queueOrigin = QUEUE_ORIGIN_BASE,
@@ -111,38 +129,45 @@ object PlaybackCommands {
                             heartMode = heartMode,
                         )
                     }
-                    val selectedItemIndex = originalQueue.indexOfFirst {
-                        it.mediaMetadata.extras?.getInt(QUEUE_ORIGINAL_INDEX_KEY) == selectedPair.first
-                    }.coerceAtLeast(0)
-                    val smartQueue = MeloXPlaybackModePreferences.autoMix(appContext) &&
-                        MeloXPlaybackModePreferences.smartQueue(appContext) &&
-                        originalQueue.size > 1
-                    val useShuffle = MeloXPlaybackModePreferences.shuffle(appContext) && !smartQueue
-                    val queue = if (useShuffle) {
-                        val selected = originalQueue[selectedItemIndex]
-                        listOf(selected) + originalQueue.filterIndexed { index, _ -> index != selectedItemIndex }.shuffled()
-                    } else {
-                        originalQueue
-                    }
-                    val startIndex = if (useShuffle) 0 else selectedItemIndex
-                    val dispatchedQueue = if (smartQueue) {
-                        listOf(MeloXSmartQueueBuilder.begin(queue, startIndex))
-                    } else {
-                        MeloXSmartQueueBuilder.reset()
-                        queue
-                    }
-                    val dispatchedStartIndex = if (smartQueue) 0 else startIndex
-
-                    adoptController(controller)
-                    controller.shuffleModeEnabled = false
-                    controller.setMediaItems(dispatchedQueue, dispatchedStartIndex, startPositionMs)
+                    controller.setMediaItems(listOf(firstItem), 0, startPositionMs)
                     MeloXPlaybackModeRuntime.heartModeActive = heartMode
                     controller.prepare()
                     controller.play()
 
+                    // Build remaining queue items asynchronously to avoid blocking.
+                    scope.launch(Dispatchers.Default) {
+                        val remainingItems = playable.filter { (index, _) -> index != selectedPair.first }
+                            .map { (index, song) ->
+                                song.toMediaItem(
+                                    quality = quality,
+                                    queueOrigin = QUEUE_ORIGIN_BASE,
+                                    originalIndex = index,
+                                    artworkOverride = downloads.localArtworkUri(song.id),
+                                    heartMode = heartMode,
+                                )
+                            }
+                        val fullQueue = if (useShuffle) {
+                            remainingItems.shuffled()
+                        } else {
+                            remainingItems
+                        }
+                        withContext(Dispatchers.Main) {
+                            controller.removeMediaItem(0)
+                            fullQueue.forEachIndexed { idx, item ->
+                                controller.addMediaItem(idx, item)
+                            }
+                            if (smartQueueEnabled && fullQueue.isNotEmpty()) {
+                                val smartBuilt = MeloXSmartQueueBuilder.begin(fullQueue, 0)
+                                controller.clearMediaItems()
+                                controller.setMediaItems(listOf(smartBuilt), 0, startPositionMs)
+                            }
+                            Log.d(TAG, "Playback queue finalized: total=${1 + fullQueue.size}, smart=$smartQueueEnabled, offline=$offline")
+                        }
+                    }
+
                     Log.d(
                         TAG,
-                        "Playback queue dispatched: size=${dispatchedQueue.size}, smart=$smartQueue, start=$dispatchedStartIndex, offline=$offline, quality=${quality.apiLevel}",
+                        "Playback started: firstItem=${selectedPair.first}, useShuffle=$useShuffle, offline=$offline",
                     )
                 } catch (error: Throwable) {
                     Log.e(TAG, "Unable to connect MediaController", error)
