@@ -57,6 +57,7 @@ data class LyricLine(
     val text: String,
     val syllables: List<LyricSyllable> = emptyList(),
     val translation: String? = null,
+    val adaptTranslation: Boolean = false,
     val romanization: String? = null,
     val romanizationSyllables: List<LyricSyllable> = emptyList(),
     val agent: LyricAgent? = null,

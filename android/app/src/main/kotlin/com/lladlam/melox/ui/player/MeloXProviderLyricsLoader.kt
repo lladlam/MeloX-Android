@@ -5,7 +5,10 @@ import android.os.SystemClock
 import android.util.Log
 import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.download.MeloXDownloadStore
+import com.lladlam.melox.core.lyrics.LyricSource
 import com.lladlam.melox.core.lyrics.LyricsDocument
+import com.lladlam.melox.core.lyrics.MeloXLyricScript
+import com.lladlam.melox.core.lyrics.MeloXLyricScriptConverter
 import com.lladlam.melox.core.lyrics.LyricTimelineProcessor
 import com.lladlam.melox.core.lyrics.AmlldbLyricsClient
 import com.lladlam.melox.core.lyrics.BoundLyricSource
@@ -35,6 +38,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -103,7 +107,7 @@ internal object MeloXProviderLyricsLoader {
             bilibiliAlignment = bilibiliAlignment,
             binding = binding,
         )
-        cached(cacheKey)?.let { return it }
+        cached(cacheKey)?.let { return scripted(it) }
 
         // Snapshot Compose/player state before handing work to the IO scope. This
         // avoids reading rapidly changing snapshot state from the worker thread.
@@ -166,9 +170,9 @@ internal object MeloXProviderLyricsLoader {
         cacheKey: String,
         snapshot: LyricTrackSnapshot,
     ): LyricsDocument {
-        cached(cacheKey)?.let { return it }
+        cached(cacheKey)?.let { return scripted(it) }
         val deferred = synchronized(lock) {
-            cache[cacheKey]?.let { return it }
+            cache[cacheKey]?.let { return scripted(it) }
             inFlight[cacheKey] ?: workerScope.async {
                 LyricTimelineProcessor.process(loadDocument(appContext, snapshot)).also { document ->
                     if (document.lines.isNotEmpty()) remember(cacheKey, document)
@@ -182,14 +186,19 @@ internal object MeloXProviderLyricsLoader {
                 }
             }
         }
-        return withTimeoutOrNull(TotalLoadTimeoutMs) { deferred.await() } ?: run {
+        val document = withTimeoutOrNull(TotalLoadTimeoutMs) { deferred.await() } ?: run {
+            deferred.cancel()
             synchronized(lock) {
                 if (inFlight[cacheKey] === deferred) inFlight.remove(cacheKey)
             }
             Log.w("MeloXLyricsAuto", "Lyrics load timed out for $cacheKey")
-            LyricsDocument(emptyList())
+            throw java.io.IOException("歌词加载超时")
         }
+        return scripted(document)
     }
+
+    private fun scripted(document: LyricsDocument): LyricsDocument =
+        MeloXLyricScriptConverter.convert(document, requestedLyricScript())
 
     private suspend fun loadDocument(
         appContext: Context,
@@ -256,7 +265,7 @@ internal object MeloXProviderLyricsLoader {
         val amllResult = async {
             val track = neteaseTrackResult.await() ?: return@async null
             val id = track.id.value.toLongOrNull() ?: return@async null
-            runCatching { AmlldbLyricsClient().lyrics(id) }
+            runCatching { AmlldbLyricsClient().lyrics(id, requestedLyricScript()) }
                 .onFailure { Log.w("MeloXBilibiliLyrics", "AMLL primary lyric failed: ${it.message}") }
                 .getOrNull()?.takeIf { it.lines.isNotEmpty() }
                 ?.let { BilibiliLyricSourceResult("amll", it, track) }
@@ -309,7 +318,7 @@ internal object MeloXProviderLyricsLoader {
         val verificationAmllResult = async {
             val track = neteaseTrack ?: return@async null
             val id = track.id.value.toLongOrNull() ?: return@async null
-            runCatching { AmlldbLyricsClient().lyrics(id) }
+            runCatching { AmlldbLyricsClient().lyrics(id, requestedLyricScript()) }
                 .onFailure { Log.w("MeloXBilibiliLyrics", "AMLL verification lyric failed: ${it.message}") }
                 .getOrNull()?.takeIf { it.lines.isNotEmpty() }
                 ?.let { BilibiliLyricSourceResult("amll", it, track) }
@@ -463,7 +472,8 @@ internal object MeloXProviderLyricsLoader {
                     ?.let { LocalMusicRepository(appContext).track(it.value)?.recognizedNeteaseId }
                 ?: findMatchedNeteaseTrack(appContext, snapshot)?.id?.value?.toLongOrNull()
                 ?: return ResolvedLyrics.Empty
-            val document = runCatching { AmlldbLyricsClient().lyrics(id) }.getOrDefault(LyricsDocument(emptyList()))
+            val document = runCatching { AmlldbLyricsClient().lyrics(id, requestedLyricScript()) }
+                .getOrDefault(LyricsDocument(emptyList()))
             return ResolvedLyrics(
                 document,
                 document.takeIf { it.lines.isNotEmpty() }?.let {
@@ -527,7 +537,8 @@ internal object MeloXProviderLyricsLoader {
     private suspend fun loadBinding(appContext: Context, binding: LyricBinding): LyricsDocument {
         if (binding.source == BoundLyricSource.AmlL) {
             val id = binding.resourceValue.toLongOrNull() ?: return LyricsDocument(emptyList())
-            return runCatching { AmlldbLyricsClient().lyrics(id) }.getOrDefault(LyricsDocument(emptyList()))
+            return runCatching { AmlldbLyricsClient().lyrics(id, requestedLyricScript()) }
+                .getOrDefault(LyricsDocument(emptyList()))
         }
         val providerSource = binding.provider ?: return LyricsDocument(emptyList())
         val provider = MeloXMusicProviders.create(appContext).require(providerSource)
@@ -638,6 +649,8 @@ internal object MeloXProviderLyricsLoader {
 }
 
 internal data class AutoLyricCandidate(val priority: Int, val document: LyricsDocument, val binding: LyricBinding? = null)
+
+private fun requestedLyricScript(): MeloXLyricScript = MeloXLyricScript.fromSystem()
 
 internal enum class LyricAutoSource { AmlL, QQMusic, Netease, Current }
 
@@ -754,6 +767,7 @@ internal fun lyricCacheKey(
     }
     if (resourceId.source == MusicSource.Bilibili) append(":alignment:").append(bilibiliAlignment)
     binding?.let { append(":bound:").append(it.stableKey()) }
+    append(":script:").append(MeloXLyricScript.fromSystem().name)
 }
 
 internal data class BilibiliLyricLoadPolicy(

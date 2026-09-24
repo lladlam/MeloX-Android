@@ -8,7 +8,7 @@ import org.xml.sax.InputSource
 
 /** Parses Apple Music/AMLL TTML including timed spans and iTunes extensions. */
 object TtmlLyricsParser {
-    fun parse(content: String): LyricsDocument {
+    fun parse(content: String, script: MeloXLyricScript = MeloXLyricScript.Original): LyricsDocument {
         if (!content.contains("http://www.w3.org/ns/ttml")) return LyricsDocument(emptyList())
         val document = runCatching {
             DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
@@ -17,13 +17,13 @@ object TtmlLyricsParser {
         }.getOrNull() ?: return LyricsDocument(emptyList())
         val root = document.documentElement ?: return LyricsDocument(emptyList())
         val agents = parseAgents(root)
-        val translations = parseTranslations(root)
+        val translations = parseTranslations(root, script)
         val transliterations = parseTransliterations(root)
         val paragraphs = root.getElementsByTagNameNS("*", "p")
         val lines = buildList {
             for (index in 0 until paragraphs.length) {
                 (paragraphs.item(index) as? Element)
-                    ?.let { parseParagraph(it, agents, translations, transliterations) }
+                    ?.let { parseParagraph(it, agents, translations, transliterations, script) }
                     ?.let(::add)
             }
         }.sortedBy(LyricLine::timeMs)
@@ -34,8 +34,9 @@ object TtmlLyricsParser {
     private fun parseParagraph(
         paragraph: Element,
         agents: Map<String, LyricAgent>,
-        translations: Map<String, String>,
+        translations: Map<String, SelectedTranslation>,
         transliterations: Map<String, List<String>>,
+        script: MeloXLyricScript,
     ): LyricLine? {
         val start = paragraph.attr("begin")?.parseTime() ?: return null
         val end = paragraph.attr("end")?.parseTime()
@@ -51,12 +52,18 @@ object TtmlLyricsParser {
         } else emptyList()
         val inlineRoman = directSpans.firstOrNull { it.hasRole("x-roman") }?.allText()?.trim()
         val romanization = inlineRoman ?: romanizationSyllables.joinToString(" ") { it.text }.takeIf(String::isNotBlank)
-        val inlineTranslation = directSpans.firstOrNull {
+        val inlineTranslation = selectTranslation(directSpans.filter {
             it.hasRole("x-translation") && !it.hasRole("x-bg") && it.isChineseTranslation()
-        }?.allText()?.trim()
-        val translation = inlineTranslation ?: translations[key]?.splitTranslation()?.first
+        }, script)
+        val translation = inlineTranslation?.text ?: translations[key]?.text?.splitTranslation()?.first
+        val storedTranslation = translations[key]
+        val adaptTranslation = when {
+            inlineTranslation != null -> !inlineTranslation.exact
+            storedTranslation != null -> !storedTranslation.exact
+            else -> false
+        }
         val accompaniment = directSpans.filter { it.hasRole("x-bg") }.mapNotNull { background ->
-            parseBackground(background, key, agent, translations)
+            parseBackground(background, key, agent, translations, script)
         }
         val plainText = paragraph.primaryText().trim()
         if (syllables.isEmpty() && plainText.isNotBlank()) {
@@ -65,6 +72,7 @@ object TtmlLyricsParser {
                 durationMs = end?.minus(start)?.coerceAtLeast(1L),
                 text = plainText,
                 translation = translation,
+                adaptTranslation = adaptTranslation,
                 romanization = romanization,
                 agent = agent,
                 timingKind = LyricTimingKind.LineSynchronized,
@@ -79,6 +87,7 @@ object TtmlLyricsParser {
             text = text,
             syllables = syllables,
             translation = translation,
+            adaptTranslation = adaptTranslation,
             romanization = romanization,
             romanizationSyllables = romanizationSyllables,
             agent = agent,
@@ -91,15 +100,16 @@ object TtmlLyricsParser {
         element: Element,
         parentKey: String?,
         parentAgent: LyricAgent?,
-        translations: Map<String, String>,
+        translations: Map<String, SelectedTranslation>,
+        script: MeloXLyricScript,
     ): LyricAccompaniment? {
         val syllables = parseSyllables(element)
         if (syllables.isEmpty()) return null
         val key = element.attr("itunes:key", "key") ?: parentKey
-        val translation = element.directElements("span").firstOrNull {
+        val selected = selectTranslation(element.directElements("span").filter {
             it.hasRole("x-translation") && it.isChineseTranslation()
-        }?.allText()?.trim()
-            ?: translations[key]?.splitTranslation()?.let { it.second ?: it.first }
+        }, script)
+        val translation = selected?.text ?: translations[key]?.text?.splitTranslation()?.let { it.second ?: it.first }
         val start = element.attr("begin")?.parseTime() ?: syllables.first().startTimeMs
         val end = element.attr("end")?.parseTime() ?: syllables.last().endTimeMs
         return LyricAccompaniment(
@@ -138,16 +148,22 @@ object TtmlLyricsParser {
         }
     }
 
-    private fun parseTranslations(root: Element): Map<String, String> = buildMap {
+    private data class SelectedTranslation(val text: String, val exact: Boolean)
+
+    private fun parseTranslations(root: Element, script: MeloXLyricScript): Map<String, SelectedTranslation> {
+        val grouped = linkedMapOf<String, MutableList<Element>>()
         val nodes = root.getElementsByTagNameNS("*", "translation")
         for (index in 0 until nodes.length) {
             val texts = (nodes.item(index) as? Element)?.getElementsByTagNameNS("*", "text") ?: continue
             for (textIndex in 0 until texts.length) {
                 val text = texts.item(textIndex) as? Element ?: continue
                 val key = text.attr("for") ?: continue
-                if (text.isChineseTranslation()) put(key, text.allText().trim())
+                if (text.isChineseTranslation()) grouped.getOrPut(key, ::mutableListOf).add(text)
             }
         }
+        return grouped.mapNotNull { (key, candidates) ->
+            selectTranslation(candidates, script)?.let { key to it }
+        }.toMap()
     }
 
     private fun parseTransliterations(root: Element): Map<String, List<String>> = buildMap {
@@ -208,6 +224,20 @@ object TtmlLyricsParser {
         return substring(0, start).trim() to substring(start + 1, lastIndex).trim().takeIf(String::isNotBlank)
     }
 
+    private fun selectTranslation(candidates: List<Element>, script: MeloXLyricScript): SelectedTranslation? {
+        if (candidates.isEmpty()) return null
+        if (script == MeloXLyricScript.Original) {
+            return SelectedTranslation(candidates.first().allText().trim(), exact = false)
+        }
+        val wanted = if (script == MeloXLyricScript.Traditional) "hant" else "hans"
+        val opposite = if (wanted == "hant") "hans" else "hant"
+        candidates.firstOrNull { it.languageTag().contains(wanted) }?.let {
+            return SelectedTranslation(it.allText().trim(), exact = true)
+        }
+        val fallback = candidates.firstOrNull { !it.languageTag().contains(opposite) } ?: candidates.first()
+        return SelectedTranslation(fallback.allText().trim(), exact = false)
+    }
+
     /** AMLL publishes alternate translations together with an explicit TTML language tag. */
     private fun Element.isChineseTranslation(): Boolean {
         val language = attr("xml:lang", "lang")?.trim()?.lowercase() ?: return false
@@ -217,6 +247,8 @@ object TtmlLyricsParser {
             language == "cmn-hans" ||
             language == "cmn-hant"
     }
+
+    private fun Element.languageTag(): String = attr("xml:lang", "lang").orEmpty().trim().lowercase()
 
     private fun String.decodeEntities(): String = replace("&amp;", "&").replace("&lt;", "<")
         .replace("&gt;", ">").replace("&apos;", "'").replace("&quot;", "\"")

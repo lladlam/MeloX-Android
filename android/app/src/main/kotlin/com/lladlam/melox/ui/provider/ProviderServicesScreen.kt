@@ -456,7 +456,11 @@ fun ProviderServicesScreen(
                 lxSources.forEach { source ->
                     MeloXIosListRow(
                         title = source.metadata.name ?: source.id,
-                        subtitle = listOfNotNull(source.metadata.version?.let { "v$it" }, source.metadata.author).joinToString(" · "),
+                        subtitle = listOfNotNull(
+                            source.metadata.version?.let { "v$it" },
+                            source.metadata.author,
+                            source.metadata.expirationTime?.takeIf { it.isNotBlank() }?.let { "到期 $it" },
+                        ).joinToString(" · "),
                         detail = "删除",
                         leading = { Spacer(Modifier.width(25.dp)) },
                         onClick = {

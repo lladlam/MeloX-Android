@@ -41,6 +41,7 @@ object PlaybackCommands {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val mainExecutor = Executor { command -> mainHandler.post(command) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val queueGeneration = java.util.concurrent.atomic.AtomicLong()
 
     @Volatile
     private var activeController: MediaController? = null
@@ -109,9 +110,6 @@ object PlaybackCommands {
                         ?: playable.firstOrNull { it.first > sourceStartIndex }
                         ?: playable.first()
 
-                    // Build the remaining queue in the background to avoid freezing the
-                    // UI for large playlists.  The first song starts playing immediately
-                    // and the full queue is assembled and appended afterward.
                     adoptController(controller)
                     controller.shuffleModeEnabled = false
 
@@ -119,8 +117,9 @@ object PlaybackCommands {
                         MeloXPlaybackModePreferences.smartQueue(appContext) &&
                         playable.size > 1
                     val useShuffle = MeloXPlaybackModePreferences.shuffle(appContext) && !smartQueueEnabled
-
-                    val firstItem = playable[selectedPair.first].let { (index, song) ->
+                    val generation = queueGeneration.incrementAndGet()
+                    val selectedSourceIndex = selectedPair.first
+                    val firstItem = selectedPair.let { (index, song) ->
                         song.toMediaItem(
                             quality = quality,
                             queueOrigin = QUEUE_ORIGIN_BASE,
@@ -134,34 +133,41 @@ object PlaybackCommands {
                     controller.prepare()
                     controller.play()
 
-                    // Build remaining queue items asynchronously to avoid blocking.
                     scope.launch(Dispatchers.Default) {
-                        val remainingItems = playable.filter { (index, _) -> index != selectedPair.first }
-                            .map { (index, song) ->
-                                song.toMediaItem(
-                                    quality = quality,
-                                    queueOrigin = QUEUE_ORIGIN_BASE,
-                                    originalIndex = index,
-                                    artworkOverride = downloads.localArtworkUri(song.id),
-                                    heartMode = heartMode,
-                                )
-                            }
-                        val fullQueue = if (useShuffle) {
-                            remainingItems.shuffled()
+                        val built = playable.map { (index, song) ->
+                            index to song.toMediaItem(
+                                quality = quality,
+                                queueOrigin = QUEUE_ORIGIN_BASE,
+                                originalIndex = index,
+                                artworkOverride = downloads.localArtworkUri(song.id),
+                                heartMode = heartMode,
+                            )
+                        }
+                        val ordered = if (useShuffle) {
+                            val selected = built.first { it.first == selectedSourceIndex }.second
+                            listOf(selected) + built.filter { it.first != selectedSourceIndex }.map { it.second }.shuffled()
                         } else {
-                            remainingItems
+                            built.sortedBy { it.first }.map { it.second }
                         }
                         withContext(Dispatchers.Main) {
-                            controller.removeMediaItem(0)
-                            fullQueue.forEachIndexed { idx, item ->
-                                controller.addMediaItem(idx, item)
+                            if (generation != queueGeneration.get()) return@withContext
+                            if (controller.mediaItemCount != 1 || controller.getMediaItemAt(0).mediaId != firstItem.mediaId) return@withContext
+                            if (smartQueueEnabled) {
+                                val selectedIndex = if (useShuffle) 0 else ordered.indexOfFirst {
+                                    it.mediaMetadata.extras?.getInt(QUEUE_ORIGINAL_INDEX_KEY) == selectedSourceIndex
+                                }.coerceAtLeast(0)
+                                MeloXSmartQueueBuilder.begin(ordered, selectedIndex)
+                                return@withContext
                             }
-                            if (smartQueueEnabled && fullQueue.isNotEmpty()) {
-                                val smartBuilt = MeloXSmartQueueBuilder.begin(fullQueue, 0)
-                                controller.clearMediaItems()
-                                controller.setMediaItems(listOf(smartBuilt), 0, startPositionMs)
+                            if (useShuffle) {
+                                controller.addMediaItems(ordered.drop(1))
+                            } else {
+                                val after = ordered.dropWhile {
+                                    it.mediaMetadata.extras?.getInt(QUEUE_ORIGINAL_INDEX_KEY) != selectedSourceIndex
+                                }.drop(1)
+                                if (after.isNotEmpty()) controller.addMediaItems(after)
                             }
-                            Log.d(TAG, "Playback queue finalized: total=${1 + fullQueue.size}, smart=$smartQueueEnabled, offline=$offline")
+                            Log.d(TAG, "Playback queue finalized: total=${ordered.size}, smart=$smartQueueEnabled, offline=$offline")
                         }
                     }
 

@@ -221,6 +221,7 @@ internal fun lyricUiRequestKey(state: MeloXPlaybackUiState, automaticSelection: 
     append(':').append(normalizeLyricMatchText(state.album))
     append(':').append(state.durationMs.takeIf { it > 0L }?.let { ((it + 500L) / 1_000L) * 1_000L } ?: 0L)
     append(':').append(automaticSelection)
+    append(':').append(com.lladlam.melox.core.lyrics.MeloXLyricScript.fromSystem().name)
 }
 
 @Composable

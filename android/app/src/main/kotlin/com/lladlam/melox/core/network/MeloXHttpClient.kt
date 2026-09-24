@@ -2,12 +2,17 @@ package com.lladlam.melox.core.network
 
 import android.content.Context
 import java.io.File
+import java.util.concurrent.TimeUnit
 import okhttp3.Cache
 import okhttp3.OkHttpClient
 
 /** One process-wide connection pool, dispatcher and bounded HTTP cache. */
 object MeloXHttpClient {
-    private val base = OkHttpClient.Builder().build()
+    private val base = OkHttpClient.Builder()
+        .callTimeout(20, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .build()
 
     @Volatile
     private var client: OkHttpClient = base

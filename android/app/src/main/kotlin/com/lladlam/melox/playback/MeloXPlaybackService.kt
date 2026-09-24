@@ -122,6 +122,7 @@ class MeloXPlaybackService : MediaSessionService() {
     private var analysisForegroundStarted = false
     private var backgroundAnalysisJob: Job? = null
     private var backgroundAnalysisScheduledId: String? = null
+    private var prefetchJob: Job? = null
     private var smartQueueJob: Job? = null
     private var smartQueueSourceId: String? = null
     private var smartQueueGeneration = -1L
@@ -141,13 +142,19 @@ class MeloXPlaybackService : MediaSessionService() {
     private val playerListener = object : Player.Listener {
         override fun onPlayerError(error: PlaybackException) {
             val active = player
-            if (active != null && !MeloXNetworkAvailability.isOnline(this@MeloXPlaybackService)) {
-                if (skipToNextDownloaded(active)) {
-                    Log.i(TAG, "Offline playback skipped unavailable item after player error")
-                    return
-                }
-            }
             Log.e(TAG, "Playback failed: code=${error.errorCodeName}, message=${error.message}", error)
+            if (active == null) return
+            if (!MeloXNetworkAvailability.isOnline(this@MeloXPlaybackService) && skipToNextDownloaded(active)) {
+                Log.i(TAG, "Offline playback skipped unavailable item after player error")
+                return
+            }
+            if (active.hasNextMediaItem()) {
+                active.seekToNextMediaItem()
+                active.prepare()
+                active.play()
+                return
+            }
+            active.prepare()
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -294,8 +301,10 @@ class MeloXPlaybackService : MediaSessionService() {
         // needed by Smart analysis when it examines the outgoing tail later.
         val following = (current until minOf(current + PREFETCH_TRACK_COUNT + 1, active.mediaItemCount))
             .map(active::getMediaItemAt)
-        serviceScope.launch(Dispatchers.IO) {
+        prefetchJob?.cancel()
+        prefetchJob = serviceScope.launch(Dispatchers.IO) {
             following.forEach { item ->
+                if (!isActive) return@launch
                 runCatching { mediaPrefetcher.cache(item) }
                     .onSuccess { Log.i(TAG, "Playback cache ready: ${item.mediaId}") }
                     .onFailure { Log.d(TAG, "Playback cache skipped for ${item.mediaId}: ${it.message}") }
@@ -1565,6 +1574,12 @@ class MeloXPlaybackService : MediaSessionService() {
         active.replaceMediaItem(index, localItem)
     }
 
+    private fun downloaded(mediaId: String): Boolean {
+        mediaId.toLongOrNull()?.takeIf { downloadStore.contains(it) }?.let { return true }
+        val id = PlaybackTrackIdentity.decode(mediaId) ?: return false
+        return providerDownloadStore.isDownloaded(id)
+    }
+
     private fun skipToNextDownloaded(active: ExoPlayer): Boolean {
         val current = active.currentMediaItemIndex
         if (current !in 0 until active.mediaItemCount) return false
@@ -1575,7 +1590,7 @@ class MeloXPlaybackService : MediaSessionService() {
             emptyList()
         }
         val target = (forward + wrapped).firstOrNull { index ->
-            active.getMediaItemAt(index).mediaId.toLongOrNull()?.let(downloadStore::contains) == true
+            downloaded(active.getMediaItemAt(index).mediaId)
         } ?: return false
         cancelPreparedMix()
         active.seekToDefaultPosition(target)

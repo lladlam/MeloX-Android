@@ -87,8 +87,14 @@ class NeteasePlaybackResolver(
         cached(key)?.let { return it }
         val pending = CompletableFuture<ResolvedRequest>()
         val existing = inFlight.putIfAbsent(key, pending)
-        if (existing != null) return runCatching { existing.get(45L, TimeUnit.SECONDS) }
-            .getOrElse { throw IOException("Unable to resolve playback source", it.cause ?: it) }
+        if (existing != null) {
+            if (existing.isCompletedExceptionally) {
+                inFlight.remove(key, existing)
+            } else {
+                return runCatching { existing.get(20L, TimeUnit.SECONDS) }
+                    .getOrElse { throw IOException("Unable to resolve playback source", it.cause ?: it) }
+            }
+        }
         return try {
             val resolved = try {
                 val source = qualityClient.playbackSourceBlocking(

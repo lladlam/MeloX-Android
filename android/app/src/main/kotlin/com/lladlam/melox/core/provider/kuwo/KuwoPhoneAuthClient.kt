@@ -14,7 +14,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 
-private const val KUWO_AUTH_BASE_URL = "http://ar.i.kuwo.cn/US_NEW/kuwo"
+private const val KUWO_AUTH_BASE_URL = "https://ar.i.kuwo.cn/US_NEW/kuwo"
 private const val SEND_SMS_PATH = "/send_sms"
 private const val LOGIN_SMS_PATH = "/login_sms"
 private const val SECRET_SALT = "imbadboy@!153"

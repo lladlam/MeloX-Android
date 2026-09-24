@@ -205,6 +205,7 @@ object MeloXListenTogetherCoordinator {
                     refreshRoomStatus()
                 }
 
+                if (room != null && controller == null && !controllerConnectionPending) connectController()
                 val activeRoom = room
                 if (activeRoom == null) {
                     // Do not hit room-status once per second when the user is not

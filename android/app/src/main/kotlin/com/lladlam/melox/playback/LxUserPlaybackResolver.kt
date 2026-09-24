@@ -16,6 +16,7 @@ import com.lladlam.melox.core.music.model.MusicResourceId
 import com.lladlam.melox.core.music.model.ProviderTrackMetadata
 import java.io.IOException
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 internal data class LxUserPlaybackResult(
     val sourceId: String,
@@ -28,6 +29,7 @@ class LxUserPlaybackResolver(
     context: Context,
 ) {
     private val appContext = context.applicationContext
+    private val inFlight = ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<LxUserPlaybackResult?>>()
 
     fun cacheIdentity(): String = LxUserSourceStore.list(appContext).joinToString("|") { it.id }
 
@@ -100,6 +102,23 @@ class LxUserPlaybackResolver(
     }
 
     internal fun resolve(track: MusicTrack, quality: AudioQualityTier): LxUserPlaybackResult? {
+        val requestKey = "${track.id.source.storageValue}:${track.id.value}:${quality.name}:${cacheIdentity()}"
+        val pending = java.util.concurrent.CompletableFuture<LxUserPlaybackResult?>()
+        val existing = inFlight.putIfAbsent(requestKey, pending)
+        if (existing != null) return runCatching { existing.get(45L, java.util.concurrent.TimeUnit.SECONDS) }.getOrNull()
+        return try {
+            val resolved = resolveUncached(track, quality)
+            pending.complete(resolved)
+            resolved
+        } catch (error: Throwable) {
+            pending.completeExceptionally(error)
+            throw error
+        } finally {
+            inFlight.remove(requestKey, pending)
+        }
+    }
+
+    private fun resolveUncached(track: MusicTrack, quality: AudioQualityTier): LxUserPlaybackResult? {
         val sourceCode = when (track.id.source) {
             MusicSource.QQMusic -> "tx"
             MusicSource.Kugou -> "kg"
@@ -194,14 +213,19 @@ class LxUserPlaybackResolver(
             }
         }.onFailure { Log.w(TAG, "LX Netease match search failed title=${track.title.take(40)} detail=${it.safeLogMessage()}") }
             .getOrNull().orEmpty()
+        val requestedArtist = normalizeLxText(track.artistText)
         val match = candidates
             .asSequence()
             .filter { normalizeLxText(it.name) == normalizeLxText(track.title) }
-            .filter { candidate -> track.durationMs == null || candidate.durationMs <= 0L || kotlin.math.abs(candidate.durationMs - track.durationMs) <= 8_000L }
-            .sortedWith(compareByDescending<com.lladlam.melox.core.model.SearchSong> {
-                val requestedArtist = normalizeLxText(track.artistText)
-                if (requestedArtist.isNotBlank() && normalizeLxText(it.artists).contains(requestedArtist)) 1 else 0
-            }.thenBy { candidate -> kotlin.math.abs(candidate.durationMs - (track.durationMs ?: candidate.durationMs)) })
+            .filter { candidate ->
+                requestedArtist.isBlank() || normalizeLxText(candidate.artists).contains(requestedArtist)
+            }
+            .filter { candidate -> track.durationMs == null || candidate.durationMs <= 0L || kotlin.math.abs(candidate.durationMs - track.durationMs) <= 3_000L }
+            .filter { candidate ->
+                val name = candidate.name.lowercase(Locale.ROOT)
+                !name.contains("live") && !name.contains("翻唱") && !name.contains("cover")
+            }
+            .sortedBy { candidate -> kotlin.math.abs(candidate.durationMs - (track.durationMs ?: candidate.durationMs)) }
             .firstOrNull()
         if (match == null) {
             Log.w(TAG, "LX Netease match not found title=${track.title.take(40)} candidates=${candidates.size}")

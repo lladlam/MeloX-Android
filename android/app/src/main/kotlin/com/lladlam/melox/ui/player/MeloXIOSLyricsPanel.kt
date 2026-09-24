@@ -1254,7 +1254,7 @@ private fun MeloXUpstreamLyricLine(
             Text(
                 text = line.translation.orEmpty(),
                 modifier = Modifier.fillMaxWidth()
-                    .blur(with(LocalDensity.current) { effectiveBlur.toDp() })
+                    .blur(effectiveBlur.dp)
                     .padding(top = UpstreamLyrics.ANNOTATION_SPACING_DP.dp),
                 color = Color.White.copy(alpha = MeloXSettingsRuntime.lyricTranslationOpacity),
                 textAlign = lineTextAlign,

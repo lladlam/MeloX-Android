@@ -16,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import javax.crypto.Cipher
@@ -346,7 +347,7 @@ class LxUserRuntime(
         Log.d(TAG, "http start endpoint=${url.toSafeEndpoint()} method=$method headers=${headers.keys.joinToString(",")} " +
             "form=${form != null} body=${bodyValue != null} timeoutMs=$timeoutMs")
 
-        Thread {
+        httpPool.execute {
             try {
                 val requestBuilder = Request.Builder().url(url)
                 headers.forEach { (key, value) ->
@@ -394,7 +395,7 @@ class LxUserRuntime(
                 Log.w(TAG, "LX HTTP failed error=${error.javaClass.simpleName}: ${error.message.safeLogMessage()}")
                 enqueueHttpResponse(HttpResponse(callback, error.message ?: "request failed", null, null))
             }
-        }.start()
+        }
     }
 
     private fun enqueueHttpResponse(response: HttpResponse) {
@@ -403,6 +404,10 @@ class LxUserRuntime(
     }
 
     private fun processPendingHttpResponses() {
+        if (closed.get()) {
+            pendingHttpResponses.clear()
+            return
+        }
         while (true) {
             val response = pendingHttpResponses.poll() ?: break
             if (response.error != null) {
@@ -478,7 +483,7 @@ class LxUserRuntime(
             onError(IllegalStateException(args.firstOrNull()?.toString() ?: "LX promise rejected"))
             null
         }
-        runCatching { then.call(resolve, reject) }.onFailure { onSuccess(value) }
+        runCatching { then.call(resolve, reject) }.onFailure(onError)
     }
 
     private fun drainUntil(done: CountDownLatch) {
@@ -601,6 +606,9 @@ class LxUserRuntime(
     }
 
     private companion object {
+        val httpPool = Executors.newFixedThreadPool(4) { runnable ->
+            Thread(runnable, "melox-lx-http").apply { isDaemon = true }
+        }
         val QUALITY_ORDER = listOf("128k", "320k", "flac", "flac24bit")
         fun createContext(): QuickJSContext {
             QuickJSLoader.init()

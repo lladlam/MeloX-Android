@@ -7,6 +7,7 @@ data class LxUserScriptMetadata(
     val author: String? = null,
     val description: String? = null,
     val homepage: String? = null,
+    val expirationTime: String? = null,
     val raw: Map<String, String> = emptyMap(),
 ) {
     companion object {
@@ -21,7 +22,8 @@ data class LxUserScriptMetadata(
             }
             return LxUserScriptMetadata(
                 values["name"], values["version"], values["author"],
-                values["description"], values["homepage"], values.toMap(),
+                values["description"], values["homepage"],
+                values["expirationtime"] ?: values["expiration"], values.toMap(),
             )
         }
     }

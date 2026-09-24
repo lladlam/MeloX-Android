@@ -115,6 +115,7 @@ import com.lladlam.melox.ui.layout.rememberMeloXWindowInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -305,11 +306,12 @@ fun SearchScreen(
             unifiedFailures = emptyList()
             runCatching { universal.songDetail(linkedId) }
                 .onSuccess {
+                    ensureActive()
                     songs = listOfNotNull(it)
                     media = emptyList()
                     kind = MeloXSearchKind.Songs
                 }
-                .onFailure { error = it.message ?: "无法读取歌曲链接" }
+                .onFailure { if (it is CancellationException) throw it else error = it.message ?: "无法读取歌曲链接" }
             loading = false
             return@LaunchedEffect
         }
@@ -332,9 +334,11 @@ fun SearchScreen(
                             )
                         }
                     }.onSuccess { result ->
+                        ensureActive()
                         providerSongs = result.aggregated.mapNotNull { it.recommendation?.track }.ifEmpty { result.tracks }
                         unifiedFailures = result.failures
                     }.onFailure { failure ->
+                        if (failure is CancellationException) throw failure
                         providerSongs = emptyList()
                         unifiedFailures = emptyList()
                         error = failure.message ?: "搜索失败"
@@ -343,8 +347,8 @@ fun SearchScreen(
                     providerSongs = emptyList()
                     unifiedFailures = emptyList()
                     runCatching { songClient.ensureArtwork(songClient.searchSongs(keyword)) }
-                        .onSuccess { songs = it }
-                        .onFailure { error = it.message ?: "搜索失败" }
+                        .onSuccess { ensureActive(); songs = it }
+                        .onFailure { if (it is CancellationException) throw it else error = it.message ?: "搜索失败" }
                 } else {
                     songs = emptyList()
                     unifiedFailures = emptyList()
@@ -355,8 +359,8 @@ fun SearchScreen(
                     } else {
                         runCatching {
                             withContext(Dispatchers.IO) { capability.searchSongs(keyword, page = 1, pageSize = 50).items }
-                        }.onSuccess { providerSongs = it }
-                            .onFailure { error = it.message ?: "搜索失败" }
+                        }.onSuccess { ensureActive(); providerSongs = it }
+                            .onFailure { if (it is CancellationException) throw it else error = it.message ?: "搜索失败" }
                     }
                 }
             }
@@ -365,15 +369,15 @@ fun SearchScreen(
                 songs = emptyList(); providerSongs = emptyList(); media = emptyList(); unifiedFailures = emptyList()
                 if (source == MusicSource.Netease) {
                     runCatching { universal.searchMedia(keyword, kind) }
-                        .onSuccess { media = it }
-                        .onFailure { error = it.message ?: "搜索失败" }
+                        .onSuccess { ensureActive(); media = it }
+                        .onFailure { if (it is CancellationException) throw it else error = it.message ?: "搜索失败" }
                 } else {
                     val capability = providerCatalog
                     if (capability == null || currentProvider !is PlaylistCapability) error = "${source.displayName} 当前没有可用的歌单详情能力"
                     else runCatching {
                         withContext(Dispatchers.IO) { capability.searchPlaylists(keyword, page = 1, pageSize = 40).items }
-                    }.onSuccess { providerPlaylists = it }
-                        .onFailure { error = it.message ?: "搜索失败" }
+                    }.onSuccess { ensureActive(); providerPlaylists = it }
+                        .onFailure { if (it is CancellationException) throw it else error = it.message ?: "搜索失败" }
                 }
             }
 
@@ -381,15 +385,15 @@ fun SearchScreen(
                 songs = emptyList(); providerSongs = emptyList(); media = emptyList(); unifiedFailures = emptyList()
                 if (source == MusicSource.Netease) {
                     runCatching { universal.searchMedia(keyword, kind) }
-                        .onSuccess { media = it }
-                        .onFailure { error = it.message ?: "搜索失败" }
+                        .onSuccess { ensureActive(); media = it }
+                        .onFailure { if (it is CancellationException) throw it else error = it.message ?: "搜索失败" }
                 } else {
                     val capability = providerCatalog
                     if (capability == null || currentProvider !is AlbumCapability) error = "${source.displayName} 当前没有可用的专辑详情能力"
                     else runCatching {
                         withContext(Dispatchers.IO) { capability.searchAlbums(keyword, page = 1, pageSize = 40).items }
-                    }.onSuccess { providerAlbums = it }
-                        .onFailure { error = it.message ?: "搜索失败" }
+                    }.onSuccess { ensureActive(); providerAlbums = it }
+                        .onFailure { if (it is CancellationException) throw it else error = it.message ?: "搜索失败" }
                 }
             }
 
@@ -397,15 +401,15 @@ fun SearchScreen(
                 songs = emptyList(); providerSongs = emptyList(); media = emptyList(); unifiedFailures = emptyList()
                 if (source == MusicSource.Netease) {
                     runCatching { universal.searchMedia(keyword, kind) }
-                        .onSuccess { media = it }
-                        .onFailure { error = it.message ?: "搜索失败" }
+                        .onSuccess { ensureActive(); media = it }
+                        .onFailure { if (it is CancellationException) throw it else error = it.message ?: "搜索失败" }
                 } else {
                     val capability = providerCatalog
                     if (capability == null || currentProvider !is ArtistCapability) error = "${source.displayName} 当前没有可用的歌手详情能力"
                     else runCatching {
                         withContext(Dispatchers.IO) { capability.searchArtists(keyword, page = 1, pageSize = 40).items }
-                    }.onSuccess { providerArtists = it }
-                        .onFailure { error = it.message ?: "搜索失败" }
+                    }.onSuccess { ensureActive(); providerArtists = it }
+                        .onFailure { if (it is CancellationException) throw it else error = it.message ?: "搜索失败" }
                 }
             }
 
@@ -416,8 +420,8 @@ fun SearchScreen(
                     error = "${source.displayName} 不提供${kind.title}搜索"
                 } else {
                     runCatching { universal.searchMedia(keyword, kind) }
-                        .onSuccess { media = it; songs = emptyList() }
-                        .onFailure { error = it.message ?: "搜索失败" }
+                        .onSuccess { ensureActive(); media = it; songs = emptyList() }
+                        .onFailure { if (it is CancellationException) throw it else error = it.message ?: "搜索失败" }
                 }
             }
         }

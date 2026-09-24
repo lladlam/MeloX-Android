@@ -7,7 +7,15 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.security.MessageDigest
 import java.io.File
@@ -16,13 +24,19 @@ class LocalMediaScanner(
     private val context: Context,
     private val repository: LocalMusicRepository = LocalMusicRepository(context),
 ) {
-    suspend fun scanAll(): List<LocalTrackRecord> = withContext(Dispatchers.IO) {
-        val records = buildList {
-            addAll(scanMediaStore())
-            repository.scanRoots().forEach { root -> addAll(scanTree(root)) }
-        }.distinctBy(LocalTrackRecord::fileKey)
+    private val artworkScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    suspend fun scanAll(): List<LocalTrackRecord> {
+        val records = coroutineScope {
+            val mediaStore = async(Dispatchers.IO) { scanMediaStore() }
+            val trees = repository.scanRoots().map { root ->
+                async(Dispatchers.IO) { scanTree(root) }
+            }
+            (listOf(mediaStore.await()) + trees.awaitAll()).flatten().distinctBy(LocalTrackRecord::fileKey)
+        }
         repository.replaceTracks(records)
-        records
+        artworkScope.launch { extractMissingArtwork(records) }
+        return records
     }
 
     private fun scanMediaStore(): List<LocalTrackRecord> {
@@ -42,7 +56,8 @@ class LocalMediaScanner(
         return queryRecords(uri, projection, selection, null, null, null)
     }
 
-    private fun scanTree(root: LocalScanRoot): List<LocalTrackRecord> {
+    private suspend fun scanTree(root: LocalScanRoot, depth: Int = 0): List<LocalTrackRecord> = coroutineScope {
+        if (depth > 8) return@coroutineScope emptyList()
         val treeUri = Uri.parse(root.uri)
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
             treeUri,
@@ -55,27 +70,33 @@ class LocalMediaScanner(
             DocumentsContract.Document.COLUMN_SIZE,
             DocumentsContract.Document.COLUMN_LAST_MODIFIED,
         )
-        val result = mutableListOf<LocalTrackRecord>()
-        val resolver = context.contentResolver
+        val directories = mutableListOf<LocalScanRoot>()
+        val files = mutableListOf<Triple<Uri, String, String>>()
         runCatching {
-            resolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+            context.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
                 while (cursor.moveToNext()) {
                     val documentId = cursor.string(projection, DocumentsContract.Document.COLUMN_DOCUMENT_ID) ?: continue
                     val name = cursor.string(projection, DocumentsContract.Document.COLUMN_DISPLAY_NAME).orEmpty()
                     val mime = cursor.string(projection, DocumentsContract.Document.COLUMN_MIME_TYPE).orEmpty()
                     if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                        result += scanTree(LocalScanRoot(
+                        directories += LocalScanRoot(
                             DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId).toString(),
                             root.persistedFlags,
-                        ))
+                        )
                     } else if (isAudio(name, mime)) {
-                        val documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
-                        readMetadata(documentUri, name, mime, root.uri)?.let(result::add)
+                        files += Triple(DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId), name, mime)
                     }
                 }
             }
         }
-        return result
+        val fileSlots = Semaphore(4)
+        val nested = directories.map { child ->
+            async(Dispatchers.IO) { scanTree(child, depth + 1) }
+        }
+        val current = files.map { (uri, name, mime) ->
+            async(Dispatchers.IO) { fileSlots.withPermit { readMetadata(uri, name, mime, root.uri) } }
+        }
+        current.awaitAll().filterNotNull() + nested.awaitAll().flatten()
     }
 
     private fun queryRecords(
@@ -129,13 +150,30 @@ class LocalMediaScanner(
                 sizeBytes = 0L,
                 lastModifiedMs = 0L,
                 sourceRootUri = rootUri,
-                artworkUri = readEmbeddedArtwork(uri, uri.toString()),
+                artworkUri = null,
             )
-        }.getOrNull().also { retriever.release() }
+        }.getOrNull().also { runCatching { retriever.release() } }
     }
 
     private fun isAudio(name: String, mimeType: String): Boolean =
         mimeType.startsWith("audio/") || name.substringAfterLast('.', "").lowercase() in setOf("mp3", "m4a", "flac", "ogg", "opus", "wav", "aac", "ape", "amr")
+
+    private suspend fun extractMissingArtwork(records: List<LocalTrackRecord>) {
+        val missing = records.filter { it.artworkUri.isNullOrBlank() }
+        if (missing.isEmpty()) return
+        val slots = Semaphore(3)
+        val extracted = coroutineScope {
+            missing.map { record ->
+                async(Dispatchers.IO) {
+                    slots.withPermit {
+                        val uri = runCatching { Uri.parse(record.contentUri) }.getOrNull() ?: return@withPermit null
+                        readEmbeddedArtwork(uri, record.fileKey)?.let { record.fileKey to it }
+                    }
+                }
+            }.awaitAll().filterNotNull()
+        }
+        if (extracted.isNotEmpty()) repository.updateArtwork(extracted.toMap())
+    }
 
     private fun readEmbeddedArtwork(uri: Uri, key: String): String? {
         val retriever = MediaMetadataRetriever()
@@ -145,7 +183,7 @@ class LocalMediaScanner(
             val file = File(context.filesDir, "local-artwork-${stableKey(key)}.jpg")
             file.outputStream().use { it.write(bytes) }
             Uri.fromFile(file).toString()
-        }.getOrNull().also { retriever.release() }
+        }.getOrNull().also { runCatching { retriever.release() } }
     }
 
     private fun stableKey(value: String): String = MessageDigest.getInstance("SHA-256")

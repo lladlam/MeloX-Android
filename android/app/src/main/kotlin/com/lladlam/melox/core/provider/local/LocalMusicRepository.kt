@@ -56,6 +56,14 @@ class LocalMusicRepository(context: Context) {
     }
 
     @Synchronized
+    fun updateArtwork(artworkByKey: Map<String, String>) {
+        if (artworkByKey.isEmpty()) return
+        replaceTracks(tracks().map { track ->
+            artworkByKey[track.fileKey]?.let { track.copy(artworkUri = it) } ?: track
+        })
+    }
+
+    @Synchronized
     fun updateLyrics(fileKey: String, lyrics: LyricsDocument): Boolean {
         if (tracks().none { it.fileKey == fileKey }) return false
         replaceTracks(tracks().map { if (it.fileKey == fileKey) it.copy(cachedLyrics = lyrics) else it })

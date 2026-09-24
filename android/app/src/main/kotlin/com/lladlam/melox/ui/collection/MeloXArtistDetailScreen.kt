@@ -79,7 +79,16 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
 
     LaunchedEffect(id, detail) {
         if (detail == null || allSongs.isNotEmpty()) return@LaunchedEffect
-        allSongs = runCatching { client.artistSongs(id, 100, 0) }.getOrDefault(emptyList())
+        val collected = mutableListOf<SearchSong>()
+        var offset = 0
+        while (offset < 500) {
+            val page = runCatching { client.artistSongs(id, 100, offset) }.getOrDefault(emptyList())
+            if (page.isEmpty()) break
+            collected += page
+            if (page.size < 100) break
+            offset += page.size
+        }
+        allSongs = collected
     }
 
     LaunchedEffect(id) {
@@ -133,7 +142,7 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
                 val fullList = allSongs.ifEmpty { artist.hotSongs }
                 if (allSongs.isNotEmpty()) {
                     item(key = "all-songs-title") { ArtistSectionTitle("全部歌曲") }
-                    items(allSongs.take(100), key = { "artist-song-all-${it.id}" }) { song ->
+                    items(allSongs, key = { "artist-song-all-${it.id}" }) { song ->
                         ArtistSongRow(
                             song = song,
                             onPlay = { PlaybackCommands.playQueue(context, allSongs, song.id) },

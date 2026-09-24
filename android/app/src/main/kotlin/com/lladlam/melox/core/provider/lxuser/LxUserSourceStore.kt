@@ -31,6 +31,7 @@ object LxUserSourceStore {
                             author = item.optString("author").takeIf(String::isNotBlank),
                             description = item.optString("description").takeIf(String::isNotBlank),
                             homepage = item.optString("homepage").takeIf(String::isNotBlank),
+                            expirationTime = item.optString("expirationTime").takeIf(String::isNotBlank),
                         ),
                     ),
                 )
@@ -73,6 +74,7 @@ object LxUserSourceStore {
                     put("author", record.metadata.author.orEmpty())
                     put("description", record.metadata.description.orEmpty())
                     put("homepage", record.metadata.homepage.orEmpty())
+                    put("expirationTime", record.metadata.expirationTime.orEmpty())
                 })
             }
         }

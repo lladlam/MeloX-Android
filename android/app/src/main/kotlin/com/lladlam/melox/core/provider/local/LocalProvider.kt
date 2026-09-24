@@ -83,7 +83,9 @@ class LocalProvider(context: Context) : MusicProvider, SearchCapability, Playbac
         local.cachedLyrics?.let { return it }
         val id = local.recognizedNeteaseId
             ?: return LyricsDocument(emptyList())
-        return AmlldbLyricsClient().lyrics(id).also { repository.updateLyrics(track.id.value, it) }
+        return AmlldbLyricsClient().lyrics(id).also { document ->
+            if (document.lines.isNotEmpty()) repository.updateLyrics(track.id.value, document)
+        }
     }
 
     override suspend fun writablePlaylists(page: Int, pageSize: Int): MusicPage<MusicPlaylistSummary> {

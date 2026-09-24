@@ -168,7 +168,6 @@ fun MeloXIOSMiniPlayer(
     val compactArtistAlpha = 1f - smoothStep(compact, 0.04f, 0.52f)
     val compactNextAlpha = 1f - smoothStep(compact, 0.04f, 0.50f)
     val controlStageWidth = lerpDp(72.dp, 36.dp, smoothStep(compact, 0.08f, 0.84f))
-    val artistHeight = lerpDp(15.dp, 0.dp, smoothStep(compact, 0.04f, 0.72f))
     val dragDirection = when {
         contentOffset.value < 0f -> -1
         contentOffset.value > 0f -> 1
@@ -330,21 +329,16 @@ fun MeloXIOSMiniPlayer(
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
-                    Box(
-                        modifier = Modifier
-                            .height(artistHeight)
-                            .graphicsLayer { alpha = compactArtistAlpha },
-                    ) {
-                        Text(
-                            text = state.artist,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            fontSize = 12.sp,
-                            lineHeight = 15.sp,
-                            softWrap = false,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
-                        )
-                    }
+                    Text(
+                        text = state.artist,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontSize = 12.sp,
+                        lineHeight = 15.sp,
+                        softWrap = false,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
+                        modifier = Modifier.graphicsLayer { alpha = compactArtistAlpha },
+                    )
                 }
                 }
                 adjacentEntry?.let { entry ->

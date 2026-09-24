@@ -457,7 +457,10 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
 
     fun togglePlayPause() {
         controller?.let { player ->
-            if (player.isPlaying) player.pause() else player.play()
+            if (player.isPlaying) player.pause() else {
+                if (player.playbackState == Player.STATE_IDLE) player.prepare()
+                player.play()
+            }
         }
     }
 

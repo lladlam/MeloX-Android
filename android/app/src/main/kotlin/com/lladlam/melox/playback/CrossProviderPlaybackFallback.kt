@@ -135,18 +135,8 @@ class CrossProviderPlaybackFallbackResolver(
                     }
                 }.awaitAll().flatten()
             }
-            val ranked = if (sourceTrack.durationMs != null) {
-                SpotifyTrackMatcher.rank(sourceTrack, candidates)
-            } else {
-                val sourceArtists = TrackAggregation.normalizeArtist(sourceTrack.artistText)
-                candidates.asSequence()
-                    .mapNotNull { SpotifyTrackMatcher.score(sourceTrack, it) }
-                    .filter { match ->
-                        TrackAggregation.normalizeArtist(match.candidate.artistText) == sourceArtists
-                    }
-                    .sortedByDescending { it.score }
-                    .toList()
-            }
+            if (sourceTrack.durationMs == null) return@withTimeoutOrNull null
+            val ranked = SpotifyTrackMatcher.rank(sourceTrack, candidates)
             eventLogger("strict matches song=${request.songId}: ${ranked.size}")
             for (match in ranked) {
                 val provider = providers.firstOrNull { it.source == match.candidate.id.source } ?: continue

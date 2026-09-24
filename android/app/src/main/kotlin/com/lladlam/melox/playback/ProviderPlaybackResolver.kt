@@ -19,8 +19,10 @@ import java.io.IOException
 import java.util.LinkedHashMap
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 
 /**
  * Adds provider-aware `melox://track/...` URIs while delegating every legacy
@@ -98,8 +100,14 @@ class ProviderPlaybackResolver(
         cached(key)?.let { return it }
         val pending = CompletableFuture<ResolvedRequest>()
         val existing = inFlight.putIfAbsent(key, pending)
-        if (existing != null) return runCatching { existing.get() }
-            .getOrElse { throw IOException("Unable to resolve provider playback source", it.cause ?: it) }
+        if (existing != null) {
+            if (existing.isCompletedExceptionally) {
+                inFlight.remove(key, existing)
+            } else {
+                return runCatching { existing.get(20L, TimeUnit.SECONDS) }
+                    .getOrElse { throw IOException("Unable to resolve provider playback source", it.cause ?: it) }
+            }
+        }
 
         return try {
             val id = MusicResourceId(source, resourceValue)
@@ -154,7 +162,7 @@ class ProviderPlaybackResolver(
             val playback = provider as? PlaybackCapability
                 ?: throw IOException("${provider.displayName} 当前没有实现播放能力")
             val resolution = runBlocking(Dispatchers.IO) {
-                playback.resolvePlayback(track, quality)
+                withTimeout(20_000L) { playback.resolvePlayback(track, quality) }
             }
             val result = when (resolution) {
                 is PlaybackResolution.Playable -> {
@@ -167,14 +175,7 @@ class ProviderPlaybackResolver(
                 }
                 is PlaybackResolution.Preview -> ResolvedRequest(Uri.parse(resolution.url), emptyMap())
                 PlaybackResolution.LoginRequired -> throw IOException("${provider.displayName} 需要登录后播放")
-                PlaybackResolution.SubscriptionRequired -> {
-                    if (allowExternalResolver && thirdPartySourcesEnabled()) {
-                        resolveThirdParty(track, quality, source)
-                            ?: throw IOException("${provider.displayName} 当前歌曲需要对应会员权益")
-                    } else {
-                        throw IOException("${provider.displayName} 当前歌曲需要对应会员权益")
-                    }
-                }
+                PlaybackResolution.SubscriptionRequired -> throw IOException("${provider.displayName} 当前歌曲需要对应会员权益")
                 PlaybackResolution.RegionRestricted -> throw IOException("${provider.displayName} 当前地区不可播放")
                 PlaybackResolution.CopyrightRestricted -> throw IOException("${provider.displayName} 当前版权不可播放")
                 is PlaybackResolution.Unavailable -> throw IOException(

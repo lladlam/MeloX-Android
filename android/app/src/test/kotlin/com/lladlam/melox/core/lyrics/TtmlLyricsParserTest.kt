@@ -33,4 +33,22 @@ class TtmlLyricsParserTest {
         assertTrue(!document.pseudoTimingAllowed)
     }
 
+    @Test
+    fun selectsAmllTraditionalTranslationWhenRequested() {
+        val ttml = """
+            <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:itunes="http://music.apple.com/lyric-ttml-internal">
+              <body><div>
+                <p begin="00:00:01.000" end="00:00:02.000" itunes:key="L1">
+                  <span begin="00:00:01.000" end="00:00:02.000">Hello</span>
+                  <span ttm:role="x-translation" xml:lang="zh-Hans">你好</span>
+                  <span ttm:role="x-translation" xml:lang="zh-Hant">你好嗎</span>
+                </p>
+              </div></body>
+            </tt>
+        """.trimIndent()
+
+        assertEquals("你好嗎", TtmlLyricsParser.parse(ttml, MeloXLyricScript.Traditional).lines.single().translation)
+        assertEquals("你好", TtmlLyricsParser.parse(ttml, MeloXLyricScript.Simplified).lines.single().translation)
+    }
+
 }
