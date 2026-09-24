@@ -1,5 +1,7 @@
 # MeloX Android 开发目录
 
+[English](../README.en.md)
+
 这里是 MeloX Android 的原生 Android 工程。
 
 当前开发版本：`0.5.3`（`versionCode 17`）。

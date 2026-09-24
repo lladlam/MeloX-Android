@@ -1,5 +1,7 @@
 # 更新日志
 
+[English](../README.en.md)
+
 ## 0.6.0 — 2026-09-19
 
 ### 新音乐源：Spotify

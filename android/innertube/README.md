@@ -1,5 +1,7 @@
 # innertube
 
+[中文](../../README.md)
+
 Vendored from **Metrolist** — <https://github.com/mostafaalagamy/Metrolist> —
 licensed GPL-3.0, the same licence this project carries. Copyright remains with
 the Metrolist project and its contributors; see that repository's git history.

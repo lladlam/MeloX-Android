@@ -1,5 +1,7 @@
 # MeloX Android 多音乐服务架构
 
+[English](../README.en.md)
+
 本文档约束 MeloX Android 在网易云音乐、QQ 音乐、酷狗音乐等服务之间的边界，并确保上游 MeloX iOS（目前只实现网易云音乐）未来继续可以低成本迁移到 Android。
 
 ## 核心原则

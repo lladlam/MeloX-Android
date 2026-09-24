@@ -1,5 +1,7 @@
 # Apple MusicKit for Android (optional)
 
+[中文](../../../README.md)
+
 MeloX uses Apple's official Android SDK for Apple Music sign-in and DRM playback.
 Download the SDK AARs from the Apple Developer MusicKit download area and place
 the original files in this directory:
