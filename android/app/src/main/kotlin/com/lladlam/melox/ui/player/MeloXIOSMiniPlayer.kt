@@ -20,16 +20,21 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,15 +55,18 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.launch
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.kyant.shapes.Capsule
-import com.lladlam.melox.ui.glass.meloXLiquidButton
+import com.lladlam.melox.ui.glass.bottomGlassSurfaceColor
+import com.lladlam.melox.ui.glass.bottomLiquidGlassTint
+import com.lladlam.melox.ui.glass.meloXLiquidBottomBar
 import com.lladlam.melox.ui.glass.meloXLiquidContentTransform
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSymbolIcon
@@ -171,7 +179,38 @@ fun MeloXIOSMiniPlayer(
     val artworkRadius = 6.dp
     val compactArtistAlpha = 1f - smoothStep(compact, 0.04f, 0.52f)
     val compactNextAlpha = 1f - smoothStep(compact, 0.04f, 0.50f)
-    val controlStageWidth = lerpDp(72.dp, 36.dp, smoothStep(compact, 0.08f, 0.84f))
+    // 收缩态内容区(36dp) 比展开态(30dp) 更高 ⇒ 控件随内容区放大（用户口径）。
+    // 用同一根 compact 曲线（与内边距同源），保证「栏高变化 ↔ 控件大小」同步、不会错拍。
+    val controlMetric = smoothStep(compact, 0.20f, 0.80f)
+    val controlSize = lerpDp(MiniControlSizeExpanded, MiniControlSizeCollapsed, controlMetric)
+    val controlIconSize = lerpDp(MiniControlIconSizeExpanded, MiniControlIconSizeCollapsed, controlMetric)
+    // 两圆之间的**圆缘**间距。图标间距 = 本值 + 2×圆内边距((size−icon)/2)。
+    // 展开 (30−18)/2 = 6 ⇒ 图标间距 = gap + 12。
+    val controlGap = lerpDp(MiniControlGapExpanded, MiniControlGapCollapsed, controlMetric)
+    val artistHeight = lerpDp(15.dp, 0.dp, smoothStep(compact, 0.04f, 0.72f))
+    // ── 排版必须**锁 dp、不锁 sp**（2026-09-25 跨机型修「作者名下沉被裁切」）────────
+    //   故障现象：其他机型上「歌曲作者名下沉、下半截被切平」（真机截图实测作者名只画出
+    //     约六成高度，切边正好落在 15dp 作者行盒的底沿）。
+    //   根因：栏高恒 48dp、内容区恒 30dp（= 48 − 3·2 − 6·2），**而行盒是 dp、字身是 sp**。
+    //     `sp` 随系统「字体大小」`fontScale` 等比放大（HyperOS / ColorOS / MIUI 常见
+    //     1.15，用户还可能再调到 1.3+），而 dp 的行盒一分不涨 ⇒ 12sp 的作者名在
+    //     fontScale=1.15 的机器上字身大 15%，descent 落到 15dp 行盒之外被裁掉。
+    //     同一台基准机（fontScale=1.0）只差 1~2px，肉眼看不出来 —— 这正是「只有其他机型
+    //     才复现」的原因，**不是玻璃/折射问题，别再往 backdrop 方向查**。
+    //   ⚠ **必须是 `Dp.toSp()`，接收者要 `Dp` 而不是 `Float`**（2026-09-25 踩坑实录）：
+    //     `Density` 上有两个同名的 `toSp` 重载，语义完全不同 ——
+    //       · `Dp.toSp()`        = dp / fontScale  ⇒ 本栏要的「锁 dp」换算；
+    //       · `Density.toSp(Float)` = **把入参当作 px**（字节码是 `toDp(value).toSp()`，
+    //         即 value / density / fontScale）⇒ 写 `14f.toSp()` 会得到 3.5sp，
+    //         在 density=4 的机器上字号直接**缩到 1/4**（真机实测：旧包标题宽 504px，
+    //         误用后 126px，正好 ÷4 = ÷density；用户反馈「变得太小了」即此）。
+    //     ⇒ 一律用 `with(density) { X.dp.toSp() }`，**不要**用 `Float.toSp()`。
+    //   换算结果 = dp / fontScale，再乘回去 ⇒ 任何 fontScale 下本栏排版几何与基准机
+    //   逐像素一致。**字号只由下面的 dp 常量决定，不要再写裸 `sp`、也不要用 Float.toSp。**
+    val titleFontSize = with(density) { MiniTitleFontDp.dp.toSp() }
+    val titleLineHeight = with(density) { MiniLineHeightDp.dp.toSp() }
+    val artistFontSize = with(density) { MiniArtistFontDp.dp.toSp() }
+    val artistLineHeight = with(density) { MiniLineHeightDp.dp.toSp() }
     // Keep the song that was already sliding in. Replacing that row with the
     // newly current track tears the layout down and flashes the next title.
     val holdIncoming = pendingIncoming != null &&
@@ -201,16 +240,21 @@ fun MeloXIOSMiniPlayer(
     val dragProgress = (kotlin.math.abs(visualOffset) / swipeWidth.coerceAtLeast(1f)).coerceIn(0f, 1f)
     val adjacentAlpha = smoothStep(dragProgress, 0.15f, 0.85f)
 
+    // 播放栏高度固定 48dp，与底栏收缩态的两侧按钮/搜索键完全等高。
+    // 之前用 lerpDp(45,48) 且外层 Box 未定高，会随 compact 与 sharedBounds
+    // 测量出更高/更矮的玻璃壳；这里统一钉死 48dp。
+    val miniHeight = 48.dp
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp)
+            .height(miniHeight)
             .then(sharedShellModifier),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp),
+                .height(miniHeight),
         ) {
             // Keep the glass surface out of the shared-bounds node itself.
             // When a capsule-shaped draw modifier is resized to the full
@@ -222,13 +266,15 @@ fun MeloXIOSMiniPlayer(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer { alpha = miniSurfaceAlpha }
-                    .meloXLiquidButton(
+                    // 与底栏 nav 胶囊用同一套材质（meloXLiquidBottomBar + 同一
+                    // tint/surfaceColor），保证深/浅色下观感一致；按压反馈通过
+                    // pressProgress 传入，内容层仍走 meloXLiquidContentTransform。
+                    .meloXLiquidBottomBar(
                         shape = Capsule(),
-                        blurRadius = 2.dp,
-                        lensRadius = 28.dp,
-                        refractionHeight = 16.dp,
-                        surfaceColor = Color.White.copy(alpha = 0.06f),
-                        interaction = liquidInteraction,
+                        tint = bottomLiquidGlassTint(),
+                        surfaceColor = bottomGlassSurfaceColor(),
+                        pressProgress = liquidInteraction.highlight.pressProgress,
+                        refractionHeight = 8.dp,
                     ),
             )
         }
@@ -239,13 +285,15 @@ fun MeloXIOSMiniPlayer(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp)
+                .height(miniHeight)
+                .padding(vertical = 3.dp)
                 .meloXLiquidContentTransform(liquidInteraction),
+            contentAlignment = Alignment.Center,
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
+                    .height(miniHeight)
                     .clip(Capsule())
                     .padding(
                         horizontal = lerpDp(12.dp, 8.dp, compact),
@@ -322,7 +370,16 @@ fun MeloXIOSMiniPlayer(
                 Artwork(
                     url = shownArtwork,
                     modifier = Modifier
-                        .size(artworkSize)
+                        // ⚠ 封面必须**正方形**（2026-09-25 修 bug）。
+                        //   原来只写 `.size(artworkSize)`：`Modifier.size()` 只设**期望**尺寸，
+                        //   会被父级 max 约束**单轴**压缩 —— 宽度不受限（40dp 保留），
+                        //   高度被内容区的 vertical padding 链压到 30dp ⇒ 实测 162×120px
+                        //   = **40×30dp 的长方形**（真机 `tmp/pb2.png` 复测）。
+                        //   改法：`matchHeightConstraintsFirst = true` ⇒ 先吃满可用**高度**，
+                        //   再按 1:1 推出宽度 ⇒ 高度 30dp 时得到 30×30dp 正方形。
+                        //   `artworkSize` 退化为「高度上限」，compact 态仍随 40→30dp 收缩。
+                        .heightIn(max = artworkSize)
+                        .aspectRatio(1f, matchHeightConstraintsFirst = true)
                         .then(sharedArtworkModifier)
                         .graphicsLayer {
                             scaleX = sharedArtworkScale
@@ -340,22 +397,56 @@ fun MeloXIOSMiniPlayer(
                         text = shownTitle.ifBlank { "正在播放" },
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        fontSize = 14.sp,
-                        lineHeight = 17.sp,
+                        fontSize = titleFontSize,
+                        // ⚠ `lineHeight` 必须与播放栏的高度预算对齐（2026-09-25 修作者名裁切）：
+                        //   内容区只有 30dp，title + artist 两行必须 ≤ 30dp，否则底部被裁。
+                        //   两行各 15dp（= `MiniLineHeightDp`），14dp 字配 15dp 行距 = 1.07×，不挤。
+                        //   ⚠ 这里**只能**用 `titleLineHeight`（dp→sp 换算），不能写裸 `15.sp`：
+                        //     裸 sp 会随 fontScale 放大、撑破 30dp 预算 —— 跨机型裁切的成因，
+                        //     见上面 `titleFontSize` 处的长注释。
+                        lineHeight = titleLineHeight,
                         softWrap = false,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface,
+                        // ⚠ `includeFontPadding = false` 是**必须的**（2026-09-25 修作者名裁切）：
+                        //   Android 默认 `includeFontPadding = true` 会在行高之外额外加
+                        //   ascent/descent 空白，标题+作者两行的**实际布局高 > 行高之和**，
+                        //   而播放栏内容区只有 30dp（48 − 3·2 − 6·2），于是底部的作者名被裁。
+                        //   BiliNext `GlassTabItem` 也是显式关掉它（`PlatformTextStyle(includeFontPadding = false)`）。
+                        style = LocalTextStyle.current.merge(
+                            TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                        ),
                     )
-                    Text(
-                        text = shownArtist,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        fontSize = 12.sp,
-                        lineHeight = 15.sp,
-                        softWrap = false,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
-                        modifier = Modifier.graphicsLayer { alpha = compactArtistAlpha },
-                    )
+                    // ⚠ `height(artistHeight)` 只是**布局预算**（展开 15dp → 收缩态 0dp），
+                    //   **不能**让作者名的**绘制**也受这个高度约束（2026-09-25 跨机型修）：
+                    //   一旦 Text 被 15dp 的 maxHeight 量过，字身 descent 超出行盒的部分就会被
+                    //   切掉 —— 基准机上只削 1~2px 看不出来，fontScale 更大的机型直接削掉四成，
+                    //   就是本次「作者名下沉被裁切」的现场。
+                    //   ⇒ ① `wrapContentHeight(unbounded = true)`：Text 按自身行高自然测量，
+                    //        溢出 15dp 的部分照常画出来（下方还有 9dp 内边距 + 胶囊裁剪余量兜底）；
+                    //     ② **去掉这一层的 `graphicsLayer { alpha }`**：离屏层同样按盒子尺寸裁
+                    //        溢出内容，是第二个裁切源；淡出改由文字颜色 alpha 承担（视觉等价）。
+                    Box(modifier = Modifier.height(artistHeight)) {
+                        Text(
+                            text = shownArtist,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            fontSize = artistFontSize,
+                            lineHeight = artistLineHeight,
+                            softWrap = false,
+                            color = MaterialTheme.colorScheme.onSurface.copy(
+                                alpha = 0.64f * compactArtistAlpha,
+                            ),
+                            modifier = Modifier.wrapContentHeight(
+                                align = Alignment.CenterVertically,
+                                unbounded = true,
+                            ),
+                            // 同标题：必须关掉字体额外留白，否则作者名会被 15dp 的行盒裁掉下半截。
+                            style = LocalTextStyle.current.merge(
+                                TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                            ),
+                        )
+                    }
                 }
                 }
                 adjacentEntry?.let { entry ->
@@ -369,10 +460,34 @@ fun MeloXIOSMiniPlayer(
                         verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(lerpDp(10.dp, 8.dp, compact)),
                     ) {
-                        Artwork(entry.artworkUrl, Modifier.size(artworkSize).clip(RoundedCornerShape(artworkRadius)))
+                        Artwork(
+                            entry.artworkUrl,
+                            // 与主封面同一修法（见上面长注释）：必须正方形，
+                            // 否则横向滑动切入的相邻封面也是 40×30dp 长方形。
+                            Modifier
+                                .heightIn(max = artworkSize)
+                                .aspectRatio(1f, matchHeightConstraintsFirst = true)
+                                .clip(RoundedCornerShape(artworkRadius)),
+                        )
                         Column(Modifier.weight(1f)) {
-                            Text(entry.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                            Text(entry.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .64f))
+                            // ⚠ 与主条目同样的 `includeFontPadding = false`（见主条目长注释）：
+                            //   否则横滑切入的这一份也会在 30dp 内容区里把作者名裁掉，
+                            //   而它恰好是**滑动过程中用户正在看的那一份**。
+                            val noFontPadding = LocalTextStyle.current.merge(
+                                TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                            )
+                            Text(
+                                entry.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                fontSize = titleFontSize, lineHeight = titleLineHeight, softWrap = false,
+                                fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface,
+                                style = noFontPadding,
+                            )
+                            Text(
+                                entry.artist, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                fontSize = artistFontSize, lineHeight = artistLineHeight, softWrap = false,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .64f),
+                                style = noFontPadding,
+                            )
                         }
                     }
                 }
@@ -388,18 +503,28 @@ fun MeloXIOSMiniPlayer(
                     .graphicsLayer { alpha = miniChromeAlpha },
             )
 
-            Box(
+            // ── 控件舞台（内容驱动宽度）──────────────────────────────────────
+            // ⚠ 关键教训（2026-09-25 v0.9.7→0.9.9）：舞台**不能**写成固定宽度。
+            //   父 Row 里 title 是 weight(1f)，会吞掉所有剩余空间 ⇒ 舞台宽一改，
+            //   title 宽度反向变化，**整块舞台被推着往右滑**，把「下一首」顶到玻璃右缘
+            //   （v0.9.9 实测 stage 右移 ~11dp、play 右移 ~22dp）。
+            //   正解：舞台宽度由内容决定（两个圆 + 显式 gap），Row 尺寸**恒定**，
+            //        这样调间距就只是调间距，不会牵动任何别的元素。
+            Row(
                 modifier = Modifier
-                    .width(controlStageWidth)
-                    .height(36.dp)
+                    .height(controlSize)
                     .zIndex(8f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(controlGap),
             ) {
                 MiniVectorButton(
                     kind = if (state.isPlaying) MiniGlyph.Pause else MiniGlyph.Play,
                     enabled = true,
                     onClick = state::togglePlayPause,
+                    size = controlSize,
+                    iconSize = controlIconSize,
                     modifier = Modifier
-                        .align(if (compact > 0.55f) Alignment.Center else Alignment.CenterStart)
+                        .offset(x = MiniControlStartPull)
                         .zIndex(10f),
                     visualAlpha = miniChromeAlpha,
                 )
@@ -408,9 +533,9 @@ fun MeloXIOSMiniPlayer(
                         kind = MiniGlyph.Forward,
                         enabled = state.hasNext || state.repeatMode != 0,
                         onClick = state::next,
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .zIndex(9f),
+                        size = controlSize,
+                        iconSize = controlIconSize,
+                        modifier = Modifier.zIndex(9f),
                         visualAlpha = miniChromeAlpha * compactNextAlpha,
                     )
                 }
@@ -458,16 +583,26 @@ private fun MiniVectorButton(
     kind: MiniGlyph,
     enabled: Boolean,
     onClick: () -> Unit,
+    size: Dp,
+    iconSize: Dp,
     modifier: Modifier = Modifier,
     visualAlpha: Float = 1f,
 ) {
     val baseAlpha = if (enabled) 0.94f else 0.26f
     val drawAlpha = visualAlpha.coerceIn(0f, 1f)
     val color = MaterialTheme.colorScheme.onSurface.copy(alpha = baseAlpha)
+    // ⚠ 图标字号也必须**锁 dp**（2026-09-25 跨机型修，同作者名裁切）：
+    //   `iconSize` 是 dp（随内容区 30/36dp 收敛），但写 `iconSize.value.sp` 会随
+    //   `fontScale` 放大 ⇒ 大字体机型上 22dp 图标画成 25dp+，被外圈
+    //   `clip(CircleShape)` 切掉边缘。经 dp→sp 换算后图标恒 = iconSize dp。
+    //   ⚠ `iconSize` **本身就是 `Dp`**，直接 `iconSize.toSp()` 即可；
+    //     `iconSize.value.toSp()` 会命中把入参当 **px** 的 `Density.toSp(Float)`，
+    //     图标会同样缩到 1/density（详见 `titleFontSize` 处的踩坑说明）。
+    val iconFontSize = with(LocalDensity.current) { iconSize.toSp() }
     Box(
         modifier = modifier
             .graphicsLayer { alpha = drawAlpha }
-            .size(36.dp)
+            .size(size)
             .clip(CircleShape)
             .clickable(
                 enabled = enabled && drawAlpha > 0.05f,
@@ -481,13 +616,46 @@ private fun MiniVectorButton(
                 MiniGlyph.Pause -> MeloXSymbol.Pause
                 MiniGlyph.Forward -> MeloXSymbol.Next
             },
-            modifier = Modifier.size(22.dp),
+            // 圆缩小 ⇒ 图标必须同比例缩，否则图标会顶满圆/溢出
+            modifier = Modifier.size(iconSize),
             color = color,
             variant = if (kind == MiniGlyph.Play || kind == MiniGlyph.Pause) MeloXSymbolVariant.Fill else MeloXSymbolVariant.Regular,
-            iconSize = 22.sp,
+            iconSize = iconFontSize,
         )
     }
 }
+
+// ── 播放栏右侧控件尺寸（2026-09-25 收敛为「随内容区高度」）──────────────────
+// 播放栏玻璃壳恒 48dp，但内边距随 compact 变化 ⇒ **内容区高度不同**：
+//   · 展开态：48 − 3·2(外) − 6·2(内) = **30dp**
+//   · 收缩态：48 − 3·2(外) − 3·2(内) = **36dp**   ⇒ 收缩态内容区**更高**
+// 因此控件不能写死一个尺寸，必须跟内容区一起变（用户：收缩态要更大一点）。
+// 展开 30dp 圆 / 18dp 图标；收缩 36dp 圆 / 22dp 图标（= v0.9.6 之前的原始尺寸）。
+private val MiniControlSizeExpanded = 30.dp
+private val MiniControlSizeCollapsed = 36.dp
+private val MiniControlIconSizeExpanded = 18.dp
+private val MiniControlIconSizeCollapsed = 22.dp
+// 两圆之间的圆缘 gap（舞台已改为内容驱动宽度）。
+//   图标间距 = gap + 2×圆内边距((size−icon)/2)。展开 (30−18)/2 = 6 ⇒ gap 0dp → 图标间距 12dp。
+//   收缩 (36−22)/2 = 7 ⇒ gap 0dp → 图标间距 14dp（收缩态 next 淡出，此值仅过渡期可见）。
+//   「三点 ↔ 暂停」= 父 Row spacedBy(10dp) + 圆内边距(6dp) + StartPull(4dp) = 12dp（= 对称）。
+private val MiniControlGapExpanded = 0.dp
+private val MiniControlGapCollapsed = 0.dp
+// 暂停键向左微拉 4dp：把「三点→暂停」从 16dp 收到 12dp，与「暂停→下一首」对齐。
+//   ⚠ 只用它压「三点↔暂停」这一侧；**绝不能**用它当「暂停↔下一首」的杠杆（v0.9.7 翻车原因）。
+private val MiniControlStartPull = (-4).dp
+
+// ── 播放栏排版（**dp 口径**，单一真相源；2026-09-25 跨机型修作者名裁切）────────
+// ⚠ 这三个值是「希望文字**渲染成多少 dp**」，不是 sp。调用点一律用
+//   `with(density) { MiniTitleFontDp.dp.toSp() }` 换算（**接收者必须是 `Dp`**，
+//   写成 `Float.toSp()` 会命中「把入参当 px」的 `Density.toSp(Float)`，字号缩到
+//   1/density —— 详见 `titleFontSize` 处的踩坑说明）—— 直接写 `14.sp` 会随系统
+//   fontScale 放大而撑破 30dp 内容预算，导致作者名 descent 被裁（跨机型故障根因，
+//   详见 `MeloXIOSMiniPlayer` 里 `titleFontSize` 处的长注释）。
+// 预算核对（展开态）：内容区 30dp = 标题行 15dp + 作者行 15dp，两行各 15dp 行高。
+private const val MiniTitleFontDp = 14f
+private const val MiniArtistFontDp = 12f
+private const val MiniLineHeightDp = 15f
 
 private fun smoothStep(value: Float, start: Float, end: Float): Float {
     if (end <= start) return if (value >= end) 1f else 0f
