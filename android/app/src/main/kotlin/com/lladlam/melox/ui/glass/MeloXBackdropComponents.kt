@@ -434,18 +434,9 @@ fun Modifier.meloXLiquidBottomBar(
             //   官方源 `app/src/commonMain/.../components/LiquidBottomTabs.kt` 第 1 层：
             //     effects = { vibrancy(); blur(8f.dp.toPx()); lens(24f.dp.toPx(), 24f.dp.toPx()) }
             //     onDrawSurface = { drawRect(containerColor) }
-            // ── blur = 2dp（2026-09-25 **用户拍板**，偏离官方 8dp）──────────────────
-            //   官方 kyant0 `LiquidBottomTabs` 面板层 = vibrancy + blur(8dp) + lens(24,24)。
-            //   历史故障：本项目曾在「极端折射诊断」期间把 blur 写成 2dp 并遗留，真机症状
-            //     「指示器颜色和水珠折射都很混乱」—— 成因是锐利的页面内容穿进 lens，
-            //     被 5× 放大链撕成碎片。
-            //   本次用户**明确要求**偏离官方值（观感：更少奶油感、更透），且**面板与捕获层
-            //     同步取值**，以维持下面这条约束。
-            //   取值沿革：8dp(官方) → 2dp → 3dp → 2.5dp → **2dp**（2026-09-25 回调：2.5dp 偏糊，回到更透的 2dp）。
-            //   ⚠ 不变约束：面板 blur 必须 ≥ 捕获层 blur（现二者相等，均为 2dp）。
-            //   ⚠ 若真机再现「指示器 / 折射混乱」，**第一嫌疑就是本行的低 blur** ——
-            //     排查第一步应是把它改回 8dp 验一次，别先去动 lens。
-            blur(2.dp.toPx())
+            // blur 回到官方 8dp。2dp 会让锐利内容穿进 lens，指示器和折射碎掉。
+            // 面板与捕获层必须同值。
+            blur(8.dp.toPx())
             lens(24.dp.toPx(), 24.dp.toPx())
         },
         highlight = {
@@ -543,10 +534,8 @@ fun Modifier.meloXLiquidCaptureLayer(
             //     highlight = { Highlight.Default.copy(alpha = p) }
             //     onDrawSurface = { drawRect(containerColor) }
             //     // ← 没有 shadow、没有 innerShadow
-            //   ⚠ blur 固定 2dp —— **必须与面板同值**（面板已同步改 2dp），
-            //     以满足「面板 blur ≥ 捕获层 blur」。
-            //     ⚠ 改一处就必须改另一处：二者一旦不等，就会重现历史上的折射混乱。
-            blur(2.dp.toPx())
+            // blur 与面板同为官方 8dp。两处必须一起改。
+            blur(8.dp.toPx())
             lens(24.dp.toPx() * progress, 24.dp.toPx() * progress)
         },
         highlight = { Highlight.Default.copy(alpha = pressProgress) },

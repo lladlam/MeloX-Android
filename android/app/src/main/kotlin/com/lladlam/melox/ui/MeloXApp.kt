@@ -82,6 +82,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -147,10 +148,10 @@ import com.lladlam.melox.ui.glass.MeloXGlassDialog
 import com.lladlam.melox.ui.glass.MeloXGlassButton
 import com.lladlam.melox.ui.glass.MeloXGlassButtonStyle
 import com.lladlam.melox.ui.theme.isMeloXDarkTheme
-import com.lladlam.melox.ui.animation.BottomBarCollapseSpec
-import com.lladlam.melox.ui.animation.BottomBarExpandSpec
 import com.lladlam.melox.ui.animation.MeloXSprings
 import com.lladlam.melox.ui.animation.NavExpandLeftShare
+import com.lladlam.melox.ui.animation.bottomBarOvershootLimit
+import com.lladlam.melox.ui.animation.bottomBarSpring
 import com.lladlam.melox.ui.animation.meloXContentEnter
 import com.lladlam.melox.ui.animation.meloXContentExit
 import com.lladlam.melox.ui.animation.sprungFrac
@@ -952,6 +953,13 @@ private val ChromeExpandedSize = 57.dp
 /** 收缩态下底栏 nav 胶囊的高度与搜索键边长。 */
 private val ChromeCompactSize = 46.dp
 
+/** 收缩态胶囊宽度。和 [MeloXBottomChrome] 里的 compact 宽度必须同源，弹簧行程才对得上。 */
+private val ChromeCompactWidth = 48.dp
+
+private val ChromeHorizontalMargin = 12.dp
+
+private val ChromeSearchGap = 7.dp
+
 /**
  * ⚠ **2026-09-25 一笔勾销**：本常量（及其自研「实心着色胶囊」Layer 2 方案）已随
  *   一比一复刻 BiliNext `LiquidGlassTabsBar.kt` 全部删除 —— Layer 2 现在是一块
@@ -972,24 +980,35 @@ private fun MeloXBottomChrome(
 ) {
     val tabsBackdrop = rememberLayerBackdrop()
     val dockScope = rememberCoroutineScope()
+    // 行程 = 展开胶囊宽 − 收缩胶囊宽。边距、缝、两侧尺寸与下面 BoxWithConstraints 同一套，
+    // 这样旋转或分屏改了窗口宽度后，下一次展开/收缩用的是这条宽度上的过冲，而不是 360dp 的比例。
+    val travelDp = (
+        LocalConfiguration.current.screenWidthDp -
+            ChromeHorizontalMargin.value * 2f -
+            ChromeSearchGap.value -
+            ChromeExpandedSize.value -
+            ChromeCompactWidth.value
+        ).coerceAtLeast(48f)
+    val expandOvershootDp = MeloXSprings.BottomBarExpandRightBudgetDp / (1f - NavExpandLeftShare)
+    val collapseOvershootDp = MeloXSprings.BottomBarCollapseOvershootDp
     val rawProgress by animateFloatAsState(
         targetValue = if (minimized) 1f else 0f,
-        // 展开 / 收缩各用**一条完整弹簧**（方向不同、手感不同）：
-        //   · 展开 bounce 0.245 → ζ=0.755，过冲 2.68% → 外扩 6.02dp（左 2.01 / 右 4.01dp，
-        //     与搜索键的 7dp 缝留 3.00dp 视觉余量）—— 空间受限，所以收着弹、且**偏右**落；
-        //   · 收缩 bounce 0.300 → ζ=0.700，过冲 4.60% → 10.30dp —— 四周空出来了，放开弹。
-        // ⚠ 别让两个方向共用 spec：共用时保护邻居只剩「对展开方向事后压缩」一条路，
-        //   而压缩后的曲线不再是弹簧（阻尼包络仍是 0.30 的），手感与收缩方向不对等。
-        //   target 与 spec 在同一帧一起算 —— 方向就是 targetValue 本身。
-        animationSpec = if (minimized) BottomBarCollapseSpec else BottomBarExpandSpec,
+        // 展开朝搜索键长大，过冲停在右缘预算；收缩四周空出来，保住约 10.3dp 的回弹。
+        // 两边都按上面的 travelDp 反推 bounce。target 与 spec 同一帧算，方向就是 target 本身。
+        animationSpec = bottomBarSpring(
+            overshootDp = if (minimized) collapseOvershootDp else expandOvershootDp,
+            travelDp = travelDp,
+        ),
         label = "melox-tab-minimize-progress",
     )
     // 语义值（alpha / 图层门控 / 选中态判定）必须夹在 [0,1]，否则负 alpha 会炸。
     val progress = rawProgress.coerceIn(0f, 1f)
 
-    // 几何值 = 弹簧本身（带符号限幅）。两侧对称、不过任何窗口 —— 详见 sprungFrac 注释：
-    // 旧的窗口 [0.20,1.00] 在展开方向把几何钉死在弹簧峰值速度处，随后空转 246ms。
-    val bounceFrac = sprungFrac(rawProgress)
+    // 几何值 = 弹簧本身。限幅盖住这次行程上较大的那侧过冲，避免把峰值削平，也避免异常 bounce 把布局撑爆。
+    val bounceFrac = sprungFrac(
+        rawProgress,
+        bottomBarOvershootLimit(maxOf(expandOvershootDp, collapseOvershootDp), travelDp),
+    )
 
     val labelStage = smoothStep(progress, 0.00f, 0.32f)   // alpha 用，保持夹住
     val dropStage = smoothStep(progress, 0.78f, 1.00f)    // 容器高度，不参与过冲
@@ -1032,21 +1051,17 @@ private fun MeloXBottomChrome(
                 .fillMaxWidth()
                 .height(chromeHeight),
         ) {
-            val horizontalMargin = 12.dp
-            val compactSize = 48.dp
+            val horizontalMargin = ChromeHorizontalMargin
+            val compactSize = ChromeCompactWidth
             // nav 胶囊右缘 ↔ 搜索键左缘的固有间隙（展开态）。
-            // 官方截图实测 = **10px = 7.12dp**（rim 峰法：nav 右缘 472 → 搜索键左缘 483，
-            // 阈值 140~205 全区间稳定），取 7dp。旧值 12dp 是「先加大缝好让过冲有地方去」的临时口径。
-            // ⚠ 这个缝同时是展开方向弹簧的约束：它定出右缘可用外扩 = 7 − 3（视觉余量）= 4dp，
-            //   再按 NavExpandLeftShare(左1:右2) 反推出总外扩 6dp 与 BottomBarExpandBounce 0.245。
-            //   改这个值必须回头重算那个常数。
-            val searchGap = 7.dp
+            // 官方截图实测 = **10px = 7.12dp**，取 7dp。右缘可用外扩 = 7 − 3 = 4dp，
+            // 总外扩按 NavExpandLeftShare 反推，bounce 再按当次行程算，不写死 0.245。
+            val searchGap = ChromeSearchGap
             val compactGap = 8.dp
             val expandedNavWidth =
                 maxWidth - horizontalMargin * 2 - searchGap - ChromeExpandedSize
-            // 宽度就是弹簧本身：lerpDpBouncy 不夹取，展开方向 f<0 会让胶囊长到
-            // 272 + 6.02 = 278.02dp —— **不需要按预算压缩、也不需要限幅**，因为展开那条
-            // 弹簧（BottomBarExpandBounce）本来就是照着这点余地定出来的。
+            // 宽度就是弹簧本身：lerpDpBouncy 不夹取。展开过冲停在右缘 4dp 预算
+            // （总外扩约 6dp），bounce 按当次行程反推，不再按 360dp 写死。
             val navWidth = lerpDpBouncy(expandedNavWidth, compactSize, bounceFrac)
             // 外扩 = 胶囊变大，多出来的宽度往哪边落由 NavExpandLeftShare 决定：
             // 现取 **左 1 : 右 2（偏右）** —— 右侧固有缝只有 7dp，那点余量必须花在
@@ -1629,10 +1644,9 @@ private fun lerpDp(start: Dp, end: Dp, progress: Float): Dp =
  *
  * ⚠ 必须用这个版本，否则弹簧的过冲会在最后一步被 [lerpDp] 吃掉，Q 弹永远看不见。
  * fraction 由 [sprungFrac] 产出，已限幅，不会把布局撑爆；但**外扩方向**是否安全
- * 取决于该几何周围有没有邻居 —— 现在这件事交给**弹簧参数自己**，不再做事后压缩：
- * nav 展开方向的越界量由 `MeloXSprings.BottomBarExpandBounce` 定死在 6.02dp
- * （右预算 4dp + 左侧让出 2dp），再按 `NavExpandLeftShare` 落到两端；
- * 收缩方向由 0.30 那条管着（10.30dp，四周没有邻居）。
+ * 取决于该几何周围有没有邻居 —— 过冲停在 dp，不按固定 bounce 同比放大：
+ * 展开右缘预算 4dp，按 [NavExpandLeftShare] 落到两端；
+ * 收缩保住约 10.30dp。bounce 由当次行程反推。
  */
 private fun lerpDpBouncy(start: Dp, end: Dp, fraction: Float): Dp =
     (start.value + (end.value - start.value) * fraction).dp

@@ -20,6 +20,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -145,8 +147,20 @@ internal class BottomBarToneState internal constructor() {
 private const val SAMPLE_W = 32
 private const val SAMPLE_H = 8
 
-/** 采样间隔。滚动时逐帧采样只会放大功耗与抖动，没有收益。 */
-private const val SAMPLE_INTERVAL_MS = 120L
+/**
+ * 明暗已经稳定、而且离翻转门槛还远时的采样间隔。
+ * 底栏停着的时候不需要 120ms 抓一次窗口。
+ */
+private const val SAMPLE_INTERVAL_IDLE_MS = 2_000L
+
+/** 亮度贴着门槛时加快，避免滑过一块深色区域要等两秒才反应。 */
+private const val SAMPLE_INTERVAL_NEAR_MS = 500L
+
+/** 已经有一次越界、正在确认时再快一点。确认两次大约 400ms。 */
+private const val SAMPLE_INTERVAL_CONFIRM_MS = 200L
+
+/** 离当前门槛不到这么多 L* 就视为「贴着」，改用 [SAMPLE_INTERVAL_NEAR_MS]。 */
+private const val TONE_NEAR_BAND_LSTAR = 8f
 
 /** 单次 PixelCopy 的超时兜底 —— 拿不到回调也不能让循环卡死。 */
 private const val SAMPLE_TIMEOUT_MS = 900L
@@ -187,7 +201,7 @@ private const val TONE_FLIP_DEADBAND_LSTAR = 5.0f
  * 连续几次"同侧越界"才真的切。
  *
  * 采样带紧贴内容底部，进度条、封面旋转这类**局部动画**偶尔会把均值推出边界一帧；
- * 要求连续命中可以过滤掉这种单帧噪声，代价只是 ~120ms 的响应延迟。
+ * 要求连续命中可以过滤掉这种单帧噪声。确认间隔见 [SAMPLE_INTERVAL_CONFIRM_MS]。
  */
 private const val TONE_CONFIRM_COUNT = 2
 
@@ -209,11 +223,12 @@ private val ToneTransition = spring<Float>(dampingRatio = 1f, stiffness = 180f)
 internal fun rememberBottomBarToneState(systemDark: Boolean): BottomBarToneState {
     val context = LocalContext.current
     val density = LocalDensity.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     val state = remember { BottomBarToneState() }
     val bandPx = remember(density) { with(density) { TONE_BAND_DP.dp.toPx() } }
     val insetPx = remember(density) { with(density) { TONE_BAND_INSET_DP.dp.toPx() } }
 
-    LaunchedEffect(state, systemDark) {
+    LaunchedEffect(state, systemDark, lifecycle) {
         val window = context.findActivity()?.window
         if (window == null) {
             state.publishTarget(if (systemDark) 1f else 0f)
@@ -227,10 +242,15 @@ internal fun rememberBottomBarToneState(systemDark: Boolean): BottomBarToneState
         var pending = Float.NaN
         var pendingCount = 0
         var lastSwitchAt = 0L
+        var intervalMs = SAMPLE_INTERVAL_IDLE_MS
 
         while (true) {
-            delay(SAMPLE_INTERVAL_MS)
+            delay(intervalMs)
             if (state.released) break
+            if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                intervalMs = SAMPLE_INTERVAL_IDLE_MS
+                continue
+            }
             val rect = state.sampleRect(bandPx, insetPx) ?: continue
             val lum = withTimeoutOrNull(SAMPLE_TIMEOUT_MS) {
                 state.capture(window, rect)
@@ -241,19 +261,27 @@ internal fun rememberBottomBarToneState(systemDark: Boolean): BottomBarToneState
             val lstar = yToLstar(lum)
 
             val current = if (decided.isNaN()) fallback else decided
+            val threshold = if (current > 0.5f) {
+                TONE_FLIP_MID_LSTAR + TONE_FLIP_DEADBAND_LSTAR
+            } else {
+                TONE_FLIP_MID_LSTAR - TONE_FLIP_DEADBAND_LSTAR
+            }
             val want = if (current > 0.5f) {
                 // 现在暗式 ⇒ 背后要明显亮于感知中灰才回亮式
-                if (lstar > TONE_FLIP_MID_LSTAR + TONE_FLIP_DEADBAND_LSTAR) 0f else 1f
+                if (lstar > threshold) 0f else 1f
             } else {
                 // 现在亮式 ⇒ 背后要明显暗于感知中灰才进暗式
-                if (lstar < TONE_FLIP_MID_LSTAR - TONE_FLIP_DEADBAND_LSTAR) 1f else 0f
+                if (lstar < threshold) 1f else 0f
             }
+            val nearThreshold = kotlin.math.abs(lstar - threshold) < TONE_NEAR_BAND_LSTAR
 
             if (want == current) {
                 pending = Float.NaN
                 pendingCount = 0
+                intervalMs = if (nearThreshold) SAMPLE_INTERVAL_NEAR_MS else SAMPLE_INTERVAL_IDLE_MS
                 continue
             }
+            intervalMs = SAMPLE_INTERVAL_CONFIRM_MS
             if (pending != want) {
                 pending = want
                 pendingCount = 1
