@@ -51,4 +51,13 @@ class TtmlLyricsParserTest {
         assertEquals("你好", TtmlLyricsParser.parse(ttml, MeloXLyricScript.Simplified).lines.single().translation)
     }
 
+    @Test
+    fun officialApiLookupPrefersPlatformId() {
+        assertEquals("ncmMusicId", AmlldbLyricQuery.Netease(186016).officialParameter()?.first)
+        assertEquals("186016", AmlldbLyricQuery.Netease(186016).officialParameter()?.second)
+        assertEquals("qqMusicId", AmlldbLyricQuery.QQ("97773").officialParameter()?.first)
+        assertEquals(listOf("ncm-lyrics/186016.ttml"), AmlldbLyricQuery.Netease(186016).rawPaths())
+        assertEquals("spotify:abc", AmlldbLyricQuery.Spotify("abc").bindingValue())
+    }
+
 }

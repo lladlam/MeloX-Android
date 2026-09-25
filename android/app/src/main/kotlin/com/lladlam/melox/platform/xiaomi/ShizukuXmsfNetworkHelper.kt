@@ -1,10 +1,10 @@
 package com.lladlam.melox.platform.xiaomi
 
 import android.app.Notification
-import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.IConnectivityManager
+import android.os.Build
 import android.os.IBinder
 import android.os.INetworkManagementService
 import android.util.Log
@@ -20,6 +20,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.lsposed.hiddenapibypass.HiddenApiBypass
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuBinderWrapper
 import rikka.shizuku.SystemServiceHelper
@@ -62,6 +63,7 @@ internal object ShizukuXmsfNetworkHelper {
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val permissionScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val networkMutex = Mutex()
+    private val permissionMutex = Mutex()
     private val wrappedServices = ConcurrentHashMap<String, Any>()
 
     @Volatile
@@ -76,103 +78,138 @@ internal object ShizukuXmsfNetworkHelper {
     private var nextRequestCode = 1200
 
     /**
-     * Called only while MeloX is foregrounded. If Shizuku is running, request permission once
-     * for this process. Users without Shizuku never see a prompt and remain on direct Focus.
+     * Playback and cold-start entry. Waits for a live binder and binds keepalive, but never
+     * calls requestPermission(). Authorization stays on the settings button.
      */
     fun prepare(context: Context) {
-        if (hasPermission()) {
-            restoreXmsfNetworkingAsync(context.applicationContext)
-            return
-        }
+        val appContext = context.applicationContext
+        installHiddenApiExemptions()
         synchronized(this) {
-            if (permissionRequestAttempted || permissionProbeJob?.isActive == true) return
+            if (permissionProbeJob?.isActive == true) return
             permissionProbeJob = permissionScope.launch {
-                repeat(8) {
-                    if (runCatching { Shizuku.pingBinder() }.getOrDefault(false)) {
-                        permissionRequestAttempted = true
-                        if (ensureShizukuPermission()) {
-                            restoreXmsfNetworkingAsync(context.applicationContext)
-                        }
-                        return@launch
-                    }
-                    delay(250L)
+                val granted = isPermissionGrantedWhenReady()
+                Log.i(
+                    TAG,
+                    "permission check: binderAlive=${runCatching { Shizuku.pingBinder() }.getOrDefault(false)} granted=$granted",
+                )
+                if (granted) {
+                    ShizukuKeepAliveService.ensureBound(appContext)
+                    restoreXmsfNetworkingAsync(appContext)
                 }
             }
         }
     }
 
-    /** Publish directly unless Shizuku permission is already granted. */
+    /**
+     * The only path allowed to show the Shizuku authorization dialog.
+     * Call this from the settings screen after an explicit user action.
+     */
+    fun requestPermission(context: Context) {
+        val appContext = context.applicationContext
+        installHiddenApiExemptions()
+        permissionScope.launch {
+            permissionMutex.withLock {
+                if (isPermissionGranted()) {
+                    ShizukuKeepAliveService.ensureBound(appContext)
+                    return@withLock
+                }
+                if (!runCatching { Shizuku.pingBinder() }.getOrDefault(false)) return@withLock
+                permissionRequestAttempted = true
+                if (ensureShizukuPermission()) {
+                    ShizukuKeepAliveService.ensureBound(appContext)
+                    restoreXmsfNetworkingAsync(appContext)
+                }
+            }
+        }
+    }
+
+    /** Publish through the Super Island foreground service. Pulse XMSF only when already granted. */
     fun dispatchFocusNotification(
         context: Context,
-        notificationId: Int,
         notification: Notification,
     ) {
         val appContext = context.applicationContext
-        val manager = appContext.getSystemService(NotificationManager::class.java)
-        if (!hasPermission()) {
-            publishDirect(manager, notificationId, notification)
-            return
-        }
+        installHiddenApiExemptions()
+        ioScope.launch {
+            if (!isPermissionGrantedWhenReady()) {
+                Log.i(TAG, "sending Focus notification directly")
+                publishDirect(appContext, notification)
+                return@launch
+            }
+            ShizukuKeepAliveService.ensureBound(appContext)
 
-        val generation = synchronized(this) {
-            dispatchGeneration += 1L
-            dispatchJob?.cancel()
-            dispatchGeneration
-        }
-        dispatchJob = ioScope.launch {
-            networkMutex.withLock {
-                if (generation != dispatchGeneration) return@withLock
+            val generation = synchronized(this@ShizukuXmsfNetworkHelper) {
+                dispatchGeneration += 1L
+                dispatchJob?.cancel()
+                dispatchGeneration
+            }
+            dispatchJob = ioScope.launch {
+                networkMutex.withLock {
+                    if (generation != dispatchGeneration) return@withLock
 
-                val blocked = withContext(NonCancellable) {
-                    setXmsfNetworkingEnabled(appContext, enabled = false)
-                }
-                if (!blocked) {
-                    publishDirect(manager, notificationId, notification)
-                    return@withLock
-                }
-                xmsfNetworkingBlocked = true
-
-                try {
-                    if (generation == dispatchGeneration) {
-                        publishDirect(manager, notificationId, notification)
+                    val blocked = withContext(NonCancellable) {
+                        setXmsfNetworkingEnabled(appContext, enabled = false)
                     }
-                    delay(XMSF_PULSE_MS)
-                } catch (_: CancellationException) {
-                    // A newer lyric owns the next pulse. finally still restores XMSF first.
-                } finally {
-                    withContext(NonCancellable) {
-                        restoreXmsfNetworking()
+                    if (!blocked) {
+                        Log.i(TAG, "sending Focus notification directly")
+                        publishDirect(appContext, notification)
+                        return@withLock
+                    }
+                    xmsfNetworkingBlocked = true
+
+                    try {
+                        if (generation == dispatchGeneration) {
+                            publishDirect(appContext, notification)
+                        }
+                        delay(XMSF_PULSE_MS)
+                    } catch (_: CancellationException) {
+                        // A newer lyric owns the next pulse. finally still restores XMSF first.
+                    } finally {
+                        withContext(NonCancellable) {
+                            restoreXmsfNetworking()
+                        }
                     }
                 }
             }
         }
     }
 
-    fun clearFocusNotification(context: Context, notificationId: Int) {
+    fun clearFocusNotification(context: Context) {
         synchronized(this) {
             dispatchGeneration += 1L
             dispatchJob?.cancel()
             dispatchJob = null
         }
-        context.applicationContext
-            .getSystemService(NotificationManager::class.java)
-            .cancel(notificationId)
+        XiaomiSuperIslandLyricService.stop(context.applicationContext)
         restoreXmsfNetworkingAsync(context.applicationContext)
     }
 
-    private fun publishDirect(
-        manager: NotificationManager,
-        notificationId: Int,
-        notification: Notification,
-    ) {
-        runCatching { manager.notify(notificationId, notification) }
-            .onFailure { Log.w(TAG, "Unable to publish Focus notification", it) }
+    private fun publishDirect(context: Context, notification: Notification) {
+        XiaomiSuperIslandLyricService.publish(context, notification)
     }
 
-    private fun hasPermission(): Boolean =
-        runCatching { Shizuku.pingBinder() }.getOrDefault(false) &&
-            runCatching { Shizuku.checkSelfPermission() }.getOrDefault(PackageManager.PERMISSION_DENIED) ==
-            PackageManager.PERMISSION_GRANTED
+    fun installHiddenApiExemptions() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
+        runCatching { HiddenApiBypass.addHiddenApiExemptions("") }
+            .onSuccess { Log.i(TAG, "Hidden API exemptions installed for process") }
+            .onFailure { Log.w(TAG, "Unable to install hidden API exemptions", it) }
+    }
+
+    private fun hasPermission(): Boolean = isPermissionGranted()
+
+    private fun isPermissionGranted(): Boolean =
+        runCatching {
+            Shizuku.pingBinder() &&
+                Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+        }.getOrDefault(false)
+
+    private suspend fun isPermissionGrantedWhenReady(): Boolean {
+        repeat(20) {
+            if (runCatching { Shizuku.pingBinder() }.getOrDefault(false)) return isPermissionGranted()
+            delay(250L)
+        }
+        return isPermissionGranted()
+    }
 
     private suspend fun ensureShizukuPermission(): Boolean = withContext(Dispatchers.Main.immediate) {
         if (!runCatching { Shizuku.pingBinder() }.getOrDefault(false)) return@withContext false

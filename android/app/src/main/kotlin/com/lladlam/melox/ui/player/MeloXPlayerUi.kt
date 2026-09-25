@@ -466,7 +466,11 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
 
     private fun restoreLastPlaybackIfNeeded() {
         val player = controller ?: return
-        if (player.currentMediaItem != null || !MeloXSettingsPreferences.boolean(appContext, "playback_remember_last_song", true)) return
+        if (
+            player.currentMediaItem != null ||
+            MeloXSettingsPreferences.boolean(appContext, "playback_save_queue", true) ||
+            !MeloXSettingsPreferences.boolean(appContext, "playback_remember_last_song", true)
+        ) return
         val saved = MeloXLastPlaybackStore.read(appContext) ?: return
         val builder = MediaItem.Builder()
             .setMediaId(saved.mediaId)

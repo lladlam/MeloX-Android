@@ -10,6 +10,7 @@ import com.lladlam.melox.core.lyrics.LyricsDocument
 import com.lladlam.melox.core.lyrics.MeloXLyricScript
 import com.lladlam.melox.core.lyrics.MeloXLyricScriptConverter
 import com.lladlam.melox.core.lyrics.LyricTimelineProcessor
+import com.lladlam.melox.core.lyrics.AmlldbLyricQuery
 import com.lladlam.melox.core.lyrics.AmlldbLyricsClient
 import com.lladlam.melox.core.lyrics.BoundLyricSource
 import com.lladlam.melox.core.lyrics.LyricBinding
@@ -467,17 +468,16 @@ internal object MeloXProviderLyricsLoader {
         source: LyricAutoSource,
     ): ResolvedLyrics {
         if (source == LyricAutoSource.AmlL) {
-            val id = snapshot.resourceId.takeIf { it.source == MusicSource.Netease }?.value?.toLongOrNull()
-                ?: snapshot.resourceId.takeIf { it.source == MusicSource.Local }
-                    ?.let { LocalMusicRepository(appContext).track(it.value)?.recognizedNeteaseId }
+            val query = amlldbQuery(appContext, snapshot)
                 ?: findMatchedNeteaseTrack(appContext, snapshot)?.id?.value?.toLongOrNull()
+                    ?.let(AmlldbLyricQuery::Netease)
                 ?: return ResolvedLyrics.Empty
-            val document = runCatching { AmlldbLyricsClient().lyrics(id, requestedLyricScript()) }
+            val document = runCatching { AmlldbLyricsClient().lyrics(query, requestedLyricScript()) }
                 .getOrDefault(LyricsDocument(emptyList()))
             return ResolvedLyrics(
                 document,
                 document.takeIf { it.lines.isNotEmpty() }?.let {
-                    LyricBinding(BoundLyricSource.AmlL, resourceValue = id.toString(), title = snapshot.title, artist = snapshot.artist, durationMs = snapshot.durationMs)
+                    LyricBinding(BoundLyricSource.AmlL, resourceValue = query.bindingValue(), title = snapshot.title, artist = snapshot.artist, durationMs = snapshot.durationMs)
                 },
             )
         }
@@ -536,8 +536,8 @@ internal object MeloXProviderLyricsLoader {
 
     private suspend fun loadBinding(appContext: Context, binding: LyricBinding): LyricsDocument {
         if (binding.source == BoundLyricSource.AmlL) {
-            val id = binding.resourceValue.toLongOrNull() ?: return LyricsDocument(emptyList())
-            return runCatching { AmlldbLyricsClient().lyrics(id, requestedLyricScript()) }
+            val query = amlldbQuery(binding.resourceValue) ?: return LyricsDocument(emptyList())
+            return runCatching { AmlldbLyricsClient().lyrics(query, requestedLyricScript()) }
                 .getOrDefault(LyricsDocument(emptyList()))
         }
         val providerSource = binding.provider ?: return LyricsDocument(emptyList())
@@ -550,6 +550,33 @@ internal object MeloXProviderLyricsLoader {
             durationMs = binding.durationMs.takeIf { it > 0L },
         )
         return runCatching { lyrics.lyrics(track) }.getOrDefault(LyricsDocument(emptyList()))
+    }
+
+    private fun amlldbQuery(resourceValue: String): AmlldbLyricQuery? {
+        resourceValue.toLongOrNull()?.let { return AmlldbLyricQuery.Netease(it) }
+        val separator = resourceValue.indexOf(':')
+        if (separator <= 0) return null
+        val value = resourceValue.substring(separator + 1).takeIf(String::isNotBlank) ?: return null
+        return when (resourceValue.substring(0, separator)) {
+            "qq" -> AmlldbLyricQuery.QQ(value)
+            "spotify" -> AmlldbLyricQuery.Spotify(value)
+            "apple" -> AmlldbLyricQuery.AppleMusic(value)
+            else -> null
+        }
+    }
+
+    private fun amlldbQuery(appContext: Context, snapshot: LyricTrackSnapshot): AmlldbLyricQuery? {
+        val id = snapshot.resourceId
+        return when (id.source) {
+            MusicSource.Netease -> id.value.toLongOrNull()?.let(AmlldbLyricQuery::Netease)
+            MusicSource.QQMusic -> id.value.takeIf(String::isNotBlank)?.let(AmlldbLyricQuery::QQ)
+            MusicSource.Spotify -> id.value.takeIf(String::isNotBlank)?.let(AmlldbLyricQuery::Spotify)
+            MusicSource.AppleMusic -> id.value.takeIf(String::isNotBlank)?.let(AmlldbLyricQuery::AppleMusic)
+            MusicSource.Local -> LocalMusicRepository(appContext).track(id.value)
+                ?.recognizedNeteaseId
+                ?.let(AmlldbLyricQuery::Netease)
+            else -> null
+        }
     }
 
     private suspend fun findMatchedNeteaseTrack(appContext: Context, snapshot: LyricTrackSnapshot): MusicTrack? {

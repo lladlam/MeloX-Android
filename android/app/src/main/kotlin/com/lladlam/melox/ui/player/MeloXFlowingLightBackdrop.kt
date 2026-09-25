@@ -49,7 +49,7 @@ internal fun MeloXBlurredArtworkBackdrop(
     val context = LocalContext.current
     val appInForeground = MeloXAppVisibility.isForeground
     val artworkModel = remember(context, artworkUrl) {
-        ImageRequest.Builder(context).data(artworkUrl).size(320, 320).crossfade(220).build()
+        ImageRequest.Builder(context).data(artworkUrl).size(320, 320).crossfade(80).build()
     }
     androidx.compose.foundation.layout.Box(modifier.fillMaxSize()) {
         AsyncImage(
@@ -96,7 +96,7 @@ internal fun MeloXLyricsArtworkBackdrop(
     val latestIsPlaying by rememberUpdatedState(isPlaying)
     val elapsedWhilePlayingMs = remember(artworkUrl) { mutableLongStateOf(0L) }
     val artworkModel = remember(context, artworkUrl) {
-        ImageRequest.Builder(context).data(artworkUrl).size(384, 384).crossfade(220).build()
+        ImageRequest.Builder(context).data(artworkUrl).size(384, 384).crossfade(80).build()
     }
 
     // The source implementation invalidates its Canvas roughly every 42ms
@@ -221,7 +221,7 @@ internal fun MeloXFlowingLightBackdrop(
         val pixels = IntArray(meshWidth * meshHeight)
         val centersX = FloatArray(currentColors.size)
         val centersY = FloatArray(currentColors.size)
-        if (MeloXSettingsRuntime.reduceMotion || !isPlaying || !appInForeground) {
+        if (MeloXSettingsRuntime.reduceMotion) {
             currentColors.indices.forEach { index ->
                 currentColors[index] = targetPalette.cells.getOrElse(index) { targetPalette.average }
             }
@@ -243,11 +243,9 @@ internal fun MeloXFlowingLightBackdrop(
                 meshBitmaps[writeIndex].setPixels(pixels, 0, meshWidth, 0, 0, meshWidth, meshHeight)
             }
             meshImage = meshImages[writeIndex]
-            // Playlist/detail backdrops pass isPlaying=false. Their mesh is
-            // static, so keeping a 20-60 Hz generator alive underneath the
-            // full-screen player only steals CPU and invalidates hidden layers.
             awaitCancellation()
         }
+        val animatePalette = !MeloXSettingsRuntime.reduceMotion
         var lastRenderNanos = 0L
         while (true) {
             val frameNanos = withFrameNanos { it }
@@ -265,15 +263,17 @@ internal fun MeloXFlowingLightBackdrop(
             downbeatPulse += (sample.downbeat - downbeatPulse) * .24f
             val motion = .026f + energy.coerceIn(0f, 1f) * .038f + beatPulse * .016f
             phase[0] = (phase[0] + motion * elapsedMs / (1_000f / 60f)) % (Math.PI.toFloat() * 2f)
-            val paletteBlend = (elapsedMs / 800f).coerceIn(.02f, .18f)
-            currentColors.indices.forEach { index ->
-                currentColors[index] = lerpColor(
-                    currentColors[index],
-                    targetPalette.cells.getOrElse(index) { targetPalette.average },
-                    paletteBlend,
-                )
+            if (animatePalette) {
+                val paletteBlend = (elapsedMs / 280f).coerceIn(.08f, .45f)
+                currentColors.indices.forEach { index ->
+                    currentColors[index] = lerpColor(
+                        currentColors[index],
+                        targetPalette.cells.getOrElse(index) { targetPalette.average },
+                        paletteBlend,
+                    )
+                }
+                currentAverage[0] = lerpColor(currentAverage[0], targetPalette.average, paletteBlend)
             }
-            currentAverage[0] = lerpColor(currentAverage[0], targetPalette.average, paletteBlend)
             val bitmap = meshBitmaps[writeIndex]
             withContext(Dispatchers.Default) {
                 fillFlowingMeshPixels(

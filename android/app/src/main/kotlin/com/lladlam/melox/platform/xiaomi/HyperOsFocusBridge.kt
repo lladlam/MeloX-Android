@@ -23,7 +23,6 @@ import com.xzakota.hyper.notification.island.model.TextInfo
 object HyperOsFocusBridge {
     private const val FOCUS_PROTOCOL_SETTING = "notification_focus_protocol"
     private const val SUPER_ISLAND_CHANNEL = "melox_super_island_lyrics_v1"
-    private const val SUPER_ISLAND_NOTIFICATION_ID = 1703
 
     @Volatile
     private var lastPublishedKey: String? = null
@@ -149,7 +148,6 @@ object HyperOsFocusBridge {
 
         ShizukuXmsfNetworkHelper.dispatchFocusNotification(
             context = appContext,
-            notificationId = SUPER_ISLAND_NOTIFICATION_ID,
             notification = notification,
         )
         return null
@@ -161,10 +159,13 @@ object HyperOsFocusBridge {
 
     fun clearSuperIsland(context: Context) {
         lastPublishedKey = null
-        ShizukuXmsfNetworkHelper.clearFocusNotification(
-            context.applicationContext,
-            SUPER_ISLAND_NOTIFICATION_ID,
-        )
+        ShizukuXmsfNetworkHelper.clearFocusNotification(context.applicationContext)
+    }
+
+    /** Settings-only authorization. Playback never calls this. */
+    fun requestShizukuPermission(context: Context) {
+        if (!supportsSuperIsland(context)) return
+        ShizukuXmsfNetworkHelper.requestPermission(context.applicationContext)
     }
 
     private fun ensureSuperIslandChannel(context: Context) {

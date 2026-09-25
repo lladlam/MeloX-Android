@@ -178,7 +178,7 @@ fun MeloXIOSNowPlayingSharedHost(
             settleJob?.cancel()
         }
     }
-    val cornerRadius = (24f + 8f * smoothStep(collapseProgress, 0f, 1f)).dp
+    val cornerRadius = (32f * smoothStep(collapseProgress, 0f, 1f)).dp
     val sharedShellModifier = with(sharedTransitionScope) {
         Modifier.sharedBounds(
             sharedContentState = rememberSharedContentState(key = sharedPlayerShellKey()),
@@ -358,7 +358,7 @@ fun MeloXIOSNowPlayingSharedHost(
                         MeloXFlowingLightBackdrop(
                             mediaId = state.mediaId,
                             artworkUrl = state.artworkUrl,
-                            isPlaying = state.isPlaying && expansionProgress > 0.72f,
+                            isPlaying = expansionProgress > 0.72f,
                         )
                     } else {
                         MeloXBlurredArtworkBackdrop(state.artworkUrl)
@@ -544,7 +544,8 @@ private fun SharedArtworkDestination(
                     .build()
             }
         }
-        val artworkFooterHeight = 78.dp
+        val artworkTitleGap = 20.dp
+        val titleBlockHeight = 58.dp
         val fullX = if (isLandscape) {
             ((maxWidth * .43f - fullArtworkSize) / 2f).coerceAtLeast(0.dp)
         } else {
@@ -553,7 +554,7 @@ private fun SharedArtworkDestination(
         val rawFullY = if (isLandscape) {
             contentTop + ((maxHeight - contentTop - fullArtworkSize) / 2f).coerceAtLeast(0.dp)
         } else {
-            contentTop + (portraitContentHeight - fullArtworkSize - artworkFooterHeight)
+            contentTop + (portraitContentHeight - fullArtworkSize - artworkTitleGap - titleBlockHeight)
                 .coerceAtLeast(0.dp)
         }
         val fullY = rawFullY.coerceIn(

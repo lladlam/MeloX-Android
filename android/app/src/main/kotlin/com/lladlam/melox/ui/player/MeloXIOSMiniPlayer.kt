@@ -89,6 +89,7 @@ fun MeloXIOSMiniPlayer(
     var accumulatedDrag by remember { mutableFloatStateOf(0f) }
     var pendingDirection by remember { mutableIntStateOf(0) }
     var pendingOutgoingMediaId by remember { mutableStateOf<String?>(null) }
+    var pendingIncoming by remember { mutableStateOf<MeloXQueueEntry?>(null) }
     var reactiveSample by remember { mutableStateOf(MeloXAudioReactiveSample.Idle) }
 
     LaunchedEffect(state.mediaId, pendingDirection) {
@@ -96,8 +97,10 @@ fun MeloXIOSMiniPlayer(
             contentOffset.snapTo(0f)
             pendingDirection = 0
             pendingOutgoingMediaId = null
+            pendingIncoming = null
         } else if (pendingDirection == 0) {
             contentOffset.snapTo(0f)
+            pendingIncoming = null
         }
     }
 
@@ -107,6 +110,7 @@ fun MeloXIOSMiniPlayer(
         contentOffset.animateTo(0f, spring(dampingRatio = .72f, stiffness = 430f))
         pendingDirection = 0
         pendingOutgoingMediaId = null
+        pendingIncoming = null
     }
 
     val expansionProgress = if (animatedVisibilityScope != null) {
@@ -168,9 +172,21 @@ fun MeloXIOSMiniPlayer(
     val compactArtistAlpha = 1f - smoothStep(compact, 0.04f, 0.52f)
     val compactNextAlpha = 1f - smoothStep(compact, 0.04f, 0.50f)
     val controlStageWidth = lerpDp(72.dp, 36.dp, smoothStep(compact, 0.08f, 0.84f))
+    // Keep the song that was already sliding in. Replacing that row with the
+    // newly current track tears the layout down and flashes the next title.
+    val holdIncoming = pendingIncoming != null &&
+        pendingDirection != 0 &&
+        state.mediaId == pendingOutgoingMediaId &&
+        kotlin.math.abs(contentOffset.value) > swipeWidth * 0.82f
+    val shownEntry = if (holdIncoming) pendingIncoming else null
+    val shownTitle = shownEntry?.title ?: state.title
+    val shownArtist = shownEntry?.artist ?: state.artist
+    val shownArtwork = shownEntry?.artworkUrl ?: state.artworkUrl
+    val shownMediaId = shownEntry?.mediaId ?: state.mediaId
+    val visualOffset = if (holdIncoming) 0f else contentOffset.value
     val dragDirection = when {
-        contentOffset.value < 0f -> -1
-        contentOffset.value > 0f -> 1
+        visualOffset < 0f -> -1
+        visualOffset > 0f -> 1
         else -> 0
     }
     val adjacentEntry = when (dragDirection) {
@@ -182,7 +198,7 @@ fun MeloXIOSMiniPlayer(
         )
         else -> null
     }
-    val dragProgress = (kotlin.math.abs(contentOffset.value) / swipeWidth.coerceAtLeast(1f)).coerceIn(0f, 1f)
+    val dragProgress = (kotlin.math.abs(visualOffset) / swipeWidth.coerceAtLeast(1f)).coerceIn(0f, 1f)
     val adjacentAlpha = smoothStep(dragProgress, 0.15f, 0.85f)
 
     Box(
@@ -264,6 +280,7 @@ fun MeloXIOSMiniPlayer(
                                     if (direction != 0) {
                                         scope.launch {
                                             contentOffset.animateTo(direction * swipeWidth, spring(dampingRatio = .68f, stiffness = 360f))
+                                            pendingIncoming = adjacentEntry
                                             pendingDirection = direction
                                             pendingOutgoingMediaId = state.mediaId
                                             if (direction < 0) state.nextFromMiniPlayer() else state.previousFromMiniPlayer()
@@ -282,7 +299,7 @@ fun MeloXIOSMiniPlayer(
                         .clickable(interactionSource = null, indication = null, onClick = onExpand),
                 ) {
                 Row(
-                    modifier = Modifier.fillMaxSize().graphicsLayer { translationX = contentOffset.value },
+                    modifier = Modifier.fillMaxSize().graphicsLayer { translationX = visualOffset },
                     verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(lerpDp(10.dp, 8.dp, compact)),
                 ) {
@@ -291,7 +308,7 @@ fun MeloXIOSMiniPlayer(
                         with(sharedTransitionScope) {
                             Modifier.sharedElement(
                                 sharedContentState = rememberSharedContentState(
-                                    key = sharedPlayerArtworkKey(state.mediaId),
+                                    key = sharedPlayerArtworkKey(shownMediaId),
                                 ),
                                 animatedVisibilityScope = animatedVisibilityScope,
                                 boundsTransform = MeloXArtworkBoundsTransform,
@@ -303,7 +320,7 @@ fun MeloXIOSMiniPlayer(
                         Modifier
                     }
                 Artwork(
-                    url = state.artworkUrl,
+                    url = shownArtwork,
                     modifier = Modifier
                         .size(artworkSize)
                         .then(sharedArtworkModifier)
@@ -320,7 +337,7 @@ fun MeloXIOSMiniPlayer(
                         .graphicsLayer { alpha = miniChromeAlpha },
                 ) {
                     Text(
-                        text = state.title.ifBlank { "正在播放" },
+                        text = shownTitle.ifBlank { "正在播放" },
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         fontSize = 14.sp,
@@ -330,7 +347,7 @@ fun MeloXIOSMiniPlayer(
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        text = state.artist,
+                        text = shownArtist,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         fontSize = 12.sp,
@@ -347,7 +364,7 @@ fun MeloXIOSMiniPlayer(
                             .fillMaxSize()
                             .graphicsLayer {
                                 alpha = adjacentAlpha
-                                translationX = contentOffset.value - dragDirection * swipeWidth
+                                translationX = visualOffset - dragDirection * swipeWidth
                             },
                         verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(lerpDp(10.dp, 8.dp, compact)),

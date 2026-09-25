@@ -160,6 +160,7 @@ class MeloXPlaybackService : MediaSessionService() {
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             listenedTimeTracker.onPlayingChanged(SystemClock.elapsedRealtime(), isPlaying)
+            if (!isPlaying) persistQueueIfEnabled()
             Log.d(TAG, "isPlaying=$isPlaying, ongoing=${isPlaybackOngoing()}")
         }
 
@@ -214,6 +215,7 @@ class MeloXPlaybackService : MediaSessionService() {
             // analyzed match at a time. It must also run for the initial item,
             // not only after a Media3 automatic transition.
             mediaItem?.let { scheduleSmartQueueNext(it.mediaId) }
+            persistQueueIfEnabled()
             val active = player
             if (transitionedId != systemLyricsSongId) {
                 active?.let(::restoreSystemLyricsMetadata)
@@ -1146,8 +1148,10 @@ class MeloXPlaybackService : MediaSessionService() {
         if (!metadataEnabled && !effectiveNotification && !VivoAtomicIslandBridge.isSupported()) {
             restoreSystemLyricsMetadata(active)
             (getSystemService(NotificationManager::class.java)).cancel(LYRICS_NOTIFICATION_ID)
+            HyperOsFocusBridge.clearSuperIsland(this)
             return
         }
+        if (!hyperIslandEnabled) HyperOsFocusBridge.clearSuperIsland(this)
         if (systemLyricsSongId != songId) resetSystemLyrics(currentItem)
         if (systemLyricsDocument == null && systemLyricsJob?.isActive != true) loadSystemLyrics(songId, currentItem)
         val document = systemLyricsDocument ?: return

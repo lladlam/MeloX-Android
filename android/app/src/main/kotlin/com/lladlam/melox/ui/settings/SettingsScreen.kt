@@ -753,6 +753,7 @@ private fun SystemPlaybackSettings(context: android.content.Context) {
         MeloXSettingsPreferences.setBoolean(context, "lyrics_notifications_enabled", granted)
     }
 
+    val protocol = remember { HyperOsFocusBridge.protocol(context) }
     SettingsGlassGroup {
         SettingsExternalToggleRow(
             title = "系统媒体信息显示歌词",
@@ -763,7 +764,6 @@ private fun SystemPlaybackSettings(context: android.content.Context) {
             systemLyrics = it
             MeloXSettingsPreferences.setBoolean(context, "system_lyrics_enabled", it)
         }
-        val protocol = remember { HyperOsFocusBridge.protocol(context) }
         MeloXSettingsDropdown(
             title = "系统媒体标题格式",
             selected = MeloXSettingsRuntime.systemLyricTitleMode,
@@ -798,6 +798,12 @@ private fun SystemPlaybackSettings(context: android.content.Context) {
         ) { enabled ->
             hyperIsland.value = enabled
             MeloXSettingsPreferences.setBoolean(context, "hyperos_super_island_enabled", enabled)
+        }
+    }
+    if (protocol == HyperOsFocusBridge.Protocol.HyperOs3) {
+        Spacer(Modifier.height(10.dp))
+        SettingsActionButton("授权 Shizuku（超级岛联网）") {
+            HyperOsFocusBridge.requestShizukuPermission(context)
         }
     }
     Spacer(Modifier.height(10.dp))

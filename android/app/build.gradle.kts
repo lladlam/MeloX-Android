@@ -170,6 +170,7 @@ dependencies {
     // permission is denied, MeloX continues publishing Focus notifications directly.
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
+    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:6.1")
     // Framework Binder signatures used only at compile time. Android supplies the
     // real hidden interfaces at runtime; this module is never packaged in the APK.
     compileOnly(project(":hidden-api"))

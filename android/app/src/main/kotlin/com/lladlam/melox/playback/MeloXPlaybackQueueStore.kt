@@ -42,6 +42,12 @@ internal object MeloXPlaybackQueueStore {
                 put("originalIndex", extras?.getInt(PlaybackCommands.QUEUE_ORIGINAL_INDEX_KEY, -1) ?: -1)
                 put("entryId", extras?.getString(PlaybackCommands.QUEUE_ENTRY_ID_KEY))
                 put("durationMs", extras?.getLong(PlaybackTrackIdentity.DurationMsExtra, 0L) ?: 0L)
+                put("source", extras?.getString(PlaybackTrackIdentity.SourceExtra))
+                put("resourceId", extras?.getString(PlaybackTrackIdentity.ResourceIdExtra))
+                put("trackTitle", extras?.getString(PlaybackTrackIdentity.TitleExtra))
+                put("trackArtist", extras?.getString(PlaybackTrackIdentity.ArtistExtra))
+                put("trackAlbum", extras?.getString(PlaybackTrackIdentity.AlbumExtra))
+                put("trackArtwork", extras?.getString(PlaybackTrackIdentity.ArtworkExtra))
             })
         }
         preferences.edit()
@@ -71,6 +77,24 @@ internal object MeloXPlaybackQueueStore {
                         putString(PlaybackCommands.QUEUE_ENTRY_ID_KEY, it)
                     }
                     putLong(PlaybackTrackIdentity.DurationMsExtra, value.optLong("durationMs", 0L))
+                    value.optString("source").takeIf(String::isNotBlank)?.let {
+                        putString(PlaybackTrackIdentity.SourceExtra, it)
+                    }
+                    value.optString("resourceId").takeIf(String::isNotBlank)?.let {
+                        putString(PlaybackTrackIdentity.ResourceIdExtra, it)
+                    }
+                    value.optString("trackTitle").takeIf(String::isNotBlank)?.let {
+                        putString(PlaybackTrackIdentity.TitleExtra, it)
+                    }
+                    value.optString("trackArtist").takeIf(String::isNotBlank)?.let {
+                        putString(PlaybackTrackIdentity.ArtistExtra, it)
+                    }
+                    value.optString("trackAlbum").takeIf(String::isNotBlank)?.let {
+                        putString(PlaybackTrackIdentity.AlbumExtra, it)
+                    }
+                    value.optString("trackArtwork").takeIf(String::isNotBlank)?.let {
+                        putString(PlaybackTrackIdentity.ArtworkExtra, it)
+                    }
                 }
                 add(
                     MediaItem.Builder()

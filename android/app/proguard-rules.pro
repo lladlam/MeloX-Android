@@ -20,6 +20,9 @@
 # Shizuku and optional vendor bridges are discovered through Android framework metadata.
 -keep class rikka.shizuku.** { *; }
 -dontwarn rikka.shizuku.**
+-keep class com.lladlam.melox.platform.xiaomi.ShizukuKeepAliveService { *; }
+-keep class org.lsposed.hiddenapibypass.** { *; }
+-dontwarn org.lsposed.hiddenapibypass.**
 -dontwarn com.apple.android.music.**
 
 ## Rules for NewPipeExtractor
