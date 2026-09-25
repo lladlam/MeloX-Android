@@ -370,16 +370,9 @@ fun MeloXIOSMiniPlayer(
                 Artwork(
                     url = shownArtwork,
                     modifier = Modifier
-                        // ⚠ 封面必须**正方形**（2026-09-25 修 bug）。
-                        //   原来只写 `.size(artworkSize)`：`Modifier.size()` 只设**期望**尺寸，
-                        //   会被父级 max 约束**单轴**压缩 —— 宽度不受限（40dp 保留），
-                        //   高度被内容区的 vertical padding 链压到 30dp ⇒ 实测 162×120px
-                        //   = **40×30dp 的长方形**（真机 `tmp/pb2.png` 复测）。
-                        //   改法：`matchHeightConstraintsFirst = true` ⇒ 先吃满可用**高度**，
-                        //   再按 1:1 推出宽度 ⇒ 高度 30dp 时得到 30×30dp 正方形。
-                        //   `artworkSize` 退化为「高度上限」，compact 态仍随 40→30dp 收缩。
-                        .heightIn(max = artworkSize)
-                        .aspectRatio(1f, matchHeightConstraintsFirst = true)
+                        // 封面按设计尺寸居中，不再吃满内容区高度后贴在上沿。
+                        // size 同时锁宽高，避免只被高度压成扁的长方形。
+                        .size(artworkSize)
                         .then(sharedArtworkModifier)
                         .graphicsLayer {
                             scaleX = sharedArtworkScale
@@ -391,7 +384,10 @@ fun MeloXIOSMiniPlayer(
                 Column(
                     modifier = Modifier
                         .weight(1f)
+                        .fillMaxHeight()
+                        .wrapContentHeight(Alignment.CenterVertically)
                         .graphicsLayer { alpha = miniChromeAlpha },
+                    verticalArrangement = Arrangement.Center,
                 ) {
                     Text(
                         text = shownTitle.ifBlank { "正在播放" },
@@ -426,7 +422,11 @@ fun MeloXIOSMiniPlayer(
                     //        溢出 15dp 的部分照常画出来（下方还有 9dp 内边距 + 胶囊裁剪余量兜底）；
                     //     ② **去掉这一层的 `graphicsLayer { alpha }`**：离屏层同样按盒子尺寸裁
                     //        溢出内容，是第二个裁切源；淡出改由文字颜色 alpha 承担（视觉等价）。
-                    Box(modifier = Modifier.height(artistHeight)) {
+                    Box(
+                        modifier = Modifier
+                            .height(artistHeight)
+                            .wrapContentHeight(Alignment.CenterVertically, unbounded = true),
+                    ) {
                         Text(
                             text = shownArtist,
                             maxLines = 1,
@@ -462,14 +462,17 @@ fun MeloXIOSMiniPlayer(
                     ) {
                         Artwork(
                             entry.artworkUrl,
-                            // 与主封面同一修法（见上面长注释）：必须正方形，
-                            // 否则横向滑动切入的相邻封面也是 40×30dp 长方形。
                             Modifier
-                                .heightIn(max = artworkSize)
-                                .aspectRatio(1f, matchHeightConstraintsFirst = true)
+                                .size(artworkSize)
                                 .clip(RoundedCornerShape(artworkRadius)),
                         )
-                        Column(Modifier.weight(1f)) {
+                        Column(
+                            Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .wrapContentHeight(Alignment.CenterVertically),
+                            verticalArrangement = Arrangement.Center,
+                        ) {
                             // ⚠ 与主条目同样的 `includeFontPadding = false`（见主条目长注释）：
                             //   否则横滑切入的这一份也会在 30dp 内容区里把作者名裁掉，
                             //   而它恰好是**滑动过程中用户正在看的那一份**。
