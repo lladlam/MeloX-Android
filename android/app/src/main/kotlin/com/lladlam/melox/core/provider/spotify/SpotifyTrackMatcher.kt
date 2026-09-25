@@ -48,7 +48,12 @@ object SpotifyTrackMatcher {
             else -> return null
         }
         val artistScore = if (sourceArtists == candidateArtists) 30 else 20
-        val durationScore = durationDelta?.let { (30 - it / 100L).coerceAtLeast(0L).toInt() } ?: 0
+        val durationScore = when {
+            durationDelta != null -> (30 - durationDelta / 100L).coerceAtLeast(0L).toInt()
+            // 两边都没有时长时，完整歌手名单顶替时长分。否则 110 的门槛会把唯一合格的结果丢掉。
+            source.durationMs == null && sourceArtists == candidateArtists -> 30
+            else -> 0
+        }
         return SpotifyMatchScore(candidate, 40 + artistScore + durationScore + availability + sourcePriority(candidate.id.source))
     }
 

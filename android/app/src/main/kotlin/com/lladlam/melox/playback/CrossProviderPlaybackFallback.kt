@@ -135,8 +135,14 @@ class CrossProviderPlaybackFallbackResolver(
                     }
                 }.awaitAll().flatten()
             }
-            if (sourceTrack.durationMs == null) return@withTimeoutOrNull null
-            val ranked = SpotifyTrackMatcher.rank(sourceTrack, candidates)
+            val ranked = SpotifyTrackMatcher.rank(sourceTrack, candidates).let { matches ->
+                if (sourceTrack.durationMs != null) {
+                    matches
+                } else {
+                    // 没有时长时不能靠时长消歧，只接受歌手名单完全一致的结果。
+                    matches.filter { artistSet(sourceTrack) == artistSet(it.candidate) }
+                }
+            }
             eventLogger("strict matches song=${request.songId}: ${ranked.size}")
             for (match in ranked) {
                 val provider = providers.firstOrNull { it.source == match.candidate.id.source } ?: continue
@@ -168,6 +174,11 @@ class CrossProviderPlaybackFallbackResolver(
 
     private fun isEligibleFallbackProvider(provider: MusicProvider): Boolean =
         provider.source in EligibleSources && provider is SearchCapability && provider is PlaybackCapability
+
+    private fun artistSet(track: MusicTrack): Set<String> = track.artists
+        .map { TrackAggregation.normalizeArtist(it.name) }
+        .filter(String::isNotBlank)
+        .toSet()
 
     companion object {
         val EligibleSources = setOf(
