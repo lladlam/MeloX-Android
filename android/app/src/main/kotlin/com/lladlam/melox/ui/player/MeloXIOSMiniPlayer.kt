@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
@@ -177,7 +178,6 @@ fun MeloXIOSMiniPlayer(
     val compact = compactProgress.coerceIn(0f, 1f)
     val artworkSize = lerpDp(40.dp, 30.dp, compact)
     val artworkRadius = 6.dp
-    val compactArtistAlpha = 1f - smoothStep(compact, 0.04f, 0.52f)
     val compactNextAlpha = 1f - smoothStep(compact, 0.04f, 0.50f)
     // 收缩态内容区(36dp) 比展开态(30dp) 更高 ⇒ 控件随内容区放大（用户口径）。
     // 用同一根 compact 曲线（与内边距同源），保证「栏高变化 ↔ 控件大小」同步、不会错拍。
@@ -187,7 +187,8 @@ fun MeloXIOSMiniPlayer(
     // 两圆之间的**圆缘**间距。图标间距 = 本值 + 2×圆内边距((size−icon)/2)。
     // 展开 (30−18)/2 = 6 ⇒ 图标间距 = gap + 12。
     val controlGap = lerpDp(MiniControlGapExpanded, MiniControlGapCollapsed, controlMetric)
-    val artistHeight = lerpDp(15.dp, 0.dp, smoothStep(compact, 0.04f, 0.72f))
+    // 收缩后仍显示歌手，不再把这一行收成 0。
+    val artistHeight = 15.dp
     // ── 排版必须**锁 dp、不锁 sp**（2026-09-25 跨机型修「作者名下沉被裁切」）────────
     //   故障现象：其他机型上「歌曲作者名下沉、下半截被切平」（真机截图实测作者名只画出
     //     约六成高度，切边正好落在 15dp 作者行盒的底沿）。
@@ -370,9 +371,9 @@ fun MeloXIOSMiniPlayer(
                 Artwork(
                     url = shownArtwork,
                     modifier = Modifier
-                        // 封面按设计尺寸居中，不再吃满内容区高度后贴在上沿。
-                        // size 同时锁宽高，避免只被高度压成扁的长方形。
-                        .size(artworkSize)
+                        // `size` / `aspectRatio` 都会服从父级最大高度，封面被压扁后再被 Crop 裁成
+                        // 长方形。`requiredSize` 忽略那条高度上限，封面保持正方形，行本身垂直居中。
+                        .requiredSize(artworkSize)
                         .then(sharedArtworkModifier)
                         .graphicsLayer {
                             scaleX = sharedArtworkScale
@@ -434,9 +435,7 @@ fun MeloXIOSMiniPlayer(
                             fontSize = artistFontSize,
                             lineHeight = artistLineHeight,
                             softWrap = false,
-                            color = MaterialTheme.colorScheme.onSurface.copy(
-                                alpha = 0.64f * compactArtistAlpha,
-                            ),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
                             modifier = Modifier.wrapContentHeight(
                                 align = Alignment.CenterVertically,
                                 unbounded = true,
@@ -463,7 +462,7 @@ fun MeloXIOSMiniPlayer(
                         Artwork(
                             entry.artworkUrl,
                             Modifier
-                                .size(artworkSize)
+                                .requiredSize(artworkSize)
                                 .clip(RoundedCornerShape(artworkRadius)),
                         )
                         Column(

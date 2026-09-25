@@ -1,6 +1,7 @@
 package com.lladlam.melox.ui.discovery
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.graphics.Brush
@@ -31,6 +32,16 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,6 +51,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.graphics.Color
@@ -79,6 +94,9 @@ import com.lladlam.melox.core.music.provider.UserLibraryCapability
 import com.lladlam.melox.core.recommendation.LocalRecommendationStore
 import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.playback.ProviderPlaybackCommands
+import com.lladlam.melox.ui.animation.MeloXMotion
+import com.lladlam.melox.ui.animation.meloXPageEnter
+import com.lladlam.melox.ui.animation.meloXPageExit
 import com.lladlam.melox.ui.account.MeloXAccountActivity
 import com.lladlam.melox.ui.collection.MeloXCollectionDetailActivity
 import com.lladlam.melox.ui.glass.MeloXActionIcon
@@ -96,8 +114,10 @@ import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import com.lladlam.melox.ui.glass.MeloXSymbolVariant
 import com.lladlam.melox.ui.podcast.MeloXPodcastScreen
 import com.lladlam.melox.ui.library.MeloXUnifiedPlaylistDetailScreen
+import com.lladlam.melox.ui.library.MeloXUnifiedSongListDetailScreen
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.layout.rememberMeloXWindowInfo
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -209,24 +229,11 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
     var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var selectedCollection by remember { mutableStateOf<DiscoveryCollection?>(null) }
-    var dailySongs by remember { mutableStateOf<List<SearchSong>>(emptyList()) }
-    var showDailySongs by remember { mutableStateOf(false) }
+    var songList by remember { mutableStateOf<HomeSongList?>(null) }
     var activeAction by remember { mutableStateOf<String?>(null) }
     var localRecommendations by remember { mutableStateOf(emptyList<com.lladlam.melox.core.recommendation.LocalRecommendationItem>()) }
     var localCandidates by remember { mutableStateOf(emptyList<MusicTrack>()) }
     val homeCacheKey = "${session.cookie.hashCode()}_${MeloXSettingsRuntime.musicArea}_${MeloXSettingsRuntime.podcastsEnabled}"
-
-    selectedCollection?.let { collection ->
-        DiscoveryCollectionDetail(collection = collection, onBack = { selectedCollection = null })
-        return
-    }
-    if (showDailySongs) {
-        DailyRecommendationScreen(
-            songs = dailySongs,
-            onBack = { showDailySongs = false },
-        )
-        return
-    }
 
     fun refresh(forceServer: Boolean = false) {
         if (refreshing) return
@@ -368,10 +375,13 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
                         else -> emptyList()
                     }
                 }.onSuccess { songs ->
-                    if (action == "每日推荐") {
-                        dailySongs = songs
-                        showDailySongs = songs.isNotEmpty()
-                        if (songs.isEmpty()) error = "没有可播放的推荐歌曲"
+                    if (action in HomeSongListActions && songs.isNotEmpty()) {
+                        songList = HomeSongList(
+                            title = action,
+                            subtitle = "网易云音乐 · ${songs.size} 首歌曲",
+                            artworkUrl = songs.firstOrNull()?.artworkUrl,
+                            songs = songs,
+                        )
                     } else {
                         songs.firstOrNull()?.let {
                             PlaybackCommands.playQueue(context, songs, it.id, heartMode = action == "心动模式")
@@ -383,53 +393,121 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
         },
         onCollection = { selectedCollection = it },
     )
+
+    // 首页留在底下。歌单页只是叠上去，打开时从右侧滑入，预见式返回滑开时露出首页。
+    HomeOverlayPage(
+        shown = selectedCollection != null,
+        onBack = { selectedCollection = null },
+    ) {
+        selectedCollection?.let { collection ->
+            DiscoveryCollectionDetail(collection = collection, onBack = { selectedCollection = null })
+        }
+    }
+    HomeOverlayPage(
+        shown = songList != null,
+        onBack = { songList = null },
+    ) {
+        songList?.let { list ->
+            HomeSongListDetail(list = list, onBack = { songList = null })
+        }
+    }
 }
 
+private val HomeSongListActions = setOf("每日推荐", "热歌榜", "私人雷达")
+
 @Composable
-private fun DailyRecommendationScreen(
-    songs: List<SearchSong>,
+private fun HomeOverlayPage(
+    shown: Boolean,
+    onBack: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val progress = remember { Animatable(0f) }
+    // 详情叠在首页上。普通返回和预见式返回都先关掉它，
+    // 滑开时露出底下的首页，而不是灰色底或「再按一次退出」。
+    BackHandler(enabled = shown, onBack = onBack)
+    PredictiveBackHandler(enabled = shown) {
+        try {
+            it.collect { event -> progress.snapTo(event.progress) }
+            progress.animateTo(1f, tween(160))
+            onBack()
+            progress.snapTo(0f)
+        } catch (_: CancellationException) {
+            progress.animateTo(0f, tween(160))
+        }
+    }
+    AnimatedVisibility(
+        visible = shown,
+        enter = meloXPageEnter(fromRight = true),
+        exit = meloXPageExit(toRight = true),
+        modifier = Modifier.fillMaxSize().zIndex(if (shown) 1f else 0f),
+    ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    translationX = size.width * progress.value
+                    val scale = 1f - 0.08f * progress.value
+                    scaleX = scale
+                    scaleY = scale
+                    transformOrigin = TransformOrigin(0f, 0.5f)
+                },
+        ) {
+            content()
+        }
+    }
+}
+
+private data class HomeSongList(
+    val title: String,
+    val subtitle: String,
+    val artworkUrl: String?,
+    val songs: List<SearchSong>,
+)
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun HomeSongListDetail(
+    list: HomeSongList,
     onBack: () -> Unit,
 ) {
-    val context = LocalContext.current.applicationContext
-    BackHandler(onBack = onBack)
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding(),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            MeloXActionIcon("‹", Modifier.size(40.dp).clickable(onClick = onBack), MaterialTheme.colorScheme.onBackground)
-            Column(Modifier.weight(1f).padding(start = 8.dp)) {
-                Text("每日推荐", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Text("网易云音乐 · ${songs.size} 首歌曲", fontSize = 12.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = .55f))
-            }
-            MeloXGlassButton(
-                onClick = { songs.firstOrNull()?.let { PlaybackCommands.playQueue(context, songs, it.id) } },
-                style = MeloXGlassButtonStyle.BorderedProminent,
-            ) { Text("播放全部") }
-        }
-        LazyColumn(
+    val playlist = remember(list.title, list.artworkUrl, list.songs.size) {
+        NeteasePlaylistSummary(
+            id = -(list.title.hashCode().toLong() and 0x7fff_ffffL) - 1L,
+            name = list.title,
+            coverUrl = list.artworkUrl,
+            trackCount = list.songs.size,
+            creatorName = list.subtitle,
+        )
+    }
+    SharedTransitionLayout(Modifier.fillMaxSize()) {
+        AnimatedContent(
+            targetState = playlist,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = com.lladlam.melox.ui.MeloXBottomContentClearance),
-        ) {
-            itemsIndexed(songs, key = { _, song -> "daily-${song.id}" }) { index, song ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().clickable {
-                        PlaybackCommands.playQueue(context, songs, song.id)
-                    }.padding(horizontal = 20.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("${index + 1}", Modifier.width(34.dp), color = MaterialTheme.colorScheme.onBackground.copy(alpha = .45f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    AsyncImage(song.artworkUrl, song.name, contentScale = ContentScale.Crop, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(9.dp)))
-                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                        Text(song.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                        Text(song.artists, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = .55f))
-                    }
-                }
+            transitionSpec = {
+                (
+                    fadeIn(
+                        animationSpec = tween(
+                            durationMillis = MeloXMotion.ContentEnterMillis,
+                            easing = FastOutSlowInEasing,
+                        ),
+                    ) togetherWith fadeOut(
+                        animationSpec = tween(
+                            durationMillis = MeloXMotion.ContentExitMillis,
+                            easing = FastOutSlowInEasing,
+                        ),
+                    )
+                ).apply { targetContentZIndex = 2f }
+            },
+            label = "home-song-list-detail",
+        ) { target ->
+            AnimatedVisibility(visible = true) {
+                MeloXUnifiedSongListDetailScreen(
+                    playlist = target,
+                    songs = list.songs,
+                    onBack = onBack,
+                    sharedTransitionScope = this@SharedTransitionLayout,
+                    animatedVisibilityScope = this,
+                )
             }
         }
     }
@@ -448,11 +526,6 @@ private fun ProviderHomeDataScreen(source: MusicSource, onOpenTool: (String) -> 
     var refreshing by remember(source) { mutableStateOf(false) }
     var error by remember(source) { mutableStateOf<String?>(null) }
     var selectedCollection by remember(source) { mutableStateOf<DiscoveryCollection?>(null) }
-
-    selectedCollection?.let { collection ->
-        DiscoveryCollectionDetail(collection = collection, onBack = { selectedCollection = null })
-        return
-    }
 
     fun refresh() {
         if (refreshing || home == null) return
@@ -519,6 +592,14 @@ private fun ProviderHomeDataScreen(source: MusicSource, onOpenTool: (String) -> 
         },
         onCollection = { selectedCollection = it },
     )
+    HomeOverlayPage(
+        shown = selectedCollection != null,
+        onBack = { selectedCollection = null },
+    ) {
+        selectedCollection?.let { collection ->
+            DiscoveryCollectionDetail(collection = collection, onBack = { selectedCollection = null })
+        }
+    }
 }
 
 @Composable
@@ -742,11 +823,6 @@ private fun NeteaseExploreDataScreen() {
     var error by remember { mutableStateOf<String?>(null) }
     var selectedCollection by remember { mutableStateOf<DiscoveryCollection?>(null) }
 
-    selectedCollection?.let { collection ->
-        DiscoveryCollectionDetail(collection = collection, onBack = { selectedCollection = null })
-        return
-    }
-
     fun refresh() {
         if (category == "播客" || refreshing) return
         val requested = category
@@ -780,6 +856,14 @@ private fun NeteaseExploreDataScreen() {
         showPodcast = category == "播客",
         onCollection = { selectedCollection = it },
     )
+    HomeOverlayPage(
+        shown = selectedCollection != null,
+        onBack = { selectedCollection = null },
+    ) {
+        selectedCollection?.let { collection ->
+            DiscoveryCollectionDetail(collection = collection, onBack = { selectedCollection = null })
+        }
+    }
 }
 
 @Composable
@@ -793,11 +877,6 @@ private fun ProviderExploreDataScreen(source: MusicSource) {
     var refreshing by remember(source) { mutableStateOf(false) }
     var error by remember(source) { mutableStateOf<String?>(null) }
     var selectedCollection by remember(source) { mutableStateOf<DiscoveryCollection?>(null) }
-
-    selectedCollection?.let { collection ->
-        DiscoveryCollectionDetail(collection = collection, onBack = { selectedCollection = null })
-        return
-    }
 
     fun refresh() {
         if (refreshing || home == null) return
@@ -836,6 +915,14 @@ private fun ProviderExploreDataScreen(source: MusicSource) {
         showPodcast = false,
         onCollection = { selectedCollection = it },
     )
+    HomeOverlayPage(
+        shown = selectedCollection != null,
+        onBack = { selectedCollection = null },
+    ) {
+        selectedCollection?.let { collection ->
+            DiscoveryCollectionDetail(collection = collection, onBack = { selectedCollection = null })
+        }
+    }
 }
 
 @Composable

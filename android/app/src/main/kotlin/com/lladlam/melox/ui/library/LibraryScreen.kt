@@ -1436,6 +1436,30 @@ private fun MeloXInsetDivider(leading: androidx.compose.ui.unit.Dp) {
 /** Canonical playlist detail used by Library, Home, Explore, Search and account entry points. */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
+internal fun MeloXUnifiedSongListDetailScreen(
+    playlist: NeteasePlaylistSummary,
+    songs: List<SearchSong>,
+    onBack: () -> Unit,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope,
+) {
+    val context = LocalContext.current.applicationContext
+    val client = remember(context) {
+        NeteaseLibraryClient(cookieProvider = { NeteaseSessionStore.readCookie(context) })
+    }
+    MeloXPlaylistDetailScreen(
+        initialPlaylist = playlist,
+        client = client,
+        onBack = onBack,
+        sharedTransitionScope = sharedTransitionScope,
+        animatedVisibilityScope = animatedVisibilityScope,
+        onModalVisibilityChanged = {},
+        providedSongs = songs,
+    )
+}
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
 internal fun MeloXUnifiedPlaylistDetailScreen(
     playlist: NeteasePlaylistSummary,
     onBack: () -> Unit,
@@ -1543,6 +1567,7 @@ private fun MeloXPlaylistDetailScreen(
     onSongLikeChanged: (SearchSong, Boolean) -> Unit = { _, _ -> },
     albumId: Long? = null,
     providerAlbum: MusicAlbumSummary? = null,
+    providedSongs: List<SearchSong>? = null,
 ) {
     val context = LocalContext.current
     val detailWindow = rememberMeloXWindowInfo()
@@ -1616,6 +1641,12 @@ private fun MeloXPlaylistDetailScreen(
     suspend fun refreshPlaylist() {
         loading = true
         errorMessage = null
+        if (providedSongs != null) {
+            detail = NeteasePlaylistDetail(summary = initialPlaylist, songs = providedSongs)
+            isSaved = null
+            loading = false
+            return
+        }
         if (providerAlbum != null) {
             val capability = providerAlbumCapability
             if (capability == null) {
