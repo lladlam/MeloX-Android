@@ -17,6 +17,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.Icon
+import androidx.compose.ui.res.painterResource
 import com.lladlam.melox.R
 import com.lladlam.melox.ui.animation.MeloXMotion
 
@@ -163,6 +165,19 @@ fun MeloXSymbolIcon(
     iconSize: TextUnit = 24.sp,
     contentDescription: String? = null,
 ) {
+    // Brand override: the Settings glyph is the traced disc (chainring) vector
+    // instead of the SF Symbols gear, mirroring how the Home tab uses a custom
+    // vector. Both the bottom-bar Settings tab and the Settings-list "通用" item
+    // flow through this symbol, so they pick up the brand disc automatically.
+    if (symbol == MeloXSymbol.Settings) {
+        Icon(
+            painter = painterResource(R.drawable.ic_melox_brand_gear),
+            contentDescription = contentDescription,
+            modifier = modifier,
+            tint = color,
+        )
+        return
+    }
     // Material Symbols uses a taller font box than SF Symbols. Rendering the
     // glyph at a slightly smaller em size leaves a real optical inset inside
     // callers' 18/20/24dp icon boxes, instead of clipping the gear and arrows

@@ -26,7 +26,9 @@ import com.lladlam.melox.ui.glass.MeloXTypography as GlassTypography
 import com.lladlam.melox.ui.theme.MeloXLanTingProFontFamily
 import androidx.core.view.WindowCompat
 
-private val LightColors = lightColorScheme(
+// ⚠ 2026-09-25：由 `private` 放开到 `internal` —— 底部 chrome 需要在**这两套真实
+//   配色**之间插值（`lerpColorScheme`），而不是再造一组近似色。
+internal val LightColors = lightColorScheme(
     primary = Color(0xFF007AFF),
     error = Color(0xFFFF3B30),
     background = Color(0xFFF7F7FA),
@@ -38,7 +40,7 @@ private val LightColors = lightColorScheme(
     onSurfaceVariant = Color(0xFF5D5D66),
 )
 
-private val DarkColors = darkColorScheme(
+internal val DarkColors = darkColorScheme(
     primary = Color(0xFF0A84FF),
     error = Color(0xFFFF453A),
     background = Color(0xFF0B0B0D),
