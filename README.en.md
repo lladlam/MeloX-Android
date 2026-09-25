@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 <p align="center">
-  <img src="android/app/src/main/res/drawable-nodpi/ic_launcher_foreground.png" width="128" alt="MeloX Android icon" />
+  <img src="docs/icon.png" width="128" alt="MeloX Android icon" />
 </p>
 
 <p align="center">
@@ -24,7 +24,7 @@
 
 ## Current version: 0.6.1
 
-`0.6.1` continues from `0.6.0` with playback-queue restore, lyric timing, HyperOS Super Island, LX source crypto, and a bottom-bar rework covering spring motion, glass, and the mini player.
+`0.6.1` continues from `0.6.0` with a bottom-bar rework and fixes for the playback queue, lyrics, HyperOS Super Island, the mini player, and home playlists.
 
 - Download and full notes: [GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.6.1)
 - Version history: [CHANGELOG.md](CHANGELOG.md)

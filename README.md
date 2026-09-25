@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 <p align="center">
-  <img src="android/app/src/main/res/drawable-nodpi/ic_launcher_foreground.png" width="128" alt="MeloX Android icon" />
+  <img src="docs/icon.png" width="128" alt="MeloX Android icon" />
 </p>
 
 <p align="center">
@@ -24,7 +24,7 @@
 
 ## 当前版本：0.6.1
 
-`0.6.1` 在 `0.6.0` 上继续修复播放队列、歌词时机、HyperOS 超级岛、洛雪音源加解密，并重做底部导航的弹簧、玻璃层和迷你播放器。
+`0.6.1` 在 `0.6.0` 上重做底部导航，并修复播放队列、歌词、HyperOS 超级岛、迷你播放器和首页歌单。
 
 - 下载与完整更新日志：[GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.6.1)
 - 详细版本记录：[CHANGELOG.md](CHANGELOG.md)
