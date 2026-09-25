@@ -22,11 +22,11 @@
 
 > MeloX Android 是非官方开源项目，与网易云音乐、小米、Apple 及其关联公司不存在隶属、合作或授权关系。
 
-## 当前版本：0.6.0
+## 当前版本：0.6.1
 
-`0.6.0` 接入 Spotify 与 YouTube Music 两个新音乐源，新增 provider-neutral 下载与离线播放、vivo OriginOS 原子岛适配、基于提交的开发版更新检查；同时集中修复社区反馈的问题（酷狗音源、搜索返回、队列持久化、歌单界面、日推、横屏布局、歌词显示等），并加固账号会话存储与网络安全。
+`0.6.1` 在 `0.6.0` 上继续修复播放队列、歌词时机、HyperOS 超级岛、洛雪音源加解密，并重做底部导航的弹簧、玻璃层和迷你播放器。
 
-- 下载与完整更新日志：[GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.6.0)
+- 下载与完整更新日志：[GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.6.1)
 - 详细版本记录：[CHANGELOG.md](CHANGELOG.md)
 - 本次版本说明：[CHANGELOG.md](CHANGELOG.md)
 
