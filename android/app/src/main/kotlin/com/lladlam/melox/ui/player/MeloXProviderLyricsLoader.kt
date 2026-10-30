@@ -42,6 +42,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -664,12 +665,10 @@ internal object MeloXProviderLyricsLoader {
         snapshot: LyricTrackSnapshot,
     ): LyricsDocument {
         val orderedSources = automaticLyricSourcesFor(snapshot.resourceId.source)
-        // Every source is started together, but the current provider is awaited
-        // first: its own lyrics win the moment they are ready and the remaining
-        // sources are cancelled. Other platforms are only consulted when the
-        // current provider has none. Because those sources already run
-        // concurrently, the fallback path still costs no more than waiting for
-        // the slowest one.
+        // Every source is started together. The current provider still supplies
+        // the fast line-timed fallback, but it must not suppress a better
+        // word-timed lyric from another provider. AMLL word timing has absolute
+        // priority; otherwise word-timed providers beat line-only lyrics.
         //
         // The jobs run on the loader's own scope rather than the caller's: the
         // lyric clients use blocking OkHttp calls that ignore coroutine
@@ -681,37 +680,42 @@ internal object MeloXProviderLyricsLoader {
         jobs[LyricAutoSource.Current]?.let { current ->
             val currentResolved = current.await()
             if (currentResolved.document.lines.isNotEmpty()) {
-                // AMLL word timing is preferred over the current provider's own
-                // lyrics: a provider document (even word-timed) can still be
-                // less precise than an authored AMLL one. Always give AMLL a
-                // short window; if it answers with word timing in time it wins,
-                // otherwise the current provider is used immediately so playback
-                // is never held up. A line-timed AMLL answer is treated as
-                // useless and never wins here (see selectAutomaticLyricCandidate).
-                val amllWithinWindow = jobs[LyricAutoSource.AmlL]?.let { amllJob ->
-                    withTimeoutOrNull(AmllWordTimingWindowMs) { amllJob.await() }
+                // If the current source has only line timing, briefly let all
+                // cross-source candidates finish so QQ QRC / NetEase YRC can
+                // beat it. If it already has word timing, only AMLL can outrank
+                // it. Line-timed AMLL never displaces the current document.
+                val betterTimed = if (hasWordTiming(currentResolved.document)) {
+                    firstWordTimedCandidate(
+                        jobs,
+                        orderedSources.filter { it == LyricAutoSource.AmlL },
+                    )
+                } else {
+                    firstWordTimedCandidate(
+                        jobs,
+                        orderedSources.filter { it != LyricAutoSource.Current },
+                    )
                 }
-                val amllHasWordTiming = amllWithinWindow != null &&
-                    amllWithinWindow.document.lines.isNotEmpty() &&
-                    hasWordTiming(amllWithinWindow.document)
-
+                val selectedSource = betterTimed?.first ?: LyricAutoSource.Current
+                val selected = betterTimed?.second ?: AutoLyricCandidate(
+                    priority = 0,
+                    document = currentResolved.document,
+                    binding = currentResolved.binding,
+                )
                 jobs.forEach { (source, job) ->
-                    if (source != LyricAutoSource.Current) job.cancel()
+                    if (source != selectedSource) job.cancel()
                 }
-
-                val chosen = if (amllHasWordTiming) amllWithinWindow else currentResolved
                 Log.d(
                     "MeloXLyricsAuto",
-                    "selectedCurrentProvider source=${chosen?.document?.source} " +
-                        "lines=${chosen?.document?.lines?.size ?: 0} " +
-                        "wordLines=${chosen?.document?.lines?.count { it.syllables.isNotEmpty() } ?: 0} " +
-                        "amllWindow=$amllHasWordTiming",
+                    "selectedAutomatic source=${selected.document.source} " +
+                        "lines=${selected.document.lines.size} " +
+                        "wordLines=${selected.document.lines.count { it.syllables.isNotEmpty() }} " +
+                        "replacedCurrent=${selected.document != currentResolved.document}",
                 )
                 return rememberBinding(
                     appContext,
                     snapshot,
-                    chosen?.binding ?: currentResolved.binding,
-                    chosen?.document ?: currentResolved.document,
+                    selected.binding,
+                    selected.document,
                 )
             }
         }
@@ -729,6 +733,47 @@ internal object MeloXProviderLyricsLoader {
         )
         return selected?.let { rememberBinding(appContext, snapshot, it.binding, it.document) }
             ?: LyricsDocument(emptyList())
+    }
+
+    /**
+     * Waits up to the fast word-timing window for the requested already-running
+     * provider jobs. The jobs complete in any order; selection is made only
+     * after the window or all candidates settle, so AMLL can outrank a faster
+     * QQ response. Completed results survive a window timeout.
+     */
+    private suspend fun firstWordTimedCandidate(
+        jobs: Map<LyricAutoSource, Deferred<ResolvedLyrics>>,
+        sources: List<LyricAutoSource>,
+    ): Pair<LyricAutoSource, AutoLyricCandidate>? {
+        val candidates = mutableListOf<Pair<LyricAutoSource, AutoLyricCandidate>>()
+        val availableSources = sources.filter { jobs[it] != null }
+        val completed = Channel<Pair<LyricAutoSource, ResolvedLyrics>>(Channel.UNLIMITED)
+        availableSources.forEach { source ->
+            workerScope.launch {
+                runCatching { jobs.getValue(source).await() }
+                    .getOrNull()
+                    ?.let { completed.trySend(source to it) }
+            }
+        }
+        try {
+            withTimeoutOrNull(AmllWordTimingWindowMs) {
+                repeat(availableSources.size) {
+                    val (source, resolved) = completed.receive()
+                    if (hasWordTiming(resolved.document)) {
+                        candidates += source to AutoLyricCandidate(
+                            priority = sources.indexOf(source),
+                            document = resolved.document,
+                            binding = resolved.binding,
+                        )
+                    }
+                }
+            }
+        } finally {
+            completed.close()
+        }
+        val selected = selectAutomaticLyricCandidate(candidates.map { it.second })
+            ?: return null
+        return candidates.first { it.second == selected }
     }
 
     private suspend fun resolveAutomaticSource(
@@ -1028,6 +1073,13 @@ internal fun selectAutomaticLyricCandidate(candidates: List<AutoLyricCandidate>)
             it.document.lines.isNotEmpty() &&
             hasWordTiming(it.document)
     }?.let { return it }
+    // Authored AMLL is the highest-quality word-timed source. Other genuine
+    // word-timed provider lyrics outrank any line-only document; among equal
+    // timing classes, preserve the source order selected by the caller.
+    candidates.asSequence()
+        .filter { it.document.lines.isNotEmpty() && hasWordTiming(it.document) }
+        .minByOrNull(AutoLyricCandidate::priority)
+        ?.let { return it }
     return candidates
         .asSequence()
         .filterNot { it.document.source == com.lladlam.melox.core.lyrics.LyricSource.AmlL }

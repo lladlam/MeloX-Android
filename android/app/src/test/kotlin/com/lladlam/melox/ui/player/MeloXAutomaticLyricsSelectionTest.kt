@@ -89,6 +89,38 @@ class MeloXAutomaticLyricsSelectionTest {
     }
 
     @Test
+    fun wordTimedQqBeatsLineTimedNetease() {
+        val qqQrc = document("QQ 逐字", wordSynced = true)
+        val neteaseLrc = document("网易逐行", wordSynced = false)
+
+        assertEquals(
+            qqQrc,
+            selectAutomaticLyrics(
+                listOf(
+                    AutoLyricCandidate(0, neteaseLrc),
+                    AutoLyricCandidate(1, qqQrc),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun authoredAmllWordTimingBeatsOtherWordTimedLyrics() {
+        val amllTtml = document("AMLL 逐字", wordSynced = true).copy(source = LyricSource.AmlL)
+        val qqQrc = document("QQ 逐字", wordSynced = true)
+
+        assertEquals(
+            amllTtml,
+            selectAutomaticLyrics(
+                listOf(
+                    AutoLyricCandidate(0, qqQrc),
+                    AutoLyricCandidate(1, amllTtml),
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun originalDoesNotMatchDjLiveRemixOrInstrumental() {
         listOf(
             "提瓦特民谣 DJ版",
