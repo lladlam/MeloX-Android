@@ -79,8 +79,12 @@ object KugouKrcLyricsParser {
             }
         }.sortedBy(LyricLine::timeMs)
 
-        if (lines.isNotEmpty()) return LyricsDocument(lines)
-        return LrcLyricsParser.parse(source)
+        if (lines.isNotEmpty()) return LyricsDocument(
+            lines, source = LyricSource.Kugou,
+            quality = if (lines.any { it.syllables.isNotEmpty() }) LyricQuality.WordSynchronized else LyricQuality.LineSynchronized,
+            pseudoTimingAllowed = false,
+        )
+        return LrcLyricsParser.parse(source).copy(source = LyricSource.Kugou)
     }
 
     fun decodeAndParse(base64: String): LyricsDocument = parse(decodeBase64(base64))

@@ -57,7 +57,9 @@ internal fun MeloXLyricShareDialog(
     val foreground = MaterialTheme.colorScheme.onBackground
     val surfaceForeground = MaterialTheme.colorScheme.onSurface
     val scope = rememberCoroutineScope()
-    var selected by remember(lines, initialIndex) { mutableStateOf(setOf(initialIndex.coerceIn(lines.indices))) }
+    var selected by remember(lines, initialIndex) {
+        mutableStateOf(if (lines.isEmpty()) emptySet() else setOf(initialIndex.coerceIn(lines.indices)))
+    }
     var generating by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 

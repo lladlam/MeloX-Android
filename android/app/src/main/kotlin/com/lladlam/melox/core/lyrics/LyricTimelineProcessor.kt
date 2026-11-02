@@ -9,6 +9,7 @@ object LyricTimelineProcessor {
     private const val DefaultLastLineDurationMs = 3_000L
 
     fun process(document: LyricsDocument): LyricsDocument {
+        if (document.isUnsynchronized) return document
         if (document.lines.isEmpty()) return document
         val sorted = document.lines.withIndex()
             .sortedWith(compareBy<IndexedValue<LyricLine>> { it.value.timeMs.coerceAtLeast(0L) }.thenBy { it.index })

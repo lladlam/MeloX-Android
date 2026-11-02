@@ -14,6 +14,7 @@ import com.lladlam.melox.core.music.model.MusicAlbumRef
 import com.lladlam.melox.core.music.model.ProviderTrackMetadata
 import com.lladlam.melox.core.music.model.TrackAvailability
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlin.random.Random
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -67,9 +68,9 @@ class QQMusicCatalogClient(
      * answers HTTP 500 with an empty body (verified 2026-09-29 across UA, Referer and keyword
      * variants), so QQ song search returned nothing at all. This replaces it:
      *
-     * - `DoSearchForQQMusicDesktop` returns `body.song.list` as flat song cards. The Mobile
-     *   method returns the grouped shell (`item_song`/`direct_group` all empty, `meta.sum = 0`)
-     *   and is unusable for songs.
+     * - `DoSearchForQQMusicDesktop` returns `body.song.list` as song cards. Old Mobile
+     *   profiles return empty shells; the versioned Mobile fallback below uses a
+     *   different comm/UA/endpoint combination and maps `body.item_song` instead.
      * - That desktop method only answers under `comm.ct = 11, cv = 0`; the catalog-wide
      *   `ct = 24, cv = 4_747_474` returns the same shell, so the comm version is a parameter.
      * - `meta.sum` is the real hit count. `estimate_sum` is a server estimate and is unusable.
@@ -81,26 +82,75 @@ class QQMusicCatalogClient(
     suspend fun searchTracks(query: String, page: Int, pageSize: Int): MusicPage<MusicTrack> {
         val safePage = page.coerceAtLeast(1)
         val safeSize = pageSize.coerceIn(1, 50)
-        val data = postMusicu(
-            module = "music.search.SearchCgiService",
-            method = "DoSearchForQQMusicDesktop",
-            param = searchParam(query, safePage, safeSize, searchType = 0),
-            commCt = 11,
-            commCv = 0,
-        )
+        val desktop = try {
+            postMusicu(
+                module = "music.search.SearchCgiService",
+                method = "DoSearchForQQMusicDesktop",
+                param = searchParam(query, safePage, safeSize, searchType = 0),
+                commCt = 11,
+                commCv = 0,
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            null
+        }
+        val desktopList = desktop?.optJSONObject("body")?.optJSONObject("song")?.optJSONArray("list")
+        val data = desktop?.takeIf { desktopList != null && desktopList.length() > 0 }
+            ?: searchMobile(query, safePage, safeSize)
         val songBlock = data.optJSONObject("body")?.optJSONObject("song") ?: JSONObject()
-        val list = songBlock.optJSONArray("list") ?: JSONArray()
+        val list = songBlock.optJSONArray("list")
+            ?: data.optJSONObject("body")?.optJSONArray("item_song") ?: JSONArray()
         val tracks = buildList {
             for (index in 0 until list.length()) {
-                parseTrack(list.optJSONObject(index) ?: continue, assumePlayable = true)?.let(::add)
+                val item = list.optJSONObject(index) ?: continue
+                parseTrack(item, assumePlayable = true)?.let(::add)
+                val grouped = item.optJSONArray("grp") ?: continue
+                for (groupIndex in 0 until grouped.length()) {
+                    parseTrack(grouped.optJSONObject(groupIndex) ?: continue, assumePlayable = true)?.let(::add)
+                }
             }
-        }
+        }.distinctBy { it.id }
         return MusicPage(
             items = tracks,
             page = safePage,
             pageSize = safeSize,
             total = searchTotal(data),
         )
+    }
+
+    /** Anonymous Mobile protocol reference: WXRIW/Lyricify-Lyrics-Helper (Apache-2.0). */
+    private fun searchMobile(query: String, page: Int, pageSize: Int): JSONObject {
+        val key = "music.search.SearchCgiService.DoSearchForQQMusicMobile"
+        val start = (page - 1) * pageSize
+        val param = JSONObject()
+            .put("query", query.trim()).put("highlight", 0)
+            .put("searchid", "").put("sub_searchid", 0).put("search_type", 0)
+            .put("nqc_flag", 0).put("sin", start).put("ein", start + 30)
+            .put("page_num", page).put("num_per_page", pageSize)
+            .put("cat", 2).put("grp", 1).put("remoteplace", "").put("from", "")
+            .put("multi_zhida", 1).put("sem", 0).put("related_data", "").put("ambi_data", "")
+        // cv alongside ct=11 makes anonymous Mobile search return an empty shell.
+        val payload = JSONObject()
+            .put("comm", JSONObject().put("ct", "11").put("v", "20080508")
+                .put("tmeLoginType", "0").put("tmeLoginMethod", "0"))
+            .put(key, JSONObject().put("module", "music.search.SearchCgiService")
+                .put("method", "DoSearchForQQMusicMobile").put("param", param))
+        val request = Request.Builder().url("https://u6.y.qq.com/cgi-bin/musicu.fcg")
+            .header("User-Agent", "QQMusic 20080508(android)")
+            .header("Accept", "*/*")
+            .apply { sessionProvider().cookie.takeIf(String::isNotBlank)?.let { header("Cookie", it) } }
+            .post(payload.toString().toRequestBody("application/x-www-form-urlencoded".toMediaType()))
+            .build()
+        return httpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("QQ音乐 Mobile 搜索失败：HTTP ${response.code}")
+            val root = JSONObject(response.body.string())
+            val result = root.optJSONObject(key) ?: throw IOException("QQ音乐 Mobile 搜索响应缺少结果")
+            if (root.optInt("code", 0) != 0 || result.optInt("code", 0) != 0) {
+                throw IOException("QQ音乐 Mobile 搜索错误码 ${result.optInt("code", root.optInt("code"))}")
+            }
+            result.optJSONObject("data") ?: JSONObject()
+        }
     }
 
     suspend fun albumDetail(album: MusicAlbumSummary, page: Int, pageSize: Int): MusicAlbumDetail {

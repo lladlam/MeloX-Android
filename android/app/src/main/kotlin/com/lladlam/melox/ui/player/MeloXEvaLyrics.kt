@@ -463,6 +463,10 @@ internal fun MeloXEvaLyricsPanel(
     active: Boolean = true,
 ) {
     val state = rememberAlternativeLyrics(playback, active)
+    if (state.isUnsynchronized) {
+        MeloXUnsynchronizedLyrics(state.lines, modifier)
+        return
+    }
     val sessionSeed = remember { System.nanoTime() }
     val fontScale = MeloXSettingsRuntime.lyricFontScale.coerceIn(.78f, 1.35f)
     Box(

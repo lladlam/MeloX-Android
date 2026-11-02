@@ -51,9 +51,9 @@ class RetryInterceptor(
                 val response = chain.proceed(candidate)
                 if (response.isSuccessful || response.code !in 500..599) return response
                 response.close()
-                lastException = IOException("QQ音乐请求失败：HTTP ${response.code}（host=$host）")
+                lastException = IOException("网络请求失败：HTTP ${response.code}（host=$host）")
             } catch (e: IOException) {
-                lastException = IOException("QQ音乐网络连接失败（host=$host）", e)
+                lastException = IOException("网络连接失败（host=$host）：${e.message.orEmpty()}", e)
             }
 
             if (index < attempts - 1) {
@@ -66,7 +66,7 @@ class RetryInterceptor(
             }
         }
 
-        throw lastException ?: IOException("QQ音乐请求失败")
+        throw lastException ?: IOException("网络请求失败")
     }
 
     companion object {

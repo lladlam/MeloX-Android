@@ -31,6 +31,7 @@ object JellyfinSessionStore {
                 userId = json.optString("userId"),
                 serverId = json.optString("serverId"),
                 userName = json.optString("userName"),
+                trustUserServer = json.optBoolean("trustUserServer", json.optString("serverUrl").startsWith("http://", true)),
             )
         }.getOrDefault(JellyfinSession())
     }
@@ -42,6 +43,7 @@ object JellyfinSessionStore {
             .put("userId", session.userId)
             .put("serverId", session.serverId)
             .put("userName", session.userName)
+            .put("trustUserServer", session.trustUserServer)
         val iv = ByteArray(12).also { java.security.SecureRandom().nextBytes(it) }
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key(), GCMParameterSpec(128, iv))

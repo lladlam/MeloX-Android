@@ -2,6 +2,7 @@ package com.lladlam.melox.core.provider.qqmusic
 
 import com.lladlam.melox.core.lyrics.LrcLyricsParser
 import com.lladlam.melox.core.lyrics.LyricsDocument
+import com.lladlam.melox.core.lyrics.LyricSource
 import com.lladlam.melox.core.music.model.AudioQualityTier
 import com.lladlam.melox.core.music.model.MusicAccountSummary
 import com.lladlam.melox.core.music.model.MusicAlbumRef
@@ -276,7 +277,7 @@ class QQMusicApiClient(
         LrcLyricsParser.parse(
             lrc = decodeBase64Utf8(response.optString("lyric")),
             translation = decodeBase64Utf8(response.optString("trans")),
-        )
+        ).copy(source = LyricSource.QQMusic)
     }
 
     suspend fun resolvePlayback(

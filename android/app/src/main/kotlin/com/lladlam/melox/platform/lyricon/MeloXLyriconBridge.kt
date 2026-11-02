@@ -198,7 +198,7 @@ object MeloXLyriconBridge {
         artist: String,
         durationMs: Long,
     ): Song {
-        val richLines = lines.mapIndexedNotNull { index, line ->
+        val richLines = (if (isUnsynchronized) emptyList() else lines).mapIndexedNotNull { index, line ->
             line.toLyriconLine(lines.getOrNull(index + 1)?.timeMs)
         }
         return Song(

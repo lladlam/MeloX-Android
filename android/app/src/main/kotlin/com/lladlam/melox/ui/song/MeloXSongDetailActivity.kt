@@ -251,12 +251,14 @@ internal fun MeloXSongDetailScreen(song: SearchSong, onBack: () -> Unit) {
                 }
             }
         }
-        item(key = "wiki") {
-            MeloXGlassButton(
-                onClick = { MeloXSongWikiActivity.launch(context, song) },
-                modifier = Modifier.fillMaxWidth(),
-                style = MeloXGlassButtonStyle.Plain,
-            ) { Text(stringResource(R.string.song_detail_wiki)) }
+        if (neteaseWikiSongId(song) != null) {
+            item(key = "wiki") {
+                MeloXGlassButton(
+                    onClick = { MeloXSongWikiActivity.launch(context, song) },
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MeloXGlassButtonStyle.Plain,
+                ) { Text(stringResource(R.string.song_detail_wiki)) }
+            }
         }
         error?.let { message ->
             item(key = "error") {

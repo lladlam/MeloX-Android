@@ -14,8 +14,68 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 
 class MeloXAutomaticLyricsSelectionTest {
+    @Test
+    fun slowQqWordTimingStillBeatsFastCurrentProvider() = runBlocking {
+        val lrc = document("网易逐行", false)
+        val qrc = document("QQ逐字", true).copy(source = LyricSource.QQMusic)
+        val current = async { AutoLyricCandidate(0, lrc) }
+        val qq = async { delay(2_100); AutoLyricCandidate(2, qrc) }
+        assertEquals(qrc, awaitAutomaticLyricCandidates(listOf(current, qq))?.document)
+    }
+
+    @Test
+    fun slowAmllWordTimingOutranksFastQqWordTiming() = runBlocking {
+        val qrc = document("QQ逐字", true)
+        val amll = document("AMLL逐字", true).copy(source = LyricSource.AmlL)
+        val qq = async { AutoLyricCandidate(0, qrc) }
+        val authored = async { delay(2_100); AutoLyricCandidate(1, amll) }
+        assertEquals(amll, awaitAutomaticLyricCandidates(listOf(qq, authored))?.document)
+    }
+    @Test
+    fun qqInstrumentalPlaceholderDoesNotSuppressRealNeteaseLyrics() {
+        val placeholder = document("此歌曲为没有填词的纯音乐，请您欣赏", wordSynced = false)
+        val actual = document("Actual lyric", wordSynced = false)
+        assertEquals(actual, selectAutomaticLyrics(listOf(
+            AutoLyricCandidate(0, placeholder), AutoLyricCandidate(1, actual),
+        )))
+    }
+
+    @Test
+    fun placeholderWithSyntheticSyllablesCannotWinWordTimingPriority() {
+        val placeholder = document("纯音乐，请欣赏", wordSynced = true)
+        val actual = document("Actual lyric", wordSynced = false)
+        assertEquals(actual, selectAutomaticLyrics(listOf(
+            AutoLyricCandidate(0, placeholder), AutoLyricCandidate(1, actual),
+        )))
+    }
+
+    @Test
+    fun genuineLyricsMentioningInstrumentalMusicArePreserved() {
+        val actual = document("我在听纯音乐", wordSynced = false)
+        assertEquals(actual, selectAutomaticLyrics(listOf(AutoLyricCandidate(0, actual))))
+    }
+
+    @Test
+    fun onlyPlaceholdersDoesNotProduceAnInstrumentalClaim() {
+        assertEquals(null, selectAutomaticLyrics(listOf(
+            AutoLyricCandidate(0, document("纯音乐，请欣赏", wordSynced = false)),
+        )))
+    }
+
+    @Test
+    fun realLineTimingOutranksHigherPriorityUntimedWords() {
+        val plain = document("Plain", false).copy(isUnsynchronized = true)
+        val timed = document("Timed", false)
+        assertEquals(timed, selectAutomaticLyrics(listOf(
+            AutoLyricCandidate(0, plain), AutoLyricCandidate(1, timed),
+        )))
+    }
+
     @Test
     fun nearQualityUsesSourcePriorityAsStableTieBreak() {
         val qq = document("QQ", wordSynced = true)
@@ -169,24 +229,43 @@ class MeloXAutomaticLyricsSelectionTest {
             assertEquals(routes.distinct(), routes)
             when (source) {
                 MusicSource.QQMusic -> {
-                    assertEquals(listOf(LyricAutoSource.Current, LyricAutoSource.AmlL, LyricAutoSource.Netease), routes)
+                    assertEquals(listOf(LyricAutoSource.Current, LyricAutoSource.AmlL, LyricAutoSource.Netease, LyricAutoSource.Kugou), routes)
                 }
                 MusicSource.Netease -> {
-                    assertEquals(listOf(LyricAutoSource.Current, LyricAutoSource.AmlL, LyricAutoSource.QQMusic), routes)
+                    assertEquals(listOf(LyricAutoSource.Current, LyricAutoSource.AmlL, LyricAutoSource.QQMusic, LyricAutoSource.Kugou), routes)
                 }
                 else -> {
                     assertEquals(
-                        listOf(
+                        buildList {
+                            addAll(listOf(
                             LyricAutoSource.Current,
                             LyricAutoSource.AmlL,
                             LyricAutoSource.QQMusic,
                             LyricAutoSource.Netease,
-                        ),
+                            ))
+                            if (source != MusicSource.Kugou && source != MusicSource.KugouLite) add(LyricAutoSource.Kugou)
+                        },
                         routes,
                     )
                 }
             }
         }
+    }
+
+    @Test
+    fun featuredArtistCreditDoesNotHideMatchingQqVersion() {
+        assertTrue(isSafeCrossProviderLyricMatch("非常简单", "iKz / 榛葉nami", 202_240,
+            track("非常简单 feat.榛葉nami", "iKz / 榛葉nami", 202_000)))
+        assertFalse(isSafeCrossProviderLyricMatch("非常简单", "iKz", 202_240,
+            track("非常简单 feat.Live", "iKz", 202_000)))
+    }
+
+    @Test
+    fun kugouWordTimingBeatsLineOnlyQq() {
+        val krc = document("KRC", true).copy(source = LyricSource.Kugou)
+        assertEquals(krc, selectAutomaticLyrics(listOf(
+            AutoLyricCandidate(0, document("QQ", false)), AutoLyricCandidate(1, krc),
+        )))
     }
 
     @Test

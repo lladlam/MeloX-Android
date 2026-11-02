@@ -93,6 +93,10 @@ internal fun MeloXSkylineLyricsPanel(
     skylineOverlayClip: SharedTransitionScope.OverlayClip? = null,
 ) {
     val state = rememberAlternativeLyrics(playback, active)
+    if (state.isUnsynchronized) {
+        MeloXUnsynchronizedLyrics(state.lines, modifier)
+        return
+    }
     val accent = remember(playback.artworkUrl, playback.mediaId) {
         skylineAccent(playback.artworkUrl, playback.mediaId)
     }

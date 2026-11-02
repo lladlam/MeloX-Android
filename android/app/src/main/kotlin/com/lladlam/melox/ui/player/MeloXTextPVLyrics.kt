@@ -71,6 +71,10 @@ internal fun MeloXTextPVLyricsPanel(
     active: Boolean = true,
 ) {
     val state = rememberAlternativeLyrics(playback, active)
+    if (state.isUnsynchronized) {
+        MeloXUnsynchronizedLyrics(state.lines, modifier)
+        return
+    }
     val style = MeloXSettingsRuntime.textPVStyle
     val template = remember(style) { TextPVTemplateCatalog.template(style) }
     val phase = remember { Animatable(0f) }

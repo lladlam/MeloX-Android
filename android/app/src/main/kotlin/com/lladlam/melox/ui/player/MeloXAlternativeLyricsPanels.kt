@@ -30,6 +30,7 @@ internal data class AlternativeLyricsState(
     val index: Int,
     val loading: Boolean,
     val error: String?,
+    val isUnsynchronized: Boolean = false,
 )
 
 /**
@@ -83,7 +84,7 @@ internal fun rememberAlternativeLyrics(
     }
     LaunchedEffect(active, mediaId, rendered, state.positionMs, state.isPlaying, state.durationMs, advanceMs) {
         val activeDocument = rendered ?: return@LaunchedEffect
-        if (!active || lines.isEmpty()) return@LaunchedEffect
+        if (!active || activeDocument.isUnsynchronized || lines.isEmpty()) return@LaunchedEffect
         val anchorPosition = state.positionMs
         if (!state.isPlaying) {
             val next = activeDocument.highlightedIndex(anchorPosition + advanceMs)
@@ -105,7 +106,7 @@ internal fun rememberAlternativeLyrics(
             kotlinx.coroutines.delay(waitMs)
         }
     }
-    return AlternativeLyricsState(lines, index, loading, error)
+    return AlternativeLyricsState(lines, index, loading, error, rendered?.isUnsynchronized == true)
 }
 
 internal fun lyricUiRequestKey(state: MeloXPlaybackUiState, automaticSelection: Boolean): String = buildString {

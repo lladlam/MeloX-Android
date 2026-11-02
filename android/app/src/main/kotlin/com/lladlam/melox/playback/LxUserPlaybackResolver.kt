@@ -11,6 +11,7 @@ import com.lladlam.melox.core.provider.lxuser.LxUserSourceStore
 import com.lladlam.melox.core.provider.lxuser.buildLxMusicInfo
 import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.core.lyrics.LrcLyricsParser
+import com.lladlam.melox.core.lyrics.LyricFileParser
 import com.lladlam.melox.core.lyrics.LyricsDocument
 import com.lladlam.melox.core.music.model.MusicArtistRef
 import com.lladlam.melox.core.music.model.MusicResourceId
@@ -46,9 +47,12 @@ class LxUserPlaybackResolver(
 
     internal fun resolveLyrics(track: MusicTrack): LyricsDocument? {
         val value = resolveAction(track, "lyric") ?: return null
-        val data = (value as? Map<*, *>) ?: return (value as? String)?.let(LrcLyricsParser::parse)
+        val data = (value as? Map<*, *>) ?: return (value as? String)?.let(LyricFileParser::parse)
         val lyric = data["lyric"]?.toString().orEmpty().ifBlank { data["lrc"]?.toString().orEmpty() }
         if (lyric.isBlank()) return null
+        val rich = LyricFileParser.parse(lyric)
+        if (rich.lines.any { it.syllables.isNotEmpty() } ||
+            com.lladlam.melox.core.lyrics.LyricifyLyricsParser.isLines(lyric)) return rich
         return LrcLyricsParser.parse(
             lrc = lyric,
             translation = data["tlyric"]?.toString().orEmpty().ifBlank { data["translation"]?.toString().orEmpty() },

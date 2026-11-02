@@ -1,7 +1,7 @@
 package com.lladlam.melox.core.provider.jellyfin
 
 import android.annotation.SuppressLint
-import android.security.NetworkSecurityPolicy
+import com.lladlam.melox.core.network.RestrictedHttpClient
 import java.io.IOException
 import java.net.InetAddress
 import java.security.SecureRandom
@@ -10,7 +10,6 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.X509TrustManager
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -21,9 +20,17 @@ class JellyfinApiClient(
     httpClient: OkHttpClient,
     private val clientName: String = "MeloX",
     private val clientVersion: String = "0.5.1",
-    trustUserServer: Boolean = false,
+    private val trustUserServer: Boolean = false,
 ) {
-    private val httpClient = if (trustUserServer) httpClient.trustingUserServer() else httpClient
+    private val normalClient = httpClient
+    private val privateClient = RestrictedHttpClient.create(httpClient)
+    private val trustedClient by lazy { privateClient.trustingUserServer() }
+
+    private fun client(serverUrl: String, trust: Boolean): OkHttpClient {
+        val url = serverUrl.toHttpUrl()
+        if (url.scheme == "http" && !trust) throw IOException("HTTP 连接需要启用允许明文连接")
+        return if (trust) trustedClient else normalClient
+    }
     fun publicServerInfo(serverUrl: String): JellyfinServerInfo {
         val json = request(serverUrl, "/System/Info/Public", null)
         return JellyfinServerInfo(
@@ -35,7 +42,7 @@ class JellyfinApiClient(
 
     fun authenticate(serverUrl: String, username: String, password: String): JellyfinSession {
         val normalized = serverUrl.trimEnd('/')
-        allowPrivateCleartext(normalized)
+        client(normalized, trustUserServer)
         val body = JSONObject().put("Username", username).put("Pw", password)
         val json = request(normalized, "/Users/AuthenticateByName", body)
         val user = json.optJSONObject("User") ?: throw IOException("Jellyfin 登录响应缺少用户信息")
@@ -48,6 +55,7 @@ class JellyfinApiClient(
             userId = user.optString("Id"),
             serverId = server.id,
             userName = user.optString("Name").ifBlank { username },
+            trustUserServer = trustUserServer,
         )
     }
 
@@ -65,7 +73,7 @@ class JellyfinApiClient(
             .header("X-Emby-Token", session.accessToken)
             .delete()
             .build()
-        httpClient.newCall(request).execute().use { response ->
+        client(session.baseUrl, session.trustUserServer).newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("Jellyfin 请求失败：HTTP ${response.code}")
         }
     }
@@ -86,7 +94,7 @@ class JellyfinApiClient(
             .header("X-Emby-Authorization", authorizationHeader())
         session?.let { builder.header("X-Emby-Token", it.accessToken) }
         body?.let { builder.post(it.toString().toRequestBody(JSON)) }
-        httpClient.newCall(builder.build()).execute().use { response ->
+        client(serverUrl, session?.trustUserServer ?: trustUserServer).newCall(builder.build()).execute().use { response ->
             val text = response.body.string()
             if (!response.isSuccessful) throw IOException("Jellyfin 请求失败：HTTP ${response.code}")
             return if (text.isBlank()) JSONObject() else JSONObject(text)
@@ -109,12 +117,6 @@ class JellyfinApiClient(
             .build()
     }
 
-    private fun allowPrivateCleartext(serverUrl: String) {
-        val host = serverUrl.toHttpUrlOrNull()?.host ?: return
-        if (!serverUrl.trim().startsWith("http://", ignoreCase = true) || !isPrivateHost(host)) return
-        PrivateCleartextPolicy.allow(host)
-    }
-
     private fun isPrivateHost(hostname: String): Boolean {
         if (hostname.equals("localhost", ignoreCase = true)) return true
         val address = runCatching { InetAddress.getByName(hostname) }.getOrNull() ?: return false
@@ -126,34 +128,5 @@ class JellyfinApiClient(
 
     private companion object {
         val JSON = "application/json; charset=utf-8".toMediaType()
-    }
-}
-
-/**
- * Lets one private host the user typed in use HTTP for this connection.
- * Domain XML cannot name an arbitrary LAN address. The platform policy is
- * swapped only while that request runs, then put back.
- */
-private object PrivateCleartextPolicy {
-    fun allow(host: String) {
-        if (NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted(host)) return
-        // ⚠ 跨设备崩溃加固（2026-10-08）：下面这段反射走隐藏内部类
-        //   `libcore.net.NetworkSecurityPolicy` / `android.security.FrameworkNetworkSecurityPolicy`，
-        //   Android 9+（落在 minSdk=26 范围内）已限制非 SDK 反射，任一环节都会抛异常。
-        //   包进 runCatching：失败只是「本次不走明文例外」——该 LAN 连接可能连不上，
-        //   但绝不能把整个请求炸成崩溃。LAN Jellyfin 这类功能是用户主动开启的，
-        //   在受限 ROM 上静默降级比闪退更合理。
-        runCatching {
-            val holder = Class.forName("libcore.net.NetworkSecurityPolicy")
-            val instance = holder.getDeclaredField("INSTANCE").apply { isAccessible = true }
-            val previous = instance.get(null)
-            val open = Class.forName("android.security.FrameworkNetworkSecurityPolicy")
-                .getConstructor(Boolean::class.javaPrimitiveType)
-                .newInstance(true)
-            instance.set(null, open)
-            if (!NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted(host)) {
-                instance.set(null, previous)
-            }
-        }
     }
 }

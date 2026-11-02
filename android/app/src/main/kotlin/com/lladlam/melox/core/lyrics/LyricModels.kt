@@ -83,9 +83,11 @@ data class LyricsDocument(
     val pseudoTimingAllowed: Boolean = true,
     /** Local model provenance; generated upgrades may finish after the AMLL early-update window. */
     val autoSyncModelKey: String? = null,
+    /** Plain lyric text has no playback clock; render it as a manually scrollable document. */
+    val isUnsynchronized: Boolean = false,
 ) {
     fun highlightedIndex(positionMs: Long, strategy: LyricHighlightStrategy = LyricHighlightStrategy.LineStart): Int? {
-        if (lines.isEmpty()) return null
+        if (isUnsynchronized || lines.isEmpty()) return null
         var low = 0
         var high = lines.size
         while (low < high) {
@@ -115,7 +117,7 @@ data class LyricsDocument(
  * document when the provider did not actually return word timing.
  */
 fun LyricsDocument.withPseudoTiming(): LyricsDocument {
-    if (!pseudoTimingAllowed) return this
+    if (isUnsynchronized || !pseudoTimingAllowed) return this
     return copy(
         lines = lines.mapIndexed { index, line ->
             if (line.syllables.isNotEmpty() || line.text.isBlank()) return@mapIndexed line

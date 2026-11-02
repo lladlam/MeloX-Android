@@ -1,5 +1,7 @@
 package com.lladlam.melox.core.provider.qqmusic
 
+import com.lladlam.melox.core.lyrics.withoutPlaceholderLyrics
+
 import com.lladlam.melox.core.lyrics.LyricsDocument
 import com.lladlam.melox.core.music.model.AudioQualityTier
 import com.lladlam.melox.core.music.model.MusicAccountSummary
@@ -104,8 +106,11 @@ class QQMusicProvider(
         catalog.searchArtists(query, page, pageSize)
 
     override suspend fun lyrics(track: MusicTrack): LyricsDocument {
-        val rich = runCatching { richLyrics.lyrics(track) }.getOrNull()
-            ?: return api.lyrics(track)
+        val rich = runCatching { richLyrics.lyrics(track) }
+            .onFailure {
+                android.util.Log.w("MeloXLyricsAuto", "QQ QRC unavailable mid=${track.id.value}: ${it.message}")
+            }.getOrNull()
+            ?: return api.lyrics(track).withoutPlaceholderLyrics()
         val needsTranslation = rich.lines.none { !it.translation.isNullOrBlank() }
         val needsRomanization = rich.lines.none { !it.romanization.isNullOrBlank() }
         if (!needsTranslation && !needsRomanization) return rich

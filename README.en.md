@@ -298,6 +298,7 @@ The glass effect is still experimental.
 
 ### API and UI references
 
+- [WXRIW/Lyricify-Lyrics-Helper](https://github.com/WXRIW/Lyricify-Lyrics-Helper) — QQ Music anonymous search and lyric protocols, instrumental-placeholder detection, NetEase YRC, Lyricify Lines and Lyricify Syllable format references (Apache-2.0). See [LYRICS.md](docs/LYRICS.md).
 - [guowenye/qishui-api](https://github.com/guowenye/qishui-api) — Qishui Music native API, QR sign-in, catalog, lyric, and playback-field reference. MIT; scope and validation: [QISHUI.md](docs/QISHUI.md).
 - [NEORUAA/MeiloX](https://github.com/NEORUAA/MeiloX) — Mei-based Apple Music style NetEase client used as a UI reference.
 - [thlucas1/SpotifyWebApiPython](https://github.com/thlucas1/SpotifyWebApiPython) — Spotify Web API reference.
@@ -315,7 +316,6 @@ The glass effect is still experimental.
 Upstream MeloX also credits these projects. The Android port inherits parts of their lyric and NetEase work through that implementation:
 
 - [jayfunc/BetterLyrics](https://github.com/jayfunc/BetterLyrics) — word-synced lyric rendering, glow, and motion;
-- [WXRIW/Lyricify-Lyrics-Helper](https://github.com/WXRIW/Lyricify-Lyrics-Helper) — NetEase YRC parsing;
 - [qier222/YesPlayMusic](https://github.com/qier222/YesPlayMusic) — NetEase API and player reference.
 - [DanteAlighieri13210914/pv-tool](https://github.com/DanteAlighieri13210914/pv-tool) — original Text PV templates and effects, ported under the PV Tool Non-Commercial License.
 

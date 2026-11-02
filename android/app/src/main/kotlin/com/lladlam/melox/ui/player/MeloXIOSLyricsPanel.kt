@@ -537,6 +537,10 @@ private fun MeloXAppleMusicLyricsPanel(
         if (pseudoTimingEnabled) document?.withPseudoTiming() else document
     }
     val lines = renderedDocument?.lines.orEmpty()
+    if (renderedDocument?.isUnsynchronized == true) {
+        MeloXUnsynchronizedLyrics(lines, modifier)
+        return
+    }
     val hasSyllableSync = remember(renderedDocument) { lines.any { it.syllables.isNotEmpty() } }
     val bilibiliOffsetMs = rememberBilibiliLyricOffset(mediaId)
     val lyricAdvanceMs = effectiveBilibiliLyricAdvance(MeloXSettingsRuntime.lyricAdvanceMs, bilibiliOffsetMs)

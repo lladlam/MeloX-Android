@@ -7,6 +7,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import com.lladlam.melox.core.lyrics.LyricFileParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -76,6 +77,7 @@ class LocalMediaScanner(
         )
         val directories = mutableListOf<Uri>()
         val files = mutableListOf<Triple<Uri, String, String>>()
+        val lyricFiles = mutableListOf<Pair<Uri, String>>()
         runCatching {
             context.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
                 while (cursor.moveToNext()) {
@@ -87,6 +89,8 @@ class LocalMediaScanner(
                         directories += childUri
                     } else if (isAudio(name, mime)) {
                         files += Triple(childUri, name, mime)
+                    } else if (name.substringAfterLast('.', "").lowercase() in setOf("lrc", "krc", "qrc", "ttml", "lys", "lyl", "txt")) {
+                        lyricFiles += childUri to name
                     }
                 }
             }
@@ -96,7 +100,24 @@ class LocalMediaScanner(
             async(Dispatchers.IO) { scanTree(treeUri, child, depth + 1) }
         }
         val current = files.map { (uri, name, mime) ->
-            async(Dispatchers.IO) { fileSlots.withPermit { readMetadata(uri, name, mime, treeUri.toString()) } }
+            async(Dispatchers.IO) {
+                fileSlots.withPermit {
+                    val record = readMetadata(uri, name, mime, treeUri.toString()) ?: return@withPermit null
+                    val documents = lyricFiles.filter { (_, lyricName) ->
+                        lyricName.substringBeforeLast('.').equals(name.substringBeforeLast('.'), ignoreCase = true)
+                    }.mapNotNull { (lyricUri, _) ->
+                        runCatching {
+                            context.contentResolver.openInputStream(lyricUri)?.use {
+                                LyricFileParser.parse(it.readBytes())
+                            }
+                        }.getOrNull()?.takeIf { it.lines.isNotEmpty() }
+                    }
+                    val lyrics = documents.maxByOrNull { document ->
+                        document.lines.count { it.syllables.isNotEmpty() } * 100 + document.lines.size
+                    }
+                    record.copy(cachedLyrics = lyrics)
+                }
+            }
         }
         current.awaitAll().filterNotNull() + nested.awaitAll().flatten()
     }

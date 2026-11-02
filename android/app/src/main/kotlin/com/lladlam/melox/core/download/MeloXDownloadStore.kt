@@ -601,7 +601,8 @@ class MeloXDownloadStore private constructor(private val context: Context) {
         }.getOrNull()
     }
 
-    private fun encodeLyrics(document: LyricsDocument): JSONObject = JSONObject().put(
+    private fun encodeLyrics(document: LyricsDocument): JSONObject = JSONObject()
+        .put("isUnsynchronized", document.isUnsynchronized).put(
         "lines",
         JSONArray().apply {
             document.lines.forEach { line ->
@@ -734,7 +735,8 @@ class MeloXDownloadStore private constructor(private val context: Context) {
                 )
             }
         }
-        return LyricsDocument(lines)
+        return LyricsDocument(lines, isUnsynchronized = value.optBoolean("isUnsynchronized", false),
+            pseudoTimingAllowed = !value.optBoolean("isUnsynchronized", false))
     }
 
     private fun readIndex(): List<MeloXDownloadedSong> {

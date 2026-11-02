@@ -91,7 +91,7 @@ internal class SuperLyricPublisher(
             val current = document
             val position = player.currentPosition.coerceAtLeast(0L)
             val lines = current?.lines.orEmpty()
-            val index = if (player.isPlaying && current != null &&
+            val index = if (player.isPlaying && current != null && !current.isUnsynchronized &&
                 songId == player.currentMediaItem?.mediaId
             ) {
                 lines.indexOfLast { position >= it.timeMs }

@@ -680,10 +680,13 @@ fun ProviderServicesScreen(
                             runCatching {
                                 require(jellyfinServerUrl.trim().startsWith("http://") || jellyfinServerUrl.trim().startsWith("https://")) { context.getString(R.string.provider_invalid_server) }
                                 require(jellyfinUsername.isNotBlank()) { context.getString(R.string.provider_username_required) }
-                                JellyfinApiClient(
-                                    com.lladlam.melox.core.network.MeloXHttpClient.shared,
-                                    trustUserServer = jellyfinTrustServer,
-                                ).authenticate(jellyfinServerUrl.trim(), jellyfinUsername.trim(), jellyfinPassword).also { JellyfinSessionStore.write(context, it) }
+                                withContext(Dispatchers.IO) {
+                                    JellyfinApiClient(
+                                        com.lladlam.melox.core.network.MeloXHttpClient.shared,
+                                        trustUserServer = jellyfinTrustServer,
+                                    ).authenticate(jellyfinServerUrl.trim(), jellyfinUsername.trim(), jellyfinPassword)
+                                        .also { JellyfinSessionStore.write(context, it) }
+                                }
                             }.onSuccess { jellyfinPassword = ""; jellyfinBusy = false; loginRevision++; showJellyfinDialog = false }
                                 .onFailure { jellyfinBusy = false; jellyfinError = it.message ?: context.getString(R.string.provider_jellyfin_failed) }
                         }

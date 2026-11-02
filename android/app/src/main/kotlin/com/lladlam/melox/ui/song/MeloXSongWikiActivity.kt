@@ -78,10 +78,10 @@ class MeloXSongWikiActivity : ComponentActivity() {
         private const val EXTRA_DURATION = "duration"
 
         fun launch(context: Context, song: SearchSong) {
-            if (song.id <= 0L || song.providerTrack != null) return
+            val id = neteaseWikiSongId(song) ?: return
             context.startMeloXPage(
                 Intent(context, MeloXSongWikiActivity::class.java)
-                    .putExtra(EXTRA_ID, song.id)
+                    .putExtra(EXTRA_ID, id)
                     .putExtra(EXTRA_TITLE, song.name)
                     .putExtra(EXTRA_ARTISTS, song.artists)
                     .putExtra(EXTRA_ALBUM, song.album)
@@ -104,6 +104,12 @@ class MeloXSongWikiActivity : ComponentActivity() {
             )
         }
     }
+}
+
+internal fun neteaseWikiSongId(song: SearchSong): Long? {
+    val track = song.providerTrack ?: return song.id.takeIf { it > 0L }
+    if (track.id.source != com.lladlam.melox.core.music.model.MusicSource.Netease) return null
+    return track.id.value.toLongOrNull()?.takeIf { it > 0L }
 }
 
 @Composable

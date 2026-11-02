@@ -14,10 +14,20 @@ object LrcLyricsParser {
         lrc: String,
         translation: String = "",
         romanization: String = "",
-    ): LyricsDocument = NeteaseLyricParser.parse(
-        yrc = "",
-        lrc = lrc,
-        translatedLrc = translation,
-        romanizedLrc = romanization,
-    ).copy(pseudoTimingAllowed = false)
+    ): LyricsDocument {
+        val timed = NeteaseLyricParser.parse(
+            yrc = "",
+            lrc = lrc,
+            translatedLrc = translation,
+            romanizedLrc = romanization,
+        ).copy(pseudoTimingAllowed = false)
+        if (timed.lines.isNotEmpty()) return timed.withoutPlaceholderLyrics()
+        // Some providers put plain, untimed text in the field named "lyric".
+        // Keep the words, but never manufacture a playback timeline for them.
+        val plain = lrc.lineSequence().map(String::trim)
+            .filter { it.isNotBlank() && !it.startsWith('[') && !it.startsWith('<') }
+            .map { LyricLine(0L, text = it, timingKind = LyricTimingKind.LineSynchronized) }.toList()
+        return LyricsDocument(plain, pseudoTimingAllowed = false, isUnsynchronized = true)
+            .withoutPlaceholderLyrics()
+    }
 }

@@ -107,9 +107,9 @@ internal fun MeloXFloatingLyricsPipScreen(
     }
 
     val lyrics = rememberAlternativeLyrics(state, active = true)
-    val index = lyrics.index.coerceIn(lyrics.lines.indices)
+    val index = if (lyrics.lines.isEmpty()) -1 else lyrics.index.coerceIn(lyrics.lines.indices)
     val current = lyrics.lines.getOrNull(index)
-    val nextLine = lyrics.lines.getOrNull(index + 1)
+    val nextLine = if (index >= 0) lyrics.lines.getOrNull(index + 1) else null
 
     Box(modifier.fillMaxSize().background(Color.Black)) {
         AsyncImage(

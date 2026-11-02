@@ -7,6 +7,9 @@ import com.lladlam.melox.core.lyrics.LyricSource
 import com.lladlam.melox.core.lyrics.LyricSyllable
 import com.lladlam.melox.core.lyrics.LyricTimingKind
 import com.lladlam.melox.core.lyrics.LyricsDocument
+import com.lladlam.melox.core.lyrics.LyricAccompaniment
+import com.lladlam.melox.core.lyrics.LyricAgent
+import com.lladlam.melox.core.lyrics.LyricAgentAlignment
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -159,7 +162,7 @@ class LocalMusicRepository(context: Context) {
         .put("recognizedArtist", track.recognizedArtist)
         .put("recognizedAlbum", track.recognizedAlbum)
         .put("recognizedArtworkUrl", track.recognizedArtworkUrl)
-        .put("cachedLyrics", track.cachedLyrics?.let(::encodeLyrics))
+        .put("cachedLyrics", track.cachedLyrics?.let(LocalLyricsCodec::encodeLyrics))
 
     private fun decodeTrack(value: Any): LocalTrackRecord? {
         val item = value as? JSONObject ?: return null
@@ -183,18 +186,31 @@ class LocalMusicRepository(context: Context) {
             recognizedArtist = item.optString("recognizedArtist").takeIf(String::isNotBlank),
             recognizedAlbum = item.optString("recognizedAlbum").takeIf(String::isNotBlank),
             recognizedArtworkUrl = item.optString("recognizedArtworkUrl").takeIf(String::isNotBlank),
-            cachedLyrics = item.optJSONObject("cachedLyrics")?.let(::decodeLyrics),
+            cachedLyrics = item.optJSONObject("cachedLyrics")?.let(LocalLyricsCodec::decodeLyrics),
         )
     }
 
-    private fun encodeLyrics(document: LyricsDocument) = JSONObject()
+}
+
+internal object LocalLyricsCodec {
+    internal fun encodeLyrics(document: LyricsDocument) = JSONObject()
         .put("source", document.source.name)
         .put("quality", document.quality.name)
         .put("pseudoTimingAllowed", document.pseudoTimingAllowed)
+        .put("isUnsynchronized", document.isUnsynchronized)
         .put("lines", JSONArray().apply { document.lines.forEach { line ->
             put(JSONObject()
                 .put("timeMs", line.timeMs).put("durationMs", line.durationMs).put("text", line.text)
                 .put("translation", line.translation).put("romanization", line.romanization)
+                .put("adaptTranslation", line.adaptTranslation)
+                .put("agent", line.agent?.let(::encodeAgent))
+                .put("accompaniment", JSONArray().apply { line.accompaniment.forEach { backing ->
+                    put(JSONObject().put("timeMs", backing.timeMs).put("durationMs", backing.durationMs)
+                        .put("text", backing.text).put("translation", backing.translation)
+                        .put("romanization", backing.romanization).put("agent", backing.agent?.let(::encodeAgent))
+                        .put("timingKind", backing.timingKind.name)
+                        .put("syllables", JSONArray().apply { backing.syllables.forEach { put(encodeSyllable(it)) } }))
+                } })
                 .put("timingKind", line.timingKind.name)
                 .put("syllables", JSONArray().apply { line.syllables.forEach { put(encodeSyllable(it)) } })
                 .put("romanizationSyllables", JSONArray().apply { line.romanizationSyllables.forEach { put(encodeSyllable(it)) } }))
@@ -203,7 +219,7 @@ class LocalMusicRepository(context: Context) {
     private fun encodeSyllable(value: LyricSyllable) = JSONObject()
         .put("text", value.text).put("startTimeMs", value.startTimeMs).put("endTimeMs", value.endTimeMs)
 
-    private fun decodeLyrics(value: JSONObject): LyricsDocument = LyricsDocument(
+    internal fun decodeLyrics(value: JSONObject): LyricsDocument = LyricsDocument(
         lines = buildList {
             val lines = value.optJSONArray("lines") ?: return@buildList
             for (index in 0 until lines.length()) {
@@ -214,6 +230,25 @@ class LocalMusicRepository(context: Context) {
                     text = line.optString("text"),
                     translation = line.optString("translation").takeIf(String::isNotBlank),
                     romanization = line.optString("romanization").takeIf(String::isNotBlank),
+                    adaptTranslation = line.optBoolean("adaptTranslation", false),
+                    agent = line.optJSONObject("agent")?.let(::decodeAgent),
+                    accompaniment = buildList {
+                        val backing = line.optJSONArray("accompaniment") ?: return@buildList
+                        for (backingIndex in 0 until backing.length()) {
+                            val item = backing.optJSONObject(backingIndex) ?: continue
+                            add(LyricAccompaniment(
+                                timeMs = item.optLong("timeMs"),
+                                durationMs = item.optLong("durationMs").takeIf { !item.isNull("durationMs") },
+                                text = item.optString("text"),
+                                translation = item.optString("translation").takeIf(String::isNotBlank),
+                                romanization = item.optString("romanization").takeIf(String::isNotBlank),
+                                agent = item.optJSONObject("agent")?.let(::decodeAgent),
+                                syllables = decodeSyllables(item.optJSONArray("syllables")),
+                                timingKind = runCatching { LyricTimingKind.valueOf(item.optString("timingKind")) }
+                                    .getOrDefault(LyricTimingKind.Precise),
+                            ))
+                        }
+                    },
                     timingKind = runCatching { LyricTimingKind.valueOf(line.optString("timingKind")) }.getOrDefault(LyricTimingKind.Precise),
                     syllables = decodeSyllables(line.optJSONArray("syllables")),
                     romanizationSyllables = decodeSyllables(line.optJSONArray("romanizationSyllables")),
@@ -223,6 +258,7 @@ class LocalMusicRepository(context: Context) {
         source = runCatching { LyricSource.valueOf(value.optString("source")) }.getOrDefault(LyricSource.Local),
         quality = runCatching { LyricQuality.valueOf(value.optString("quality")) }.getOrDefault(LyricQuality.Fallback),
         pseudoTimingAllowed = value.optBoolean("pseudoTimingAllowed", true),
+        isUnsynchronized = value.optBoolean("isUnsynchronized", false),
     )
 
     private fun decodeSyllables(array: JSONArray?): List<LyricSyllable> = buildList {
@@ -232,4 +268,12 @@ class LocalMusicRepository(context: Context) {
             add(LyricSyllable(value.optString("text"), value.optLong("startTimeMs"), value.optLong("endTimeMs")))
         }
     }
+
+    private fun encodeAgent(agent: LyricAgent) = JSONObject()
+        .put("id", agent.id).put("name", agent.name).put("alignment", agent.alignment.name)
+
+    private fun decodeAgent(value: JSONObject) = LyricAgent(
+        value.optString("id"), value.optString("name"),
+        runCatching { LyricAgentAlignment.valueOf(value.optString("alignment")) }.getOrDefault(LyricAgentAlignment.Normal),
+    )
 }

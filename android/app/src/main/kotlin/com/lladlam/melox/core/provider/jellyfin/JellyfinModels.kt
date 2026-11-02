@@ -7,6 +7,7 @@ data class JellyfinSession(
     val userId: String = "",
     val serverId: String = "",
     val userName: String = "",
+    val trustUserServer: Boolean = false,
 ) {
     val isLoggedIn: Boolean
         get() = serverUrl.isNotBlank() && accessToken.isNotBlank() && userId.isNotBlank()

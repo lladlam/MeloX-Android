@@ -4,6 +4,9 @@ import com.lladlam.melox.core.account.NeteaseAccountProfile
 import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.lyrics.LyricsDocument
 import com.lladlam.melox.core.lyrics.NeteaseLyricParser
+import com.lladlam.melox.core.lyrics.withoutPlaceholderLyrics
+import com.lladlam.melox.core.lyrics.LrcLyricsParser
+import com.lladlam.melox.core.lyrics.LyricSource
 import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.core.music.model.AudioQualityTier
 import com.lladlam.melox.core.music.model.audioQualityForBitrate
@@ -16,6 +19,7 @@ import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
@@ -205,21 +209,62 @@ class NeteaseSearchClient(
         ensureArtwork(listOf(song)).firstOrNull() ?: song
 
     suspend fun lyrics(songId: Long): LyricsDocument = withContext(Dispatchers.IO) {
-        val response = eapi(
-            uri = "/api/song/lyric/v1",
-            data = JSONObject()
-                .put("id", songId)
-                .put("cp", false)
-                .put("tv", 0)
-                .put("lv", 0)
-                .put("rv", 0)
-                .put("kv", 0)
-                .put("yv", 0)
-                .put("ytv", 0)
-                .put("yrv", 0),
-        )
+        val primary = try {
+            parseLyrics(
+                eapi(
+                    uri = "/api/song/lyric/v1",
+                    data = JSONObject()
+                        .put("id", songId)
+                        .put("cp", false)
+                        .put("tv", 0)
+                        .put("lv", 0)
+                        .put("rv", 0)
+                        .put("kv", 0)
+                        .put("yv", 0)
+                        .put("ytv", 0)
+                        .put("yrv", 0),
+                ),
+            ).withoutPlaceholderLyrics()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            null
+        }
+        if (primary != null && primary.lines.isNotEmpty()) return@withContext primary
 
-        NeteaseLyricParser.parse(
+        // Account/client-specific responses can report "instrumental" for songs
+        // whose public lyric endpoint still has LRC. Do not forward account cookies.
+        try {
+            val url = okhttp3.HttpUrl.Builder()
+                .scheme("https")
+                .host("music.163.com")
+                .addPathSegments("api/song/lyric")
+                .addQueryParameter("id", songId.toString())
+                .apply {
+                    listOf("lv", "tv", "rv", "kv", "yv", "ytv", "yrv").forEach {
+                        addQueryParameter(it, "-1")
+                    }
+                }
+                .build()
+            val request = Request.Builder().url(url)
+                .header("User-Agent", "Mozilla/5.0")
+                .header("Referer", "https://music.163.com/")
+                .build()
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) throw IOException("网易云公开歌词请求失败：HTTP ${response.code}")
+                val body = JSONObject(response.body.string())
+                if (body.optInt("code") != 200) throw IOException("网易云公开歌词错误码 ${body.optInt("code")}")
+                parseLyrics(body).withoutPlaceholderLyrics()
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            primary ?: throw error
+        }
+    }
+
+    private fun parseLyrics(response: JSONObject): LyricsDocument {
+        val timed = NeteaseLyricParser.parse(
             yrc = response.optJSONObject("yrc")?.optString("lyric").orEmpty(),
             lrc = response.optJSONObject("lrc")?.optString("lyric").orEmpty(),
             translatedYrc = response.optJSONObject("ytlrc")?.optString("lyric").orEmpty(),
@@ -227,6 +272,9 @@ class NeteaseSearchClient(
             romanizedYrc = response.optJSONObject("yromalrc")?.optString("lyric").orEmpty(),
             romanizedLrc = response.optJSONObject("romalrc")?.optString("lyric").orEmpty(),
         )
+        return (if (timed.lines.isNotEmpty()) timed else
+            LrcLyricsParser.parse(response.optJSONObject("lrc")?.optString("lyric").orEmpty()))
+            .copy(source = LyricSource.Netease)
     }
 
     suspend fun playbackUrl(songId: Long): String = withContext(Dispatchers.IO) {

@@ -3728,7 +3728,8 @@ private fun AboutSettings(context: android.content.Context) {
                 "MeloX 主体：GNU GPLv3\n" +
                     "qier222/YesPlayMusic：网易云接口与播放器实现参考（MIT）\n" +
                     "jayfunc/BetterLyrics：逐字歌词渲染、光效与动效参考\n" +
-                    "WXRIW/Lyricify-Lyrics-Helper：网易云 YRC 解析参考\n" +
+                    "WXRIW/Lyricify-Lyrics-Helper：QQ 匿名搜索与歌词协议、纯音乐占位识别、网易云 YRC、Lyricify Lines / Syllable 格式参考（Apache-2.0）\n" +
+                    "https://github.com/WXRIW/Lyricify-Lyrics-Helper\n" +
                     "neteasecloudmusicapienhanced/api-enhanced：听歌识曲与音频指纹运行时\n" +
                     "DanteAlighieri13210914/pv-tool：文字 PV 原始实现（Non-Commercial License）\n" +
                      "mjhydri/BeatNet：自动混音节拍/重拍/速度分析（CC BY 4.0）\n" +
