@@ -90,13 +90,11 @@ import com.lladlam.melox.ui.animation.meloXContentExit
 import com.lladlam.melox.ui.layout.rememberMeloXWindowInfo
 import com.lladlam.melox.playback.MeloXPlaybackModeRuntime
 import com.lladlam.melox.playback.MeloXPlaybackNotice
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.lladlam.melox.core.account.NeteaseSessionStore
@@ -1381,7 +1379,6 @@ private fun rememberTrackFavorite(state: MeloXPlaybackUiState): MeloXTrackFavori
     }
     val cookieProvider = remember(app) { { NeteaseSessionStore.readCookie(app) } }
     val library = remember(app) { NeteaseLibraryClient(cookieProvider = cookieProvider) }
-    val ops = remember(app) { NeteaseMusicOperationsClient(cookieProvider = cookieProvider) }
     val account = remember(app) { NeteaseSearchClient(cookieProvider = cookieProvider) }
     val scope = rememberCoroutineScope()
 
@@ -1398,10 +1395,6 @@ private fun rememberTrackFavorite(state: MeloXPlaybackUiState): MeloXTrackFavori
     //   放在 State 里以便 LaunchedEffect（拉取服务器真值）也能读，用于「查询期间用户
     //   已 tap 过就不再覆盖」这一判断。
     val seqState = remember { mutableIntStateOf(0) }
-
-    // ★ 同步任务句柄：连点时取消上一次「待发的网络请求」，等用户停手后再发最终状态。
-    //   既保证 UI 每一次点击都立即响应，又避免对限流接口狂轰（见下方 toggle 防抖）。
-    val syncJobState = remember(mediaId) { mutableStateOf<Job?>(null) }
 
     // ★ 首屏查询（切歌后拉取当前收藏集合）。seq 判据避免覆盖刚发生的乐观 tap。
     LaunchedEffect(mediaId, track, unifiedFavoritesEnabled, unifiedFavoritesRevision) {
@@ -1433,47 +1426,14 @@ private fun rememberTrackFavorite(state: MeloXPlaybackUiState): MeloXTrackFavori
             }
             val id = identity?.takeIf { it.source == MusicSource.Netease }
                 ?.value?.toLongOrNull() ?: return@remember
-            // ★ UI 立即翻转：无论网络成败，用户看到的状态永远等于「自己点的那一下的意图」，
-            //   这是「点多几次按钮没反应」彻底消失的根本——点击一定有可见反馈。
+            // Show immediate feedback; the background writer reports failure.
             val desired = likedState.value != true
             likedState.value = desired
             val mine = ++seqState.value
-            // 取消上一次尚未发出的同步（含其退避重试），用本次意图整体覆盖。
-            syncJobState.value?.cancel()
-            syncJobState.value = scope.launch {
-                // ★ 防抖：连点时只等用户停手（350ms）发一次最终请求，从源头避开
-                //   网易云「操作频繁，请稍后」限流——连点 5 下 = 1 次网络请求。
-                try {
-                    delay(350)
-                } catch (_: CancellationException) {
-                    return@launch // 被更新的 tap 取代，作废
-                }
-                if (seqState.value != mine) return@launch // 期间又 tap 过，本请求作废
-                // ★ 限流/瞬时失败时带退避重试，直到服务器拿到最终状态为止。
-                //   这样「点多几次」既能立即看到响应、最终也真正落库，而不是悄悄失败。
-                var attempt = 0
-                while (true) {
-                    attempt++
-                    try {
-                        ops.setSongLiked(id, desired)
-                        return@launch
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Throwable) {
-                        val msg = e.message ?: ""
-                        // 网易云限流提示词特征：「操作频繁」/「稍候」/「稍后」。
-                        val rateLimited = msg.contains("操作频繁", ignoreCase = true)
-                            || msg.contains("稍候") || msg.contains("稍后")
-                        if (rateLimited && attempt < 3) {
-                            delay(800L * attempt) // 退避后重试，乐观状态继续保留
-                            continue
-                        }
-                        // 非限流错误（如未登录）：保持乐观状态**不回滚**，仅轻提示。
-                        if (!rateLimited) {
-                            MeloXPlaybackNotice.show(context, msg.ifBlank { "收藏失败，请稍后重试" })
-                        }
-                        return@launch
-                    }
+            com.lladlam.melox.core.network.NeteaseFavoriteSync.submit(app, id, desired) { result ->
+                result.onFailure { error ->
+                    if (seqState.value == mine) likedState.value = null
+                    MeloXPlaybackNotice.show(app, "收藏状态同步失败：${error.message ?: "请稍后重试"}")
                 }
             }
         }

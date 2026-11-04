@@ -10,6 +10,8 @@ import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -71,6 +73,32 @@ private data class MeloXPrivateMessagePayload(
 
 internal data class NeteasePlaylistCreateSpec(val name: String, val privacy: Int)
 
+internal class NeteaseRequestException(val code: Int, message: String) : IOException(message)
+
+internal suspend fun <T> retryNeteaseFavorite(
+    maxAttempts: Int = 3,
+    pause: suspend (Long) -> Unit = { delay(it) },
+    operation: suspend () -> T,
+): T {
+    require(maxAttempts > 0)
+    repeat(maxAttempts - 1) { attempt ->
+        try {
+            return operation()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: IOException) {
+            val retryable = when (error) {
+                is NeteaseRequestException -> error.code == 429 || error.code == 502 ||
+                    error.code == 503 || error.code == 504 || error.message.orEmpty().contains("操作频繁")
+                else -> true
+            }
+            if (!retryable) throw error
+            pause(800L * (attempt + 1))
+        }
+    }
+    return operation()
+}
+
 internal fun neteasePlaylistCreateSpec(name: String, privatePlaylist: Boolean): NeteasePlaylistCreateSpec {
     val normalizedName = name.trim()
     require(normalizedName.isNotBlank()) { "歌单名称不能为空" }
@@ -103,12 +131,15 @@ class NeteaseMusicOperationsClient(
     private val authenticatedWeapi = NeteaseAuthenticatedWeapi(cookieProvider, httpClient)
 
     suspend fun setSongLiked(songId: Long, liked: Boolean) = withContext(Dispatchers.IO) {
+        require(songId > 0L) { "歌曲 ID 无效" }
         ensureLoggedIn()
-        eapi(
-            "/api/radio/like",
-            JSONObject().put("alg", "itembased").put("trackId", songId).put("like", liked).put("time", "3"),
-            true,
-        )
+        retryNeteaseFavorite {
+            eapi(
+                "/api/radio/like",
+                JSONObject().put("alg", "itembased").put("trackId", songId).put("like", liked).put("time", "3"),
+                true,
+            )
+        }
         Unit
     }
 
@@ -692,9 +723,9 @@ private fun collectWikiUiText(ui: JSONObject?, lines: MutableList<String>) {
         if(authenticated)b.header("Cookie",encodedCookie(header))
         val req=b.post(FormBody.Builder().add("params",params).build()).build()
         httpClient.newCall(req).execute().use { response ->
-            val body=response.body.string(); if(!response.isSuccessful)throw IOException("网易云请求失败：HTTP ${response.code}")
+            val body=response.body.string(); if(!response.isSuccessful)throw NeteaseRequestException(response.code, "网易云请求失败：HTTP ${response.code}")
             if(body.isBlank())throw IOException("网易云返回了空响应"); val result=JSONObject(body); val code=result.optInt("code",response.code)
-            if(code !in 200..299)throw IOException((result.optString("message").ifBlank{result.optString("msg")}.ifBlank{"请求失败（$code）"})+" | ${body.take(300)}"); return result
+            if(code !in 200..299)throw NeteaseRequestException(code, (result.optString("message").ifBlank{result.optString("msg")}.ifBlank{"请求失败（$code）"})+" | ${body.take(300)}"); return result
         }
     }
     private fun authenticatedHeader(c:Map<String,String>,now:Long)=JSONObject().put("osver",c["osver"]?:"16.2").put("deviceId",c["deviceId"]?:syntheticDeviceId).put("os",c["os"]?:"iPhone OS").put("appver",c["appver"]?:"9.0.90").put("versioncode",c["versioncode"]?:"140").put("buildver",c["buildver"]?:(now/1000L).toString()).put("resolution",c["resolution"]?:"1170x2532").put("__csrf",c["__csrf"]?:"").put("channel",c["channel"]?:"distribution").put("requestId","${now}_${randomDigits(4)}").apply{c["MUSIC_U"]?.takeIf(String::isNotBlank)?.let{put("MUSIC_U",it)}}
