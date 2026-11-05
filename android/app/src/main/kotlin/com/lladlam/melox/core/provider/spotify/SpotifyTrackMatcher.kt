@@ -17,14 +17,14 @@ object SpotifyTrackMatcher {
 
     fun rank(source: MusicTrack, candidates: List<MusicTrack>): List<SpotifyMatchScore> = candidates
         .asSequence()
-        .filter { it.id.source != MusicSource.Spotify }
+        .filter { it.id.sourceId.builtIn != MusicSource.Spotify }
         .mapNotNull { candidate -> score(source, candidate) }
         .filter { it.score >= MinimumScore }
         .sortedByDescending(SpotifyMatchScore::score)
         .toList()
 
     fun score(source: MusicTrack, candidate: MusicTrack): SpotifyMatchScore? {
-        if (candidate.id.source == MusicSource.Spotify) return null
+        if (candidate.id.sourceId.builtIn == MusicSource.Spotify) return null
         if (TrackAggregation.normalize(source.title) != TrackAggregation.normalize(candidate.title)) return null
         val sourceArtists = source.artists.map { TrackAggregation.normalizeArtist(it.name) }.filter(String::isNotBlank).toSet()
         val candidateArtists = candidate.artists.map { TrackAggregation.normalizeArtist(it.name) }.filter(String::isNotBlank).toSet()
@@ -54,10 +54,10 @@ object SpotifyTrackMatcher {
             source.durationMs == null && sourceArtists == candidateArtists -> 30
             else -> 0
         }
-        return SpotifyMatchScore(candidate, 40 + artistScore + durationScore + availability + sourcePriority(candidate.id.source))
+        return SpotifyMatchScore(candidate, 40 + artistScore + durationScore + availability + sourcePriority(candidate.id.sourceId.builtIn))
     }
 
-    private fun sourcePriority(source: MusicSource): Int = when (source) {
+    private fun sourcePriority(source: MusicSource?): Int = when (source) {
         MusicSource.QQMusic -> 5
         MusicSource.AppleMusic -> 4
         MusicSource.Netease -> 3
@@ -70,5 +70,6 @@ object SpotifyTrackMatcher {
         MusicSource.Jellyfin -> 0
         MusicSource.Local -> 0
         MusicSource.Qishui -> 0
+        null -> 0
     }
 }

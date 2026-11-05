@@ -50,6 +50,31 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MeloX">
 
+        <activity
+            android:name=".core.plugin.PluginOAuthCallbackActivity"
+            android:exported="true"
+            android:excludeFromRecents="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.lladlam.melox.plugin" android:path="/oauth2redirect" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".ui.sharing.PluginTrackLinkActivity" android:exported="true" android:theme="@style/Theme.MeloX.Page">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="melox" android:host="plugin-track" />
+            </intent-filter>
+        </activity>
+        <service
+            android:name=".core.plugin.PluginIsolatedService"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":melox_plugin" />
+
         <!-- 冷启动性能：emoji2 是传递依赖（Compose Material3 带进来的）
              androidx.startup 初始化项。它在每次启动的主线程上跑
              EmojiCompat.MetadataRepo.create()，实测 ~165ms（atrace 确认），

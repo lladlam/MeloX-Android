@@ -78,6 +78,7 @@ fun ProviderSettingsHub(
     onOpenAccount: () -> Unit,
     onOpenServices: () -> Unit,
     onOpenMessages: () -> Unit,
+    currentSourceId: com.lladlam.melox.core.music.model.SourceId = com.lladlam.melox.core.music.model.SourceId.fromBuiltIn(currentSource),
 ) {
     val context = LocalContext.current
     val accountManager = remember(neteaseSession) {
@@ -184,6 +185,7 @@ fun ProviderSettingsHub(
     SettingsScreen(
         session = neteaseSession,
         source = currentSource,
+        sourceId = currentSourceId,
         onLogin = onNeteaseLogin,
         onOpenAccount = onOpenAccount,
         onOpenServices = onOpenServices,

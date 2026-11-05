@@ -88,7 +88,7 @@ object LocalRecommendationStore {
         val array = JSONArray()
         tracks.forEach { track ->
             array.put(JSONObject().apply {
-                put("source", track.id.source.storageValue); put("id", track.id.value); put("title", track.title)
+                put("source", track.id.sourceId.value); put("id", track.id.value); put("title", track.title)
                 put("artist", track.artistText); put("artwork", track.artworkUrl); put("durationMs", track.durationMs ?: 0L)
             })
         }

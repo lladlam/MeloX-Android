@@ -36,6 +36,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -114,17 +115,21 @@ internal fun MeloXProviderSongActionsOverlay(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val provider = remember(identity.source) {
-        MeloXMusicProviders.create(context).require(identity.source)
+    val registry = remember(context) { MeloXMusicProviders.create(context) }
+    val generation by registry.changes.collectAsState()
+    val provider = remember(identity.sourceId, generation) { registry[identity.sourceId] }
+    val favoriteCapability = (provider as? FavoriteCapability)?.takeIf {
+        identity.sourceId.builtIn != null || provider.supports(com.lladlam.melox.core.music.provider.MusicCapability.Favorites)
     }
-    val favoriteCapability = provider as? FavoriteCapability
-    val downloadCapability = provider as? DownloadCapability
+    val downloadCapability = (provider as? DownloadCapability)?.takeIf {
+        identity.sourceId.builtIn != null || provider.supports(com.lladlam.melox.core.music.provider.MusicCapability.Download)
+    }
     val downloadStore = remember { MeloXProviderDownloadStore.get(context) }
     val playlistWriteCapability = provider as? PlaylistWriteCapability
     val playlistSyncCapability = provider as? PlaylistSyncCapability
     val accountManager = remember { ProviderAccountManager(context) }
-    val providerLoggedIn = remember(identity.source, visible) {
-        accountManager.state(identity.source).loggedIn
+    val providerLoggedIn = remember(identity.sourceId, visible, generation) {
+        identity.sourceId.builtIn?.let { accountManager.state(it).loggedIn } ?: (provider != null)
     }
     val actionTrack = remember(identity, track, state?.title, state?.artist, state?.album, state?.durationMs) {
         track ?: MusicTrack(
@@ -136,7 +141,7 @@ internal fun MeloXProviderSongActionsOverlay(
             album = state?.album?.takeIf(String::isNotBlank)?.let { com.lladlam.melox.core.music.model.MusicAlbumRef(name = it) },
             artworkUrl = state?.artworkUrl,
             durationMs = state?.durationMs?.takeIf { it > 0L },
-            providerMetadata = when (identity.source) {
+            providerMetadata = when (identity.sourceId.builtIn) {
                 MusicSource.Kugou -> ProviderTrackMetadata.Kugou(hash = identity.value)
                 MusicSource.Kuwo -> ProviderTrackMetadata.Kuwo(mid = identity.value.toLongOrNull() ?: 0L)
                 else -> ProviderTrackMetadata.Empty
@@ -157,15 +162,24 @@ internal fun MeloXProviderSongActionsOverlay(
     var actionStatus by remember(identity) { mutableStateOf<String?>(null) }
     var actionError by remember(identity) { mutableStateOf<String?>(null) }
     var recognitionWorking by remember(identity) { mutableStateOf(false) }
+    var nativeFavoriteOpen by remember(identity, visible) { mutableStateOf(false) }
+    if (nativeFavoriteOpen && provider is com.lladlam.melox.core.plugin.PluginMusicProvider && favoriteCapability != null) {
+        com.lladlam.melox.ui.search.PluginFavoriteDialog(provider, actionTrack) { nativeFavoriteOpen = false }
+    }
     val downloaded = downloadStore.isDownloaded(identity)
     val downloading = downloadStore.isDownloading(identity)
-    val bilibiliOffsetState = if (identity.source == MusicSource.Bilibili) {
+    val bilibiliOffsetState = if (identity.sourceId.builtIn == MusicSource.Bilibili) {
         BilibiliLyricOffsetStore.state(context, identity.value)
     } else null
 
     LaunchedEffect(identity, visible, unifiedFavoritesEnabled, unifiedFavoritesRevision) {
         if (visible && unifiedFavoritesEnabled) {
             favoriteKnownState = MeloXUnifiedFavorites.contains(context, actionTrack)
+        }
+        if (visible && !unifiedFavoritesEnabled && favoriteCapability is com.lladlam.melox.core.music.provider.FavoriteStateCapability) {
+            try { favoriteKnownState = favoriteCapability.isFavorite(actionTrack) }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (failure: Exception) { actionError = failure.message }
         }
     }
 
@@ -206,7 +220,7 @@ internal fun MeloXProviderSongActionsOverlay(
                         ProviderActionHeader(
                              track = actionTrack,
                             subtitle = when (target) {
-                                ProviderSongActionPage.Main -> stringResource(R.string.player_source_actions, identity.source.displayName)
+                                 ProviderSongActionPage.Main -> stringResource(R.string.player_source_actions, identity.sourceId.displayName)
                                 ProviderSongActionPage.Sleep -> stringResource(R.string.player_sleep_timer)
                                 ProviderSongActionPage.Playlists -> stringResource(R.string.player_choose_playlist)
                             },
@@ -225,7 +239,7 @@ internal fun MeloXProviderSongActionsOverlay(
                                         onDismiss()
                                     }
                                 }
-                                if (identity.source == MusicSource.Local) {
+                                if (identity.sourceId.builtIn == MusicSource.Local) {
                                     ProviderActionItem(
                                         title = if (recognitionWorking) stringResource(R.string.player_recognizing) else stringResource(R.string.player_recognize),
                                         symbol = "⌁",
@@ -250,10 +264,13 @@ internal fun MeloXProviderSongActionsOverlay(
                                     }
                                 }
                                 if (favoriteCapability != null || unifiedFavoritesEnabled) {
+                                    if (provider is com.lladlam.melox.core.plugin.PluginMusicProvider) {
+                                        if (favoriteCapability != null) ProviderActionItem("音源收藏状态", "♡") { nativeFavoriteOpen = true }
+                                    }
                                     ProviderActionItem(
                                         title = when {
                                             !unifiedFavoritesEnabled && !providerLoggedIn ->
-                                                stringResource(R.string.player_login_for_favorites, identity.source.displayName)
+                                                stringResource(R.string.player_login_for_favorites, identity.sourceId.displayName)
                                             favoriteWorking -> stringResource(R.string.player_updating_favorites)
                                             favoriteKnownState == true -> stringResource(R.string.player_remove_favorite)
                                             else -> stringResource(R.string.player_add_favorite)
@@ -281,9 +298,9 @@ internal fun MeloXProviderSongActionsOverlay(
                                             }.onSuccess {
                                                 favoriteKnownState = targetFavorite
                                                 actionStatus = if (targetFavorite) {
-                                                    context.getString(R.string.player_added_favorite, identity.source.displayName)
+                                                    context.getString(R.string.player_added_favorite, identity.sourceId.displayName)
                                                 } else {
-                                                    context.getString(R.string.player_removed_favorite, identity.source.displayName)
+                                                    context.getString(R.string.player_removed_favorite, identity.sourceId.displayName)
                                                 }
                                             }.onFailure { failure ->
                                                 actionError = failure.message ?: context.getString(R.string.player_favorite_failed)
@@ -294,6 +311,7 @@ internal fun MeloXProviderSongActionsOverlay(
                                 }
 
                                 if (downloadCapability != null) {
+                                    downloadStore.errorFor(identity)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                                     ProviderActionItem(
                                         title = when {
                                             downloaded -> stringResource(R.string.player_delete_download)
@@ -305,14 +323,14 @@ internal fun MeloXProviderSongActionsOverlay(
                                     ) {
                                         if (downloaded) downloadStore.remove(identity) else {
                                             downloadStore.start(actionTrack)
-                                            actionStatus = context.getString(R.string.player_download_queued, identity.source.displayName)
+                                            actionStatus = context.getString(R.string.player_download_queued, identity.sourceId.displayName)
                                         }
                                     }
                                 }
 
                                 if (playlistWriteCapability != null) {
                                     ProviderActionItem(
-                                        title = if (providerLoggedIn) stringResource(R.string.player_add_to_playlist) else stringResource(R.string.player_login_for_playlist, identity.source.displayName),
+                                        title = if (providerLoggedIn) stringResource(R.string.player_add_to_playlist) else stringResource(R.string.player_login_for_playlist, identity.sourceId.displayName),
                                         symbol = "＋",
                                         enabled = providerLoggedIn && !playlistsLoading,
                                     ) {
@@ -355,7 +373,7 @@ internal fun MeloXProviderSongActionsOverlay(
                                 onEditPlaylistTrack?.let { edit ->
                                     ProviderActionItem(stringResource(R.string.playlist_actions), "•••") { onDismiss(); edit() }
                                 }
-                                if (identity.source != MusicSource.Bilibili && !actionTrack.album?.name.isNullOrBlank() && onNavigateSearch != null) {
+                                if (identity.sourceId.builtIn != MusicSource.Bilibili && !actionTrack.album?.name.isNullOrBlank() && onNavigateSearch != null) {
                                     ProviderActionItem(stringResource(R.string.player_go_album, actionTrack.album!!.name), "▣") {
                                         val target = actionTrack.album.name
                                         MeloXSearchLaunchBus.post(target, MeloXSearchKind.Albums)
@@ -363,7 +381,7 @@ internal fun MeloXProviderSongActionsOverlay(
                                         onNavigateSearch(target, MeloXSearchKind.Albums)
                                     }
                                 }
-                                if (identity.source != MusicSource.Bilibili && actionTrack.artists.isNotEmpty() && onNavigateSearch != null) {
+                                if (identity.sourceId.builtIn != MusicSource.Bilibili && actionTrack.artists.isNotEmpty() && onNavigateSearch != null) {
                                     ProviderActionItem(stringResource(R.string.player_go_artist, actionTrack.artistText), "♬") {
                                         val target = actionTrack.artists.first().name
                                         MeloXSearchLaunchBus.post(target, MeloXSearchKind.Artists)
@@ -446,7 +464,7 @@ internal fun MeloXProviderSongActionsOverlay(
                             }
                         }
                         }
-                        if (target == ProviderSongActionPage.Main && identity.source == MusicSource.Bilibili) {
+                        if (target == ProviderSongActionPage.Main && identity.sourceId.builtIn == MusicSource.Bilibili) {
                             val persistedOffset = bilibiliOffsetState?.value ?: 0
                             var displayedOffset by remember(identity.value, persistedOffset) {
                                 mutableIntStateOf(persistedOffset)
@@ -636,7 +654,7 @@ private fun shareProviderSong(
     track: MusicTrack,
     identity: MusicResourceId,
 ) {
-    val providerUrl = when (identity.source) {
+    val providerUrl = when (identity.sourceId.builtIn) {
         MusicSource.QQMusic -> "https://y.qq.com/n/ryqq/songDetail/${identity.value}"
         MusicSource.Kugou,
         MusicSource.KugouLite,
@@ -651,11 +669,13 @@ private fun shareProviderSong(
         MusicSource.Qishui -> "https://music.douyin.com/qishui/song/${identity.value}"
         MusicSource.Jellyfin -> null
         MusicSource.Local -> null
+        null -> null
     }
     val text = buildString {
         append(track.title.ifBlank { context.getString(R.string.player_now_playing) })
         if (track.artists.isNotEmpty()) append(" · ").append(track.artistText)
         providerUrl?.let { append('\n').append(it) }
+        if (identity.sourceId.builtIn == null) append('\n').append(com.lladlam.melox.core.plugin.PluginTrackLink.create(identity, track.title))
     }
     val intent = Intent.createChooser(
         Intent(Intent.ACTION_SEND).apply {

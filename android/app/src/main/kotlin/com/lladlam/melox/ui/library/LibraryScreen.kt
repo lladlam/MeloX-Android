@@ -1,5 +1,7 @@
 package com.lladlam.melox.ui.library
 
+import androidx.compose.material3.TextButton
+
 import android.Manifest
 import android.app.Activity
 import android.content.Context
@@ -809,7 +811,7 @@ fun LibraryScreen(
                                         key = album.id.value,
                                         title = album.title,
                                         subtitle = album.artists.joinToString(" / ") { it.name }
-                                            .ifBlank { album.id.source.displayName },
+                                            .ifBlank { album.id.sourceId.displayName },
                                         artworkUrl = album.artworkUrl,
                                     )
                                 },
@@ -829,7 +831,7 @@ fun LibraryScreen(
                                         key = artist.id.value,
                                         title = artist.name,
                                         subtitle = artist.description?.takeIf { it.isNotBlank() }
-                                            ?: artist.id.source.displayName,
+                                            ?: artist.id.sourceId.displayName,
                                         artworkUrl = artist.artworkUrl,
                                     )
                                 },
@@ -920,6 +922,7 @@ private fun MeloXLibraryDownloadsPage(downloads: MeloXDownloadStore) {
     val paused = downloads.pausedDownloads.values.toList()
     val completed = downloads.downloads.toList()
     val providerCompleted = providerDownloads.downloads.toList()
+    val providerAttempts = providerDownloads.attempts.toMap()
     val groups = downloads.downloadedPlaylists
     val browseGroups = remember(completed, browseMode) {
         when (browseMode) {
@@ -965,6 +968,23 @@ private fun MeloXLibraryDownloadsPage(downloads: MeloXDownloadStore) {
   contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 146.dp),
   verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+  items(providerAttempts.entries.toList(), key = { "provider-attempt:${it.key}" }) { (key, attempt) ->
+      val failure = providerDownloads.downloadErrors[key]
+      val running = providerDownloads.activeDownloads[key] == true
+      Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+          Text(attempt.track.title, style = MaterialTheme.typography.titleSmall)
+          Text(attempt.track.id.sourceId.value, style = MaterialTheme.typography.bodySmall)
+          Text(failure ?: if (running) "下载中或等待下载" else "正在完成任务",
+              color = if (failure != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              if (running) TextButton(onClick = { providerDownloads.cancel(attempt.track.id) }) { Text("取消下载") }
+              else if (failure != null) {
+                  TextButton(onClick = { providerDownloads.retry(attempt.track.id) }) { Text("重试") }
+                  TextButton(onClick = { providerDownloads.dismissError(attempt.track.id) }) { Text("移除失败记录") }
+              }
+          }
+      }
+  }
   if (active.isNotEmpty()) {
       item {
           DownloadNavigationCard(
@@ -1142,7 +1162,7 @@ private fun MeloXLibraryDownloadsPage(downloads: MeloXDownloadStore) {
       item {
           Text("Spotify / YouTube Music", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 18.dp, bottom = 8.dp))
       }
-      items(providerCompleted, key = { "provider-download-${it.track.id.source.storageValue}:${it.track.id.value}" }) { item ->
+      items(providerCompleted, key = { "provider-download-${it.track.id.sourceId.value}:${it.track.id.value}" }) { item ->
           Row(
               Modifier.fillMaxWidth().height(62.dp).clickable {
                   ProviderPlaybackCommands.playQueue(context, providerCompleted.map { it.track }, item.track.id)
@@ -1158,7 +1178,7 @@ private fun MeloXLibraryDownloadsPage(downloads: MeloXDownloadStore) {
               Column(Modifier.weight(1f).padding(start = 12.dp)) {
                   Text(item.track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
                   Text(
-                      "${item.track.artistText} · ${item.track.id.source.displayName}",
+                      "${item.track.artistText} · ${item.track.id.sourceId.displayName}",
                       maxLines = 1,
                       overflow = TextOverflow.Ellipsis,
                       color = MaterialTheme.colorScheme.onBackground.copy(alpha = .48f),
@@ -1170,7 +1190,7 @@ private fun MeloXLibraryDownloadsPage(downloads: MeloXDownloadStore) {
       }
   }
 
-  if (active.isEmpty() && completed.isEmpty() && providerCompleted.isEmpty()) {
+  if (active.isEmpty() && completed.isEmpty() && providerCompleted.isEmpty() && providerAttempts.isEmpty()) {
       item {
           Box(Modifier.fillMaxWidth().height(260.dp), contentAlignment = Alignment.Center) {
               Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1765,8 +1785,8 @@ internal fun MeloXProviderArtistDetailScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
-    val capability = remember(artist.id.source) {
-        MeloXMusicProviders.create(context).require(artist.id.source) as? ArtistCapability
+    val capability = remember(artist.id.sourceId) {
+        MeloXMusicProviders.create(context)[artist.id.sourceId] as? ArtistCapability
     }
     var songs by remember(artist.id) { mutableStateOf<List<SearchSong>>(emptyList()) }
     var loading by remember(artist.id) { mutableStateOf(true) }
@@ -1777,7 +1797,7 @@ internal fun MeloXProviderArtistDetailScreen(
         val reader = capability
         if (reader == null) {
             loading = false
-            errorMessage = context.getString(R.string.library_capability_missing, artist.id.source.displayName)
+            errorMessage = context.getString(R.string.library_capability_missing, artist.id.sourceId.displayName)
             return@LaunchedEffect
         }
         runCatching {
@@ -1801,14 +1821,14 @@ internal fun MeloXProviderArtistDetailScreen(
                         name = artist.name,
                         coverUrl = artist.artworkUrl,
                         trackCount = songs.size,
-                        creatorName = artist.id.source.displayName,
+                        creatorName = artist.id.sourceId.displayName,
                         description = artist.description,
                     ),
                     songs = songs,
                     onBack = onBack,
                     sharedTransitionScope = this@SharedTransitionLayout,
                     animatedVisibilityScope = this,
-                    source = artist.id.source,
+                    source = artist.id.sourceId.builtIn,
                     onRefresh = { refreshVersion++ },
                 )
             }
@@ -2033,13 +2053,13 @@ private fun LocalRecommendationPlaylistScreen(onBack: () -> Unit) {
             return
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = MeloXBottomContentClearance)) {
-            itemsIndexed(tracks, key = { _, track -> "local-recommendation-${track.id.source.storageValue}-${track.id.value}" }) { index, track ->
+            itemsIndexed(tracks, key = { _, track -> "local-recommendation-${track.id.sourceId.value}-${track.id.value}" }) { index, track ->
                 Row(Modifier.fillMaxWidth().clickable { ProviderPlaybackCommands.playQueue(context, tracks, track.id) }.padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("${index + 1}", Modifier.width(38.dp), color = MaterialTheme.colorScheme.onBackground.copy(alpha = .45f), textAlign = TextAlign.Center)
                     AsyncImage(track.artworkUrl, null, contentScale = ContentScale.Crop, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)))
                     Column(Modifier.weight(1f).padding(start = 12.dp)) {
                         Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                        Text("${track.artistText} · ${track.id.source.displayName}", maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = .5f))
+                        Text("${track.artistText} · ${track.id.sourceId.displayName}", maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, color = MaterialTheme.colorScheme.onBackground.copy(alpha = .5f))
                     }
                 }
             }
@@ -2271,36 +2291,41 @@ private fun MeloXPlaylistDetailScreen(
     val albumClient = remember(appContext) {
         NeteaseCollectionDetailsClient(cookieProvider = { NeteaseSessionStore.readCookie(appContext) })
     }
-    val providerAlbumCapability = remember(providerAlbum?.id?.source, appContext) {
+    val providerAlbumCapability = remember(providerAlbum?.id?.sourceId, appContext) {
         providerAlbum?.let { backing ->
-            MeloXMusicProviders.create(appContext).require(backing.id.source) as? AlbumCapability
+            MeloXMusicProviders.create(appContext)[backing.id.sourceId] as? AlbumCapability
         }
     }
     val providerPlaylist = initialPlaylist.providerPlaylist
-    val providerSyncCandidate = remember(providerPlaylist?.id?.source, appContext) {
+    val providerSyncCandidate = remember(providerPlaylist?.id?.sourceId, appContext) {
         providerPlaylist?.let { backing ->
-            MeloXMusicProviders.create(appContext).require(backing.id.source) as? PlaylistSyncCapability
+            MeloXMusicProviders.create(appContext)[backing.id.sourceId] as? PlaylistSyncCapability
         }
     }
-    val providerPlaylistCapability = remember(providerPlaylist?.id?.source, appContext) {
+    val providerPlaylistCapability = remember(providerPlaylist?.id?.sourceId, appContext) {
         providerPlaylist?.let { backing ->
-            MeloXMusicProviders.create(appContext).require(backing.id.source) as? PlaylistCapability
+            MeloXMusicProviders.create(appContext)[backing.id.sourceId] as? PlaylistCapability
         }
     }
     val isProviderPlaylist = providerPlaylist != null
     val isAlbum = albumId != null || providerAlbum != null
-    val collectionSource = providerPlaylist?.id?.source ?: providerAlbum?.id?.source ?: providedSource
-        ?: providedSongs?.firstOrNull()?.providerTrack?.id?.source
+    val collectionSource = providerPlaylist?.id?.sourceId?.builtIn ?: providerAlbum?.id?.sourceId?.builtIn ?: providedSource
+        ?: providedSongs?.firstOrNull()?.providerTrack?.id?.sourceId?.builtIn
+    val collectionSourceId = providerPlaylist?.id?.sourceId ?: providerAlbum?.id?.sourceId ?:
+        providedSource?.let(com.lladlam.melox.core.music.model.SourceId::fromBuiltIn)
+        ?: providedSongs?.firstOrNull()?.providerTrack?.id?.sourceId
     val isProviderCollection = isProviderPlaylist || providerAlbum != null || collectionSource != null
-    val canDownloadCollection = remember(collectionSource) {
-        collectionSource == null || MeloXMusicProviders.create(appContext).require(collectionSource) is DownloadCapability
+    val canDownloadCollection = remember(collectionSourceId) {
+        collectionSourceId == null || MeloXMusicProviders.create(appContext)[collectionSourceId]?.let {
+            it is DownloadCapability && (collectionSourceId.builtIn != null || it.supports(com.lladlam.melox.core.music.provider.MusicCapability.Download))
+        } == true
     }
     var detail by remember(initialPlaylist.id) { mutableStateOf<NeteasePlaylistDetail?>(null) }
     val providerSync = providerSyncCandidate.takeUnless {
         (detail?.summary?.providerPlaylist ?: providerPlaylist)?.isEditable == false
     }
     var loading by remember(initialPlaylist.id) { mutableStateOf(true) }
-    val pagedBilibiliPlaylist = providerPlaylist?.id?.source == MusicSource.Bilibili && providedSongs == null
+    val pagedBilibiliPlaylist = providerPlaylist?.id?.sourceId?.builtIn == MusicSource.Bilibili && providedSongs == null
     var providerPage by remember(initialPlaylist.id) { mutableStateOf(1) }
     var providerHasMore by remember(initialPlaylist.id) { mutableStateOf(false) }
     var providerLoadingMore by remember(initialPlaylist.id) { mutableStateOf(false) }
@@ -2395,7 +2420,7 @@ private fun MeloXPlaylistDetailScreen(
         if (providerAlbum != null) {
             val capability = providerAlbumCapability
             if (capability == null) {
-                errorMessage = "${providerAlbum.id.source.displayName} 当前不提供专辑详情能力"
+                errorMessage = "${providerAlbum.id.sourceId.displayName} 当前不提供专辑详情能力"
                 loading = false
                 return
             }
@@ -2432,7 +2457,7 @@ private fun MeloXPlaylistDetailScreen(
         } else if (providerPlaylist != null) {
             val capability = providerPlaylistCapability
             if (capability == null) {
-                errorMessage = "${providerPlaylist.id.source.displayName} 当前不提供歌单详情能力"
+                errorMessage = "${providerPlaylist.id.sourceId.displayName} 当前不提供歌单详情能力"
                 loading = false
                 return
             }
@@ -2790,8 +2815,8 @@ private fun MeloXPlaylistDetailScreen(
                         tracks = filteredSongs,
                         foreground = foreground,
                         secondary = secondary,
-                        sourceLabel = providerAlbum?.id?.source?.displayName
-                            ?: displayed.providerPlaylist?.id?.source?.displayName
+                        sourceLabel = providerAlbum?.id?.sourceId?.displayName
+                            ?: displayed.providerPlaylist?.id?.sourceId?.displayName
                             ?: stringResource(R.string.share_netease),
                         onPlay = {
                             PlaybackCommands.playAll(
@@ -3788,7 +3813,7 @@ internal fun sharePlaylistFromDetail(context: android.content.Context, playlist:
         append(providerPlaylist?.title ?: playlist.name)
         val creator = providerPlaylist?.creatorName ?: playlist.creatorName
         if (creator.isNotBlank()) append(" · ").append(creator)
-        append('\n').append((providerPlaylist?.id?.source ?: source)?.displayName.orEmpty())
+        append('\n').append(providerPlaylist?.id?.sourceId?.displayName ?: source?.displayName.orEmpty())
     }
     val intent = android.content.Intent.createChooser(
         android.content.Intent(android.content.Intent.ACTION_SEND).apply {
@@ -3806,7 +3831,7 @@ private fun shareProviderAlbum(context: android.content.Context, album: MusicAlb
         append(album.title)
         val artists = album.artists.joinToString(" / ") { it.name }
         if (artists.isNotBlank()) append(" · ").append(artists)
-        append('\n').append(album.id.source.displayName)
+        append('\n').append(album.id.sourceId.displayName)
     }
     val intent = android.content.Intent.createChooser(
         android.content.Intent(android.content.Intent.ACTION_SEND).apply {

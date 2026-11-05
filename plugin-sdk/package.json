@@ -1,0 +1,19 @@
+{
+  "name": "@melox/plugin-sdk",
+  "version": "0.0.1-dev",
+  "private": true,
+  "description": "Draft MeloX plugin protocol types; Android runtime integration is not complete",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": { "melox-plugin": "./tools/cli.mjs" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.check.json",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": { "ajv": "^8.17.1", "esbuild": "^0.25.0" },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

@@ -1348,7 +1348,7 @@ private fun rememberTrackFavorite(state: MeloXPlaybackUiState): MeloXTrackFavori
                 artworkUrl = state.artworkUrl,
                 durationMs = state.durationMs.takeIf { it > 0L },
                 availability = TrackAvailability.Playable,
-                providerMetadata = when (id.source) {
+                providerMetadata = when (id.sourceId.builtIn) {
                     MusicSource.Netease -> ProviderTrackMetadata.Netease(
                         numericId = id.value.toLongOrNull() ?: 0L,
                     )
@@ -1373,6 +1373,7 @@ private fun rememberTrackFavorite(state: MeloXPlaybackUiState): MeloXTrackFavori
                         fileKey = id.value,
                     )
                     MusicSource.Jellyfin, MusicSource.Qishui -> ProviderTrackMetadata.Empty
+                    null -> ProviderTrackMetadata.Empty
                 },
             )
         }
@@ -1403,7 +1404,7 @@ private fun rememberTrackFavorite(state: MeloXPlaybackUiState): MeloXTrackFavori
             likedState.value = track?.let { MeloXUnifiedFavorites.contains(app, it) }
             return@LaunchedEffect
         }
-        val id = identity?.takeIf { it.source == MusicSource.Netease }
+        val id = identity?.takeIf { it.sourceId.builtIn == MusicSource.Netease }
             ?.value?.toLongOrNull() ?: return@LaunchedEffect
         val querySeqAtStart = seqState.value
         runCatching {
@@ -1424,7 +1425,7 @@ private fun rememberTrackFavorite(state: MeloXPlaybackUiState): MeloXTrackFavori
                 track?.let { likedState.value = MeloXUnifiedFavorites.toggle(app, it) }
                 return@remember
             }
-            val id = identity?.takeIf { it.source == MusicSource.Netease }
+            val id = identity?.takeIf { it.sourceId.builtIn == MusicSource.Netease }
                 ?.value?.toLongOrNull() ?: return@remember
             // Show immediate feedback; the background writer reports failure.
             val desired = likedState.value != true

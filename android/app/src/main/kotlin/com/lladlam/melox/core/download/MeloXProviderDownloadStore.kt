@@ -44,10 +44,23 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
     private val indexFile = File(directory, "index.json")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val jobs = ConcurrentHashMap<String, Job>()
+    private val pluginDownloadSlots = kotlinx.coroutines.sync.Semaphore(2)
     private val recordsByKey = ConcurrentHashMap<String, MeloXProviderDownloadedSong>()
 
     val downloads = mutableStateListOf<MeloXProviderDownloadedSong>()
     val activeDownloads = mutableStateMapOf<String, Boolean>()
+    val downloadErrors = mutableStateMapOf<String, String>()
+    data class Attempt(val track: MusicTrack, val quality: AudioQualityTier)
+    /** Session-only task descriptions; never retain resolved URLs or credentials for retries. */
+    val attempts = mutableStateMapOf<String, Attempt>()
+
+    fun retry(id: MusicResourceId) { attempts[key(id)]?.let { start(it.track, it.quality) } }
+    fun cancel(id: MusicResourceId) { jobs[key(id)]?.cancel() }
+    fun dismissError(id: MusicResourceId) {
+        val idKey = key(id)
+        if (jobs.containsKey(idKey)) return
+        attempts.remove(idKey); downloadErrors.remove(idKey)
+    }
 
     init {
         scope.launch {
@@ -63,6 +76,7 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
     } == true
 
     fun isDownloading(id: MusicResourceId): Boolean = activeDownloads[key(id)] == true
+    fun errorFor(id: MusicResourceId): String? = downloadErrors[key(id)]
 
     fun recordFor(id: MusicResourceId): MeloXProviderDownloadedSong? = recordsByKey[key(id)]
 
@@ -84,18 +98,29 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
     fun start(track: MusicTrack, quality: AudioQualityTier = AudioQualityTier.Standard) {
         val idKey = key(track.id)
         if (isDownloaded(track.id) || jobs.containsKey(idKey)) return
-        val provider = MeloXMusicProviders.create(app).require(track.id.source)
-        val downloader = provider as? DownloadCapability ?: return
+        attempts[idKey] = Attempt(track, quality)
+        val provider = MeloXMusicProviders.create(app)[track.id.sourceId]
+        if (provider == null) { downloadErrors[idKey] = "来源缺失或已禁用：${track.id.sourceId.value}"; return }
+        if (track.id.sourceId.builtIn == null && !provider.supports(com.lladlam.melox.core.music.provider.MusicCapability.Download)) {
+            downloadErrors[idKey] = "来源未声明下载能力"; return
+        }
+        val downloader = provider as? DownloadCapability ?: run { downloadErrors[idKey] = "来源不支持下载"; return }
         activeDownloads[idKey] = true
+        downloadErrors.remove(idKey)
         jobs[idKey] = scope.launch(Dispatchers.IO) {
+            var acquired = false
             try {
+                if (provider is com.lladlam.melox.core.plugin.PluginMusicProvider) {
+                    pluginDownloadSlots.acquire(); acquired = true
+                }
                 val resolution = downloader.resolveDownload(track, quality)
                 val playable = resolution as? PlaybackResolution.Playable
-                    ?: error("${track.id.source.displayName} 当前没有可下载音频")
+                    ?: error("${track.id.sourceId.displayName} 当前没有可下载音频")
                 val extension = extensionFor(playable.format)
                 val fileName = "${digest(idKey)}.$extension"
                 val destination = File(directory, fileName)
-                download(playable, destination)
+                val job = kotlinx.coroutines.currentCoroutineContext()[Job]!!
+                kotlinx.coroutines.runInterruptible { download(playable, destination, provider) { job.isActive } }
                 val record = MeloXProviderDownloadedSong(
                     track = track,
                     quality = quality,
@@ -109,19 +134,28 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
                     recordsByKey[idKey] = record
                     downloads.removeAll { key(it.track.id) == idKey }
                     downloads += record
+                    attempts.remove(idKey)
                 }
                 withContext(Dispatchers.IO) { writeIndex(recordsByKey.values.toList()) }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main.immediate) { attempts.remove(idKey); downloadErrors.remove(idKey) }
+                throw cancelled
+            }
+            catch (failure: Exception) {
+                withContext(Dispatchers.Main.immediate) { downloadErrors[idKey] = "下载失败：${failure.javaClass.simpleName}" }
             } finally {
-                withContext(Dispatchers.Main.immediate) { activeDownloads.remove(idKey) }
+                if (acquired) pluginDownloadSlots.release()
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main.immediate) { activeDownloads.remove(idKey) }
                 jobs.remove(idKey)
             }
         }
     }
 
-    private fun download(resolution: PlaybackResolution.Playable, destination: File) {
+    private fun download(resolution: PlaybackResolution.Playable, destination: File, provider: com.lladlam.melox.core.music.provider.MusicProvider, isActive: () -> Boolean) {
         destination.parentFile?.mkdirs()
         val uri = Uri.parse(resolution.url)
-        if (uri.scheme == "file") {
+        val plugin = provider as? com.lladlam.melox.core.plugin.PluginMusicProvider
+        if (uri.scheme == "file" && plugin == null) {
             File(requireNotNull(uri.path)).inputStream().use { input ->
                 destination.outputStream().use { output -> input.copyTo(output) }
             }
@@ -130,11 +164,34 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
         val request = Request.Builder().url(resolution.url).apply {
             resolution.requestHeaders.forEach(::header)
         }.build()
-        com.lladlam.melox.core.network.MeloXHttpClient.shared.newCall(request).execute().use { response ->
+        val broker = plugin?.mediaBroker()
+        try {
+        broker?.authorizeMediaUrl(resolution.url)
+        val registry = MeloXMusicProviders.create(app)
+        val generation = registry.generation
+        val client = broker?.mediaClient(resolution.credentialReference == "active") ?: com.lladlam.melox.core.network.MeloXHttpClient.shared
+        client.newCall(request).execute().use { response ->
             check(response.isSuccessful) { "下载失败: HTTP ${response.code}" }
             val body = requireNotNull(response.body) { "下载响应为空" }
-            body.byteStream().use { input -> destination.outputStream().use { output -> input.copyTo(output) } }
+            body.byteStream().use { input -> destination.outputStream().use { output ->
+                val buffer = ByteArray(8192)
+                var total = 0L
+                while (true) {
+                    check(isActive() && !Thread.currentThread().isInterrupted) { "download cancelled" }
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    if (plugin != null) {
+                        total += count
+                        check(total <= 512L * 1024 * 1024) { "plugin download quota exceeded" }
+                        check(registry.generation == generation && registry[provider.sourceId] === provider) { "plugin changed during download" }
+                    }
+                    output.write(buffer, 0, count)
+                }
+                if (plugin != null) check(total > 0 && registry.generation == generation && registry[provider.sourceId] === provider) { "invalid or revoked download" }
+            } }
         }
+        } catch (error: Throwable) { if (plugin != null) destination.delete(); throw error }
+        finally { broker?.close() }
     }
 
     private fun readIndex(): List<MeloXProviderDownloadedSong> = runCatching {
@@ -143,7 +200,7 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
         buildList {
             for (index in 0 until array.length()) {
                 val json = array.getJSONObject(index)
-                val source = MusicSource.fromStorageValue(json.optString("source"))
+                val source = com.lladlam.melox.core.music.model.SourceId.parse(json.optString("source")) ?: continue
                 val id = json.optString("id").takeIf(String::isNotBlank) ?: continue
                 val fileName = json.optString("fileName").takeIf(String::isNotBlank) ?: continue
                 val track = MusicTrack(
@@ -155,7 +212,7 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
                         ?.let { name -> MusicAlbumRef(name = name) },
                     artworkUrl = json.optString("artworkUrl").takeIf(String::isNotBlank),
                     durationMs = json.optLong("durationMs").takeIf { it > 0L },
-                    providerMetadata = if (source == MusicSource.Spotify) {
+                    providerMetadata = if (source.builtIn == MusicSource.Spotify) {
                         ProviderTrackMetadata.Spotify(id)
                     } else ProviderTrackMetadata.Empty,
                 )
@@ -181,7 +238,7 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
         records.forEach { record ->
             val track = record.track
             array.put(JSONObject().apply {
-                put("source", track.id.source.storageValue)
+                put("source", track.id.sourceId.value)
                 put("id", track.id.value)
                 put("title", track.title)
                 put("artists", track.artistText)
@@ -210,7 +267,7 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
         .digest(value.toByteArray())
         .joinToString("") { "%02x".format(it) }
 
-    private fun key(id: MusicResourceId): String = "${id.source.storageValue}:${id.value}"
+    private fun key(id: MusicResourceId): String = "${id.sourceId.value}:${id.value}"
 
     companion object {
         @Volatile private var instance: MeloXProviderDownloadStore? = null

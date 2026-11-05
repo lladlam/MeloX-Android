@@ -19,7 +19,7 @@ import com.lladlam.melox.core.music.model.MusicTrack
  */
 object MeloXLegacyUiBridge {
     fun track(track: MusicTrack): SearchSong = SearchSong(
-        id = stableLegacyId("track:${track.id.source.storageValue}:${track.id.value}"),
+        id = stableLegacyId("track:${track.id.sourceId.value}:${track.id.value}"),
         name = track.title,
         artists = track.artistText,
         album = track.album?.name.orEmpty(),
@@ -31,7 +31,7 @@ object MeloXLegacyUiBridge {
     )
 
     fun playlist(playlist: MusicPlaylistSummary): NeteasePlaylistSummary = NeteasePlaylistSummary(
-        id = stableLegacyId("playlist:${playlist.id.source.storageValue}:${playlist.id.value}"),
+        id = stableLegacyId("playlist:${playlist.id.sourceId.value}:${playlist.id.value}"),
         name = playlist.title,
         coverUrl = playlist.artworkUrl,
         trackCount = playlist.trackCount ?: 0,

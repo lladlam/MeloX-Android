@@ -32,7 +32,7 @@ class LocalProvider(context: Context) : MusicProvider, SearchCapability, Playbac
     private val repository = LocalMusicRepository(context)
     private val appContext = context.applicationContext
     private val isUnifiedFavorites: (MusicPlaylistSummary) -> Boolean = { playlist ->
-        playlist.id.source == MusicSource.Local && playlist.id.value == MeloXUnifiedFavorites.PlaylistId
+        playlist.id.sourceId.builtIn == MusicSource.Local && playlist.id.value == MeloXUnifiedFavorites.PlaylistId
     }
 
     override val source: MusicSource = MusicSource.Local

@@ -47,6 +47,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.LaunchedEffect
@@ -58,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -180,7 +182,7 @@ private const val SubPageComposeSettleMillis = 80L
 private val SearchCategories = listOf("排行榜", "播客", "华语", "欧美", "日语", "韩语", "粤语", "流行", "摇滚", "民谣", "电子", "说唱", "R&B/Soul", "古典", "ACG", "影视原声", "学习", "工作", "放松", "夜晚")
 
 private sealed interface ProviderSearchDestination {
-    val source: MusicSource
+    val source: com.lladlam.melox.core.music.model.SourceId
     val key: String
     val kind: MeloXSearchKind
     val title: String
@@ -188,8 +190,8 @@ private sealed interface ProviderSearchDestination {
     val artworkUrl: String?
 
     data class Playlist(val value: MusicPlaylistSummary) : ProviderSearchDestination {
-        override val source = value.id.source
-        override val key = "playlist:${source.storageValue}:${value.id.value}"
+        override val source = value.id.sourceId
+        override val key = "playlist:${source.value}:${value.id.value}"
         override val kind = MeloXSearchKind.Playlists
         override val title = value.title
         override val subtitle = value.creatorName.orEmpty()
@@ -197,8 +199,8 @@ private sealed interface ProviderSearchDestination {
     }
 
     data class Album(val value: MusicAlbumSummary) : ProviderSearchDestination {
-        override val source = value.id.source
-        override val key = "album:${source.storageValue}:${value.id.value}"
+        override val source = value.id.sourceId
+        override val key = "album:${source.value}:${value.id.value}"
         override val kind = MeloXSearchKind.Albums
         override val title = value.title
         override val subtitle = value.artists.joinToString(" / ") { it.name }
@@ -206,8 +208,8 @@ private sealed interface ProviderSearchDestination {
     }
 
     data class Artist(val value: MusicArtistSummary) : ProviderSearchDestination {
-        override val source = value.id.source
-        override val key = "artist:${source.storageValue}:${value.id.value}"
+        override val source = value.id.sourceId
+        override val key = "artist:${source.value}:${value.id.value}"
         override val kind = MeloXSearchKind.Artists
         override val title = value.name
         override val subtitle = buildList {
@@ -279,6 +281,7 @@ fun SearchScreen(
     onSearchBackState: (SearchBackAction) -> Unit = {},
     onSearchExit: () -> Unit = {},
     onOpenRecognition: () -> Unit = {},
+    pluginSourceId: String? = null,
 ) {
     val context = LocalContext.current
     val appContext = context.applicationContext
@@ -294,7 +297,7 @@ fun SearchScreen(
     val providerHome = currentProvider as? HomeFeedCapability
     val unifiedService = remember(providerRegistry) { UnifiedMusicService(providerRegistry) }
     val unifiedEnabled = MusicProviderSelectionStore.unifiedEnabled(appContext)
-    val unifiedSources = MusicProviderSelectionStore.unifiedSources(appContext)
+    val unifiedSources = MusicProviderSelectionStore.unifiedSourceIds(appContext)
 
     val availableKinds = remember(source, providerCatalog) {
         if (source == MusicSource.Netease) {
@@ -312,6 +315,8 @@ fun SearchScreen(
     }
 
     var query by rememberSaveable(source.name) { mutableStateOf("") }
+    var selectedPlugin by rememberSaveable(source.name, pluginSourceId) { mutableStateOf(pluginSourceId) }
+    val pluginGeneration by providerRegistry.changes.collectAsState()
     var searchTrigger by rememberSaveable(source.name) { mutableIntStateOf(0) }
     var skipSearchDebounce by rememberSaveable(source.name) { mutableStateOf(false) }
     var kind by rememberSaveable(source.name) { mutableStateOf(MeloXSearchKind.Songs) }
@@ -322,6 +327,8 @@ fun SearchScreen(
     var providerArtists by remember(source) { mutableStateOf<List<MusicArtistSummary>>(emptyList()) }
     var providerRecommendations by remember(source) { mutableStateOf<List<MusicPlaylistSummary>>(emptyList()) }
     var unifiedFailures by remember(source) { mutableStateOf<List<UnifiedMusicService.SearchFailure>>(emptyList()) }
+    var providerSearchPage by remember(source, kind, query, unifiedSources, selectedPlugin) { mutableIntStateOf(1) }
+    var providerSearchHasMore by remember(source, kind, query) { mutableStateOf(false) }
     var media by remember(source) { mutableStateOf<List<MeloXSearchMediaItem>>(emptyList()) }
     var recommendations by remember(source) { mutableStateOf<List<NeteasePlaylistSummary>>(emptyList()) }
     var categoryTitle by remember(source) { mutableStateOf<String?>(null) }
@@ -386,7 +393,9 @@ fun SearchScreen(
         }
     }
 
-    LaunchedEffect(query, kind, source, unifiedEnabled, unifiedSources, searchTrigger) {
+    LaunchedEffect(query, kind, source, unifiedEnabled, unifiedSources, searchTrigger, selectedPlugin, providerSearchPage, pluginGeneration) {
+        providerSearchHasMore = false
+        if (selectedPlugin != null) return@LaunchedEffect
         val keyword = query.trim()
         if (keyword.isBlank()) {
             songs = emptyList()
@@ -430,17 +439,19 @@ fun SearchScreen(
                     songs = emptyList()
                     runCatching {
                         withContext(Dispatchers.IO) {
-                            unifiedService.searchSongs(
+                            unifiedService.searchSourceIds(
                                 query = keyword,
                                 sources = unifiedSources,
-                                page = 1,
+                                page = providerSearchPage,
                                 pageSizePerProvider = 25,
                             )
                         }
                     }.onSuccess { result ->
                         providerSongs = result.aggregated.mapNotNull { it.recommendation?.track }.ifEmpty { result.tracks }
                         unifiedFailures = result.failures
+                        providerSearchHasMore = result.pages.values.any { it.hasMore }
                     }.onFailure { failure ->
+                        if (failure is kotlinx.coroutines.CancellationException) throw failure
                         providerSongs = emptyList()
                         unifiedFailures = emptyList()
                         error = failure.message ?: "搜索失败"
@@ -460,8 +471,8 @@ fun SearchScreen(
                         error = "${source.displayName} 当前没有歌曲搜索能力"
                     } else {
                         runCatching {
-                            withContext(Dispatchers.IO) { capability.searchSongs(keyword, page = 1, pageSize = 50).items }
-                        }.onSuccess { providerSongs = it }
+                            withContext(Dispatchers.IO) { capability.searchSongs(keyword, page = providerSearchPage, pageSize = 50) }
+                        }.onSuccess { providerSongs = it.items; providerSearchHasMore = it.hasMore }
                             .onFailure { error = it.message ?: "搜索失败" }
                     }
                 }
@@ -750,12 +761,27 @@ fun SearchScreen(
             onBack = { if (query.isNotBlank()) query = "" else onSearchExit() },
             onOpenRecognition = onOpenRecognition,
         )
-        if (query.isNotBlank()) {
+        if (providerRegistry.enabledDynamicProviders().isNotEmpty() || selectedPlugin != null) {
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp)) {
+                item {
+                    androidx.compose.material3.TextButton(onClick = { selectedPlugin = null; MusicProviderSelectionStore.setSelectedSource(appContext, source) }) {
+                        Text(if (selectedPlugin == null) "✓ ${source.displayName}" else source.displayName)
+                    }
+                }
+                items(providerRegistry.enabledDynamicProviders(), key = { it.sourceId.value }) { provider ->
+                    androidx.compose.material3.TextButton(onClick = { selectedPlugin = provider.sourceId.value; kind = MeloXSearchKind.Songs; MusicProviderSelectionStore.setSelectedSourceId(appContext, provider.sourceId) }) {
+                        Text(if (selectedPlugin == provider.sourceId.value) "✓ ${provider.displayName}" else provider.displayName)
+                    }
+                }
+            }
+        }
+        if (query.isNotBlank() && selectedPlugin == null) {
             SearchScopes(kind = kind, availableKinds = availableKinds, onKind = { kind = it })
         }
 
         Box(Modifier.weight(1f)) {
             when {
+                selectedPlugin != null -> PluginSearchResults(providerRegistry, selectedPlugin!!, query, pluginGeneration)
                 query.isBlank() && source == MusicSource.Netease -> SearchDiscovery(
                     state = listState,
                     recommendations = recommendations,
@@ -794,7 +820,13 @@ fun SearchScreen(
                 error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
                 }
-                kind == MeloXSearchKind.Songs && (unifiedEnabled || source != MusicSource.Netease) -> ProviderSearchSongResults(
+                kind == MeloXSearchKind.Songs && (unifiedEnabled || source != MusicSource.Netease) -> Column(Modifier.fillMaxSize()) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        TextButton(enabled = providerSearchPage > 1, onClick = { providerSearchPage-- }) { Text("上一页") }
+                        Text("第 $providerSearchPage 页", Modifier.padding(12.dp))
+                        TextButton(enabled = providerSearchHasMore, onClick = { providerSearchPage++ }) { Text("下一页") }
+                    }
+                    Box(Modifier.weight(1f)) { ProviderSearchSongResults(
                     state = listState,
                     values = visibleProviderSongs,
                     failures = unifiedFailures,
@@ -807,7 +839,8 @@ fun SearchScreen(
                             onFailure = { failure -> error = failure.message ?: "播放失败" },
                         )
                     },
-                )
+                ) }
+                }
                 kind == MeloXSearchKind.Songs -> SearchSongResults(
                     state = listState,
                     values = visibleSongs,
@@ -943,6 +976,22 @@ fun SearchScreen(
             visible = true,
             onDismiss = { selectedActionSong = null },
         )
+    }
+}
+
+@Composable
+private fun PluginSearchResults(
+    registry: com.lladlam.melox.core.music.provider.MusicProviderRegistry,
+    sourceValue: String,
+    query: String,
+    generation: Long,
+) {
+    val context = LocalContext.current
+    val state = rememberLazyListState()
+    PluginCatalogBrowser(registry, sourceValue, query, generation) { tracks ->
+        ProviderSearchSongResults(state, tracks, emptyList(), true) { track ->
+            ProviderPlaybackCommands.playQueue(context, tracks, track.id)
+        }
     }
 }
 
@@ -1221,7 +1270,7 @@ private fun ProviderSearchDiscovery(
             item { Text(stringResource(R.string.search_trending), modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 12.dp), fontSize = 24.sp, fontWeight = FontWeight.Bold) }
             item {
                 LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    items(recommendations, key = { "${it.id.source.storageValue}:${it.id.value}" }) { p ->
+                    items(recommendations, key = { "${it.id.sourceId.value}:${it.id.value}" }) { p ->
                         val destinationKey = SearchDetailDestination.Provider(ProviderSearchDestination.Playlist(p)).key
                         SearchCardVisibility(
                             destinationKey = destinationKey,
@@ -1274,7 +1323,7 @@ private fun SearchCategoryCard(title: String, modifier: Modifier, onClick: () ->
 }
 
 @Composable
-private fun ProviderSearchSongResults(
+internal fun ProviderSearchSongResults(
     state: LazyListState = rememberLazyListState(),
     values: List<MusicTrack>,
     failures: List<UnifiedMusicService.SearchFailure>,
@@ -1292,7 +1341,7 @@ private fun ProviderSearchSongResults(
         if (failures.isNotEmpty()) {
             item {
                 Text(
-                    failures.joinToString("；") { "${it.source.displayName}：${it.message}" },
+                    failures.joinToString("；") { "${it.sourceId.displayName}：${it.message}" },
                     modifier = Modifier.padding(vertical = 8.dp),
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = .46f),
                     fontSize = 12.sp,
@@ -1303,15 +1352,15 @@ private fun ProviderSearchSongResults(
         if (values.isEmpty()) {
             item { SearchEmptyInline(stringResource(R.string.search_no_songs)) }
         } else {
-            items(values, key = { "provider:${it.id.source.storageValue}:${it.id.value}" }) { track ->
+            items(values, key = { "provider:${it.id.sourceId.value}:${it.id.value}" }) { track ->
                 SearchSwipeSongRow(
                     song = MeloXLegacyUiBridge.track(track),
                     onPlay = { onPlay(track) },
                     onMore = { actionTrack = track },
-                    endAction = if (providers.require(track.id.source) is com.lladlam.melox.core.music.provider.DownloadCapability) MeloXSwipeAction(stringResource(R.string.search_download_local), MeloXSymbol.Download, Color(0xFF0EA5E9)) {
+                    endAction = if (providers[track.id.sourceId]?.let { it is com.lladlam.melox.core.music.provider.DownloadCapability && (it.sourceId.builtIn != null || it.supports(com.lladlam.melox.core.music.provider.MusicCapability.Download)) } == true) MeloXSwipeAction(stringResource(R.string.search_download_local), MeloXSymbol.Download, Color(0xFF0EA5E9)) {
                         providerDownloads.start(track)
                     } else null,
-                    sourceLabel = track.id.source.displayName.takeIf { showSource },
+                    sourceLabel = track.id.sourceId.displayName.takeIf { showSource },
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = .08f))
             }
@@ -1682,7 +1731,7 @@ private fun SearchCollectionDetail(
                     }
                     is SearchDetailDestination.Provider -> {
                         val item = destination.value
-                        val provider = providerRegistry.require(item.source)
+                        val provider = providerRegistry[item.source] ?: error("音源已禁用或卸载：${item.source.value}")
                         val tracks = when (item) {
                             is ProviderSearchDestination.Playlist -> {
                                 val capability = provider as? PlaylistCapability
@@ -1760,7 +1809,7 @@ private fun SearchCollectionDetail(
             when {
                 loading -> item { Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
                 error != null -> item { Text(error.orEmpty(), color = MaterialTheme.colorScheme.error) }
-                providerTracks.isNotEmpty() -> items(providerTracks, key = { "detail:${it.id.source.storageValue}:${it.id.value}" }) { track ->
+                providerTracks.isNotEmpty() -> items(providerTracks, key = { "detail:${it.id.sourceId.value}:${it.id.value}" }) { track ->
                     SearchSwipeSongRow(
                         song = MeloXLegacyUiBridge.track(track),
                         onPlay = { ProviderPlaybackCommands.playQueue(context, providerTracks, track.id) },
@@ -1768,7 +1817,7 @@ private fun SearchCollectionDetail(
                         endAction = MeloXSwipeAction(stringResource(R.string.search_download_local), MeloXSymbol.Download, Color(0xFF0EA5E9)) {
                             MeloXProviderDownloadStore.get(context).start(track)
                         },
-                        sourceLabel = track.id.source.displayName,
+                        sourceLabel = track.id.sourceId.displayName,
                     )
                 }
                 else -> items(songs, key = { it.id }) { song ->

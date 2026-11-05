@@ -4,6 +4,8 @@ import android.net.Uri
 import androidx.media3.common.MediaItem
 import com.lladlam.melox.core.music.model.MusicResourceId
 import com.lladlam.melox.core.music.model.MusicSource
+import com.lladlam.melox.core.music.model.SourceId
+import com.lladlam.melox.core.music.model.SourceResourceUri
 
 /**
  * Media3 IDs used by new providers. A legacy numeric ID is intentionally parsed
@@ -20,10 +22,12 @@ object PlaybackTrackIdentity {
     const val ArtworkExtra = "melox.track.artwork"
     const val IsFavoriteExtra = "melox.track.is_favorite"
 
-    fun encode(id: MusicResourceId): String =
-        "$Prefix${id.source.storageValue}:${Uri.encode(id.value)}"
+    fun encode(id: MusicResourceId): String = if (id.sourceId.builtIn == null)
+        SourceResourceUri.encode(id.sourceId, id.value)
+    else "$Prefix${id.sourceId.value}:${Uri.encode(id.value)}"
 
     fun decode(mediaId: String): MusicResourceId? {
+        SourceResourceUri.decode(mediaId)?.let { return MusicResourceId(it.first, it.second) }
         mediaId.toLongOrNull()?.takeIf { it > 0L }?.let {
             return MusicResourceId(MusicSource.Netease, it.toString())
         }
@@ -66,16 +70,22 @@ object PlaybackTrackIdentity {
         val extras = item.mediaMetadata.extras
         val sourceValue = extras?.getString(SourceExtra)
         val resourceId = extras?.getString(ResourceIdExtra)
-        if (!sourceValue.isNullOrBlank() && !resourceId.isNullOrBlank()) {
-            val source = MusicSource.entries.firstOrNull { it.storageValue == sourceValue }
-            if (source != null) return MusicResourceId(source, resourceId)
+        return decodeWithExtras(item.mediaId, sourceValue, resourceId)
+    }
+
+    internal fun decodeWithExtras(mediaId: String, sourceValue: String?, resourceId: String?): MusicResourceId? {
+        if (!sourceValue.isNullOrBlank()) {
+            // Explicit source is authoritative even if the extras are malformed.
+            // A numeric mediaId must not turn an unknown provider into NetEase.
+            val source = SourceId.parse(sourceValue) ?: return null
+            return resourceId?.takeIf(String::isNotBlank)?.let { MusicResourceId(source, it) }
         }
-        return decode(item.mediaId)
+        return decode(mediaId)
     }
 
     fun neteaseNumericId(item: MediaItem?): Long? =
         fromMediaItem(item)
-            ?.takeIf { it.source == MusicSource.Netease }
+            ?.takeIf { it.sourceId.builtIn == MusicSource.Netease }
             ?.value
             ?.toLongOrNull()
 }

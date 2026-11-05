@@ -13,10 +13,13 @@ import com.lladlam.melox.core.audio.MusicQualityRuntime
 import com.lladlam.melox.core.diagnostics.MeloXCrashRecorder
 import com.lladlam.melox.ui.animation.MeloXSystemScale
 import com.lladlam.melox.ui.player.ArtworkDynamicPaletteProvider
+import kotlinx.coroutines.launch
 
 class MeloXApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        // Isolated plugin workers must not initialize app accounts, caches, diagnostics or UI.
+        if (android.os.Process.myUid() != applicationInfo.uid) return
         // 崩溃现场记录：尽早接管，保证第一次 UI 帧之后的任何崩溃都能落到 filesDir/crash/。
         // ⚠ 只记录、不降级 —— 玻璃是否继续渲染与它无关（见 MeloXCrashRecorder 说明）。
         MeloXCrashRecorder.install(this)
@@ -27,12 +30,24 @@ class MeloXApplication : Application() {
         MeloXCrashStore.install(this)
         MusicQualityRuntime.selected = MusicQualityPreferences.read(this)
         MeloXHttpClient.initialize(this)
+        coil3.SingletonImageLoader.setSafe { context -> coil3.ImageLoader.Builder(context).components {
+            add(com.lladlam.melox.core.plugin.PluginArtworkFetcher.Guard(context))
+            add(com.lladlam.melox.core.plugin.PluginArtworkFetcher.Factory(context))
+        }.build() }
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launchPluginRestore(this)
         // 让 Compose 侧的整页转场（首页 / 搜索 / 资料库 / 播客的一镜到底）跟随**与系统
         // Activity 转场同一个**动画缩放键（TRANSITION_ANIMATION_SCALE）：否则在「过渡动画
         // 缩放」上调速度时，只有 Activity 页变、Compose 页纹丝不动。见 MeloXSystemScale。
         MeloXSystemScale.install(this)
         registerActivityLifecycleCallbacks(MeloXAppVisibility)
         registerComponentCallbacks(MeloXMemoryCallbacks)
+    }
+}
+
+private fun kotlinx.coroutines.CoroutineScope.launchPluginRestore(context: Context) {
+    launch {
+        runCatching { com.lladlam.melox.core.plugin.MeloXPlugins.get(context).restore() }
+            .onFailure { android.util.Log.w("MeloXPlugins", "Plugin restore failed: ${it.javaClass.simpleName}") }
     }
 }
 

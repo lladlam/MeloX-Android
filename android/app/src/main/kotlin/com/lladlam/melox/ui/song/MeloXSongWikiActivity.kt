@@ -108,7 +108,7 @@ class MeloXSongWikiActivity : ComponentActivity() {
 
 internal fun neteaseWikiSongId(song: SearchSong): Long? {
     val track = song.providerTrack ?: return song.id.takeIf { it > 0L }
-    if (track.id.source != com.lladlam.melox.core.music.model.MusicSource.Netease) return null
+    if (track.id.sourceId.builtIn != com.lladlam.melox.core.music.model.MusicSource.Netease) return null
     return track.id.value.toLongOrNull()?.takeIf { it > 0L }
 }
 

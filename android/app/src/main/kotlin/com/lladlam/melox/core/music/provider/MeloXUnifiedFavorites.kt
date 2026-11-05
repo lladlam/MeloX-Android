@@ -98,7 +98,7 @@ object MeloXUnifiedFavorites {
                     // A later add from another source is an explicit choice:
                     // keep that source, but never downgrade an existing higher
                     // quality copy of the same logical song.
-                    if (track.id.source != list[index].id.source &&
+                    if (track.id.sourceId != list[index].id.sourceId &&
                         qualityRank(track) < qualityRank(list[index])
                     ) {
                         list[index] = list[index].copy(
@@ -115,7 +115,7 @@ object MeloXUnifiedFavorites {
         } else {
             current.filterNot { sameSong(it, track) }
         }
-        writeTracks(context, updated)
+        writeTracks(context, updated, removed = current.map { it.id }.toSet() - updated.map { it.id }.toSet())
     }
 
     fun remove(context: Context, track: MusicTrack) = set(context, track, false)
@@ -274,11 +274,12 @@ object MeloXUnifiedFavorites {
         }
     }
 
-    private fun writeTracks(context: Context, tracks: List<MusicTrack>, notify: Boolean = true) {
+    private fun writeTracks(context: Context, tracks: List<MusicTrack>, notify: Boolean = true, removed: Set<MusicResourceId> = emptySet()) {
         synchronized(writeLock) {
-            val array = JSONArray()
-            tracks.distinctBy { "${it.id.source.storageValue}:${it.id.value}" }
-                .forEach { array.put(MeloXTrackJson.encode(it)) }
+            val raw = prefs(context).getString(KeyTracks, null).orEmpty()
+            // Refuse to overwrite a corrupt payload instead of silently erasing it.
+            val previous = if (raw.isBlank()) JSONArray() else JSONArray(raw)
+            val array = mergeFavoriteRecords(previous, tracks, removed)
             prefs(context).edit().putString(KeyTracks, array.toString()).apply()
         }
         if (notify) bumpRevision()
@@ -290,4 +291,35 @@ object MeloXUnifiedFavorites {
     private fun bumpRevision() {
         revisionState.intValue++
     }
+}
+
+/** Keep entries this version cannot decode when a known favorite is edited. */
+internal fun mergeFavoriteRecords(previous: JSONArray, tracks: List<MusicTrack>, removed: Set<MusicResourceId> = emptySet()): JSONArray {
+    val result = JSONArray()
+    val oldRecords = (0 until previous.length()).mapNotNull { index ->
+        previous.optJSONObject(index)?.let { record -> MeloXTrackJson.decode(record)?.let { it.id to record } }
+    }.toMap()
+    val retained = tracks.distinctBy { it.id }
+    val retainedIds = retained.map { it.id }.toSet()
+    retained.forEach { track ->
+        val encoded = MeloXTrackJson.encode(track)
+        oldRecords[track.id]?.let { old ->
+            // Preserve opaque top-level extension data, but don't resurrect removed standard fields.
+            val known = setOf("source", "id", "title", "artists", "album", "artwork", "durationMs", "availability", "bestQuality", "bestBitrate", "metadata")
+            old.keys().forEach { key -> if (key !in known) encoded.put(key, old.get(key)) }
+            val metadata = old.optJSONObject("metadata")
+            if (track.providerMetadata == ProviderTrackMetadata.Empty && metadata?.optString("type") !in setOf(null, "empty")) {
+                encoded.put("metadata", metadata)
+            }
+        }
+        result.put(encoded)
+    }
+    for (index in 0 until previous.length()) {
+        val entry = previous.opt(index)
+        val decoded = (entry as? org.json.JSONObject)?.let(MeloXTrackJson::decode)
+        if (decoded == null || decoded.id.sourceId.builtIn == null && decoded.id !in retainedIds && decoded.id !in removed) {
+            result.put(entry)
+        }
+    }
+    return result
 }

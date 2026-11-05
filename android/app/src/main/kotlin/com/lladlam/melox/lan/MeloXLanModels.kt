@@ -153,7 +153,7 @@ internal fun meloXLanTrackFromMediaItem(
 ): MeloXLanTrack? {
     val identity = PlaybackTrackIdentity.decode(mediaId) ?: return null
     return MeloXLanTrack(
-        source = identity.source.storageValue,
+        source = identity.sourceId.value,
         id = identity.value,
         title = title,
         artist = artist,

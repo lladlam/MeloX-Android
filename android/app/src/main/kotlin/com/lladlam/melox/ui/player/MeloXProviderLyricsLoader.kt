@@ -140,6 +140,19 @@ internal object MeloXProviderLyricsLoader {
             ?: return LyricsDocument(emptyList())
         val resourceId = PlaybackTrackIdentity.decode(resolvedMediaId)
             ?: return LyricsDocument(emptyList())
+        if (resourceId.sourceId.builtIn == null) {
+            val registry = MeloXMusicProviders.create(appContext)
+            val generation = registry.generation
+            val provider = registry[resourceId.sourceId] ?: return LyricsDocument(emptyList())
+            if (!provider.supports(com.lladlam.melox.core.music.provider.MusicCapability.Lyrics)) return LyricsDocument(emptyList())
+            val capability = provider as? com.lladlam.melox.core.music.provider.LyricsCapability
+                ?: return LyricsDocument(emptyList())
+            val track = com.lladlam.melox.core.music.model.MusicTrack(resourceId, title,
+                listOf(com.lladlam.melox.core.music.model.MusicArtistRef(name = artist)), durationMs = durationMs)
+            val document = capability.lyrics(track)
+            return if (generation == registry.generation && registry[resourceId.sourceId] === provider) document
+                else LyricsDocument(emptyList())
+        }
         val localRecord = if (resourceId.source == MusicSource.Local) {
             LocalMusicRepository(appContext).track(resourceId.value)
         } else null
@@ -206,6 +219,7 @@ internal object MeloXProviderLyricsLoader {
             .take(count.coerceIn(0, 4))
             .mapNotNull { entry ->
                 val resourceId = PlaybackTrackIdentity.decode(entry.mediaId) ?: return@mapNotNull null
+                if (resourceId.sourceId.builtIn == null) return@mapNotNull null
                 val automaticSelection = automaticSelectionEnabled || resourceId.source == MusicSource.Local
                 // Bilibili matching can issue several catalog requests. Do not
                 // preload it without the active decoder duration.
@@ -822,7 +836,7 @@ internal object MeloXProviderLyricsLoader {
 
     private fun amlldbQuery(appContext: Context, snapshot: LyricTrackSnapshot): AmlldbLyricQuery? {
         val id = snapshot.resourceId
-        return when (id.source) {
+        return when (id.sourceId.builtIn) {
             MusicSource.Netease -> id.value.toLongOrNull()?.let(AmlldbLyricQuery::Netease)
             MusicSource.QQMusic -> id.value.takeIf(String::isNotBlank)?.let(AmlldbLyricQuery::QQ)
             MusicSource.Spotify -> id.value.takeIf(String::isNotBlank)?.let(AmlldbLyricQuery::Spotify)

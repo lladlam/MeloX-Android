@@ -199,6 +199,7 @@ enum class SettingsRoute(private val fallbackTitle: String, private val titleRes
     SystemPlayback("系统歌词显示", R.string.settings_route_system_playback),
     SkylineLyrics("全屏天际歌词", R.string.settings_route_skyline),
     FloatingLyrics("悬浮窗歌词", R.string.settings_route_floating),
+    Plugins("音乐源插件"),
     ContentFeatures("功能模块", R.string.settings_route_features),
     Blocklist("屏蔽管理"),
     Recognition("听歌识曲", R.string.settings_route_recognition),
@@ -239,6 +240,7 @@ private val SettingsSections = listOf(
         SettingsItem(SettingsRoute.Storage, "空间统计、下载与缓存清理", "▰", "下载 存储 缓存 清理 数据库"),
     )),
     SettingsSection("扩展", listOf(
+        SettingsItem(SettingsRoute.Plugins, "导入和管理动态音乐源插件（开发中）", "⊞", "插件 plugin 音源 导入 SDK"),
         SettingsItem(SettingsRoute.ContentFeatures, "播客、云盘、最近播放等模块", "☷", "播客 广播 云盘 最近播放 下载"),
         SettingsItem(SettingsRoute.Recognition, "麦克风音频指纹与持续识别", "⌁", "听歌识曲 麦克风 指纹 Shazam 持续识别"),
         SettingsItem(SettingsRoute.Messages, "联系人、会话历史与文字私信", "✉", "私信 联系人 会话 分享 网易云"),
@@ -278,6 +280,7 @@ fun SettingsScreen(
     onOpenAccount: (() -> Unit)? = null,
     onOpenServices: (() -> Unit)? = null,
     onOpenMessages: (() -> Unit)? = null,
+    sourceId: com.lladlam.melox.core.music.model.SourceId = com.lladlam.melox.core.music.model.SourceId.fromBuiltIn(source),
 ) {
     val context = LocalContext.current
     var search by remember { mutableStateOf("") }
@@ -299,8 +302,8 @@ fun SettingsScreen(
     val visibleSections = SettingsSections.mapNotNull { section ->
         val filtered = section.items.filter { item ->
             val supported = when (item.route) {
-                SettingsRoute.Messages, SettingsRoute.ListenTogether -> source == MusicSource.Netease
-                SettingsRoute.KugouLiteVip -> source == MusicSource.KugouLite
+                SettingsRoute.Messages, SettingsRoute.ListenTogether -> sourceId.builtIn == MusicSource.Netease
+                SettingsRoute.KugouLiteVip -> sourceId.builtIn == MusicSource.KugouLite
                 else -> true
             }
             supported && (normalized.isBlank() || listOf(item.route.title, item.subtitle, item.keywords)
@@ -331,7 +334,7 @@ fun SettingsScreen(
         Spacer(Modifier.height(20.dp))
 
         if (normalized.isBlank() || stringResource(R.string.settings_account_keywords).contains(normalized)) {
-            SettingsAccountCard(
+            if (sourceId.builtIn == null) com.lladlam.melox.ui.provider.PluginServiceSection() else SettingsAccountCard(
                 session = session,
                 onLogin = onLogin,
                 onOpenAccount = onOpenAccount,
@@ -505,6 +508,7 @@ internal fun SettingsDetailScreen(route: SettingsRoute, source: MusicSource, ses
                     SettingsRoute.General -> GeneralSettings(context)
                     SettingsRoute.RemoteConfig -> RemoteConfigSettings()
                     SettingsRoute.About -> AboutSettings(context)
+                    SettingsRoute.Plugins -> PluginSettings()
                     SettingsRoute.Legal -> LegalSettings(context)
                     SettingsRoute.Privacy -> PrivacySettings(context)
                     SettingsRoute.Developer -> DeveloperSettings()

@@ -44,7 +44,10 @@ object LocalRecommendationEngine {
             }.getOrDefault(emptyList())
             val candidateTracks = runCatching {
                 val registry = MeloXMusicProviders.create(context)
-                UnifiedMusicService(registry).collectRecommendationCandidates(MusicSource.entries.toSet(), limitPerProvider = 30)
+                val selection = com.lladlam.melox.core.music.provider.MusicProviderSelectionStore
+                val dynamic = if (selection.unifiedEnabled(context)) selection.unifiedSourceIds(context).filter { it.builtIn == null } else emptyList()
+                val sources = MusicSource.entries.mapTo(linkedSetOf(), com.lladlam.melox.core.music.model.SourceId::fromBuiltIn) + dynamic
+                UnifiedMusicService(registry).collectRecommendationCandidatesSourceIds(sources, limitPerProvider = 30)
             }.getOrDefault(emptyList())
             LocalRecommendationStore.progress.value = LocalAnalysisProgress(LocalAnalysisStage.Syncing, trainingTracks.size, trainingTracks.size + candidateTracks.size, message = "已采集 ${trainingTracks.size} 个训练来源和 ${candidateTracks.size} 个候选来源", isFullAnalysis = true)
             val trainingGroups = TrackAggregation.aggregate(trainingTracks)

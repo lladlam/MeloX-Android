@@ -61,7 +61,7 @@ class LxUserPlaybackResolver(
     }
 
     private fun resolveAction(track: MusicTrack, action: String): Any? {
-        val sourceCode = when (track.id.source) {
+        val sourceCode = when (track.id.sourceId.builtIn) {
             MusicSource.QQMusic -> "tx"
             MusicSource.Kugou -> "kg"
             MusicSource.Kuwo -> "kw"
@@ -106,6 +106,7 @@ class LxUserPlaybackResolver(
     }
 
     internal fun resolve(track: MusicTrack, quality: AudioQualityTier): LxUserPlaybackResult? {
+        if (track.id.sourceId.builtIn == null) return null
         val requestKey = "${track.id.source.storageValue}:${track.id.value}:${quality.name}:${cacheIdentity()}"
         val pending = java.util.concurrent.CompletableFuture<LxUserPlaybackResult?>()
         val existing = inFlight.putIfAbsent(requestKey, pending)
@@ -123,7 +124,7 @@ class LxUserPlaybackResolver(
     }
 
     private fun resolveUncached(track: MusicTrack, quality: AudioQualityTier): LxUserPlaybackResult? {
-        val sourceCode = when (track.id.source) {
+        val sourceCode = when (track.id.sourceId.builtIn) {
             MusicSource.QQMusic -> "tx"
             MusicSource.Kugou -> "kg"
             MusicSource.Kuwo -> "kw"

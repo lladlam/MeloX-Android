@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://melox.invalid/plugin/protocol-v1.schema.json",
+  "title": "MeloX Plugin API v1 standard transport",
+  "$defs": {
+    "resourceId": { "type": "string", "minLength": 1, "maxLength": 4096, "pattern": "\\S" },
+    "quality": { "enum": ["standard", "high", "lossless", "hiResolution", "immersive", "master"] },
+    "availability": { "enum": ["unknown", "playable", "previewOnly", "loginRequired", "subscriptionRequired", "regionRestricted", "copyrightRestricted", "unavailable"] },
+    "artistRef": {
+      "type": "object", "required": ["name"],
+      "properties": { "id": { "$ref": "#/$defs/resourceId" }, "name": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "\\S" } }
+    },
+    "albumRef": {
+      "type": "object", "required": ["name"],
+      "properties": { "id": { "$ref": "#/$defs/resourceId" }, "name": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "\\S" }, "artworkUrl": { "type": "string", "maxLength": 4096 } }
+    },
+    "track": {
+      "type": "object", "required": ["id", "title", "artists"],
+      "properties": {
+        "id": { "$ref": "#/$defs/resourceId" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "\\S" },
+        "artists": { "type": "array", "minItems": 1, "maxItems": 32, "items": { "$ref": "#/$defs/artistRef" } },
+        "album": { "$ref": "#/$defs/albumRef" }, "artworkUrl": { "type": "string", "maxLength": 4096 },
+        "durationMs": { "type": "integer", "minimum": 0, "maximum": 86400000 },
+        "availability": { "$ref": "#/$defs/availability" }, "bestQuality": { "$ref": "#/$defs/quality" },
+        "bestBitrate": { "type": "integer", "minimum": 1, "maximum": 2147483647 }
+      }
+    },
+    "searchPage": {
+      "type": "object", "required": ["items", "page", "pageSize", "hasMore"],
+      "properties": {
+        "items": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/track" } },
+        "page": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "pageSize": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "total": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }, "hasMore": { "type": "boolean" }
+      }
+    },
+    "playbackResolution": {
+      "oneOf": [
+        { "type": "object", "required": ["type", "url"], "properties": {
+          "type": { "const": "playable" }, "url": { "type": "string", "maxLength": 4096 },
+          "credential": { "const": "active" },
+          "headers": { "type": "object", "maxProperties": 32, "additionalProperties": { "type": "string", "maxLength": 4096 } },
+          "actualQuality": { "$ref": "#/$defs/quality" }, "bitrate": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+          "format": { "type": "string", "maxLength": 64 },
+          "expiresAtEpochMs": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+        } },
+        { "type": "object", "required": ["type", "url"], "properties": { "type": { "const": "preview" }, "url": { "type": "string", "maxLength": 4096 }, "durationMs": { "type": "integer", "minimum": 1, "maximum": 86400000 } } },
+        { "type": "object", "required": ["type"], "properties": { "type": { "enum": ["loginRequired", "subscriptionRequired", "regionRestricted", "copyrightRestricted"] } } },
+        { "type": "object", "required": ["type"], "properties": { "type": { "const": "unavailable" }, "reason": { "type": "string", "maxLength": 512 } } }
+      ]
+    },
+    "playlist": {
+      "type": "object", "required": ["id", "title"], "properties": {
+        "id": { "$ref": "#/$defs/resourceId" }, "title": { "$ref": "#/$defs/catalogText" },
+        "creatorName": { "$ref": "#/$defs/catalogText" }, "description": { "$ref": "#/$defs/catalogText" },
+        "trackCount": { "type": "integer", "minimum": 0, "maximum": 2147483647 }, "playCount": { "$ref": "#/$defs/count" }
+      }
+    },
+    "album": {
+      "type": "object", "required": ["id", "title"], "properties": {
+        "id": { "$ref": "#/$defs/resourceId" }, "title": { "$ref": "#/$defs/catalogText" },
+        "artists": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/artistRef" } },
+        "trackCount": { "$ref": "#/$defs/count" }, "releaseDate": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "\\S" }
+      }
+    },
+    "artist": {
+      "type": "object", "required": ["id", "name"], "properties": {
+        "id": { "$ref": "#/$defs/resourceId" }, "name": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "\\S" },
+        "description": { "$ref": "#/$defs/catalogText" }, "songCount": { "$ref": "#/$defs/count" }, "albumCount": { "$ref": "#/$defs/count" }
+      }
+    },
+    "ranking": {
+      "type": "object", "required": ["id", "title"], "properties": {
+        "id": { "$ref": "#/$defs/resourceId" }, "title": { "$ref": "#/$defs/catalogText" }, "subtitle": { "$ref": "#/$defs/catalogText" }
+      }
+    },
+    "catalogText": { "type": "string", "minLength": 1, "maxLength": 4096, "pattern": "\\S" },
+    "count": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "page": {
+      "type": "object", "required": ["items", "page", "pageSize", "hasMore"], "properties": {
+        "items": { "type": "array", "maxItems": 100 }, "page": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "pageSize": { "type": "integer", "minimum": 1, "maximum": 100 }, "total": { "$ref": "#/$defs/count" }, "hasMore": { "type": "boolean" }
+      }
+    },
+    "playlistPage": { "allOf": [{ "$ref": "#/$defs/page" }, { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/$defs/playlist" } } } }] },
+    "albumPage": { "allOf": [{ "$ref": "#/$defs/page" }, { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/$defs/album" } } } }] },
+    "artistPage": { "allOf": [{ "$ref": "#/$defs/page" }, { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/$defs/artist" } } } }] },
+    "rankingPage": { "allOf": [{ "$ref": "#/$defs/page" }, { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/$defs/ranking" } } } }] },
+    "playlistDetail": { "type": "object", "required": ["summary", "tracks"], "properties": { "summary": { "$ref": "#/$defs/playlist" }, "tracks": { "$ref": "#/$defs/searchPage" } } },
+    "albumDetail": { "type": "object", "required": ["summary", "tracks"], "properties": { "summary": { "$ref": "#/$defs/album" }, "tracks": { "$ref": "#/$defs/searchPage" } } },
+    "artistDetail": { "type": "object", "required": ["summary", "tracks"], "properties": { "summary": { "$ref": "#/$defs/artist" }, "tracks": { "$ref": "#/$defs/searchPage" } } },
+    "homeFeed": {
+      "type": "object", "required": ["recommendedPlaylists", "newSongs", "rankings"], "properties": {
+        "recommendedPlaylists": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/playlist" } },
+        "newSongs": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/track" } },
+        "rankings": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/ranking" } }
+      }
+    },
+    "account": {
+      "type": "object", "required": ["id", "displayName"], "properties": {
+        "id": { "$ref": "#/$defs/resourceId" }, "displayName": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "\\S" }, "subtitle": { "$ref": "#/$defs/catalogText" }
+      }
+    },
+    "authenticationStatus": {
+      "oneOf": [
+        { "type": "object", "required": ["type"], "properties": { "type": { "enum": ["notRequired", "signedOut"] } } },
+        { "type": "object", "required": ["type", "account"], "properties": { "type": { "const": "signedIn" }, "account": { "$ref": "#/$defs/account" } } },
+        { "type": "object", "required": ["type"], "properties": { "type": { "const": "expired" }, "accountId": { "$ref": "#/$defs/resourceId" } } }
+      ]
+    },
+    "favoriteState": { "type": "boolean" },
+    "writeAcknowledgement": { "type": "null" },
+    "lyrics": {
+      "type": "object", "required": ["lines"],
+      "properties": {
+        "isUnsynchronized": { "type": "boolean" },
+        "lines": { "type": "array", "maxItems": 2000, "items": {
+          "type": "object", "required": ["timeMs", "text"],
+          "properties": {
+            "timeMs": { "type": "integer", "minimum": 0, "maximum": 86400000 },
+            "durationMs": { "type": "integer", "minimum": 0, "maximum": 86400000 },
+            "text": { "type": "string", "maxLength": 4096 },
+            "translation": { "type": "string", "maxLength": 4096 }, "romanization": { "type": "string", "maxLength": 4096 }
+          }
+        } }
+      }
+    }
+  }
+}

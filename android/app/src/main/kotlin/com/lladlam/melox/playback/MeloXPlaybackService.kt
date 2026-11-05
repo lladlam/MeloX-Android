@@ -666,7 +666,8 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
             thirdPartySourcesEnabled = { ThirdPartyMusicSourceConsentStore.enabled(this@MeloXPlaybackService) },
         )
         autoMixAnalyzer = MeloXAutoMixAudioAnalyzer(this)
-        val upstream = DefaultDataSource.Factory(this, httpFactory)
+        val defaultUpstream = DefaultDataSource.Factory(this, httpFactory)
+        val upstream = androidx.media3.datasource.DataSource.Factory { PluginMediaDataSource(defaultUpstream) }
         val resolving = ResolvingDataSource.Factory(
             upstream,
             playbackResolver,
@@ -689,7 +690,7 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
         com.lladlam.melox.core.autosync.AutoSyncPlaybackBridge.isCurrentTrack = { expected ->
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
                 val id = PlaybackTrackIdentity.fromMediaItem(player?.currentMediaItem)
-                id != null && "${id.source.storageValue}:${id.value}" == expected
+                id != null && "${id.sourceId.value}:${id.value}" == expected
             }
         }
         com.lladlam.melox.core.autosync.AutoSyncPlaybackBridge.audioResolver = { expected ->
@@ -702,7 +703,7 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
                 player?.currentMediaItem
             }
             val id = PlaybackTrackIdentity.fromMediaItem(item)
-            if (item == null || id == null || "${id.source.storageValue}:${id.value}" != expected) {
+            if (item == null || id == null || "${id.sourceId.value}:${id.value}" != expected) {
                 null
             } else {
                 // Never decode the user's playback stream: a hi-res item is tens
@@ -715,7 +716,10 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
                 }
             }
         }
-        mediaSourceFactory = DefaultMediaSourceFactory(this).setDataSourceFactory(cached)
+        val pluginAwareCache = androidx.media3.datasource.DataSource.Factory {
+            PluginCacheRoutingDataSource(cached, resolving)
+        }
+        mediaSourceFactory = DefaultMediaSourceFactory(this).setDataSourceFactory(pluginAwareCache)
 
         val active = buildPlayer(managesAudioFocus = shouldManageAudioFocus())
             player = active
@@ -1177,8 +1181,8 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
             positionMs = active.currentPosition.coerceAtLeast(0L),
             durationMs = active.duration.takeIf { it > 0L && it != C.TIME_UNSET } ?: 0L,
             volume = (active.volume * 100f).toInt().coerceIn(0, 100),
-            trackId = identity?.let { "${it.source.storageValue}:${it.value}" },
-            source = identity?.source?.storageValue,
+            trackId = identity?.let { "${it.sourceId.value}:${it.value}" },
+            source = identity?.sourceId?.value,
             index = active.currentMediaItemIndex,
             queueLength = active.mediaItemCount,
             canNext = active.hasNextMediaItem(),
@@ -2811,13 +2815,18 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
             return
         }
         val registry = ProviderPlaybackRuntime.registryOrNull() ?: return outcome("no provider registry")
-        val provider = registry[identity.source]
-        val favoriteCapability = provider as? FavoriteCapability ?: return outcome("provider has no FavoriteCapability: ${identity.source.displayName}")
+        val provider = registry[identity.sourceId]
+        if (identity.sourceId.builtIn == null && provider?.supports(com.lladlam.melox.core.music.provider.MusicCapability.Favorites) != true)
+            return outcome("provider does not declare Favorites")
+        val favoriteCapability = provider as? FavoriteCapability ?: return outcome("provider has no FavoriteCapability: ${identity.sourceId.displayName}")
 
         val currentExtras = item.mediaMetadata.extras
         val currentlyFavorite = currentExtras?.getBoolean(PlaybackTrackIdentity.IsFavoriteExtra, false) ?: false
-        val targetFavorite = !currentlyFavorite
         val actionTrack = buildMusicTrackFromMediaItem(item, identity)
+        val targetFavorite = runCatching {
+            if (favoriteCapability is com.lladlam.melox.core.music.provider.FavoriteStateCapability)
+                !favoriteCapability.isFavorite(actionTrack) else !currentlyFavorite
+        }.getOrElse { return outcome("favorite status query failed") }
 
         runCatching {
             favoriteCapability.setFavorite(actionTrack, targetFavorite)
@@ -2833,10 +2842,10 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
             }.onFailure { metaError ->
                 Log.w(TAG, "Failed to refresh MediaItem extras after favorite toggle", metaError)
             }
-            Log.i(TAG, "System favorite toggled for ${identity.source.displayName}:${identity.value} -> $targetFavorite")
+            Log.i(TAG, "System favorite toggled for ${identity.sourceId.displayName}:${identity.value} -> $targetFavorite")
             outcome("favorited=${targetFavorite}")
         }.onFailure { error ->
-            Log.w(TAG, "System favorite toggle failed for ${identity.source.displayName}:${identity.value}", error)
+            Log.w(TAG, "System favorite toggle failed for ${identity.sourceId.displayName}:${identity.value}", error)
             outcome("failed: ${error.message}")
         }
     }
@@ -2862,7 +2871,7 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
             artworkUrl = artwork,
             durationMs = durationMs,
             availability = TrackAvailability.Playable,
-            providerMetadata = when (identity.source) {
+            providerMetadata = when (identity.sourceId.builtIn) {
                 MusicSource.Netease -> ProviderTrackMetadata.Netease(
                     numericId = identity.value.toLongOrNull() ?: 0L,
                 )
@@ -2886,6 +2895,7 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
                 MusicSource.Jellyfin -> ProviderTrackMetadata.Empty
                 MusicSource.Qishui -> ProviderTrackMetadata.Empty
                 MusicSource.KugouLite -> ProviderTrackMetadata.Kugou(hash = identity.value)
+                null -> ProviderTrackMetadata.Empty
             },
         )
     }

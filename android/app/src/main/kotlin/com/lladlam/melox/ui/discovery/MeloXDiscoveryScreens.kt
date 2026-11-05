@@ -195,7 +195,7 @@ private sealed interface DiscoveryTrack {
     }
 
     data class Provider(val track: MusicTrack) : DiscoveryTrack {
-        override val key: String = "${track.id.source.storageValue}:${track.id.value}"
+        override val key: String = "${track.id.sourceId.value}:${track.id.value}"
         override val title: String = track.title
         override val artist: String = track.artistText
         override val artworkUrl: String? = track.artworkUrl
@@ -220,7 +220,7 @@ private sealed interface DiscoveryCollection {
     }
 
     data class ProviderPlaylist(val playlist: MusicPlaylistSummary) : DiscoveryCollection {
-        override val key: String = "${playlist.id.source.storageValue}-playlist:${playlist.id.value}"
+        override val key: String = "${playlist.id.sourceId.value}-playlist:${playlist.id.value}"
         override val title: String = playlist.title
         override val artworkUrl: String? = playlist.artworkUrl
         override val creatorName: String = playlist.creatorName.orEmpty()
@@ -229,10 +229,10 @@ private sealed interface DiscoveryCollection {
     }
 
     data class ProviderRanking(val ranking: MusicRankingSummary) : DiscoveryCollection {
-        override val key: String = "${ranking.id.source.storageValue}-ranking:${ranking.id.value}"
+        override val key: String = "${ranking.id.sourceId.value}-ranking:${ranking.id.value}"
         override val title: String = ranking.title
         override val artworkUrl: String? = ranking.artworkUrl
-        override val creatorName: String = ranking.id.source.displayName
+        override val creatorName: String = ranking.id.sourceId.displayName
         override val playCount: Long = 0L
         override val description: String? = ranking.subtitle
     }
@@ -1806,9 +1806,9 @@ private fun DiscoveryCollectionDetail(
         runCatching {
             withContext(Dispatchers.IO) {
                 val ranking = (collection as DiscoveryCollection.ProviderRanking).ranking
-                val provider = MeloXMusicProviders.create(context).require(ranking.id.source)
+                val provider = MeloXMusicProviders.create(context)[ranking.id.sourceId] ?: error("音源不可用：${ranking.id.sourceId.value}")
                 val capability = provider as? RankingCapability
-                    ?: throw IllegalStateException("${ranking.id.source.displayName} 当前不提供排行榜详情")
+                    ?: throw IllegalStateException("${ranking.id.sourceId.displayName} 当前不提供排行榜详情")
                 loadAllMusicPages(key = { it.id }) { page ->
                     capability.rankingTracks(ranking, page = page, pageSize = 150)
                 }.map { DiscoveryTrack.Provider(it) }
@@ -1833,7 +1833,7 @@ private fun DiscoveryCollectionDetail(
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
                     artworkSharedKey = artworkSharedKey ?: discoveryCollectionArtworkSharedKey(collection),
-                    source = ranking.id.source,
+                    source = ranking.id.sourceId.builtIn,
                     onRefresh = { refreshVersion++ },
                 )
         return

@@ -64,7 +64,7 @@ suspend fun PlaylistCapability.loadAllPlaylistTracks(
         tracks += next.tracks
         val distinct = tracks.distinctBy {
             val membership = (it.providerMetadata as? ProviderTrackMetadata.YouTube)?.setVideoId
-            membership?.let { setId -> "${it.id.source}:member:$setId" } ?: it.id.toString()
+            membership?.let { setId -> "${it.id.sourceId.value}:member:$setId" } ?: it.id.toString()
         }
         tracks.clear()
         tracks += distinct

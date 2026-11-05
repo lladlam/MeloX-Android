@@ -38,7 +38,7 @@ object ProviderPlaybackCommands {
             MeloXPlaybackNotice.show(appContext, MeloXPlaybackNotice.EMPTY_QUEUE)
             return
         }
-        if (tracks.all { it.id.source == MusicSource.AppleMusic }) {
+        if (tracks.all { it.id.sourceId.builtIn == MusicSource.AppleMusic }) {
             // MusicKit playback bypasses Media3, so Media3-backed lyrics remain
             // unavailable for this hidden source until the backend is unified.
             val session = AppleMusicSessionStore.read(appContext)
@@ -152,7 +152,7 @@ object ProviderPlaybackCommands {
             putInt(PlaybackCommands.QUEUE_ORIGINAL_INDEX_KEY, originalIndex)
             putString(PlaybackCommands.QUEUE_ENTRY_ID_KEY, UUID.randomUUID().toString())
             putBoolean(PlaybackCommands.HEART_MODE_KEY, false)
-            putString(PlaybackTrackIdentity.SourceExtra, id.source.storageValue)
+            putString(PlaybackTrackIdentity.SourceExtra, id.sourceId.value)
             putString(PlaybackTrackIdentity.ResourceIdExtra, id.value)
             putLong(PlaybackTrackIdentity.DurationMsExtra, normalizedQueueDurationMs(durationMs))
             putString(PlaybackTrackIdentity.TitleExtra, title)
@@ -179,7 +179,7 @@ object ProviderPlaybackCommands {
             .build()
 
         val neteaseId = id.value.toLongOrNull()
-            ?.takeIf { id.source == MusicSource.Netease && it > 0L }
+            ?.takeIf { id.sourceId.builtIn == MusicSource.Netease && it > 0L }
         val localUri = (providerMetadata as? ProviderTrackMetadata.Local)
             ?.contentUri?.takeIf(String::isNotBlank)
         return MediaItem.Builder()

@@ -2,6 +2,9 @@ package com.lladlam.melox.core.music.provider
 
 import com.lladlam.melox.core.music.model.MusicSource
 import com.lladlam.melox.core.music.model.MusicTrack
+import com.lladlam.melox.core.music.model.SourceId
+import com.lladlam.melox.core.music.model.MusicPage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -18,14 +21,18 @@ class UnifiedMusicService(
     private val registry: MusicProviderRegistry,
 ) {
     data class SearchFailure(
-        val source: MusicSource,
+        val sourceId: SourceId,
         val message: String,
-    )
+    ) {
+        constructor(source: MusicSource, message: String) : this(SourceId.fromBuiltIn(source), message)
+        val source: MusicSource get() = sourceId.builtIn ?: error("Dynamic search failure: ${sourceId.value}")
+    }
 
     data class SearchResult(
         val tracks: List<MusicTrack>,
         val failures: List<SearchFailure> = emptyList(),
         val aggregated: List<AggregatedTrack> = emptyList(),
+        val pages: Map<SourceId, MusicPage<MusicTrack>> = emptyMap(),
     )
 
     suspend fun searchSongs(
@@ -33,52 +40,51 @@ class UnifiedMusicService(
         sources: Set<MusicSource>,
         page: Int = 1,
         pageSizePerProvider: Int = 20,
+    ): SearchResult = searchSourceIds(query, sources.mapTo(linkedSetOf(), SourceId::fromBuiltIn), page, pageSizePerProvider)
+
+    suspend fun searchSourceIds(
+        query: String,
+        sources: Set<SourceId>,
+        page: Int = 1,
+        pageSizePerProvider: Int = 20,
     ): SearchResult = coroutineScope {
         val normalized = query.trim()
         if (normalized.isEmpty() || sources.isEmpty()) return@coroutineScope SearchResult(emptyList())
 
-        val orderedSources = MusicSource.entries.filter(sources::contains)
+        require(page > 0 && pageSizePerProvider in 1..100 && sources.size <= 64)
+        val generation = registry.generation
+        val orderedSources = sources.sortedBy { it.value }
         val requests = orderedSources.map { source ->
             async {
                 val provider = registry[source]
                 val search = provider as? SearchCapability
-                if (search == null) {
-                    ProviderResult(
-                        source = source,
-                        tracks = emptyList(),
-                        failure = SearchFailure(source, "${source.displayName} 当前没有搜索能力"),
-                    )
+                if (search == null || !provider.supports(MusicCapability.Search)) {
+                    source to Result.failure<MusicPage<MusicTrack>>(IllegalStateException("${source.displayName} 当前不可用或没有搜索能力"))
                 } else {
-                    runCatching {
-                        search.searchSongs(
+                    source to try {
+                        val result = search.searchSongs(
                             query = normalized,
                             page = page.coerceAtLeast(1),
                             pageSize = pageSizePerProvider.coerceIn(1, 50),
-                        ).items
-                    }.fold(
-                        onSuccess = { tracks -> ProviderResult(source, tracks, null) },
-                        onFailure = { error ->
-                            ProviderResult(
-                                source = source,
-                                tracks = emptyList(),
-                                failure = SearchFailure(
-                                    source,
-                                    error.message ?: "${source.displayName} 搜索失败",
-                                ),
-                            )
-                        },
-                    )
+                        )
+                        check(registry.generation == generation && registry[source] === provider) { "音源状态已变化" }
+                        require(result.items.all { it.id.sourceId == source }) { "search source identity mismatch" }
+                        Result.success(result)
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (error: Exception) { Result.failure(error) }
                 }
             }
         }.awaitAll()
 
         // Keep provider results distinct. Same-title tracks are not silently
         // merged here because their rights/quality/account availability differ.
-        val tracks = requests.flatMap(ProviderResult::tracks)
+        val pages = requests.mapNotNull { (source, result) -> result.getOrNull()?.let { source to it } }.toMap()
+        val tracks = pages.values.flatMap { it.items }
         SearchResult(
             tracks = tracks,
-            failures = requests.mapNotNull(ProviderResult::failure),
+            failures = requests.mapNotNull { (source, result) -> result.exceptionOrNull()?.let { SearchFailure(source, it.message ?: "搜索失败") } },
             aggregated = TrackAggregation.aggregate(tracks),
+            pages = pages,
         )
     }
 
@@ -108,20 +114,31 @@ class UnifiedMusicService(
     suspend fun collectRecommendationCandidates(
         sources: Set<MusicSource>,
         limitPerProvider: Int = 30,
+    ): List<MusicTrack> = collectRecommendationCandidatesSourceIds(sources.mapTo(linkedSetOf(), SourceId::fromBuiltIn), limitPerProvider)
+
+    suspend fun collectRecommendationCandidatesSourceIds(
+        sources: Set<SourceId>,
+        limitPerProvider: Int = 30,
     ): List<MusicTrack> = coroutineScope {
-        MusicSource.entries.filter(sources::contains).map { source ->
+        require(sources.size <= 64)
+        val generation = registry.generation
+        sources.sortedBy { it.value }.map { source ->
             async {
-                val feed = registry[source] as? HomeFeedCapability ?: return@async emptyList()
-                runCatching {
+                val provider = registry[source] ?: return@async emptyList()
+                if (!provider.supports(MusicCapability.HomeRecommendations)) return@async emptyList()
+                val feed = provider as? HomeFeedCapability ?: return@async emptyList()
+                try {
                     val home = feed.homeFeed(
                         playlistLimit = 6,
                         newSongLimit = limitPerProvider.coerceIn(1, 50),
                         rankingLimit = 4,
                     )
-                    home.newSongs + home.rankings.flatMap { it.previewTracks }
-                }.getOrDefault(emptyList())
+                    check(registry.generation == generation && registry[source] === provider) { "source changed" }
+                    (home.newSongs + home.rankings.flatMap { it.previewTracks }).also { tracks -> require(tracks.all { it.id.sourceId == source }) }
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { emptyList() }
             }
-        }.awaitAll().flatten().distinctBy { "${it.id.source.storageValue}:${it.id.value}" }
+        }.awaitAll().flatten().distinctBy { "${it.id.sourceId.value}:${it.id.value}" }
     }
 
     private data class ProviderResult(

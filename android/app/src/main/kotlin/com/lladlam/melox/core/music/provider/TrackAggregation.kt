@@ -148,7 +148,7 @@ object TrackAggregation {
             TrackAvailability.CopyrightRestricted,
             TrackAvailability.Unavailable -> 0
         }
-        val sourceBonus = sourceBonus(track.id.source)
+        val sourceBonus = track.id.sourceId.builtIn?.let(::sourceBonus) ?: 0
         return AggregatedTrackCandidate(
             track = track,
             identityScore = identity,
@@ -156,7 +156,7 @@ object TrackAggregation {
             qualityScore = qualityScore,
             availabilityScore = availability,
             totalScore = identity + version + qualityScore + availability + sourceBonus,
-            reason = "版本 ${key.version} · ${track.id.source.displayName} · ${qualityLabel(qualityTier)}",
+            reason = "版本 ${key.version} · ${track.id.sourceId.displayName} · ${qualityLabel(qualityTier)}",
         )
     }
 

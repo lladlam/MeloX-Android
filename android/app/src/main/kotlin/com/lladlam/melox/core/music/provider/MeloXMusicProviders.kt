@@ -28,6 +28,7 @@ import com.lladlam.melox.core.provider.qishui.QishuiSessionStore
 
 /** Creates provider instances that all read their authentication state locally. */
 object MeloXMusicProviders {
+    private val dynamicProviders = DynamicMusicProviders()
     @Volatile
     private var sharedRegistry: MusicProviderRegistry? = null
 
@@ -72,6 +73,7 @@ object MeloXMusicProviders {
                 httpClient,
                 playbackProviders = { nativeProviders },
             ),
+            dynamic = dynamicProviders,
         )
     }
 
@@ -129,6 +131,7 @@ object MeloXMusicProviders {
                 httpClient,
                 playbackProviders = { nativeProviders },
             ),
+            dynamic = dynamicProviders,
         )
     }
 }

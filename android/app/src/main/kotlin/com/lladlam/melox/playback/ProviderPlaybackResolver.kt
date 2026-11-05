@@ -14,6 +14,8 @@ import com.lladlam.melox.core.music.model.MusicSource
 import com.lladlam.melox.core.music.model.MusicTrack
 import com.lladlam.melox.core.music.model.PlaybackResolution
 import com.lladlam.melox.core.music.model.ProviderTrackMetadata
+import com.lladlam.melox.core.music.model.SourceId
+import com.lladlam.melox.core.plugin.PluginMusicProvider
 import com.lladlam.melox.core.music.provider.MusicProviderRegistry
 import com.lladlam.melox.core.music.provider.PlaybackCapability
 import java.io.IOException
@@ -64,6 +66,8 @@ class ProviderPlaybackResolver(
         if (uri.scheme != MeloXScheme) return dataSpec
         if (uri.host == LegacySongHost) return neteaseResolver.resolveDataSpec(dataSpec)
         if (uri.host != ProviderTrackHost) return dataSpec
+        val dynamicSource = uri.pathSegments.firstOrNull()?.let(SourceId::parse)?.takeIf { it.builtIn == null }
+        if (dynamicSource != null) return resolveDynamicRequest(dataSpec, dynamicSource)
         val resolved = resolveProviderRequest(uri)
         return dataSpec.buildUpon()
             .setUri(resolved.uri)
@@ -71,6 +75,32 @@ class ProviderPlaybackResolver(
             // Provider CDN URLs are short-lived. Do not reuse bytes cached for an earlier resolution.
             .setKey(resolved.uri.toString())
             .build()
+    }
+
+    private fun resolveDynamicRequest(dataSpec: DataSpec, source: SourceId): DataSpec {
+        val generation = providers.generation
+        val provider = providers[source] as? PluginMusicProvider
+            ?: throw IOException("Music source ${source.value} is missing or disabled")
+        if (!provider.supports(com.lladlam.melox.core.music.provider.MusicCapability.Playback))
+            throw IOException("Plugin does not support playback")
+        val uri = dataSpec.uri
+        val value = uri.pathSegments.getOrNull(1)?.takeIf { it.isNotBlank() }
+            ?: throw IOException("Invalid plugin resource ID")
+        val track = MusicTrack(MusicResourceId(source, value), uri.getQueryParameter(TrackTitleQuery).orEmpty(),
+            uri.getQueryParameter(TrackArtistsQuery).orEmpty().split('\u001f').filter { it.isNotBlank() }
+                .map { com.lladlam.melox.core.music.model.MusicArtistRef(name = it) },
+            durationMs = uri.getQueryParameter(TrackDurationQuery)?.toLongOrNull())
+        val resolution = runBlocking(Dispatchers.IO) { provider.resolvePlayback(track, currentQuality(uri)) }
+        if (providers.generation != generation || providers[source] !== provider) throw IOException("Plugin changed during resolution")
+        val (url, headers) = when (resolution) {
+            is PlaybackResolution.Playable -> resolution.url to resolution.requestHeaders
+            is PlaybackResolution.Preview -> resolution.url to emptyMap()
+            else -> throw IOException("Plugin audio unavailable: ${resolution.javaClass.simpleName}")
+        }
+        return dataSpec.buildUpon().setUri(url).setHttpRequestHeaders(headers)
+            .setCustomData(PluginMediaRequest(provider, providers, generation, (resolution as? PlaybackResolution.Playable)?.credentialReference == "active",
+                reResolve = { resolveDynamicRequest(dataSpec, source) }))
+            .setKey("plugin:${source.value}:$generation:$url").build()
     }
 
     override fun resolveReportedUri(uri: Uri): Uri {
@@ -311,7 +341,7 @@ class ProviderPlaybackResolver(
         ): Uri = Uri.Builder()
             .scheme(MeloXScheme)
             .authority(ProviderTrackHost)
-            .appendPath(track.id.source.storageValue)
+            .appendPath(track.id.sourceId.value)
             .appendPath(track.id.value)
             .appendQueryParameter(QualityQuery, quality.name)
             .appendQueryParameter(TrackTitleQuery, track.title)

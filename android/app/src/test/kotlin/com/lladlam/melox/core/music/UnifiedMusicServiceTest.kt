@@ -15,6 +15,43 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UnifiedMusicServiceTest {
+    @Test fun dynamicWhitelistPreservesPaginationAndUnavailableIdentity() = runBlocking {
+        val dynamic = com.lladlam.melox.core.music.model.SourceId.parse("plugin:org.example.search")!!
+        val missing = com.lladlam.melox.core.music.model.SourceId.parse("plugin:org.example.missing")!!
+        val registry = MusicProviderRegistry(listOf(FakeSearchProvider(MusicSource.Netease, mutableListOf())))
+        val plugin = object : MusicProvider, SearchCapability {
+            override val sourceId = dynamic
+            override val displayName = "Dynamic"
+            override val capabilities = setOf(MusicCapability.Search)
+            override suspend fun searchSongs(query: String, page: Int, pageSize: Int) = MusicPage(
+                listOf(MusicTrack(MusicResourceId(dynamic, "opaque"), query, emptyList())), page, pageSize, 101L, true)
+        }
+        registry.registerDynamic(plugin)
+        val service = UnifiedMusicService(registry)
+        val result = service.searchSourceIds("test", setOf(dynamic, missing), 2, 25)
+        assertEquals(dynamic, result.tracks.single().id.sourceId)
+        assertEquals(2, result.pages[dynamic]?.page)
+        assertEquals(101L, result.pages[dynamic]?.total)
+        assertEquals(missing, result.failures.single().sourceId)
+        registry.unregisterDynamic(dynamic)
+        val unavailable = service.searchSourceIds("test", setOf(dynamic))
+        assertTrue(unavailable.tracks.isEmpty())
+        assertEquals(dynamic, unavailable.failures.single().sourceId)
+    }
+
+    @Test fun cancelledProviderCallIsNotConvertedToPartialSuccess() {
+        val provider = object : MusicProvider, SearchCapability {
+            override val source = MusicSource.QQMusic
+            override val displayName = "Cancelled"
+            override val capabilities = setOf(MusicCapability.Search)
+            override suspend fun searchSongs(query: String, page: Int, pageSize: Int): MusicPage<MusicTrack> {
+                throw kotlinx.coroutines.CancellationException("cancelled")
+            }
+        }
+        org.junit.Assert.assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+            runBlocking { UnifiedMusicService(MusicProviderRegistry(listOf(provider))).searchSongs("test", setOf(MusicSource.QQMusic)) }
+        }
+    }
     @Test
     fun onlyExplicitlyWhitelistedProvidersAreQueried() = runBlocking {
         val calls = mutableListOf<MusicSource>()

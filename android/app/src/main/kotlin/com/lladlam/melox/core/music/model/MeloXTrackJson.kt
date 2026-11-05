@@ -10,7 +10,7 @@ import org.json.JSONObject
  */
 internal object MeloXTrackJson {
     fun encode(track: MusicTrack): JSONObject = JSONObject().apply {
-        put("source", track.id.source.storageValue)
+        put("source", track.id.sourceId.value)
         put("id", track.id.value)
         put("title", track.title)
         put("artists", JSONArray().apply {
@@ -18,7 +18,7 @@ internal object MeloXTrackJson {
                 put(JSONObject().apply {
                     put("name", artist.name)
                     artist.id?.let { id ->
-                        put("artistSource", id.source.storageValue)
+                        put("artistSource", id.sourceId.value)
                         put("artistId", id.value)
                     }
                 })
@@ -28,7 +28,7 @@ internal object MeloXTrackJson {
             put("album", JSONObject().apply {
                 put("name", album.name)
                 album.id?.let { id ->
-                    put("albumSource", id.source.storageValue)
+                    put("albumSource", id.sourceId.value)
                     put("albumId", id.value)
                 }
                 album.artworkUrl?.let { put("artworkUrl", it) }
@@ -43,9 +43,7 @@ internal object MeloXTrackJson {
     }
 
     fun decode(value: JSONObject): MusicTrack? {
-        val source = MusicSource.entries.firstOrNull {
-            it.storageValue == value.optString("source")
-        } ?: return null
+        val source = SourceId.parse(value.optString("source")) ?: return null
         val id = value.optString("id").takeIf(String::isNotBlank) ?: return null
         val title = value.optString("title").takeIf(String::isNotBlank) ?: return null
         val artists = value.optJSONArray("artists")?.let { array ->
@@ -58,7 +56,7 @@ internal object MeloXTrackJson {
                     add(
                         MusicArtistRef(
                             id = artistSource?.let { sourceValue ->
-                                MusicSource.entries.firstOrNull { it.storageValue == sourceValue }
+                                SourceId.parse(sourceValue)
                             }?.let { artistSourceValue -> MusicResourceId(artistSourceValue, artistId ?: return@let null) },
                             name = name,
                         ),
@@ -72,7 +70,7 @@ internal object MeloXTrackJson {
             val albumId = albumValue.optString("albumId").takeIf(String::isNotBlank)
             MusicAlbumRef(
                 id = albumSource?.let { sourceValue ->
-                    MusicSource.entries.firstOrNull { it.storageValue == sourceValue }
+                    SourceId.parse(sourceValue)
                 }?.let { albumSourceValue -> MusicResourceId(albumSourceValue, albumId ?: return@let null) },
                 name = name,
                 artworkUrl = albumValue.optString("artworkUrl").takeIf(String::isNotBlank),

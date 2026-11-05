@@ -14,7 +14,11 @@ import com.lladlam.melox.core.music.model.MusicPlaylistSummary
 import com.lladlam.melox.core.music.model.MusicRankingSummary
 import com.lladlam.melox.core.music.model.MusicSource
 import com.lladlam.melox.core.music.model.MusicTrack
+import com.lladlam.melox.core.music.model.SourceId
 import com.lladlam.melox.core.music.model.PlaybackResolution
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 enum class MusicCapability {
     Search,
@@ -37,6 +41,8 @@ enum class MusicCapability {
     ListenTogether,
     Messages,
     Recognition,
+    Authentication,
+    Download,
 }
 
 /**
@@ -44,7 +50,11 @@ enum class MusicCapability {
  * features must not be forced into this interface just because NetEase has them.
  */
 interface MusicProvider {
+    /** Built-in providers override this; dynamic providers override [sourceId]. */
     val source: MusicSource
+        get() = error("Dynamic music providers have no built-in MusicSource")
+    val sourceId: SourceId
+        get() = SourceId.fromBuiltIn(source)
     val displayName: String
     val capabilities: Set<MusicCapability>
 
@@ -109,6 +119,19 @@ interface FavoriteCapability {
         track: MusicTrack,
         favorite: Boolean,
     )
+}
+
+/** Optional explicit state query; a write-only provider must not invent a favorite state. */
+interface FavoriteStateCapability : FavoriteCapability {
+    suspend fun isFavorite(track: MusicTrack): Boolean
+}
+
+interface AuthenticationCapability {
+    suspend fun authenticationStatus(): com.lladlam.melox.core.music.model.MusicAuthenticationState
+}
+
+interface RankingCatalogCapability : RankingCapability {
+    suspend fun rankings(page: Int = 1, pageSize: Int = 30): MusicPage<MusicRankingSummary>
 }
 
 /**
@@ -214,6 +237,7 @@ interface ArtistCapability {
 /** Small registry used by repositories and the provider-aware UI layer. */
 class MusicProviderRegistry(
     providers: Iterable<MusicProvider>,
+    private val dynamic: DynamicMusicProviders = DynamicMusicProviders(),
 ) {
     private val providersBySource = providers.associateBy(MusicProvider::source)
 
@@ -227,6 +251,89 @@ class MusicProviderRegistry(
 
     operator fun get(source: MusicSource): MusicProvider? = providersBySource[source]
 
+    /** Unknown identities are unavailable, never mapped to a default provider. */
+    operator fun get(source: SourceId): MusicProvider? = source.builtIn?.let(providersBySource::get)
+        ?: dynamic[source]
+
+    val generation: Long get() = dynamic.generation
+    val changes: StateFlow<Long> get() = dynamic.changes
+
+    fun registerDynamic(provider: MusicProvider, enabled: Boolean = true) = dynamic.register(provider, enabled)
+
+    fun setDynamicEnabled(source: SourceId, enabled: Boolean): Boolean = dynamic.setEnabled(source, enabled)
+
+    fun unregisterDynamic(source: SourceId): Boolean = dynamic.unregister(source)
+
+    fun replaceDynamic(provider: MusicProvider) = dynamic.replace(provider)
+
+    /** Dynamic entries only; legacy callers of [providers] still see built-ins. */
+    fun enabledDynamicProviders(): List<MusicProvider> = dynamic.enabledProviders()
+
     fun require(source: MusicSource): MusicProvider =
         providersBySource[source] ?: error("Music provider ${source.storageValue} is not registered")
+}
+
+/** Shared by the UI and playback registries; no provider is persisted here. */
+class DynamicMusicProviders {
+    private val lock = Any()
+    @Volatile private var entries: Map<SourceId, Entry> = emptyMap()
+    @Volatile var generation: Long = 0
+        private set
+    private val changesState = MutableStateFlow(0L)
+    val changes: StateFlow<Long> = changesState.asStateFlow()
+
+    private data class Entry(val provider: MusicProvider, val enabled: Boolean)
+
+    operator fun get(source: SourceId): MusicProvider? = entries[source]?.takeIf { it.enabled }?.provider
+
+    /** Atomically swaps an already enabled provider without a transient missing-source window. */
+    fun replace(provider: MusicProvider) = synchronized(lock) {
+        validate(provider)
+        val old = entries[provider.sourceId] ?: error("plugin provider is not registered")
+        entries = entries + (provider.sourceId to old.copy(provider = provider))
+        generation++
+        changesState.value = generation
+    }
+
+    private fun validate(provider: MusicProvider) {
+        val id = provider.sourceId
+        require(id.value.startsWith("plugin:") && id.builtIn == null) { "dynamic provider needs a plugin source id" }
+        require(MusicCapability.Search !in provider.capabilities || provider is SearchCapability) { "missing search capability" }
+        require(MusicCapability.Playback !in provider.capabilities || provider is PlaybackCapability) { "missing playback capability" }
+        require(MusicCapability.Lyrics !in provider.capabilities || provider is LyricsCapability) { "missing lyrics capability" }
+    }
+
+    /** Register only an unused plugin identity; replacement requires explicit unregister. */
+    fun register(provider: MusicProvider, enabled: Boolean = true) = synchronized(lock) {
+        validate(provider)
+        val id = provider.sourceId
+        require(id.value.startsWith("plugin:") && id.builtIn == null) { "dynamic provider needs a plugin source id" }
+        require(MusicCapability.Search !in provider.capabilities || provider is SearchCapability) { "missing search capability" }
+        require(MusicCapability.Playback !in provider.capabilities || provider is PlaybackCapability) { "missing playback capability" }
+        require(MusicCapability.Lyrics !in provider.capabilities || provider is LyricsCapability) { "missing lyrics capability" }
+        require(id !in entries) { "duplicate dynamic provider source: ${id.value}" }
+        entries = entries + (id to Entry(provider, enabled))
+        generation++
+        changesState.value = generation
+    }
+
+    fun setEnabled(source: SourceId, enabled: Boolean): Boolean = synchronized(lock) {
+        val old = entries[source] ?: return@synchronized false
+        if (old.enabled != enabled) {
+            entries = entries + (source to old.copy(enabled = enabled))
+            generation++
+            changesState.value = generation
+        }
+        true
+    }
+
+    fun unregister(source: SourceId): Boolean = synchronized(lock) {
+        if (source !in entries) return@synchronized false
+        entries = entries - source
+        generation++
+        changesState.value = generation
+        true
+    }
+
+    fun enabledProviders(): List<MusicProvider> = entries.values.filter { it.enabled }.map { it.provider }
 }

@@ -84,7 +84,7 @@ class ThirdPartyPlaybackResolver private constructor(
                 .getOrNull()
                 ?: continue
             if (result.url.startsWith("http://") || result.url.startsWith("https://")) {
-                Log.i(TAG, "Resolved via ${result.sourceLabel} source=${track.id.source.storageValue}")
+                Log.i(TAG, "Resolved via ${result.sourceLabel} source=${track.id.sourceId.value}")
                 return result
             }
         }

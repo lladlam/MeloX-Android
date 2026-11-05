@@ -1,0 +1,10 @@
+{
+  "id": "org.melox.api-token-demo",
+  "name": "MeloX API Token Demo",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "entry": "index.js",
+  "capabilities": ["search", "playback", "lyrics", "authentication"],
+  "networkDomains": ["httpbingo.org"],
+  "authentication": { "type": "apiToken", "header": "Authorization", "prefix": "Bearer ", "domains": ["httpbingo.org"] }
+}

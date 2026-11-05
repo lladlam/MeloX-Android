@@ -70,7 +70,7 @@ class MeloXCliReceiver : BroadcastReceiver() {
         if (command == "search") {
             return JSONObject().put("tracks", JSONArray().apply {
                 tracks.forEachIndexed { index, track ->
-                    put(JSONObject().put("index", index).put("source", track.id.source.storageValue)
+                    put(JSONObject().put("index", index).put("source", track.id.sourceId.value)
                         .put("id", track.id.value).put("title", track.title).put("artist", track.artistText))
                 }
             })

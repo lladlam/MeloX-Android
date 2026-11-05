@@ -5,12 +5,14 @@ import com.lladlam.melox.core.music.experience.ExperienceTabId
 import com.lladlam.melox.core.music.experience.MusicExperiences
 import com.lladlam.melox.core.music.model.MusicResourceId
 import com.lladlam.melox.core.music.model.MusicSource
+import com.lladlam.melox.core.music.model.SourceId
 import com.lladlam.melox.core.music.provider.AlbumCapability
 import com.lladlam.melox.core.music.provider.ArtistCapability
 import com.lladlam.melox.core.music.provider.CatalogSearchCapability
 import com.lladlam.melox.core.music.provider.MusicCapability
 import com.lladlam.melox.core.music.provider.MusicProvider
 import com.lladlam.melox.core.music.provider.MusicProviderRegistry
+import com.lladlam.melox.core.music.provider.DynamicMusicProviders
 import com.lladlam.melox.core.provider.kugou.KugouProvider
 import com.lladlam.melox.core.provider.kugou.KugouSession
 import com.lladlam.melox.core.provider.qqmusic.QQMusicProvider
@@ -18,6 +20,8 @@ import com.lladlam.melox.core.provider.qqmusic.QQMusicSession
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class MusicProviderArchitectureTest {
@@ -90,5 +94,73 @@ class MusicProviderArchitectureTest {
         }
         val registry = MusicProviderRegistry(listOf(spotify))
         assertEquals(spotify, registry.require(MusicSource.Spotify))
+    }
+
+    @Test
+    fun registryLookupDoesNotMapUnknownSourceIdToNetease() {
+        val netease = object : MusicProvider {
+            override val source = MusicSource.Netease
+            override val displayName = source.displayName
+            override val capabilities = emptySet<MusicCapability>()
+        }
+        val registry = MusicProviderRegistry(listOf(netease))
+        assertEquals(netease, registry[SourceId.fromBuiltIn(MusicSource.Netease)])
+        assertNull(registry[SourceId.parse("plugin:example.catalog")!!])
+        assertNull(registry[SourceId.parse("future_provider")!!])
+    }
+
+    @Test
+    fun dynamicRegistryLifecycleDoesNotAlterBuiltInProviders() {
+        val builtIn = object : MusicProvider {
+            override val source = MusicSource.Netease
+            override val displayName = "NetEase"
+            override val capabilities = emptySet<MusicCapability>()
+        }
+        val id = SourceId.parse("plugin:example.catalog")!!
+        val dynamic = object : MusicProvider {
+            override val sourceId = id
+            override val displayName = "Example"
+            override val capabilities = emptySet<MusicCapability>()
+        }
+        val registry = MusicProviderRegistry(listOf(builtIn))
+        registry.registerDynamic(dynamic)
+        assertEquals(dynamic, registry[id])
+        assertEquals(builtIn, registry[MusicSource.Netease])
+        assertEquals(listOf(dynamic), registry.enabledDynamicProviders())
+        assertThrows(IllegalArgumentException::class.java) { registry.registerDynamic(dynamic) }
+        assertTrue(registry.setDynamicEnabled(id, false))
+        assertNull(registry[id])
+        assertTrue(registry.enabledDynamicProviders().isEmpty())
+        assertTrue(registry.setDynamicEnabled(id, true))
+        assertEquals(dynamic, registry[id])
+        assertTrue(registry.unregisterDynamic(id))
+        assertNull(registry[id])
+        assertEquals(builtIn, registry[MusicSource.Netease])
+        assertEquals(4L, registry.generation)
+        assertThrows(IllegalArgumentException::class.java) { registry.registerDynamic(builtIn) }
+    }
+
+    @Test
+    fun uiAndPlaybackRegistriesObserveSameDynamicLifecycle() {
+        val builtIn = object : MusicProvider {
+            override val source = MusicSource.Netease
+            override val displayName = "NetEase"
+            override val capabilities = emptySet<MusicCapability>()
+        }
+        val id = SourceId.parse("plugin:example.catalog")!!
+        val plugin = object : MusicProvider {
+            override val sourceId = id
+            override val displayName = "Example"
+            override val capabilities = emptySet<MusicCapability>()
+        }
+        val shared = DynamicMusicProviders()
+        val ui = MusicProviderRegistry(listOf(builtIn), shared)
+        val playback = MusicProviderRegistry(listOf(builtIn), shared)
+        ui.registerDynamic(plugin)
+        assertEquals(plugin, playback[id])
+        assertEquals(ui.generation, playback.generation)
+        playback.setDynamicEnabled(id, false)
+        assertNull(ui[id])
+        assertEquals(ui.generation, playback.generation)
     }
 }

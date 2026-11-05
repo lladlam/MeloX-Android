@@ -25,9 +25,14 @@ enum class MusicSource(
 }
 
 data class MusicResourceId(
-    val source: MusicSource,
+    val sourceId: SourceId,
     val value: String,
 ) {
+    constructor(source: MusicSource, value: String) : this(SourceId.fromBuiltIn(source), value)
+
+    /** Legacy built-in-only API. Unknown identities never fall back to a built-in. */
+    val source: MusicSource get() = sourceId.builtIn
+        ?: error("Source ${sourceId.value} is not a built-in music source")
     init {
         require(value.isNotBlank()) { "music resource id must not be blank" }
     }
@@ -57,6 +62,7 @@ data class MusicArtistDetail(
     val summary: MusicArtistSummary,
     val tracks: List<MusicTrack>,
     val totalTracks: Long? = null,
+    val hasMore: Boolean? = null,
 )
 
 data class MusicAlbumSummary(
@@ -72,6 +78,7 @@ data class MusicAlbumDetail(
     val summary: MusicAlbumSummary,
     val tracks: List<MusicTrack>,
     val totalTracks: Long? = null,
+    val hasMore: Boolean? = null,
 )
 
 enum class TrackAvailability {
@@ -194,12 +201,23 @@ data class MusicRankingSummary(
 
 /** Minimal account information that can be displayed without leaking provider-specific credentials. */
 data class MusicAccountSummary(
-    val source: MusicSource,
+    val sourceId: SourceId,
     val id: String,
     val displayName: String,
     val avatarUrl: String? = null,
     val subtitle: String? = null,
-)
+) {
+    constructor(source: MusicSource, id: String, displayName: String, avatarUrl: String? = null, subtitle: String? = null) :
+        this(SourceId.fromBuiltIn(source), id, displayName, avatarUrl, subtitle)
+    val source: MusicSource get() = sourceId.builtIn ?: error("Account source ${sourceId.value} is not built-in")
+}
+
+sealed interface MusicAuthenticationState {
+    data object NotRequired : MusicAuthenticationState
+    data object SignedOut : MusicAuthenticationState
+    data class SignedIn(val account: MusicAccountSummary) : MusicAuthenticationState
+    data class Expired(val accountId: String?) : MusicAuthenticationState
+}
 
 /**
  * Common semantic feed. Empty lists are meaningful: a provider may simply not
@@ -237,6 +255,8 @@ sealed interface PlaybackResolution {
         val bitrate: Int? = null,
         val format: String? = null,
         val expiresAtEpochMs: Long? = null,
+        /** Opaque host credential reference; never a token. */
+        val credentialReference: String? = null,
     ) : PlaybackResolution
 
     data class Preview(

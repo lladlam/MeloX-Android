@@ -259,6 +259,12 @@ fun MeloXApp(
     var selectedSource by remember {
         mutableStateOf(MusicProviderSelectionStore.selectedSource(context))
     }
+    val sourceSelectionRevision by MusicProviderSelectionStore.changes.collectAsState()
+    var selectedSourceId by remember { mutableStateOf(MusicProviderSelectionStore.selectedSourceId(context)) }
+    LaunchedEffect(sourceSelectionRevision) {
+        selectedSourceId = MusicProviderSelectionStore.selectedSourceId(context)
+        selectedSourceId.builtIn?.let { selectedSource = it }
+    }
     val initialTab = remember(context) {
         runCatching {
             AppTab.valueOf(
@@ -315,6 +321,7 @@ fun MeloXApp(
     }
     var heartModeLaunchAttempted by remember { mutableStateOf(false) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        selectedSourceId = MusicProviderSelectionStore.selectedSourceId(context)
         val persistedSource = MusicProviderSelectionStore.selectedSource(context)
         if (persistedSource != selectedSource) {
             selectedSource = persistedSource
@@ -887,6 +894,7 @@ fun MeloXApp(
                         primaryModifier = Modifier.nestedScroll(tabBarMinimizeConnection),
                         onSourceSelected = { source ->
                             selectedSource = source
+                            MusicProviderSelectionStore.setSelectedSource(context, source)
                             libraryModalVisible = false
                             heartModeLaunchAttempted = false
                         },
@@ -942,7 +950,8 @@ fun MeloXApp(
                         label = "melox-page-transition",
                     ) { tab ->
                     rootPageState.SaveableStateProvider(tab.name) { when (tab) {
-                         AppTab.Search -> if (selectedSource == MusicSource.Netease) SearchScreen(
+                         AppTab.Search -> if (selectedSourceId.builtIn == null) SearchScreen(pluginSourceId = selectedSourceId.value)
+                         else if (selectedSource == MusicSource.Netease) SearchScreen(
                              backClearSignal = searchTabBackClear,
                              onSearchBackState = { searchTabAction = it },
                               onSearchExit = {
@@ -952,7 +961,7 @@ fun MeloXApp(
                              },
                              onOpenRecognition = { recognitionVisible = true },
                          ) else ProviderSearchScreen(selectedSource)
-                        AppTab.Home -> MeloXHomeScreen(
+                         AppTab.Home -> if (selectedSourceId.builtIn == null) com.lladlam.melox.ui.provider.PluginSourcePage(selectedSourceId, "home") else MeloXHomeScreen(
                             source = selectedSource,
                             onOpenTool = { route ->
                                 when (route) {
@@ -967,8 +976,8 @@ fun MeloXApp(
                                  }
                             },
                         )
-                        AppTab.Explore -> if (selectedSource == MusicSource.Netease) MeloXExploreScreen() else ProviderExploreScreen(selectedSource)
-                        AppTab.Library -> if (selectedSource == MusicSource.Netease) {
+                         AppTab.Explore -> if (selectedSourceId.builtIn == null) com.lladlam.melox.ui.provider.PluginSourcePage(selectedSourceId, "rankings") else if (selectedSource == MusicSource.Netease) MeloXExploreScreen() else ProviderExploreScreen(selectedSource)
+                         AppTab.Library -> if (selectedSourceId.builtIn == null) com.lladlam.melox.ui.provider.PluginSourcePage(selectedSourceId, "library") else if (selectedSource == MusicSource.Netease) {
                             LibraryScreen(
                                 session = neteaseSession,
                                 playlistBackEnabled = !fullPlayerVisible && !libraryModalVisible,
@@ -985,8 +994,9 @@ fun MeloXApp(
                             forcedPageName = "Downloads",
                         )
                         AppTab.Cloud -> MeloXCloudMusicScreen()
-                        AppTab.Settings -> ProviderSettingsHub(
-                            currentSource = selectedSource,
+                         AppTab.Settings -> ProviderSettingsHub(
+                             currentSource = selectedSource,
+                             currentSourceId = selectedSourceId,
                              onSourceSelected = { source ->
                                  detailPaneState.clearPages()
                                  selectedSource = source

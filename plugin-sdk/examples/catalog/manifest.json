@@ -1,0 +1,10 @@
+{
+  "id": "org.melox.catalog-demo",
+  "name": "MeloX CC0 Catalog Demo",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "entry": "index.js",
+  "capabilities": ["search", "playback", "lyrics", "playlists", "albums", "artists", "rankings", "homeFeed", "userLibrary", "favorites", "download", "authentication"],
+  "authentication": { "type": "none" },
+  "networkDomains": ["httpbingo.org"]
+}
