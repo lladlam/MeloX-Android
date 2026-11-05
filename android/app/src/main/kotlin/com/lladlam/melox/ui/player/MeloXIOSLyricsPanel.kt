@@ -119,6 +119,9 @@ import com.lladlam.melox.core.lyrics.LyricTimelineProcessor
 import com.lladlam.melox.core.lyrics.LyricRomanizationAligner
 import com.lladlam.melox.core.lyrics.LyricsDocument
 import com.lladlam.melox.core.lyrics.withPseudoTiming
+import com.lladlam.melox.core.lyrics.withQqBracketBackingVocals
+import com.lladlam.melox.core.music.model.MusicSource
+import com.lladlam.melox.playback.PlaybackTrackIdentity
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.meloXEdgeOverscrollHaptic
 import com.lladlam.melox.MeloXAppVisibility
@@ -533,8 +536,17 @@ private fun MeloXAppleMusicLyricsPanel(
 
     val document = lyrics
     val pseudoTimingEnabled = MeloXSettingsRuntime.lyricPseudoTimingEnabled
-    val renderedDocument = remember(document, pseudoTimingEnabled) {
-        if (pseudoTimingEnabled) document?.withPseudoTiming() else document
+    val qqBracketBackingEnabled = MeloXSettingsRuntime.qqBracketBackingVocals
+    val qqTrack = remember(mediaId) {
+        PlaybackTrackIdentity.decode(mediaId.orEmpty())?.sourceId?.builtIn == MusicSource.QQMusic
+    }
+    val renderedDocument = remember(document, pseudoTimingEnabled, qqBracketBackingEnabled, qqTrack) {
+        val withBackingVocals = if (qqBracketBackingEnabled && qqTrack) {
+            document?.withQqBracketBackingVocals()
+        } else {
+            document
+        }
+        if (pseudoTimingEnabled) withBackingVocals?.withPseudoTiming() else withBackingVocals
     }
     val lines = renderedDocument?.lines.orEmpty()
     if (renderedDocument?.isUnsynchronized == true) {

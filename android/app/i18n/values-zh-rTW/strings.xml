@@ -1565,4 +1565,6 @@
     <string name="youtube_login_network_error">無法載入 Google 登入頁（%1$d：%2$s）。請檢查網路或 VPN 後重試。</string>
     <string name="youtube_login_http_error">Google 登入頁傳回 HTTP %1$d，請稍後重試。</string>
     <string name="youtube_login_retry">重試</string>
+    <string name="settings_lyrics_qq_bracket_backing">QQ 音樂：括號歌詞辨識為伴唱</string>
+    <string name="settings_lyrics_qq_bracket_backing_note">整行括號（…）的內容會作為上一句的伴唱：從上一句結束時開始，結束時間沿用原歌詞。</string>
 </resources>

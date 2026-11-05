@@ -1565,4 +1565,6 @@
     <string name="youtube_login_network_error">Google のログインページを読み込めませんでした（%1$d：%2$s）。ネットワークまたは VPN を確認して再試行してください。</string>
     <string name="youtube_login_http_error">Google のログインページが HTTP %1$d を返しました。しばらくしてから再試行してください。</string>
     <string name="youtube_login_retry">再試行</string>
+    <string name="settings_lyrics_qq_bracket_backing">QQ Music：括弧付き歌詞をバッキングボーカルとして扱う</string>
+    <string name="settings_lyrics_qq_bracket_backing_note">行全体が括弧（…）で囲まれた歌詞を前の行のバッキングボーカルにします。前の行が終わった時点から始まり、元の終了時刻を維持します。</string>
 </resources>

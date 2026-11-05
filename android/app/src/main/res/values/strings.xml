@@ -1565,4 +1565,6 @@
     <string name="youtube_login_network_error">Couldn\'t load Google sign-in (%1$d: %2$s). Check your network or VPN and retry.</string>
     <string name="youtube_login_http_error">Google sign-in returned HTTP %1$d. Try again later.</string>
     <string name="youtube_login_retry">Retry</string>
+    <string name="settings_lyrics_qq_bracket_backing">QQ Music: bracket lines as backing vocals</string>
+    <string name="settings_lyrics_qq_bracket_backing_note">Lines wrapped entirely in parentheses (…) become the backing vocal of the previous line. They start when that line ends and keep their original end time.</string>
 </resources>

@@ -313,4 +313,6 @@
     <string name="youtube_login_network_error">Google oturum açma sayfası yüklenemedi (%1$d: %2$s). Ağınızı veya VPN\'inizi kontrol edip tekrar deneyin.</string>
     <string name="youtube_login_http_error">Google oturum açma sayfası HTTP %1$d döndürdü. Daha sonra tekrar deneyin.</string>
     <string name="youtube_login_retry">Tekrar dene</string>
+    <string name="settings_lyrics_qq_bracket_backing">QQ Music: parantezli satırları geri vokal olarak kullan</string>
+    <string name="settings_lyrics_qq_bracket_backing_note">Tamamen parantez içine alınmış (…) satırlar önceki satırın geri vokali olur. Önceki satır bittiğinde başlar ve özgün bitiş zamanını korur.</string>
 </resources>

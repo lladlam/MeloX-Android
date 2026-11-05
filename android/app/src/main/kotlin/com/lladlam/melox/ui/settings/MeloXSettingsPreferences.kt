@@ -142,6 +142,7 @@ object MeloXSettingsRuntime {
     var lyricWordByWordEnabled by mutableStateOf(true)
         internal set
     var lyricPseudoTimingEnabled by mutableStateOf(false)
+    var qqBracketBackingVocals by mutableStateOf(false)
         internal set
     var lyricTapSeekEnabled by mutableStateOf(true)
         internal set
@@ -516,6 +517,7 @@ object MeloXSettingsRuntime {
         showLyricRomanization = MeloXSettingsPreferences.boolean(app, "lyrics_romanization", false)
         lyricWordByWordEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_word_by_word", true)
         lyricPseudoTimingEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_pseudo_timing", false)
+        qqBracketBackingVocals = MeloXSettingsPreferences.boolean(app, "lyrics_qq_bracket_backing", false)
         lyricTapSeekEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_tap_seek", true)
         lyricLongPressShareEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_long_press_share", true)
         lyricInterludeCountdownEnabled = MeloXSettingsPreferences.boolean(app, "lyrics_interlude_countdown", true)
@@ -823,6 +825,7 @@ object MeloXSettingsPreferences {
             "lyrics_romanization" -> MeloXSettingsRuntime.showLyricRomanization = value
             "lyrics_word_by_word" -> MeloXSettingsRuntime.lyricWordByWordEnabled = value
             "lyrics_pseudo_timing" -> MeloXSettingsRuntime.lyricPseudoTimingEnabled = value
+            "lyrics_qq_bracket_backing" -> MeloXSettingsRuntime.qqBracketBackingVocals = value
             "lyrics_tap_seek" -> MeloXSettingsRuntime.lyricTapSeekEnabled = value
             "lyrics_long_press_share" -> MeloXSettingsRuntime.lyricLongPressShareEnabled = value
             "lyrics_interlude_countdown" -> MeloXSettingsRuntime.lyricInterludeCountdownEnabled = value
