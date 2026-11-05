@@ -96,14 +96,26 @@ class QishuiProviderTest {
             else assertNull(chain.request().header("Cookie"))
             Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("OK")
                 .addHeader("Set-Cookie", if (creating) "csrf=qr-csrf; Path=/; Secure" else "sessionid=confirmed-session; Path=/; Secure")
-                .body((if (creating) """{"data":{"token":"qr-token","qrcode":"data:image/png;base64,AA=="}}"""
+                .body((if (creating) """{"data":{"token":"qr-token","qrcode":"data:image/png;base64,AA==","qrcode_index_url":"https://bff-pc.qishui.com/ucenter_web/app/sdk-next?token=qr-token&uc_sdk=scan-auth"}}"""
                     else """{"data":{"status":"confirmed"}}""").toResponseBody()).build()
         }.build()
         val api = QishuiApiClient({ session }, client)
         val qr = api.createQr()
+        assertEquals("https://bff-pc.qishui.com/light/invoke/scan_login?token=qr-token&os=Windows&computer_name=MeloX", qr.link)
+        assertEquals("", qr.image)
         val authorized = api.pollQr(qr.token)
         assertEquals("confirmed", authorized.status)
         assertEquals("confirmed-session", authorized.sessionId)
+    }
+
+    @Test fun scanLoginUrlUsesTheLiveDesktopEndpoint() {
+        val index = "https://bff-pc.qishui.com/ucenter_web/app/sdk-next?next_url=x&qr_source_aid=386088&token=abc_123&uc_sdk=scan-auth"
+        assertEquals(
+            "https://bff-pc.qishui.com/light/invoke/scan_login?token=abc_123&os=Windows&computer_name=Pixel%208",
+            scanLoginUrl(index, "Pixel 8"),
+        )
+        assertNull(scanLoginUrl("https://example.com/without-token", "Pixel"))
+        assertNull(scanLoginUrl("", "Pixel"))
     }
 
     @Test fun qrConfirmationKeepsFullPassportCookieAndAcceptsRedirect() = runBlocking {

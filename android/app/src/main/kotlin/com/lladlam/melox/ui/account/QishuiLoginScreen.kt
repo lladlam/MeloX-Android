@@ -55,7 +55,7 @@ fun QishuiLoginScreen(onDismiss: () -> Unit, onLoggedIn: () -> Unit) {
         try {
             val created = api.createQr()
             qr = created
-            status = "请使用已登录的抖音 App 扫码，并在手机上确认"
+            status = "请使用已登录的汽水音乐 App 扫码，并在手机上确认"
             repeat(100) {
                 delay(2_000)
                 val state = api.pollQr(created.token)
@@ -75,7 +75,7 @@ fun QishuiLoginScreen(onDismiss: () -> Unit, onLoggedIn: () -> Unit) {
                         status = "二维码已失效或已取消，请刷新后重试"
                         return@LaunchedEffect
                     }
-                    "scanned", "scaned" -> status = "已扫码，请在抖音 App 中确认登录"
+                    "scanned", "scaned" -> status = "已扫码，请在汽水音乐 App 中确认登录"
                     "confirmed" -> status = "已确认，正在等待汽水音乐登录会话…"
                 }
             }
@@ -109,7 +109,7 @@ fun QishuiLoginScreen(onDismiss: () -> Unit, onLoggedIn: () -> Unit) {
                 if (bitmap != null) Image(bitmap.asImageBitmap(), "汽水音乐登录二维码", Modifier.size(240.dp))
                 else if (error == null && qr == null) CircularProgressIndicator()
                 Text(error ?: status, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .72f))
-                Text("此接口当前要求使用抖音 App 扫码；汽水音乐 App 扫码可能无法完成确认。",
+                Text("请使用汽水音乐手机客户端扫码。抖音扫码会打开已失效的旧页面并提示\"无法访问页面\"；二维码过期时点下方刷新。",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .52f))
                 MeloXGlassButton(onClick = { refresh++ }, style = MeloXGlassButtonStyle.BorderedProminent) { Text("刷新二维码") }
                 MeloXLegalLinks()

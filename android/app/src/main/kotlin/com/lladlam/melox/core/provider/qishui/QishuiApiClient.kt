@@ -178,7 +178,17 @@ internal class QishuiApiClient(
         val token = QishuiParsing.text(data, "token")
         if (token.isBlank()) throw IOException("汽水音乐未返回登录二维码")
         qrToken = token; qrCookies = cookies
-        return Qr(token, QishuiParsing.text(data, "qrcode"), QishuiParsing.text(data, "qrcode_index_url"))
+        val indexUrl = QishuiParsing.text(data, "qrcode_index_url")
+        // Upstream's `qrcode`/`qrcode_index_url` still points at the retired
+        // `ucenter_web/app/sdk-next` page, which now returns 404 in Douyin.
+        // Desktop clients build the QR locally from the passport token and the
+        // live `light/invoke/scan_login` page instead.
+        val scanUrl = scanLoginUrl(indexUrl, android.os.Build.MODEL.orEmpty())
+        return if (scanUrl != null) {
+            Qr(token, image = "", link = scanUrl)
+        } else {
+            Qr(token, QishuiParsing.text(data, "qrcode"), indexUrl)
+        }
     }
 
     suspend fun pollQr(token: String): QrState {
@@ -199,4 +209,22 @@ internal class QishuiApiClient(
         const val WebAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
         private val Json = "application/json; charset=utf-8".toMediaType()
     }
+}
+
+/**
+ * The live desktop scan-login page. Upstream's `qrcode_index_url` still embeds
+ * the retired `ucenter_web/app/sdk-next` path (HTTP 404), so build the QR from
+ * the passport token and this endpoint instead. Null when no token is present,
+ * in which case callers fall back to the upstream image.
+ */
+internal fun scanLoginUrl(indexUrl: String, computerName: String): String? {
+    val token = runCatching {
+        java.net.URI(indexUrl).rawQuery
+            ?.split('&')
+            ?.firstOrNull { it.startsWith("token=") }
+            ?.substringAfter('=')
+    }.getOrNull()?.takeIf { it.isNotBlank() } ?: return null
+    fun encode(value: String) = java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+    return "https://bff-pc.qishui.com/light/invoke/scan_login" +
+        "?token=${encode(token)}&os=Windows&computer_name=${encode(computerName.ifBlank { "MeloX" })}"
 }
