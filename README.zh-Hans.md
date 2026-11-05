@@ -278,6 +278,7 @@ apksigner verify --verbose --print-certs MeloX-Android-0.5.3.apk
 
 - [AndroidX / Jetpack Compose](https://github.com/androidx/androidx) — Compose UI、Activity、Lifecycle、Navigation 等 Android 基础能力；主要使用 Apache License 2.0。
 - [AndroidX Media3](https://github.com/androidx/media) — ExoPlayer、MediaSession 与后台播放；Apache License 2.0。
+- [Jellyfin androidx-media](https://github.com/jellyfin/jellyfin-androidx-media) — 预编译的 Media3 FFmpeg 音频解码器，用于受影响 Android 8.1 设备的 FLAC 软件解码回退；GPL-3.0。
 - [Coil](https://github.com/coil-kt/coil) — Compose 图片与封面加载；Apache License 2.0。
 - [OkHttp](https://github.com/square/okhttp) — HTTP 网络客户端；Apache License 2.0。
 - [kotlinx.coroutines](https://github.com/Kotlin/kotlinx.coroutines) — Kotlin 协程与异步任务；Apache License 2.0。

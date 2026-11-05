@@ -3755,6 +3755,7 @@ private fun AboutSettings(context: android.content.Context) {
                      "lladlam/MeloX-AutoSync：本地逐字歌词对齐与发音映射参考\n" +
                      "Microsoft ONNX Runtime：本地歌词对齐推理（MIT）\n" +
                      "AndroidX / Jetpack Compose / Media3：界面、生命周期与播放基础（Apache-2.0）\n" +
+                     "Jellyfin androidx-media：预编译 Media3 FFmpeg 音频解码器，受影响 Android 8.1 设备的 FLAC 软件解码回退（GPL-3.0）\n" +
                      "Coil / OkHttp / kotlinx.coroutines：封面加载、网络与协程（Apache-2.0）\n" +
                      "HarlonWang/quickjs-wrapper：LX Music 兼容音源脚本隔离运行时（各组件保留原许可证）\n" +
                      "ZXing：二维码生成（Apache-2.0）\n" +

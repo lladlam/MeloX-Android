@@ -1175,6 +1175,11 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
             ) {
                 super.buildAudioRenderers(
                     context,
+                    // Force OFF: with the extension mode ON, DefaultRenderersFactory
+                    // reflectively finds androidx.media3.decoder.ffmpeg.FfmpegAudioRenderer
+                    // on the classpath (the Jellyfin artifact) and adds it too, which
+                    // would decode every format twice. The renderer is added explicitly
+                    // below instead.
                     DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF,
                     QtiFlacDecoderWorkaround.mediaCodecSelector,
                     enableDecoderFallback,
@@ -1185,8 +1190,12 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
                 )
                 // Software fallback after the platform decoders: only takes formats
                 // no MediaCodec decoder handles, e.g. FLAC once the broken QTI
-                // decoder is hidden.
-                out.add(FfmpegAudioRenderer(eventHandler, eventListener, audioSink))
+                // decoder is hidden. Android 8.1 and older are the only affected
+                // versions; avoid constructing (and loading the native library for)
+                // this renderer on newer devices.
+                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.O_MR1) {
+                    out.add(FfmpegAudioRenderer(eventHandler, eventListener, audioSink))
+                }
             }
         }
         return ExoPlayer.Builder(this, renderersFactory)

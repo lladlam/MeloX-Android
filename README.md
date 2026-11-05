@@ -287,6 +287,7 @@ MeloX Android comes from the MeloX Android migration and also uses or references
 
 - [AndroidX / Jetpack Compose](https://github.com/androidx/androidx) — Compose UI, Activity, Lifecycle, and Navigation. Mostly Apache License 2.0.
 - [AndroidX Media3](https://github.com/androidx/media) — ExoPlayer, MediaSession, and background playback. Apache License 2.0.
+- [Jellyfin androidx-media](https://github.com/jellyfin/jellyfin-androidx-media) — prebuilt Media3 FFmpeg audio decoder used as the software FLAC fallback on affected Android 8.1 devices; GPL-3.0.
 - [Coil](https://github.com/coil-kt/coil) — Compose image loading. Apache License 2.0.
 - [OkHttp](https://github.com/square/okhttp) — HTTP client. Apache License 2.0.
 - [kotlinx.coroutines](https://github.com/Kotlin/kotlinx.coroutines) — coroutines. Apache License 2.0.
