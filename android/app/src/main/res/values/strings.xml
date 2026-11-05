@@ -1569,4 +1569,6 @@
     <string name="settings_lyrics_qq_bracket_backing_note">Lines wrapped entirely in parentheses (…) become the backing vocal of the previous line. They start when that line ends and keep their original end time.</string>
     <string name="settings_listen_solo">Solo listening (keep room online)</string>
     <string name="settings_listen_solo_note">Keep the room online but control only this device. Your playback is not sent to the other listener, and the room keeps its current song. Turn off to sync back to the room.</string>
+    <string name="settings_storage_playback_limit">Playback cache limit</string>
+    <string name="settings_storage_playback_limit_note">When the limit is reached, the least recently used audio is evicted. The new limit takes effect after the app restarts.</string>
 </resources>

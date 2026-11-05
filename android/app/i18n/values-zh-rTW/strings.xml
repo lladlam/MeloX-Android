@@ -1569,4 +1569,6 @@
     <string name="settings_lyrics_qq_bracket_backing_note">整行括號（…）的內容會作為上一句的伴唱：從上一句結束時開始，結束時間沿用原歌詞。</string>
     <string name="settings_listen_solo">單人模式（保持房間在線）</string>
     <string name="settings_listen_solo_note">保持一起聽房間在線，但只控制本機播放：你的切歌和暫停不會影響對方，房間仍顯示原來的歌。關閉後會同步回對方的目前播放。</string>
+    <string name="settings_storage_playback_limit">播放快取上限</string>
+    <string name="settings_storage_playback_limit_note">達到上限後會自動清除最久未使用的音訊快取；修改後下次啟動應用程式生效。</string>
 </resources>

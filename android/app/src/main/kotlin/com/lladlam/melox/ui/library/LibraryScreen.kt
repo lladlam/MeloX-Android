@@ -3388,11 +3388,13 @@ private fun MeloXStandardPlaylistHero(
                 modifier = Modifier
                     .size(artworkSize)
                     .shadow(
-                        elevation = 18.dp,
+                        elevation = 12.dp,
                         shape = RoundedCornerShape(12.dp),
-                        clip = false,
-                        ambientColor = Color.Black.copy(alpha = 0.18f),
-                        spotColor = Color.Black.copy(alpha = 0.18f),
+                        // clip=true keeps the platform shadow on the rounded
+                        // outline instead of the rectangular layer bounds.
+                        clip = true,
+                        ambientColor = Color.Black.copy(alpha = 0.12f),
+                        spotColor = Color.Black.copy(alpha = 0.12f),
                     ),
             ) {
                 AsyncImage(

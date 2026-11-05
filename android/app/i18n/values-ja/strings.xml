@@ -1569,4 +1569,6 @@
     <string name="settings_lyrics_qq_bracket_backing_note">行全体が括弧（…）で囲まれた歌詞を前の行のバッキングボーカルにします。前の行が終わった時点から始まり、元の終了時刻を維持します。</string>
     <string name="settings_listen_solo">ソロモード（ルームはオンラインのまま）</string>
     <string name="settings_listen_solo_note">一緒に聴くルームには接続したまま、この端末の再生だけを操作します。曲送りや一時停止は相手に送られず、ルームには元の曲が表示されます。オフにすると相手の現在の再生に同期します。</string>
+    <string name="settings_storage_playback_limit">再生キャッシュの上限</string>
+    <string name="settings_storage_playback_limit_note">上限に達すると、最も長く使われていない音声キャッシュから削除されます。変更はアプリの次回起動時に反映されます。</string>
 </resources>

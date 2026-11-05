@@ -17,7 +17,7 @@ object MeloXMediaCache {
     fun get(context: Context): SimpleCache = cache ?: synchronized(this) {
         cache ?: SimpleCache(
             File(context.applicationContext.cacheDir, "melox_media"),
-            LeastRecentlyUsedCacheEvictor(MEDIA_CACHE_BYTES),
+            LeastRecentlyUsedCacheEvictor(limitBytes(context)),
             StandaloneDatabaseProvider(context.applicationContext),
         ).also { cache = it }
     }
@@ -27,5 +27,14 @@ object MeloXMediaCache {
         active.keys.toList().forEach(active::removeResource)
     }
 
-    private const val MEDIA_CACHE_BYTES = 512L * 1024L * 1024L
+    fun limitBytes(context: Context): Long {
+        val stored = context.applicationContext
+            .getSharedPreferences("melox_app_settings", Context.MODE_PRIVATE)
+            .getLong("playback_cache_limit_bytes", DEFAULT_LIMIT_BYTES)
+        return stored.coerceIn(MIN_LIMIT_BYTES, MAX_LIMIT_BYTES)
+    }
+
+    const val DEFAULT_LIMIT_BYTES = 512L * 1024L * 1024L
+    const val MIN_LIMIT_BYTES = 128L * 1024L * 1024L
+    const val MAX_LIMIT_BYTES = 4L * 1024L * 1024L * 1024L
 }

@@ -317,4 +317,6 @@
     <string name="settings_lyrics_qq_bracket_backing_note">Tamamen parantez içine alınmış (…) satırlar önceki satırın geri vokali olur. Önceki satır bittiğinde başlar ve özgün bitiş zamanını korur.</string>
     <string name="settings_listen_solo">Tek başına dinleme (oda çevrimiçi kalır)</string>
     <string name="settings_listen_solo_note">Oda çevrimiçi kalır ama yalnızca bu cihazı kontrol edersiniz. Şarkı değiştirme ve duraklatma karşı tarafa gönderilmez; odada özgün şarkı görünür. Kapatınca karşı tarafın mevcut oynatımına geri dönersiniz.</string>
+    <string name="settings_storage_playback_limit">Oynatma önbelleği sınırı</string>
+    <string name="settings_storage_playback_limit_note">Sınıra ulaşıldığında en uzun süredir kullanılmayan ses önbelleği silinir. Yeni sınır uygulama yeniden başlatıldığında geçerli olur.</string>
 </resources>

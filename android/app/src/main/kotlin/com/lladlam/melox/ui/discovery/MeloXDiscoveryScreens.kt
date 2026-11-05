@@ -31,6 +31,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
@@ -914,69 +916,94 @@ private fun HomeAccountButton(account: HomeAccountUi) {
     }
 }
 
+private data class HomeQuickAction(
+    val title: String,
+    val eyebrow: String,
+    val subtitle: String,
+    val symbol: MeloXSymbol,
+    val colors: List<Color>,
+)
+
 @Composable
 private fun HomeQuickActions(source: MusicSource, active: String?, perform: (String) -> Unit) {
-    data class Action(
-        val title: String,
-        val eyebrow: String,
-        val subtitle: String,
-        val symbol: MeloXSymbol,
-        val colors: List<Color>,
-    )
     val actions = buildList {
         if (source == MusicSource.Netease) {
-            add(Action("每日推荐", stringResource(R.string.home_eyebrow_daily), stringResource(R.string.home_subtitle_daily), MeloXSymbol.Calendar, listOf(Color(0xFFFF5B8A), Color(0xFFFF3147))))
-            add(Action("热歌榜", stringResource(R.string.home_eyebrow_hot), stringResource(R.string.home_subtitle_hot), MeloXSymbol.Flame, listOf(Color(0xFFFFA14A), Color(0xFFFF5A36))))
-            add(Action("心动模式", stringResource(R.string.home_eyebrow_heart), stringResource(R.string.home_subtitle_heart), MeloXSymbol.Heart, listOf(Color(0xFFFF6EAC), Color(0xFF9B5DE5))))
-            add(Action("私人雷达", stringResource(R.string.home_eyebrow_radar), stringResource(R.string.home_subtitle_radar), MeloXSymbol.RadioWaves, listOf(Color(0xFF6B7BFF), Color(0xFF8C52FF))))
-            add(Action("私人漫游", stringResource(R.string.home_eyebrow_roam), stringResource(R.string.home_subtitle_roam), MeloXSymbol.Walk, listOf(Color(0xFF26C6DA), Color(0xFF4285F4))))
-            add(Action("相似歌曲", stringResource(R.string.home_eyebrow_similar), stringResource(R.string.home_subtitle_similar), MeloXSymbol.List, listOf(Color(0xFF58C9A3), Color(0xFF159D9A))))
+            add(HomeQuickAction("每日推荐", stringResource(R.string.home_eyebrow_daily), stringResource(R.string.home_subtitle_daily), MeloXSymbol.Calendar, listOf(Color(0xFFFF5B8A), Color(0xFFFF3147))))
+            add(HomeQuickAction("热歌榜", stringResource(R.string.home_eyebrow_hot), stringResource(R.string.home_subtitle_hot), MeloXSymbol.Flame, listOf(Color(0xFFFFA14A), Color(0xFFFF5A36))))
+            add(HomeQuickAction("心动模式", stringResource(R.string.home_eyebrow_heart), stringResource(R.string.home_subtitle_heart), MeloXSymbol.Heart, listOf(Color(0xFFFF6EAC), Color(0xFF9B5DE5))))
+            add(HomeQuickAction("私人雷达", stringResource(R.string.home_eyebrow_radar), stringResource(R.string.home_subtitle_radar), MeloXSymbol.RadioWaves, listOf(Color(0xFF6B7BFF), Color(0xFF8C52FF))))
+            add(HomeQuickAction("私人漫游", stringResource(R.string.home_eyebrow_roam), stringResource(R.string.home_subtitle_roam), MeloXSymbol.Walk, listOf(Color(0xFF26C6DA), Color(0xFF4285F4))))
+            add(HomeQuickAction("相似歌曲", stringResource(R.string.home_eyebrow_similar), stringResource(R.string.home_subtitle_similar), MeloXSymbol.List, listOf(Color(0xFF58C9A3), Color(0xFF159D9A))))
         }
-        add(Action("听歌识曲", stringResource(R.string.home_eyebrow_recognize), stringResource(R.string.home_subtitle_recognize), MeloXSymbol.Microphone, listOf(Color(0xFF7B61FF), Color(0xFF36C5F0))))
-        if (source == MusicSource.Netease) add(Action("私信", stringResource(R.string.home_eyebrow_messages), stringResource(R.string.home_subtitle_messages), MeloXSymbol.Mail, listOf(Color(0xFFFF6B8B), Color(0xFFFF3B30))))
+        add(HomeQuickAction("听歌识曲", stringResource(R.string.home_eyebrow_recognize), stringResource(R.string.home_subtitle_recognize), MeloXSymbol.Microphone, listOf(Color(0xFF7B61FF), Color(0xFF36C5F0))))
+        if (source == MusicSource.Netease) add(HomeQuickAction("私信", stringResource(R.string.home_eyebrow_messages), stringResource(R.string.home_subtitle_messages), MeloXSymbol.Mail, listOf(Color(0xFFFF6B8B), Color(0xFFFF3B30))))
         if (source == MusicSource.Netease && MeloXSettingsRuntime.podcastsEnabled && MeloXSettingsRuntime.podcastsHomePlacement) {
-            add(Action("播客", stringResource(R.string.home_eyebrow_podcasts), stringResource(R.string.home_subtitle_podcasts), MeloXSymbol.RadioWaves, listOf(Color(0xFF8B5CF6), Color(0xFFEC4899))))
+            add(HomeQuickAction("播客", stringResource(R.string.home_eyebrow_podcasts), stringResource(R.string.home_subtitle_podcasts), MeloXSymbol.RadioWaves, listOf(Color(0xFF8B5CF6), Color(0xFFEC4899))))
         }
         if (MeloXSettingsRuntime.downloadsEnabled && MeloXSettingsRuntime.downloadsHomePlacement) {
-            add(Action("下载", stringResource(R.string.home_eyebrow_downloads), stringResource(R.string.home_subtitle_downloads), MeloXSymbol.Download, listOf(Color(0xFF0EA5E9), Color(0xFF14B8A6))))
+            add(HomeQuickAction("下载", stringResource(R.string.home_eyebrow_downloads), stringResource(R.string.home_subtitle_downloads), MeloXSymbol.Download, listOf(Color(0xFF0EA5E9), Color(0xFF14B8A6))))
         }
         if (source == MusicSource.Netease && MeloXSettingsRuntime.cloudMusicEnabled && MeloXSettingsRuntime.cloudHomePlacement) {
-            add(Action("云盘", stringResource(R.string.home_eyebrow_cloud), stringResource(R.string.home_subtitle_cloud), MeloXSymbol.Storage, listOf(Color(0xFF64748B), Color(0xFF6366F1))))
+            add(HomeQuickAction("云盘", stringResource(R.string.home_eyebrow_cloud), stringResource(R.string.home_subtitle_cloud), MeloXSymbol.Storage, listOf(Color(0xFF64748B), Color(0xFF6366F1))))
         }
     }
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    if (actions.isEmpty()) return
+    val pages = actions.chunked(2)
+    val pagerState = rememberPagerState(pageCount = { pages.size })
+    // Two half-width cards per page; the pager snaps as one magnetic group so
+    // a swipe never rests on a half-visible tile.
+    HorizontalPager(
+        state = pagerState,
+        pageSpacing = 0.dp,
+    ) { page ->
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            pages[page].forEach { action ->
+                HomeQuickActionCard(
+                    action = action,
+                    active = active,
+                    perform = perform,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            repeat(2 - pages[page].size) { Spacer(Modifier.weight(1f)) }
+        }
+    }
+}
+
+@Composable
+private fun HomeQuickActionCard(
+    action: HomeQuickAction,
+    active: String?,
+    perform: (String) -> Unit,
+    modifier: Modifier,
+) {
+    Column(
+        modifier = modifier.clickable(enabled = active == null) { perform(action.title) },
     ) {
-        items(actions, key = { it.title }) { action ->
-            Column(
-                Modifier
-                    .width(310.dp)
-                    .clickable(enabled = active == null) { perform(action.title) },
-            ) {
-                Text(action.eyebrow.uppercase(), color = MaterialTheme.colorScheme.onBackground.copy(alpha = .55f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                Text(action.title, modifier = Modifier.padding(top = 3.dp), fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Text(action.subtitle, modifier = Modifier.padding(top = 2.dp), color = MaterialTheme.colorScheme.onBackground.copy(alpha = .52f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1.48f)
-                        .padding(top = 8.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Brush.linearGradient(action.colors)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    MeloXSymbolIcon(
-                        symbol = action.symbol,
-                        modifier = Modifier.fillMaxSize(),
-                        color = Color.White.copy(alpha = .24f),
-                        iconSize = 72.sp,
-                    )
-                    Text(action.title, modifier = Modifier.align(Alignment.BottomStart).padding(18.dp), color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
-                    if (active == action.title) {
-                        CircularProgressIndicator(Modifier.size(52.dp), color = Color.White, strokeWidth = 3.dp)
-                    }
-                }
+        Text(action.eyebrow.uppercase(), color = MaterialTheme.colorScheme.onBackground.copy(alpha = .55f), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(action.title, modifier = Modifier.padding(top = 2.dp), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(action.subtitle, modifier = Modifier.padding(top = 1.dp), color = MaterialTheme.colorScheme.onBackground.copy(alpha = .52f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp)
+                .aspectRatio(1.25f)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Brush.linearGradient(action.colors)),
+            contentAlignment = Alignment.Center,
+        ) {
+            MeloXSymbolIcon(
+                symbol = action.symbol,
+                modifier = Modifier.fillMaxSize(),
+                color = Color.White.copy(alpha = .24f),
+                iconSize = 48.sp,
+            )
+            Text(action.title, modifier = Modifier.align(Alignment.BottomStart).padding(14.dp), color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            if (active == action.title) {
+                CircularProgressIndicator(Modifier.size(40.dp), color = Color.White, strokeWidth = 3.dp)
             }
         }
     }
