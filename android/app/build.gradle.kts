@@ -329,6 +329,9 @@ dependencies {
     implementation("androidx.media3:media3-datasource-okhttp:1.10.1")
     implementation("androidx.media3:media3-exoplayer:1.10.1")
     implementation("androidx.media3:media3-session:1.10.1")
+    // Prebuilt Media3 FFmpeg audio decoder by Jellyfin (GPL-3.0); software FLAC fallback
+    // for devices whose platform FLAC decoder is broken (QtiFlacDecoderWorkaround).
+    implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.9.0+1")
 
     // AutoSync word-level lyric alignment. Inference is fully local (ONNX
     // Runtime on CPU); weights are supplied per language, never bundled here.
