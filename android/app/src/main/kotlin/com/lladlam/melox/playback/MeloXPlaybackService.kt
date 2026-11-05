@@ -26,10 +26,14 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.decoder.ffmpeg.FfmpegAudioRenderer
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.Renderer
+import androidx.media3.exoplayer.audio.AudioRendererEventListener
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.CommandButton
 import com.lladlam.melox.R
@@ -1156,6 +1160,32 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
                 .setEnableFloatOutput(false)
                 .setEnableAudioTrackPlaybackParams(false)
                 .build()
+
+            override fun buildAudioRenderers(
+                context: Context,
+                extensionRendererMode: Int,
+                mediaCodecSelector: MediaCodecSelector,
+                enableDecoderFallback: Boolean,
+                audioSink: AudioSink,
+                eventHandler: Handler,
+                eventListener: AudioRendererEventListener,
+                out: ArrayList<Renderer>,
+            ) {
+                super.buildAudioRenderers(
+                    context,
+                    DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF,
+                    QtiFlacDecoderWorkaround.mediaCodecSelector,
+                    enableDecoderFallback,
+                    audioSink,
+                    eventHandler,
+                    eventListener,
+                    out,
+                )
+                // Software fallback after the platform decoders: only takes formats
+                // no MediaCodec decoder handles, e.g. FLAC once the broken QTI
+                // decoder is hidden.
+                out.add(FfmpegAudioRenderer(eventHandler, eventListener, audioSink))
+            }
         }
         return ExoPlayer.Builder(this, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
