@@ -1119,7 +1119,7 @@ fun MeloXNowPlaying(
     state: MeloXPlaybackUiState,
     onDismiss: () -> Unit,
 ) {
-    var page by remember { mutableStateOf(MeloXNowPlayingPage.Artwork) }
+    var page by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(MeloXNowPlayingPage.Artwork) }
 
     Box(
         modifier = Modifier

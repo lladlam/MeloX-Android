@@ -1,4 +1,5 @@
 package com.lladlam.melox.ui.collection
+import com.lladlam.melox.ui.state.rememberRetainedPageState
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -211,10 +212,11 @@ private fun AlbumScreen(id: Long, onBack: () -> Unit) {
     val context = LocalContext.current
     val app = context.applicationContext
     val client = remember(app) { NeteaseUniversalSearchClient(cookieProvider = { NeteaseSessionStore.readCookie(app) }) }
-    var program by remember(id) { mutableStateOf<MeloXPodcastProgram?>(null) }
-    var loading by remember(id) { mutableStateOf(true) }
+    var program by rememberRetainedPageState(id) { mutableStateOf<MeloXPodcastProgram?>(null) }
+    var loading by remember(id) { mutableStateOf(program == null) }
     var error by remember(id) { mutableStateOf<String?>(null) }
     LaunchedEffect(id) {
+        if (program != null) return@LaunchedEffect
         runCatching { client.podcastProgramDetail(id) }
             .onSuccess { program = it ?: run { error = context.getString(R.string.artist_program_missing); null } }
             .onFailure { error = it.message ?: context.getString(R.string.artist_program_failed) }

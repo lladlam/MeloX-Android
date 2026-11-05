@@ -57,11 +57,13 @@ object MeloXAppVisibility : Application.ActivityLifecycleCallbacks {
     val foregroundSessionId: Long get() = foregroundSession
 
     override fun onActivityStarted(activity: Activity) {
+        traceActivity(activity, "started")
         if (startedActivities == 0) foregroundSession++
         startedActivities++
         foregroundState.value = startedActivities > 0
     }
     override fun onActivityStopped(activity: Activity) {
+        traceActivity(activity, "stopped")
         startedActivities = (startedActivities - 1).coerceAtLeast(0)
         foregroundState.value = startedActivities > 0
         if (startedActivities == 0) recordBackgrounded(activity)
@@ -84,11 +86,27 @@ object MeloXAppVisibility : Application.ActivityLifecycleCallbacks {
                 .apply()
         } catch (_: Throwable) { }
     }
-    override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
+    private fun traceActivity(activity: Activity, event: String) {
+        if (!BuildConfig.DEBUG) return
+        android.util.Log.i(
+            "MeloXLifecycle",
+            "${activity.javaClass.simpleName}@${System.identityHashCode(activity)} " +
+                "$event task=${activity.taskId} finishing=${activity.isFinishing} " +
+                "changingConfig=${activity.isChangingConfigurations}",
+        )
+    }
+
+    override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
+        traceActivity(activity, "created restored=${savedInstanceState != null}")
+    }
     override fun onActivityResumed(activity: Activity) = Unit
     override fun onActivityPaused(activity: Activity) = Unit
-    override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
-    override fun onActivityDestroyed(activity: Activity) = Unit
+    override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {
+        traceActivity(activity, "saved")
+    }
+    override fun onActivityDestroyed(activity: Activity) {
+        traceActivity(activity, "destroyed")
+    }
 }
 
 private object MeloXMemoryCallbacks : ComponentCallbacks2 {

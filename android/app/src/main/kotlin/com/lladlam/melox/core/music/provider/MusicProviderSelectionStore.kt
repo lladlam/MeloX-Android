@@ -55,7 +55,11 @@ object MusicProviderSelectionStore {
     fun selectedSource(context: Context): MusicSource {
         val preferences = context.applicationContext
             .getSharedPreferences(PreferencesName, Context.MODE_PRIVATE)
-        val stored = MusicSource.fromStorageValue(preferences.getString(KeySelectedSource, null))
+        // SourceId is the authoritative selection. Older installs/test migrations
+        // can leave the legacy field behind; reading one at startup and the other
+        // on resume silently switches providers and discards source-keyed pages.
+        val stored = SourceId.parse(preferences.getString(KeySelectedSourceId, null).orEmpty())?.builtIn
+            ?: MusicSource.fromStorageValue(preferences.getString(KeySelectedSource, null))
         if (stored == MusicSource.Kugou) {
             // Switch only the selected source; standard and Lite credentials remain isolated.
             preferences.edit().putString(KeySelectedSource, MusicSource.KugouLite.storageValue).apply()

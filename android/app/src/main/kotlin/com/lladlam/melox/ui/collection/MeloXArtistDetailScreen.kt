@@ -1,5 +1,8 @@
 package com.lladlam.melox.ui.collection
 
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.lladlam.melox.ui.state.rememberRetainedPageState
+
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import kotlinx.coroutines.CancellationException
@@ -92,16 +95,16 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
     val app = context.applicationContext
     val client = remember(app) { NeteaseCollectionDetailsClient(cookieProvider = { NeteaseSessionStore.readCookie(app) }) }
     val scope = rememberCoroutineScope()
-    var detail by remember(id) { mutableStateOf<MeloXArtistDetail?>(null) }
-    var loading by remember(id) { mutableStateOf(true) }
+    var detail by rememberRetainedPageState(id) { mutableStateOf<MeloXArtistDetail?>(null) }
+    var loading by remember(id) { mutableStateOf(detail == null) }
     var error by remember(id) { mutableStateOf<String?>(null) }
-    var followed by remember(id) { mutableStateOf<Boolean?>(null) }
+    var followed by rememberSaveable(id) { mutableStateOf<Boolean?>(null) }
     var followBusy by remember(id) { mutableStateOf(false) }
     var selectedSong by remember(id) { mutableStateOf<SearchSong?>(null) }
-    var allSongs by remember(id) { mutableStateOf<List<SearchSong>>(emptyList()) }
+    var allSongs by rememberRetainedPageState(id) { mutableStateOf<List<SearchSong>>(emptyList()) }
     var showInfoSheet by remember { mutableStateOf(false) }
-    var expandedSection by remember { mutableStateOf<String?>(null) }
-    var selectedAlbumId by remember { mutableStateOf<Long?>(null) }
+    var expandedSection by rememberSaveable(id) { mutableStateOf<String?>(null) }
+    var selectedAlbumId by rememberSaveable(id) { mutableStateOf<Long?>(null) }
 
     val expandedSectionBackProgress = remember { Animatable(0f) }
     PredictiveBackHandler(enabled = expandedSection != null && selectedAlbumId == null) {
@@ -160,6 +163,7 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
     }
 
     LaunchedEffect(id) {
+        if (detail != null) return@LaunchedEffect
         loading = true
         runCatching { client.artistDetail(id) }
             .onSuccess {

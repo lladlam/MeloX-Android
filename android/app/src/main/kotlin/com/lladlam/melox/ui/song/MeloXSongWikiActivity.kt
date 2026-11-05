@@ -1,5 +1,8 @@
 package com.lladlam.melox.ui.song
 
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.lladlam.melox.ui.state.rememberRetainedPageState
+
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -124,16 +127,18 @@ private fun MeloXSongWikiScreen(song: SearchSong, onBack: () -> Unit) {
     val client = remember(app) {
         NeteaseMusicOperationsClient(cookieProvider = { NeteaseSessionStore.readCookie(app) })
     }
-    var sections by remember(song.id) { mutableStateOf<List<MeloXWikiSection>>(emptyList()) }
+    var sections by rememberRetainedPageState(song.id) { mutableStateOf<List<MeloXWikiSection>>(emptyList()) }
     var loading by remember(song.id) { mutableStateOf(true) }
     var error by remember(song.id) { mutableStateOf<String?>(null) }
-    var refreshKey by remember(song.id) { mutableIntStateOf(0) }
+    var refreshKey by rememberSaveable(song.id) { mutableIntStateOf(0) }
+    var loaded by rememberRetainedPageState(song.id, refreshKey) { mutableStateOf(false) }
 
     LaunchedEffect(song.id, refreshKey) {
+        if (loaded) { loading = false; return@LaunchedEffect }
         loading = true
         error = null
         runCatching { client.songWiki(song.id) }
-            .onSuccess { sections = it }
+            .onSuccess { sections = it; loaded = true }
             .onFailure { error = it.message ?: "歌曲百科加载失败" }
         loading = false
     }

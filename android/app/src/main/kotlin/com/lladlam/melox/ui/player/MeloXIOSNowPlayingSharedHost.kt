@@ -167,7 +167,7 @@ fun MeloXIOSNowPlayingSharedHost(
         onDispose {}
     }
     val rememberPlayerPage = MeloXSettingsPreferences.boolean(context, "playback_remember_page", true)
-    var page by remember(rememberPlayerPage) {
+    var page by androidx.compose.runtime.saveable.rememberSaveable(rememberPlayerPage) {
         mutableStateOf(
             if (rememberPlayerPage) runCatching {
                 MeloXNowPlayingPage.valueOf(
@@ -179,7 +179,7 @@ fun MeloXIOSNowPlayingSharedHost(
     var transitionSourcePage by remember {
         mutableStateOf(MeloXNowPlayingPage.Artwork)
     }
-    var showActions by remember { mutableStateOf(false) }
+    var showActions by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var showQuality by remember { mutableStateOf(false) }
     var showLandscapeSkyline by remember { mutableStateOf(false) }
     var lyricsInterfaceHidden by remember { mutableStateOf(false) }

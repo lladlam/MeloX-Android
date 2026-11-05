@@ -151,12 +151,12 @@ internal fun MeloXProviderSongActionsOverlay(
 
     val unifiedFavoritesEnabled = MeloXUnifiedFavorites.enabled(context)
     val unifiedFavoritesRevision = MeloXUnifiedFavorites.revision
-    var page by remember(identity, visible) { mutableStateOf(ProviderSongActionPage.Main) }
+    var page by androidx.compose.runtime.saveable.rememberSaveable(identity, visible) { mutableStateOf(ProviderSongActionPage.Main) }
     var favoriteKnownState by remember(identity) { mutableStateOf<Boolean?>(null) }
     var favoriteWorking by remember(identity) { mutableStateOf(false) }
     var writablePlaylists by remember(identity) { mutableStateOf<List<MusicPlaylistSummary>>(emptyList()) }
     var showCreatePlaylist by remember(identity, visible, page) { mutableStateOf(false) }
-    var newPlaylistName by remember(identity, visible, page) { mutableStateOf("") }
+    var newPlaylistName by androidx.compose.runtime.saveable.rememberSaveable(identity, visible, page) { mutableStateOf("") }
     var playlistsLoading by remember(identity) { mutableStateOf(false) }
     var playlistWriteWorking by remember(identity) { mutableStateOf(false) }
     var actionStatus by remember(identity) { mutableStateOf<String?>(null) }

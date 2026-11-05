@@ -1,5 +1,8 @@
 package com.lladlam.melox.ui.player
 
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.lladlam.melox.ui.state.rememberRetainedPageState
+
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -150,22 +153,22 @@ fun MeloXSongActionsOverlay(
     val account = remember(app) { NeteaseSearchClient(cookieProvider = cookieProvider) }
     val downloads = remember(app) { MeloXDownloadStore.get(app) }
 
-    var page by remember(song.id, visible) { mutableStateOf(SongActionPage.Main) }
+    var page by rememberSaveable(song.id, visible) { mutableStateOf(SongActionPage.Main) }
     var busy by remember(song.id, visible) { mutableStateOf(false) }
     var message by remember(song.id, visible) { mutableStateOf<String?>(null) }
     var liked by remember(song.id, visible) { mutableStateOf<Boolean?>(null) }
     var writablePlaylists by remember(song.id, visible) { mutableStateOf<List<NeteasePlaylistSummary>>(emptyList()) }
-    var newPlaylistName by remember(song.id, visible) { mutableStateOf("") }
-    var newPlaylistPrivate by remember(song.id, visible) { mutableStateOf(false) }
-    var hotComments by remember(song.id, visible) { mutableStateOf<List<MeloXMusicComment>>(emptyList()) }
-    var comments by remember(song.id, visible) { mutableStateOf<List<MeloXMusicComment>>(emptyList()) }
-    var commentsPage by remember(song.id, visible) { mutableStateOf<com.lladlam.melox.core.network.MeloXCommentsPage?>(null) }
-    var selectedComment by remember(song.id, visible) { mutableStateOf<MeloXMusicComment?>(null) }
-    var repliesPage by remember(song.id, visible) { mutableStateOf<MeloXCommentRepliesPage?>(null) }
+    var newPlaylistName by rememberSaveable(song.id, visible) { mutableStateOf("") }
+    var newPlaylistPrivate by rememberSaveable(song.id, visible) { mutableStateOf(false) }
+    var hotComments by rememberRetainedPageState(song.id, visible) { mutableStateOf<List<MeloXMusicComment>>(emptyList()) }
+    var comments by rememberRetainedPageState(song.id, visible) { mutableStateOf<List<MeloXMusicComment>>(emptyList()) }
+    var commentsPage by rememberRetainedPageState(song.id, visible) { mutableStateOf<com.lladlam.melox.core.network.MeloXCommentsPage?>(null) }
+    var selectedComment by rememberRetainedPageState(song.id, visible) { mutableStateOf<MeloXMusicComment?>(null) }
+    var repliesPage by rememberRetainedPageState(song.id, visible) { mutableStateOf<MeloXCommentRepliesPage?>(null) }
     var shareContacts by remember(song.id, visible) { mutableStateOf<List<com.lladlam.melox.core.network.MeloXMessageContact>>(emptyList()) }
-    var playRecordPeriod by remember(song.id, visible) { mutableStateOf(MeloXUserPlayRecordPeriod.Week) }
-    var playRecords by remember(song.id, visible) { mutableStateOf<List<MeloXUserPlayRecord>>(emptyList()) }
-    var wiki by remember(song.id, visible) { mutableStateOf<List<MeloXWikiSection>>(emptyList()) }
+    var playRecordPeriod by rememberSaveable(song.id, visible) { mutableStateOf(MeloXUserPlayRecordPeriod.Week) }
+    var playRecords by rememberRetainedPageState(song.id, visible) { mutableStateOf<List<MeloXUserPlayRecord>>(emptyList()) }
+    var wiki by rememberRetainedPageState(song.id, visible) { mutableStateOf<List<MeloXWikiSection>>(emptyList()) }
     val togetherState by MeloXListenTogetherCoordinator.state(app).collectAsState()
     val listenRoom = togetherState.room
     var invitationText by remember(visible) { mutableStateOf("") }

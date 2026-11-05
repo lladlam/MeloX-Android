@@ -1,5 +1,7 @@
 package com.lladlam.melox.ui.search
 
+import com.lladlam.melox.ui.state.rememberRetainedPageState
+
 import com.lladlam.melox.ui.layout.LocalMeloXListDetail
 import com.lladlam.melox.ui.layout.rememberMeloXDetailSelection
 import com.lladlam.melox.ui.library.MeloXProviderArtistDetailScreen
@@ -323,37 +325,38 @@ fun SearchScreen(
     var searchTrigger by rememberSaveable(source.name) { mutableIntStateOf(0) }
     var skipSearchDebounce by rememberSaveable(source.name) { mutableStateOf(false) }
     var kind by rememberSaveable(source.name) { mutableStateOf(MeloXSearchKind.Songs) }
-    var songs by remember(source) { mutableStateOf<List<SearchSong>>(emptyList()) }
-    var providerSongs by remember(source) { mutableStateOf<List<MusicTrack>>(emptyList()) }
-    var providerPlaylists by remember(source) { mutableStateOf<List<MusicPlaylistSummary>>(emptyList()) }
-    var providerAlbums by remember(source) { mutableStateOf<List<MusicAlbumSummary>>(emptyList()) }
-    var providerArtists by remember(source) { mutableStateOf<List<MusicArtistSummary>>(emptyList()) }
-    var providerRecommendations by remember(source) { mutableStateOf<List<MusicPlaylistSummary>>(emptyList()) }
+    var songs by rememberRetainedPageState(source) { mutableStateOf<List<SearchSong>>(emptyList()) }
+    var providerSongs by rememberRetainedPageState(source) { mutableStateOf<List<MusicTrack>>(emptyList()) }
+    var providerPlaylists by rememberRetainedPageState(source) { mutableStateOf<List<MusicPlaylistSummary>>(emptyList()) }
+    var providerAlbums by rememberRetainedPageState(source) { mutableStateOf<List<MusicAlbumSummary>>(emptyList()) }
+    var providerArtists by rememberRetainedPageState(source) { mutableStateOf<List<MusicArtistSummary>>(emptyList()) }
+    var providerRecommendations by rememberRetainedPageState(source) { mutableStateOf<List<MusicPlaylistSummary>>(emptyList()) }
     var unifiedFailures by remember(source) { mutableStateOf<List<UnifiedMusicService.SearchFailure>>(emptyList()) }
-    var providerSearchPage by remember(source, kind, query, unifiedSources, selectedPlugin) { mutableIntStateOf(1) }
-    var providerSearchHasMore by remember(source, kind, query) { mutableStateOf(false) }
-    var media by remember(source) { mutableStateOf<List<MeloXSearchMediaItem>>(emptyList()) }
-    var recommendations by remember(source) { mutableStateOf<List<NeteasePlaylistSummary>>(emptyList()) }
-    var categoryTitle by remember(source) { mutableStateOf<String?>(null) }
-    var categoryPlaylists by remember(source) { mutableStateOf<List<NeteasePlaylistSummary>>(emptyList()) }
-    var selectedDetail by remember(source) { mutableStateOf<SearchDetailDestination?>(null) }
+    var providerSearchPage by rememberRetainedPageState(source, kind, query, unifiedSources, selectedPlugin) { mutableStateOf(1) }
+    var providerSearchHasMore by rememberRetainedPageState(source, kind, query) { mutableStateOf(false) }
+    var media by rememberRetainedPageState(source) { mutableStateOf<List<MeloXSearchMediaItem>>(emptyList()) }
+    var recommendations by rememberRetainedPageState(source) { mutableStateOf<List<NeteasePlaylistSummary>>(emptyList()) }
+    var categoryTitle by rememberSaveable(source) { mutableStateOf<String?>(null) }
+    var categoryPlaylists by rememberRetainedPageState(source) { mutableStateOf<List<NeteasePlaylistSummary>>(emptyList()) }
+    var selectedDetail by rememberRetainedPageState(source) { mutableStateOf<SearchDetailDestination?>(null) }
     // 详情覆盖层的内容与可见性必须拆成两个 state：返回时只关 selectedDetail，
     // overlayDetail 一直保留到退出过渡跑完。否则返回瞬间 let 取到空、详情子树被
     // 立刻拆掉，共享元素封面就只有进入、没有返回。
-    var overlayDetail by remember(source) { mutableStateOf<SearchDetailDestination?>(null) }
+    var overlayDetail by remember(source) { mutableStateOf(selectedDetail) }
     // 卡片可见性直接用 `selectedDetail?.key` 驱动，与详情 hero 的 visible 完全同步
     // （进入即退出、返回即进入），确保 sharedElement 两端同时处于过渡、能一镜到底配对。
     // ⚠ 不再用 busy/排队串行化：`MeloXInterruptiblePage` 已支持在途改向（弹簧继承值与速度），
     //   退出途中再点卡直接改向即可 —— 排队会把点击压到 ~350ms 后才响应（＝「退出后不能立刻点击」）。
     // 整页子页面（分类页 / 播客页 / 没有 hero 的详情页）的**内容**：同样的道理，
     // 打开时写入、返回时不清，可见性由 subPageOpen 实时推导。
-    var subPageContent by remember(source) { mutableStateOf<SearchSubPage?>(null) }
+    var subPageContent by rememberRetainedPageState(source) { mutableStateOf<SearchSubPage?>(null) }
     val detailBackProgress = remember { Animatable(0f) }
-    var podcastDiscovery by remember(source) { mutableStateOf(false) }
+    var podcastDiscovery by rememberSaveable(source) { mutableStateOf(false) }
     var loading by remember(source) { mutableStateOf(false) }
     var error by remember(source) { mutableStateOf<String?>(null) }
-    var selectedActionSong by remember(source) { mutableStateOf<SearchSong?>(null) }
+    var selectedActionSong by rememberRetainedPageState(source) { mutableStateOf<SearchSong?>(null) }
     val launchRequest = MeloXSearchLaunchBus.request
+    var loadedSearch by rememberRetainedPageState(source) { mutableStateOf<List<Any?>?>(null) }
 
     val visibleSongs = songs
     val visibleProviderSongs = providerSongs
@@ -384,6 +387,7 @@ fun SearchScreen(
     }
 
     LaunchedEffect(source) {
+        if (recommendations.isNotEmpty() || providerRecommendations.isNotEmpty()) return@LaunchedEffect
         if (source == MusicSource.Netease) {
             runCatching { library.explorePlaylists("推荐歌单", 10) }
                 .onSuccess { recommendations = it }
@@ -397,6 +401,8 @@ fun SearchScreen(
     }
 
     LaunchedEffect(query, kind, source, unifiedEnabled, unifiedSources, searchTrigger, selectedPlugin, providerSearchPage, pluginGeneration) {
+        val requestKey = listOf(query, kind, source, unifiedEnabled, unifiedSources, searchTrigger, selectedPlugin, providerSearchPage, pluginGeneration)
+        if (loadedSearch == requestKey) return@LaunchedEffect
         providerSearchHasMore = false
         if (selectedPlugin != null) return@LaunchedEffect
         val keyword = query.trim()
@@ -429,6 +435,7 @@ fun SearchScreen(
                 }
                 .onFailure { error = it.message ?: "无法读取歌曲链接" }
             loading = false
+            if (error == null) loadedSearch = requestKey
             return@LaunchedEffect
         }
 
@@ -541,6 +548,7 @@ fun SearchScreen(
                 }
             }
         }
+        if (error == null) loadedSearch = requestKey
         loading = false
     }
 

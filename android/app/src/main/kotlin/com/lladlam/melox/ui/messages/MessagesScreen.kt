@@ -1,5 +1,8 @@
 package com.lladlam.melox.ui.messages
 
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.lladlam.melox.ui.state.rememberRetainedPageState
+
 import android.content.Context
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -80,8 +83,8 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun MessagesScreen(onBack: () -> Unit) {
-    var selectedContact by remember { mutableStateOf<MeloXMessageContact?>(null) }
-    var selectingContact by remember { mutableStateOf(false) }
+    var selectedContact by rememberRetainedPageState { mutableStateOf<MeloXMessageContact?>(null) }
+    var selectingContact by rememberSaveable { mutableStateOf(false) }
 
     BackHandler(enabled = selectedContact != null || selectingContact) {
         if (selectedContact != null) selectedContact = null else selectingContact = false
@@ -123,7 +126,7 @@ private fun MessagesConversationList(
         NeteaseSearchClient(cookieProvider = { NeteaseSessionStore.readCookie(context) })
     }
 
-    var contacts by remember { mutableStateOf<List<MeloXMessageContact>>(emptyList()) }
+    var contacts by rememberRetainedPageState { mutableStateOf<List<MeloXMessageContact>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableIntStateOf(0) }
@@ -269,8 +272,8 @@ private fun MessageContactsScreen(
     val account = remember(context) {
         NeteaseSearchClient(cookieProvider = { NeteaseSessionStore.readCookie(context) })
     }
-    var contacts by remember { mutableStateOf<List<MeloXMessageContact>>(emptyList()) }
-    var query by remember { mutableStateOf("") }
+    var contacts by rememberRetainedPageState { mutableStateOf<List<MeloXMessageContact>>(emptyList()) }
+    var query by rememberSaveable { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableIntStateOf(0) }
@@ -432,9 +435,9 @@ private fun MessagesDetailScreen(
         NeteaseSearchClient(cookieProvider = { NeteaseSessionStore.readCookie(context) })
     }
 
-    var messages by remember(contact.id) { mutableStateOf<List<MeloXPrivateMessage>>(emptyList()) }
-    var currentUserId by remember { mutableStateOf(0L) }
-    var draft by remember { mutableStateOf("") }
+    var messages by rememberRetainedPageState(contact.id) { mutableStateOf<List<MeloXPrivateMessage>>(emptyList()) }
+    var currentUserId by rememberSaveable { mutableStateOf(0L) }
+    var draft by rememberSaveable(contact.id) { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }

@@ -1,5 +1,8 @@
 package com.lladlam.melox.ui.account
 
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.lladlam.melox.ui.state.rememberRetainedPageState
+
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -107,13 +110,13 @@ internal fun AccountHomeScreen(userId: Long, onBack: () -> Unit) {
     val social = remember(app) { NeteaseSocialExtrasClient(cookie) }
     val library = remember(app) { NeteaseLibraryClient(cookie) }
     val scope = rememberCoroutineScope()
-    var profile by remember(userId) { mutableStateOf<MeloXAccountDetail?>(null) }
-    var playlists by remember(userId) { mutableStateOf<List<NeteasePlaylistSummary>>(emptyList()) }
-    var period by remember(userId) { mutableStateOf(MeloXUserPlayRecordPeriod.Week) }
-    var records by remember(userId) { mutableStateOf<List<MeloXUserPlayRecord>>(emptyList()) }
-    var loading by remember(userId) { mutableStateOf(true) }
+    var profile by rememberRetainedPageState(userId) { mutableStateOf<MeloXAccountDetail?>(null) }
+    var playlists by rememberRetainedPageState(userId) { mutableStateOf<List<NeteasePlaylistSummary>>(emptyList()) }
+    var period by rememberSaveable(userId) { mutableStateOf(MeloXUserPlayRecordPeriod.Week) }
+    var records by rememberRetainedPageState(userId) { mutableStateOf<List<MeloXUserPlayRecord>>(emptyList()) }
+    var loading by remember(userId) { mutableStateOf(profile == null) }
     var error by remember(userId) { mutableStateOf<String?>(null) }
-    var selectedPlaylist by remember(userId) { mutableStateOf<NeteasePlaylistSummary?>(null) }
+    var selectedPlaylist by rememberRetainedPageState(userId) { mutableStateOf<NeteasePlaylistSummary?>(null) }
 
     suspend fun loadRank(requested: MeloXUserPlayRecordPeriod) {
         period = requested
@@ -140,7 +143,7 @@ internal fun AccountHomeScreen(userId: Long, onBack: () -> Unit) {
         loading = false
     }
 
-    LaunchedEffect(userId) { refresh() }
+    LaunchedEffect(userId) { if (profile == null) refresh() }
 
     selectedPlaylist?.let { playlist ->
         MeloXUnifiedPlaylistDetailScreen(playlist = playlist, onBack = { selectedPlaylist = null })

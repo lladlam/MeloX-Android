@@ -1,5 +1,8 @@
 package com.lladlam.melox.ui.search
 
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.lladlam.melox.ui.state.rememberRetainedPageState
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -25,7 +28,7 @@ internal fun PluginCatalogBrowser(
     trackContent: @Composable (List<MusicTrack>) -> Unit,
 ) {
     val provider = SourceId.parse(sourceValue)?.let { registry[it] } as? PluginMusicProvider
-    key(sourceValue, provider) {
+    key(sourceValue, generation) {
         PluginCatalogContent(registry, sourceValue, query, generation, initialSection, provider, trackContent)
     }
 }
@@ -40,15 +43,16 @@ private fun PluginCatalogContent(
     provider: PluginMusicProvider?,
     trackContent: @Composable (List<MusicTrack>) -> Unit,
 ) {
-    var section by remember(sourceValue, initialSection) { mutableStateOf(initialSection) }
-    var collection by remember(sourceValue, section, query) { mutableStateOf<Any?>(null) }
-    var page by remember(sourceValue, section, query, collection) { mutableIntStateOf(1) }
-    var rows by remember { mutableStateOf<List<Any>>(emptyList()) }
-    var tracks by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
-    var hasMore by remember { mutableStateOf(false) }
+    var section by rememberSaveable(sourceValue, initialSection) { mutableStateOf(initialSection) }
+    var collection by rememberRetainedPageState(sourceValue, section, query) { mutableStateOf<Any?>(null) }
+    var page by rememberSaveable(sourceValue, section, query, collection) { mutableIntStateOf(1) }
+    var rows by rememberRetainedPageState(sourceValue) { mutableStateOf<List<Any>>(emptyList()) }
+    var tracks by rememberRetainedPageState(sourceValue) { mutableStateOf<List<MusicTrack>>(emptyList()) }
+    var hasMore by rememberRetainedPageState(sourceValue) { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var accountName by remember { mutableStateOf<String?>(null) }
+    var accountName by rememberSaveable(sourceValue) { mutableStateOf<String?>(null) }
+    var loadedRequest by rememberRetainedPageState(sourceValue) { mutableStateOf<List<Any?>?>(null) }
     val sections = buildList {
         fun addIf(capability: PluginCapability, key: String, label: String) {
             if (provider?.manifest?.capabilities?.contains(capability) == true) add(key to label)
@@ -67,6 +71,8 @@ private fun PluginCatalogContent(
         if (sections.none { it.first == section }) section = sections.firstOrNull()?.first ?: "songs"
     }
     LaunchedEffect(sourceValue, query, generation, section, collection, page) {
+        val requestKey = listOf(sourceValue, query, generation, section, collection, page)
+        if (loadedRequest == requestKey) return@LaunchedEffect
         rows = emptyList(); tracks = emptyList(); error = null; hasMore = false; accountName = null
         if (provider == null) { error = "音源已禁用或卸载：$sourceValue"; return@LaunchedEffect }
         if (sections.none { it.first == section }) return@LaunchedEffect
@@ -106,6 +112,7 @@ private fun PluginCatalogContent(
             if (registry.generation != generation || registry[provider.sourceId] !== provider) {
                 rows = emptyList(); tracks = emptyList(); error = "音源状态已变化"
             }
+            if (error == null) loadedRequest = requestKey
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { error = com.lladlam.melox.core.plugin.PluginErrors.describe(failure) }
         finally { loading = false }

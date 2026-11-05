@@ -1,5 +1,7 @@
 package com.lladlam.melox.ui.discovery
 
+import com.lladlam.melox.ui.state.rememberRetainedPageState
+
 import com.lladlam.melox.ui.layout.LocalMeloXListDetail
 import com.lladlam.melox.ui.layout.rememberMeloXDetailSelection
 import com.lladlam.melox.core.music.provider.loadAllMusicPages
@@ -70,7 +72,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -367,10 +368,10 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
     }
     val scope = rememberCoroutineScope()
     val session = rememberNeteaseSessionStore()
-    var content by remember { mutableStateOf<NeteaseHomeContent?>(null) }
+    var content by rememberRetainedPageState(session.cookie, MeloXSettingsRuntime.musicArea, MeloXSettingsRuntime.podcastsEnabled) { mutableStateOf<NeteaseHomeContent?>(null) }
     var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var selectedCollection by rememberSaveable(stateSaver = DiscoveryCollectionSaver) { mutableStateOf<DiscoveryCollection?>(null) }
+    var selectedCollection by rememberSaveable(stateSaver = DiscoveryCollectionSaver) { mutableStateOf(restoreLastCollection(context)) }
     // 内容与可见性分开持有：返回时只把 selectedCollection 置空（让列表卡片重新进入过渡），
     // overlayCollection 保留，退出过渡期间详情仍被组合 → 封面才能一镜到底地 morph 回卡片。
     var overlayCollection by remember { mutableStateOf<DiscoveryCollection?>(null) }
@@ -381,17 +382,6 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
             overlayCollection = selectedCollection
         }
         rememberLastCollection(context, selectedCollection)
-    }
-    // A process killed while the playlist was open has no saved instance state
-    // when relaunched from the launcher. Reopen the last NetEase playlist for a
-    // short window; an explicit back clears it immediately.
-    LaunchedEffect(Unit) {
-        if (selectedCollection == null) {
-            restoreLastCollection(context)?.let {
-                selectedCollection = it
-                overlayCollection = it
-            }
-        }
     }
     var songList by rememberSaveable(stateSaver = HomeSongListSaver) { mutableStateOf<HomeSongList?>(null) }
     // 「每日推荐 / 热歌榜 / 私人雷达」歌单页的内容持有物。与 selectedCollection 同理：
@@ -405,9 +395,9 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
     var activeAction by remember { mutableStateOf<String?>(null) }
     // Reopening a loaded quick action (daily/ranked/radar) must not depend on a
     // second upstream request: the first request may be rate-limited by NetEase.
-    val quickActionCache = remember { mutableStateMapOf<String, List<SearchSong>>() }
-    var localRecommendations by remember { mutableStateOf(emptyList<com.lladlam.melox.core.recommendation.LocalRecommendationItem>()) }
-    var localCandidates by remember { mutableStateOf(emptyList<MusicTrack>()) }
+    var quickActionCache by rememberRetainedPageState(session.cookie) { mutableStateOf<Map<String, List<SearchSong>>>(emptyMap()) }
+    var localRecommendations by rememberRetainedPageState { mutableStateOf(emptyList<com.lladlam.melox.core.recommendation.LocalRecommendationItem>()) }
+    var localCandidates by rememberRetainedPageState { mutableStateOf(emptyList<MusicTrack>()) }
     val homeCacheKey = "${session.cookie.hashCode()}_${MeloXSettingsRuntime.musicArea}_${MeloXSettingsRuntime.podcastsEnabled}"
 
     fun refresh(forceServer: Boolean = false) {
@@ -440,9 +430,9 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
         }
         localRecommendations = localData.first
         localCandidates = localData.second
-        content = cache.loadHomeContent(homeCacheKey)
+        if (content == null) content = cache.loadHomeContent(homeCacheKey)
         if (session.isLoggedIn) session.refreshProfile()
-        if (NeteaseLibraryCache.beginHomeColdStartRefresh(homeCacheKey, cache.cacheDir)) refresh(false)
+        if (content == null || NeteaseLibraryCache.beginHomeColdStartRefresh(homeCacheKey, cache.cacheDir)) refresh(false)
     }
 
     val blocks = content?.let { value ->
@@ -602,7 +592,7 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
                             else -> emptyList()
                         }
                     }.onSuccess { songs ->
-                        if (songs.isNotEmpty()) quickActionCache[action] = songs
+                        if (songs.isNotEmpty()) quickActionCache = quickActionCache + (action to songs)
                         if (action in HomeSongListActions && songs.isNotEmpty()) {
                             val list = HomeSongList(
                                 title = action,
@@ -827,15 +817,15 @@ private fun ProviderHomeDataScreen(source: MusicSource, onOpenTool: (String) -> 
     val provider = remember(source, registry) { registry.require(source) }
     val home = provider as? HomeFeedCapability
     val library = provider as? UserLibraryCapability
-    var feed by remember(source) { mutableStateOf<MusicHomeFeed?>(null) }
-    var account by remember(source) { mutableStateOf<MusicAccountSummary?>(null) }
+    var feed by rememberRetainedPageState(source) { mutableStateOf<MusicHomeFeed?>(null) }
+    var account by rememberRetainedPageState(source) { mutableStateOf<MusicAccountSummary?>(null) }
     var refreshing by remember(source) { mutableStateOf(false) }
     var error by remember(source) { mutableStateOf<String?>(null) }
-    var selectedCollection by remember(source) { mutableStateOf<DiscoveryCollection?>(null) }
+    var selectedCollection by rememberRetainedPageState(source) { mutableStateOf<DiscoveryCollection?>(null) }
     // 内容与可见性分开持有（与网易云首页同款）：返回时只把 selectedCollection 置空，
     // overlayCollection 保留到退场过渡跑完，否则退场期间 content lambda 已取到 null，
     // 那个过渡在演一个空壳 ⇒「没有返回动画」。
-    var overlayCollection by remember(source) { mutableStateOf<DiscoveryCollection?>(null) }
+    var overlayCollection by remember(source) { mutableStateOf(selectedCollection) }
 
     fun refresh() {
         if (refreshing || home == null) return
@@ -856,7 +846,7 @@ private fun ProviderHomeDataScreen(source: MusicSource, onOpenTool: (String) -> 
         }
     }
 
-    LaunchedEffect(source) { refresh() }
+    LaunchedEffect(source) { if (feed == null) refresh() }
 
     // 退场过渡跑完再释放歌单页内容（理由见 overlayCollection）。
     LaunchedEffect(selectedCollection) {
@@ -1218,13 +1208,13 @@ private fun NeteaseExploreDataScreen() {
         (item != "精品歌单" || MeloXSettingsRuntime.showHighQualityPlaylists) &&
             (item != "播客" || MeloXSettingsRuntime.podcastsEnabled)
     }
-    var category by remember { mutableStateOf(visibleCategories.first()) }
-    var collections by remember { mutableStateOf<List<DiscoveryCollection>>(emptyList()) }
+    var category by rememberSaveable { mutableStateOf(visibleCategories.first()) }
+    var collections by rememberRetainedPageState(category) { mutableStateOf<List<DiscoveryCollection>>(emptyList()) }
     var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var selectedCollection by remember { mutableStateOf<DiscoveryCollection?>(null) }
+    var selectedCollection by rememberSaveable(stateSaver = DiscoveryCollectionSaver) { mutableStateOf<DiscoveryCollection?>(null) }
     // 见 NeteaseHomeDataScreen：内容保留到退出过渡结束，返回时封面才能 morph 回卡片。
-    var overlayCollection by remember { mutableStateOf<DiscoveryCollection?>(null) }
+    var overlayCollection by remember { mutableStateOf(selectedCollection) }
 
     fun refresh() {
         if (category == "播客" || refreshing) return
@@ -1244,8 +1234,8 @@ private fun NeteaseExploreDataScreen() {
 
     LaunchedEffect(category) {
         if (category == "播客") return@LaunchedEffect
-        collections = cache.loadExplore(category).orEmpty().map { DiscoveryCollection.Netease(it) }
-        if (NeteaseLibraryCache.beginExploreColdStartRefresh(category, cache.cacheDir)) refresh()
+        if (collections.isEmpty()) collections = cache.loadExplore(category).orEmpty().map { DiscoveryCollection.Netease(it) }
+        if (collections.isEmpty() || NeteaseLibraryCache.beginExploreColdStartRefresh(category, cache.cacheDir)) refresh()
     }
 
     SharedTransitionLayout(Modifier.fillMaxSize()) {
@@ -1313,15 +1303,15 @@ private fun ProviderExploreDataScreen(source: MusicSource) {
     val scope = rememberCoroutineScope()
     val provider = remember(source) { MeloXMusicProviders.create(context).require(source) }
     val home = provider as? HomeFeedCapability
-    var feed by remember(source) { mutableStateOf<MusicHomeFeed?>(null) }
-    var category by remember(source) { mutableStateOf("推荐歌单") }
+    var feed by rememberRetainedPageState(source) { mutableStateOf<MusicHomeFeed?>(null) }
+    var category by rememberSaveable(source) { mutableStateOf("推荐歌单") }
     var refreshing by remember(source) { mutableStateOf(false) }
     var error by remember(source) { mutableStateOf<String?>(null) }
-    var selectedCollection by remember(source) { mutableStateOf<DiscoveryCollection?>(null) }
+    var selectedCollection by rememberRetainedPageState(source) { mutableStateOf<DiscoveryCollection?>(null) }
     // 内容与可见性分开持有（与网易云首页同款）：返回时只把 selectedCollection 置空，
     // overlayCollection 保留到退场过渡跑完，否则退场期间 content lambda 已取到 null，
     // 那个过渡在演一个空壳 ⇒「没有返回动画」。
-    var overlayCollection by remember(source) { mutableStateOf<DiscoveryCollection?>(null) }
+    var overlayCollection by remember(source) { mutableStateOf(selectedCollection) }
 
     fun refresh() {
         if (refreshing || home == null) return
@@ -1338,7 +1328,7 @@ private fun ProviderExploreDataScreen(source: MusicSource) {
         }
     }
 
-    LaunchedEffect(source) { refresh() }
+    LaunchedEffect(source) { if (feed == null) refresh() }
 
     // 退场过渡跑完再释放歌单页内容（理由见 overlayCollection）。
     LaunchedEffect(selectedCollection) {
@@ -1999,9 +1989,9 @@ private fun DiscoveryCollectionDetail(
         is DiscoveryCollection.ProviderRanking -> Unit
     }
     val context = LocalContext.current.applicationContext
-    var tracks by remember(collection.key) { mutableStateOf<List<DiscoveryTrack>?>(null) }
+    var refreshVersion by rememberSaveable(collection.key) { mutableStateOf(0) }
+    var tracks by rememberRetainedPageState(collection.key, refreshVersion) { mutableStateOf<List<DiscoveryTrack>?>(null) }
     var error by remember(collection.key) { mutableStateOf<String?>(null) }
-    var refreshVersion by remember(collection.key) { mutableStateOf(0) }
     BackHandler(onBack = onBack)
 
     // ⚠ 2026-10-16：排行榜详情此前是「裸 LazyColumn」—— **整页没有任何背景**。
@@ -2017,6 +2007,7 @@ private fun DiscoveryCollectionDetail(
     val foreground = if (palette.prefersDarkAppearance) Color.White else Color.Black
 
     LaunchedEffect(collection.key, refreshVersion) {
+        if (tracks != null) return@LaunchedEffect
         tracks = null
         error = null
         runCatching {

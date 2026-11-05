@@ -1,5 +1,8 @@
 package com.lladlam.melox.ui.cloud
 
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.lladlam.melox.ui.state.rememberRetainedPageState
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -80,19 +83,19 @@ fun MeloXCloudMusicScreen(
         NeteaseUniversalSearchClient(cookieProvider = { NeteaseSessionStore.readCookie(app) })
     }
     val scope = rememberCoroutineScope()
-    var values by remember { mutableStateOf<List<MeloXCloudSong>>(emptyList()) }
-    var query by remember { mutableStateOf("") }
+    var values by rememberRetainedPageState { mutableStateOf<List<MeloXCloudSong>>(emptyList()) }
+    var query by rememberSaveable { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
     var searchingRemaining by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var loadMoreError by remember { mutableStateOf<String?>(null) }
-    var quota by remember { mutableStateOf("") }
-    var totalCount by remember { mutableIntStateOf(0) }
-    var usedBytes by remember { mutableLongStateOf(0L) }
-    var maxBytes by remember { mutableLongStateOf(0L) }
-    var hasMore by remember { mutableStateOf(false) }
-    var nextOffset by remember { mutableIntStateOf(0) }
+    var quota by rememberSaveable { mutableStateOf("") }
+    var totalCount by rememberSaveable { mutableIntStateOf(0) }
+    var usedBytes by rememberSaveable { mutableLongStateOf(0L) }
+    var maxBytes by rememberSaveable { mutableLongStateOf(0L) }
+    var hasMore by rememberSaveable { mutableStateOf(false) }
+    var nextOffset by rememberSaveable { mutableIntStateOf(0) }
     var searchReloadToken by remember { mutableIntStateOf(0) }
     var pendingDelete by remember { mutableStateOf<MeloXCloudSong?>(null) }
     var uploading by remember { mutableStateOf(false) }
@@ -194,7 +197,7 @@ fun MeloXCloudMusicScreen(
         }
     }
 
-    LaunchedEffect(Unit) { refresh() }
+    LaunchedEffect(Unit) { if (values.isEmpty()) refresh() }
 
     val normalizedQuery = query.trim()
     val isSearching = normalizedQuery.isNotEmpty()

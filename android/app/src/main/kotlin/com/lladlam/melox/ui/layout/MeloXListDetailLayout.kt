@@ -26,6 +26,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
@@ -84,11 +85,16 @@ internal interface MeloXDetailPageOwner {
 
 class MeloXDetailPaneState {
     internal class Slot(
+        val key: String,
         val visible: State<Boolean>,
         val onDismiss: State<(() -> Unit)?>,
         val content: @Composable () -> Unit,
     )
-    internal class Page(val intent: Intent, val onSuccess: (() -> Unit)? = null)
+    internal class Page(val intent: Intent, val onSuccess: (() -> Unit)? = null) {
+        val key: String = intent.getStringExtra("melox_page_key") ?: java.util.UUID.randomUUID().toString().also {
+            intent.putExtra("melox_page_key", it)
+        }
+    }
     internal val slots = mutableStateListOf<Slot>()
     internal val pages = mutableStateListOf<Page>()
 
@@ -111,6 +117,14 @@ class MeloXDetailPaneState {
     }
 
     fun clearPages() = pages.clear()
+
+    internal fun savePages(): ArrayList<Intent> = ArrayList(pages.map { Intent(it.intent) })
+
+    internal fun restorePages(intents: List<Intent>) {
+        pages.clear()
+        intents.filter { it.component?.className in pageClasses || it.action == ToolPageAction }
+            .forEach { pages.add(Page(Intent(it))) }
+    }
 
     internal fun openTool(route: String) {
         open(Intent(ToolPageAction).putExtra("route", route), parent = null)
@@ -185,13 +199,16 @@ internal fun MeloXAdaptiveDetail(
             CompositionLocalProvider(LocalMeloXInDetailPane provides true) { currentContent(shown) }
         }
     }
-    val slot = remember { MeloXDetailPaneState.Slot(currentVisible, currentDismiss) { movable(currentVisible.value) } }
+    val slotKey = rememberSaveable { java.util.UUID.randomUUID().toString() }
+    val slot = remember { MeloXDetailPaneState.Slot(slotKey, currentVisible, currentDismiss) { movable(currentVisible.value) } }
     DisposableEffect(state, slot) {
         state.slots.add(slot)
         onDispose { state.slots.remove(slot) }
     }
+    var previouslyVisible by remember { mutableStateOf(visible) }
     LaunchedEffect(visible) {
-        if (visible) state.clearPages()
+        if (visible && !previouslyVisible) state.clearPages()
+        previouslyVisible = visible
     }
     if (!LocalMeloXListDetail.current) movable(visible)
 }
@@ -273,13 +290,13 @@ internal fun MeloXListDetailLayout(
                         LocalMeloXPaneSize provides IntSize((rightSize.width - with(density) { rightSide.roundToPx() }).coerceAtLeast(0), (rightSize.height - with(density) { rightTop.roundToPx() }).coerceAtLeast(0)),
                     ) {
                         if (split) state.slots.forEach { slot ->
-                            key(slot) {
+                            key(slot.key) {
                                 val detailContext = remember(context, state, slot) { DetailContext(context, state, slot) }
                                 CompositionLocalProvider(LocalContext provides detailContext) { slot.content() }
                             }
                         }
                         state.pages.forEach { page ->
-                            key(page) {
+                            key(page.key) {
                                 val detailContext = remember(context, state, page) { DetailContext(context, state, page) }
                                 CompositionLocalProvider(LocalContext provides detailContext) {
                                     AdaptiveActivityPage(

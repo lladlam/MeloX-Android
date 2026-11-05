@@ -1,5 +1,8 @@
 package com.lladlam.melox.ui.library
 
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.lladlam.melox.ui.state.rememberRetainedPageState
+
 import androidx.compose.material3.TextButton
 
 import android.Manifest
@@ -328,17 +331,17 @@ fun LibraryScreen(
             ?: fallback
     }
     val onDetailSelected = rememberMeloXDetailSelection()
-    var selectedPage by remember(source, forcedPageName) { mutableStateOf(initialLibraryPage) }
-    var librarySearchQuery by remember(source) { mutableStateOf("") }
-    var selectedPlaylist by remember(source, session.cookie) { mutableStateOf<NeteasePlaylistSummary?>(null) }
-    var savedAlbums by remember(source) { mutableStateOf<List<MusicAlbumSummary>>(emptyList()) }
-    var followedArtists by remember(source) { mutableStateOf<List<MusicArtistSummary>>(emptyList()) }
-    var selectedAlbum by remember(source) { mutableStateOf<MusicAlbumSummary?>(null) }
-    var selectedArtist by remember(source) { mutableStateOf<MusicArtistSummary?>(null) }
-    var showLocalRecommendations by remember(source) { mutableStateOf(false) }
-    var snapshot by remember(source, session.cookie) { mutableStateOf<NeteaseLibrarySnapshot?>(null) }
-    var providerAccount by remember(source) { mutableStateOf<MusicAccountSummary?>(null) }
-    var loading by remember(source, session.cookie) { mutableStateOf(source != MusicSource.Netease) }
+    var selectedPage by rememberSaveable(source, forcedPageName) { mutableStateOf(initialLibraryPage) }
+    var librarySearchQuery by rememberSaveable(source) { mutableStateOf("") }
+    var selectedPlaylist by rememberRetainedPageState(source, session.cookie) { mutableStateOf<NeteasePlaylistSummary?>(null) }
+    var savedAlbums by rememberRetainedPageState(source) { mutableStateOf<List<MusicAlbumSummary>>(emptyList()) }
+    var followedArtists by rememberRetainedPageState(source) { mutableStateOf<List<MusicArtistSummary>>(emptyList()) }
+    var selectedAlbum by rememberRetainedPageState(source) { mutableStateOf<MusicAlbumSummary?>(null) }
+    var selectedArtist by rememberRetainedPageState(source) { mutableStateOf<MusicArtistSummary?>(null) }
+    var showLocalRecommendations by rememberSaveable(source) { mutableStateOf(false) }
+    var snapshot by rememberRetainedPageState(source, session.cookie) { mutableStateOf<NeteaseLibrarySnapshot?>(null) }
+    var providerAccount by rememberRetainedPageState(source) { mutableStateOf<MusicAccountSummary?>(null) }
+    var loading by remember(source, session.cookie) { mutableStateOf(source != MusicSource.Netease && snapshot == null) }
     var errorMessage by remember(source, session.cookie) { mutableStateOf<String?>(null) }
     val playlistListState = rememberLazyListState()
     // 本地推荐歌单：readRecommendedTracks() 要反序列化 candidate_tracks +
@@ -464,6 +467,7 @@ fun LibraryScreen(
     }
 
     val youtubeSessionRevision by YouTubeSessionStore.revision.collectAsState()
+    var loadedYoutubeRevision by rememberRetainedPageState(source) { mutableStateOf<Long?>(null) }
     LaunchedEffect(source, session.cookie, session.profile?.userId, youtubeSessionRevision.takeIf { source == MusicSource.YouTubeMusic }) {
         if (source == MusicSource.Netease) {
             val userId = session.profile?.userId
@@ -476,11 +480,12 @@ fun LibraryScreen(
                 return@LaunchedEffect
             }
             cache.loadSnapshot(userId)?.let { snapshot = it.withUnifiedFavorites(appContext) }
-            if (NeteaseLibraryCache.beginLibraryColdStartRefresh(userId, cache.cacheDir)) {
+            if (snapshot == null || NeteaseLibraryCache.beginLibraryColdStartRefresh(userId, cache.cacheDir)) {
                 refreshLibrary()
             }
-        } else {
+        } else if (snapshot == null || (source == MusicSource.YouTubeMusic && loadedYoutubeRevision != youtubeSessionRevision)) {
             refreshLibrary()
+            if (errorMessage == null) loadedYoutubeRevision = youtubeSessionRevision
         }
     }
 
@@ -910,12 +915,12 @@ private enum class MeloXLocalBrowseMode(val title: String) {
 private fun MeloXLibraryDownloadsPage(downloads: MeloXDownloadStore) {
     val context = LocalContext.current
     val providerDownloads = remember(context) { MeloXProviderDownloadStore.get(context) }
-    var page by remember { mutableStateOf(MeloXDownloadsPage.Root) }
-    var selectedPlaylistId by remember { mutableStateOf<Long?>(null) }
+    var page by rememberSaveable { mutableStateOf(MeloXDownloadsPage.Root) }
+    var selectedPlaylistId by rememberSaveable { mutableStateOf<Long?>(null) }
     var selecting by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
-    var browseMode by remember { mutableStateOf(MeloXLocalBrowseMode.Songs) }
-    var browseGroup by remember { mutableStateOf<String?>(null) }
+    var browseMode by rememberSaveable { mutableStateOf(MeloXLocalBrowseMode.Songs) }
+    var browseGroup by rememberSaveable { mutableStateOf<String?>(null) }
     var exportMessage by remember { mutableStateOf<String?>(null) }
 
     val active = downloads.activeDownloads.values.toList()
@@ -1791,11 +1796,13 @@ internal fun MeloXProviderArtistDetailScreen(
     val capability = remember(artist.id.sourceId) {
         MeloXMusicProviders.create(context)[artist.id.sourceId] as? ArtistCapability
     }
-    var songs by remember(artist.id) { mutableStateOf<List<SearchSong>>(emptyList()) }
-    var loading by remember(artist.id) { mutableStateOf(true) }
+    var songs by rememberRetainedPageState(artist.id) { mutableStateOf<List<SearchSong>>(emptyList()) }
+    var loading by remember(artist.id) { mutableStateOf(songs.isEmpty()) }
     var errorMessage by remember(artist.id) { mutableStateOf<String?>(null) }
-    var refreshVersion by remember(artist.id) { mutableStateOf(0) }
+    var refreshVersion by rememberSaveable(artist.id) { mutableStateOf(0) }
+    var loaded by rememberRetainedPageState(artist.id, refreshVersion) { mutableStateOf(false) }
     LaunchedEffect(artist.id, refreshVersion) {
+        if (loaded) { loading = false; return@LaunchedEffect }
         loading = true
         val reader = capability
         if (reader == null) {
@@ -1809,6 +1816,7 @@ internal fun MeloXProviderArtistDetailScreen(
             }
         }.onSuccess {
             songs = it
+            loaded = true
             errorMessage = null
         }.onFailure { failure ->
             errorMessage = failure.message
@@ -2323,22 +2331,23 @@ private fun MeloXPlaylistDetailScreen(
             it is DownloadCapability && (collectionSourceId.builtIn != null || it.supports(com.lladlam.melox.core.music.provider.MusicCapability.Download))
         } == true
     }
-    var detail by remember(initialPlaylist.id) { mutableStateOf<NeteasePlaylistDetail?>(null) }
+    var detail by rememberRetainedPageState(initialPlaylist.id, collectionSourceId) { mutableStateOf<NeteasePlaylistDetail?>(null) }
+    var detailLoaded by rememberRetainedPageState(initialPlaylist.id, collectionSourceId) { mutableStateOf(false) }
     val providerSync = providerSyncCandidate.takeUnless {
         (detail?.summary?.providerPlaylist ?: providerPlaylist)?.isEditable == false
     }
-    var loading by remember(initialPlaylist.id) { mutableStateOf(true) }
+    var loading by remember(initialPlaylist.id) { mutableStateOf(detail == null) }
     val pagedBilibiliPlaylist = providerPlaylist?.id?.sourceId?.builtIn == MusicSource.Bilibili && providedSongs == null
-    var providerPage by remember(initialPlaylist.id) { mutableStateOf(1) }
-    var providerHasMore by remember(initialPlaylist.id) { mutableStateOf(false) }
+    var providerPage by rememberRetainedPageState(initialPlaylist.id) { mutableStateOf(1) }
+    var providerHasMore by rememberRetainedPageState(initialPlaylist.id) { mutableStateOf(false) }
     var providerLoadingMore by remember(initialPlaylist.id) { mutableStateOf(false) }
     var providerPageError by remember(initialPlaylist.id) { mutableStateOf<String?>(null) }
     var providerLoadGeneration by remember(initialPlaylist.id) { mutableStateOf(0) }
     var errorMessage by remember(initialPlaylist.id) { mutableStateOf<String?>(null) }
-    var searchQuery by remember(initialPlaylist.id) { mutableStateOf("") }
+    var searchQuery by rememberSaveable(initialPlaylist.id) { mutableStateOf("") }
     var showPlaylistActions by remember(initialPlaylist.id) { mutableStateOf(false) }
     var showBatchDownload by remember(initialPlaylist.id) { mutableStateOf(false) }
-    var selectedTrackAction by remember(initialPlaylist.id) { mutableStateOf<SearchSong?>(null) }
+    var selectedTrackAction by rememberRetainedPageState(initialPlaylist.id) { mutableStateOf<SearchSong?>(null) }
     var showProviderRename by remember(initialPlaylist.id) { mutableStateOf(false) }
     var providerSyncTrack by remember(initialPlaylist.id) { mutableStateOf<SearchSong?>(null) }
     var providerSyncBusy by remember(initialPlaylist.id) { mutableStateOf(false) }
@@ -2352,7 +2361,7 @@ private fun MeloXPlaylistDetailScreen(
     var currentUserId by remember(initialPlaylist.id) { mutableStateOf<Long?>(null) }
     var savingPlaylist by remember(initialPlaylist.id) { mutableStateOf(false) }
     var palette by remember(initialPlaylist.coverUrl) { mutableStateOf(MeloXDetailPalette.LightFallback) }
-    var sortMode by remember(initialPlaylist.id) { mutableStateOf(MeloXPlaylistSortMode.Original) }
+    var sortMode by rememberSaveable(initialPlaylist.id) { mutableStateOf(MeloXPlaylistSortMode.Original) }
 
     DisposableEffect(showPlaylistActions, showBatchDownload, selectedTrackAction, showProviderRename, providerSyncTrack) {
         val visible = showProviderRename || providerSyncTrack != null ||
@@ -2405,6 +2414,7 @@ private fun MeloXPlaylistDetailScreen(
     }
 
     suspend fun refreshPlaylist() {
+        detailLoaded = false
         providerLoadGeneration++
         providerHasMore = false
         providerPageError = null
@@ -2412,6 +2422,7 @@ private fun MeloXPlaylistDetailScreen(
         errorMessage = null
         if (providedSongs != null) {
             detail = NeteasePlaylistDetail(summary = initialPlaylist, songs = providedSongs)
+            detailLoaded = true
             // ⚠ 不在此清 isSaved（2026-10-06）：收藏态由**另一个** LaunchedEffect 的
             //   refreshSavedState() 异步查得。若这里写 isSaved = null，而 refreshPlaylist
             //   又后于它完成，就会把已查到的收藏态覆盖成 null ⇒ ✓ 按钮退回「＋」⇒
@@ -2495,6 +2506,7 @@ private fun MeloXPlaylistDetailScreen(
                 }
                 .onFailure { errorMessage = it.message ?: "歌单加载失败" }
         }
+        detailLoaded = detail != null && errorMessage == null
         loading = false
     }
 
@@ -2524,12 +2536,20 @@ private fun MeloXPlaylistDetailScreen(
     }
 
     LaunchedEffect(initialPlaylist.id, providerPlaylist?.id, providedSongs) {
-        if (isAlbum || providerPlaylist != null) {
+        // Supplied lists (daily recommendations, charts, radar) are already loaded.
+        // Their synthetic IDs have no disk cache and must never pass through the
+        // process-wide network refresh gate: it suppresses the second open/restore.
+        if (providedSongs != null) {
             refreshPlaylist()
+        } else if (isAlbum || providerPlaylist != null) {
+            if (detail == null || !detailLoaded) refreshPlaylist()
         } else {
-            cache.loadPlaylistDetail(initialPlaylist.id)?.let { detail = it }
+            if (detail == null) cache.loadPlaylistDetail(initialPlaylist.id)?.let {
+                detail = it
+                detailLoaded = true
+            }
             loading = detail == null
-            if (NeteaseLibraryCache.beginPlaylistColdStartRefresh(initialPlaylist.id, cache.cacheDir)) {
+            if (detail == null || !detailLoaded || NeteaseLibraryCache.beginPlaylistColdStartRefresh(initialPlaylist.id, cache.cacheDir)) {
                 refreshPlaylist()
             }
         }

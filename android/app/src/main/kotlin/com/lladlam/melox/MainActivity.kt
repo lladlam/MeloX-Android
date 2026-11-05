@@ -16,6 +16,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -93,6 +94,8 @@ class MainActivity : ComponentActivity(), MeloXDetailPageOwner {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        @Suppress("DEPRECATION")
+        savedInstanceState?.getParcelableArrayList<Intent>("melox_detail_pages")?.let(detailPaneState::restorePages)
         val coldStart = savedInstanceState == null
         val returnFromBackground = coldStart &&
             System.currentTimeMillis() - MeloXAppVisibility.lastBackgroundedAtMs(this) <= RETURN_FROM_BACKGROUND_WINDOW_MS
@@ -104,6 +107,7 @@ class MainActivity : ComponentActivity(), MeloXDetailPageOwner {
 
         setContent {
             MeloXTheme {
+                val mainPageState = rememberSaveableStateHolder()
                 var splashVisible by remember { mutableStateOf(coldStart && !returnFromBackground && !pipModeState.value) }
                 val pageAlpha by animateFloatAsState(
                     targetValue = if (splashVisible) 0f else 1f,
@@ -123,13 +127,15 @@ class MainActivity : ComponentActivity(), MeloXDetailPageOwner {
                     if (pipModeState.value) {
                         MeloXFloatingLyricsPipScreen(Modifier.fillMaxSize())
                     } else {
-                    Box(Modifier.fillMaxSize().alpha(pageAlpha)) {
-                        MeloXApp(
+                     Box(Modifier.fillMaxSize().alpha(pageAlpha)) {
+                        mainPageState.SaveableStateProvider("main") {
+                         MeloXApp(
                             openNowPlayingRequest = openNowPlayingRequest,
                             clipboardLinkRequest = clipboardLinkRequest,
                             onClipboardLinkConsumed = { clipboardLinkRequest = null },
                             playbackConnectionEnabled = playbackConnectionEnabled,
-                        )
+                         )
+                        }
                     }
                     if (splashAlpha > 0f) {
                         Image(
@@ -169,6 +175,11 @@ class MainActivity : ComponentActivity(), MeloXDetailPageOwner {
             runCatching { MeloXLyriconBridge.start(applicationContext) }
                 .onFailure { android.util.Log.w("MeloXStartup", "Skipping optional Lyricon initialization", it) }
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putParcelableArrayList("melox_detail_pages", detailPaneState.savePages())
+        super.onSaveInstanceState(outState)
     }
 
     override fun onNewIntent(intent: Intent) {

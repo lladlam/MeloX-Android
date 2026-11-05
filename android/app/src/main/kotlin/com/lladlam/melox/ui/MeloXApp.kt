@@ -252,6 +252,17 @@ fun MeloXApp(
     playbackConnectionEnabled: Boolean = true,
 ) {
     val hostContext = LocalContext.current
+    DisposableEffect(hostContext) {
+        val hostId = System.identityHashCode(hostContext)
+        if (com.lladlam.melox.BuildConfig.DEBUG) {
+            android.util.Log.i("MeloXLifecycle", "MeloXApp mounted host=$hostId")
+        }
+        onDispose {
+            if (com.lladlam.melox.BuildConfig.DEBUG) {
+                android.util.Log.i("MeloXLifecycle", "MeloXApp disposed host=$hostId")
+            }
+        }
+    }
     val context = hostContext.applicationContext
     val detailPaneState = (hostContext as? MeloXDetailPageOwner)?.detailPaneState
         ?: remember { MeloXDetailPaneState() }
@@ -275,9 +286,9 @@ fun MeloXApp(
         }.getOrDefault(AppTab.Home)
     }
     var selectedTab by rememberSaveable { mutableStateOf(initialTab) }
-    var messagesVisible by remember { mutableStateOf(false) }
+    var messagesVisible by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = messagesVisible) { messagesVisible = false }
-    var recognitionVisible by remember { mutableStateOf(false) }
+    var recognitionVisible by rememberSaveable { mutableStateOf(false) }
     fun launchNeteaseLogin(returnTab: AppTab) {
         detailPaneState.openLogin(hostContext) { selectedTab = returnTab }
     }
@@ -331,7 +342,12 @@ fun MeloXApp(
         }
     }
     val playbackState = rememberMeloXPlaybackUiState(connectionEnabled = playbackConnectionEnabled)
-    val playerTransitionState = remember { SeekableTransitionState(false) }
+    val playerTransitionState = rememberSaveable(
+        saver = androidx.compose.runtime.saveable.Saver<SeekableTransitionState<Boolean>, Boolean>(
+            save = { it.targetState },
+            restore = { SeekableTransitionState(it) },
+        ),
+    ) { SeekableTransitionState(false) }
     val playerTransition = rememberTransition(
         transitionState = playerTransitionState,
         label = "melox-player-transition",
@@ -541,10 +557,15 @@ fun MeloXApp(
     }
 
     val currentListDetailMode by rememberUpdatedState(listDetailMode)
-    LaunchedEffect(listDetailMode, MeloXSettingsRuntime.splitNavigationPosition, MeloXSettingsRuntime.splitMiniPlayerPosition,
-        MeloXSettingsRuntime.disableAutomaticTabBarShrink) {
-        tabBarMinimized = false
-        scrollAccumulator = 0f
+    val chromeConfiguration = "$listDetailMode:${MeloXSettingsRuntime.splitNavigationPosition.name}:" +
+        "${MeloXSettingsRuntime.splitMiniPlayerPosition.name}:${MeloXSettingsRuntime.disableAutomaticTabBarShrink}"
+    var previousChromeConfiguration by rememberSaveable { mutableStateOf(chromeConfiguration) }
+    LaunchedEffect(chromeConfiguration) {
+        if (previousChromeConfiguration != chromeConfiguration) {
+            tabBarMinimized = false
+            scrollAccumulator = 0f
+        }
+        previousChromeConfiguration = chromeConfiguration
     }
     val tabBarMinimizeConnection = remember {
         object : NestedScrollConnection {
@@ -599,8 +620,12 @@ fun MeloXApp(
         if (clipboardLinkRequest != null && clipboardTarget == null) onClipboardLinkConsumed()
     }
 
+    var hasConnectedMedia by remember { mutableStateOf(false) }
     LaunchedEffect(playbackState.hasMedia) {
-        if (!playbackState.hasMedia) {
+        if (playbackState.hasMedia) hasConnectedMedia = true
+        // Initial service reconnection has an empty UI snapshot. It must not
+        // close a restored player before the real queue/metadata arrives.
+        if (!playbackState.hasMedia && hasConnectedMedia) {
             playerTransitionState.snapTo(false)
         }
     }
@@ -646,9 +671,13 @@ fun MeloXApp(
         PlaybackCommands.playAll(context, songs, heartMode = true)
     }
 
+    var previousSelectedTab by rememberSaveable { mutableStateOf(selectedTab) }
     LaunchedEffect(selectedTab) {
-        tabBarMinimized = false
-        scrollAccumulator = 0f
+        if (previousSelectedTab != selectedTab) {
+            tabBarMinimized = false
+            scrollAccumulator = 0f
+        }
+        previousSelectedTab = selectedTab
         if (selectedTab != AppTab.Library) libraryModalVisible = false
         if (MeloXSettingsRuntime.rememberLastTab) {
             MeloXSettingsPreferences.setString(context, "general_last_tab", selectedTab.name)

@@ -1,5 +1,8 @@
 package com.lladlam.melox.ui.podcast
 
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.lladlam.melox.ui.state.rememberRetainedPageState
+
 import com.lladlam.melox.ui.layout.LocalMeloXListDetail
 import com.lladlam.melox.ui.layout.rememberMeloXDetailSelection
 
@@ -155,17 +158,17 @@ fun MeloXPodcastScreen(
     // visible=false（已退出过渡），返回时不会重新 enter —— 详情 hero 的 exit
     // 找不到配对对象，morph 回卡片就没了。搜索页用 selectedDetail?.key 驱动卡片
     // visible，selectedDetail 返回时清零，所以卡片会重新 enter 配上。
-    var selectedPodcastId by remember(initialPodcastId) {
+    var selectedPodcastId by rememberSaveable(initialPodcastId) {
         mutableStateOf(initialPodcastId)
     }
-    var selectedCardKey by remember { mutableStateOf<String?>(null) }
+    var selectedCardKey by rememberSaveable { mutableStateOf<String?>(null) }
     // 详情端的内容态：podcast 对象 + 配对 key。返回时都不清，退出过渡里详情
     // hero 才有东西画、才有 key 配对。
-    var detailPodcast by remember(initialPodcastId) {
+    var detailPodcast by rememberRetainedPageState(initialPodcastId) {
         mutableStateOf(initialPodcastId?.let { MeloXPodcast(id = it, name = "播客") })
     }
-    var detailArtworkKey by remember(initialPodcastId) { mutableStateOf<String?>(null) }
-    var subscriptionGeneration by remember { mutableIntStateOf(0) }
+    var detailArtworkKey by rememberSaveable(initialPodcastId) { mutableStateOf<String?>(null) }
+    var subscriptionGeneration by rememberSaveable { mutableIntStateOf(0) }
 
     BackHandler(enabled = selectedPodcastId != null) {
         if (initialPodcastId != null) onExit?.invoke() else selectedPodcastId = null
@@ -262,13 +265,14 @@ private fun PodcastHome(
 ) {
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
-    var payload by remember { mutableStateOf(PodcastHomePayload()) }
-    var selectedCategory by remember { mutableStateOf<MeloXPodcastCategory?>(null) }
-    var categoryPodcasts by remember { mutableStateOf<List<MeloXPodcast>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+    var payload by rememberRetainedPageState(subscriptionsOnly) { mutableStateOf(PodcastHomePayload()) }
+    var selectedCategory by rememberRetainedPageState { mutableStateOf<MeloXPodcastCategory?>(null) }
+    var categoryPodcasts by rememberRetainedPageState(selectedCategory?.id) { mutableStateOf<List<MeloXPodcast>>(emptyList()) }
+    var loading by remember { mutableStateOf(payload.isEmpty) }
     var categoryLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var manualReload by remember { mutableIntStateOf(0) }
+    var manualReload by rememberSaveable { mutableIntStateOf(0) }
+    var homeLoaded by rememberRetainedPageState(reloadToken, manualReload, subscriptionsOnly) { mutableStateOf(false) }
 
     suspend fun loadHome() {
         loading = true
@@ -291,12 +295,13 @@ private fun PodcastHome(
                     )
                 }
             }
-        }.onSuccess { payload = it }
+        }.onSuccess { payload = it; homeLoaded = true }
             .onFailure { error = it.message ?: "播客加载失败" }
         loading = false
     }
 
     LaunchedEffect(reloadToken, manualReload, subscriptionsOnly) {
+        if (homeLoaded) return@LaunchedEffect
         // 推入动画期间只画加载态，数据等滑动跑完再拉（详见 deferLoadMillis 注释）。
         if (deferLoadMillis > 0) delay(deferLoadMillis)
         loadHome()
@@ -306,6 +311,7 @@ private fun PodcastHome(
             categoryPodcasts = emptyList()
             return@LaunchedEffect
         }
+        if (categoryPodcasts.isNotEmpty()) return@LaunchedEffect
         categoryLoading = true
         runCatching { client.podcastsByCategory(category.id, offset = 0, limit = 30).values }
             .onSuccess { loaded -> if (selectedCategory?.id == category.id) categoryPodcasts = loaded }
@@ -628,16 +634,18 @@ private fun PodcastDetail(
     val programsFailedMessage = stringResource(R.string.podcast_episodes_failed)
     val subscribedLabel = stringResource(R.string.podcast_subscribed)
     val subscribeLabel = stringResource(R.string.podcast_subscribe)
-    var podcast by remember(initialPodcast.id) { mutableStateOf(initialPodcast) }
+    var podcast by rememberRetainedPageState(initialPodcast.id) { mutableStateOf(initialPodcast) }
     // 兜底 key 用 initialPodcast.id：详情数据被接口刷新替换后 podcast 会变，id 不变。
     val artworkKey = artworkSharedKey ?: podcastArtworkKey(PodcastPrimarySectionKey, initialPodcast.id)
-    var programs by remember(initialPodcast.id) { mutableStateOf<List<MeloXPodcastProgram>>(emptyList()) }
-    var loading by remember(initialPodcast.id) { mutableStateOf(true) }
+    var programs by rememberRetainedPageState(initialPodcast.id) { mutableStateOf<List<MeloXPodcastProgram>>(emptyList()) }
+    var loading by remember(initialPodcast.id) { mutableStateOf(programs.isEmpty()) }
     var subscribing by remember(initialPodcast.id) { mutableStateOf(false) }
     var error by remember(initialPodcast.id) { mutableStateOf<String?>(null) }
-    var reloadKey by remember(initialPodcast.id) { mutableIntStateOf(0) }
+    var reloadKey by rememberSaveable(initialPodcast.id) { mutableIntStateOf(0) }
+    var programsLoaded by rememberRetainedPageState(initialPodcast.id, reloadKey) { mutableStateOf(false) }
 
     LaunchedEffect(initialPodcast.id, reloadKey) {
+        if (programsLoaded) return@LaunchedEffect
         loading = true
         error = null
         runCatching {
@@ -649,6 +657,7 @@ private fun PodcastDetail(
         }.onSuccess { (loadedPodcast, loadedPrograms) ->
             loadedPodcast?.let { podcast = it }
             programs = loadedPrograms
+            programsLoaded = true
         }.onFailure { error = it.message ?: programsFailedMessage }
         loading = false
     }
