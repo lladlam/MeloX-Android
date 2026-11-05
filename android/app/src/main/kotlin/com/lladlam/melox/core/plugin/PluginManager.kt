@@ -12,6 +12,8 @@ class PluginManager(
     private val store: PluginRepository,
     private val registry: MusicProviderRegistry,
     private val factory: ProviderFactory,
+    private val readPersistentDiagnostics: (SourceId) -> List<String> = { emptyList() },
+    private val erasePersistentDiagnostics: (SourceId) -> Unit = {},
 ) : Closeable {
     fun interface ProviderFactory {
         /** Must fully load/check the entry and declared capabilities before returning. */
@@ -48,11 +50,18 @@ class PluginManager(
         val entry = state.value[source] ?: return@synchronized listOf("插件未安装：${source.value}")
         buildList {
             add("${source.value} · ${entry.manifest.version} · API ${entry.manifest.apiVersion} · ${entry.status}")
-            entry.error?.let { add("宿主错误类型：$it") }
+            entry.error?.let { add("宿主错误：$it · ${PluginErrors.message(it)}") }
+            runCatching { readPersistentDiagnostics(source) }.fold(
+                onSuccess = { addAll(it) }, onFailure = { add("持久诊断无法读取，原文件已保留，可清除后重试") })
             val runtime = loaded[source]?.resources as? PluginRuntime
             runtime?.logs()?.takeLast(30)?.forEach { add("${it.level}: ${it.message}") }
             if (runtime == null) add("运行时未加载")
         }
+    }
+    fun clearDiagnostics(source: SourceId) = synchronized(lock) {
+        checkOpen()
+        erasePersistentDiagnostics(source)
+        (loaded[source]?.resources as? PluginRuntime)?.clearLogs()
     }
     private var closed = false
 
@@ -84,7 +93,7 @@ class PluginManager(
                 publish(State(manifest, Status.Disabled))
                 if (manifest.sourceId in desired) {
                     try { enable(manifest.sourceId) }
-                    catch (error: Exception) { publish(State(manifest, Status.Failed, error.javaClass.simpleName)) }
+                    catch (error: Exception) { publish(State(manifest, Status.Failed, PluginErrors.code(error))) }
                 }
             }
         }
@@ -99,7 +108,7 @@ class PluginManager(
         require(pinned == null || pinned == (plugin.publisher?.fingerprint ?: PluginPackageTrust.UNSIGNED)) { "PUBLISHER_RECORD_MISMATCH" }
         val candidate = try { factory.prepare(plugin) }
         catch (error: Exception) {
-            publish(State(plugin.manifest, Status.Failed, error.javaClass.simpleName))
+            publish(State(plugin.manifest, Status.Failed, PluginErrors.code(error)))
             throw error
         }
         try {
@@ -116,7 +125,7 @@ class PluginManager(
             publish(State(plugin.manifest, Status.Enabled))
         } catch (error: Throwable) {
             runCatching { candidate.resources.close() }
-            publish(State(plugin.manifest, Status.Failed, error.javaClass.simpleName))
+            publish(State(plugin.manifest, Status.Failed, PluginErrors.code(error)))
             throw error
         }
     }
@@ -182,8 +191,34 @@ class PluginManager(
     internal fun commitAccount(source: SourceId, expected: PluginManifest, action: () -> Unit) = synchronized(lock) {
         checkOpen()
         check(state.value[source]?.manifest == expected && source in loaded) { "plugin changed during login" }
-        action()
-        accountChanged(source)
+        replaceAccountContext(source, action)
+    }
+
+    /** Withdraw and close the old context BEFORE changing credentials/selection. No request may
+     * acquire the next account's credentials through a still-registered previous Provider.
+     */
+    internal fun changeAccount(source: SourceId, expected: PluginManifest, action: () -> Unit) = synchronized(lock) {
+        checkOpen()
+        check(state.value[source]?.manifest == expected) { "plugin changed during account operation" }
+        PluginOAuth.cancel(source)
+        replaceAccountContext(source, action)
+    }
+
+    private fun replaceAccountContext(source: SourceId, action: () -> Unit) {
+        val previous = loaded.remove(source)
+        if (previous != null) {
+            registry.unregisterDynamic(source)
+            runCatching { previous.resources.close() }
+        }
+        var primary: Throwable? = null
+        try { action() }
+        catch (failure: Throwable) { primary = failure; throw failure }
+        finally {
+            if (previous != null) {
+                try { enable(source) }
+                catch (failure: Throwable) { primary?.addSuppressed(failure) ?: throw failure }
+            }
+        }
     }
 
     /** Process shutdown frees runtime resources without altering the desired enabled state. */

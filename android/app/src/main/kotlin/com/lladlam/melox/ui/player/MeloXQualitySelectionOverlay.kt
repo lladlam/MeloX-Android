@@ -28,6 +28,7 @@ import com.lladlam.melox.core.audio.SongAudioAvailability
 import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.core.music.model.AudioQualityTier
 import com.lladlam.melox.core.music.model.MusicSource
+import com.lladlam.melox.core.music.model.SourceId
 import com.lladlam.melox.playback.PlaybackTrackIdentity
 import com.lladlam.melox.playback.CrossProviderPlaybackRuntime
 import com.lladlam.melox.playback.ProviderPlaybackQualityRuntime
@@ -53,10 +54,11 @@ internal fun MeloXQualitySelectionOverlay(
         )
     }
     val identity = remember(state.mediaId) { state.mediaId?.let(PlaybackTrackIdentity::decode) }
-    val source = identity?.source ?: MusicSource.Netease
+    val sourceId = identity?.sourceId ?: SourceId.fromBuiltIn(MusicSource.Netease)
+    val source = sourceId.builtIn
     val foreground = MaterialTheme.colorScheme.onSurface
     val songId = identity
-        ?.takeIf { it.source == MusicSource.Netease }
+        ?.takeIf { it.sourceId.builtIn == MusicSource.Netease }
         ?.value
         ?.toLongOrNull()
     val downloadedQuality = songId?.let(downloads::downloadedQuality)
@@ -109,14 +111,14 @@ internal fun MeloXQualitySelectionOverlay(
     val sourceLabel = when {
         downloadedQuality != null -> stringResource(R.string.player_quality_downloaded)
         fallbackSource != null -> stringResource(R.string.player_quality_actual_source, fallbackSource!!.displayName)
-        source != MusicSource.Netease -> stringResource(R.string.player_quality_source, source.displayName)
+        source != MusicSource.Netease -> stringResource(R.string.player_quality_source, sourceId.displayName)
         else -> stringResource(R.string.player_quality_current_playback)
     }
     val details = qualityDetails(
         context = context,
         resource = availability.resourceFor(actualQuality),
         quality = actualQuality,
-        source = source,
+        source = sourceId,
         downloaded = downloadedQuality != null,
     )
 
@@ -181,7 +183,7 @@ private fun qualityDetails(
     context: android.content.Context,
     resource: SongAudioResource?,
     quality: MusicQuality,
-    source: MusicSource,
+    source: SourceId,
     downloaded: Boolean,
 ): String {
     if (downloaded) return context.getString(R.string.player_quality_local_file)
@@ -192,7 +194,7 @@ private fun qualityDetails(
             MusicQuality.HighDefinitionSurround,
             MusicQuality.ImmersiveSurround,
             -> add(context.getString(R.string.player_quality_channels_51))
-            else -> if (source == MusicSource.Netease) add(context.getString(R.string.player_quality_channels_2))
+            else -> if (source.builtIn == MusicSource.Netease) add(context.getString(R.string.player_quality_channels_2))
         }
     }
     return details.joinToString(" · ").ifBlank {

@@ -967,7 +967,10 @@ private fun MeloXLibraryDownloadsPage(downloads: MeloXDownloadStore) {
   modifier = Modifier.fillMaxSize(),
   contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 146.dp),
   verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
+         ) {
+  providerDownloads.taskRecoveryError?.let { message ->
+      item { Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp)) }
+  }
   items(providerAttempts.entries.toList(), key = { "provider-attempt:${it.key}" }) { (key, attempt) ->
       val failure = providerDownloads.downloadErrors[key]
       val running = providerDownloads.activeDownloads[key] == true

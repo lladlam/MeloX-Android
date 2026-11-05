@@ -320,7 +320,7 @@ private fun SceneQualityChip(
     val downloads = remember(context) { MeloXDownloadStore.get(context) }
     val identity = remember(state.mediaId) { state.mediaId?.let(PlaybackTrackIdentity::decode) }
     val neteaseSongId = identity
-        ?.takeIf { it.source == MusicSource.Netease }
+        ?.takeIf { it.sourceId.builtIn == MusicSource.Netease }
         ?.value
         ?.toLongOrNull()
     val downloadedQuality = neteaseSongId?.let(downloads::downloadedQuality)
@@ -342,7 +342,7 @@ private fun SceneQualityChip(
     LaunchedEffect(state.mediaId) {
         while (true) {
             selected = MusicQualityRuntime.selected
-            if (identity?.source == MusicSource.Netease) {
+            if (identity?.sourceId?.builtIn == MusicSource.Netease) {
                 neteaseActual = MusicQualityRuntime.actualFor(neteaseSongId)
                 fallbackSource = CrossProviderPlaybackRuntime.sourceFor(neteaseSongId)
             } else {
@@ -357,7 +357,7 @@ private fun SceneQualityChip(
 
     val qualityTitle = when {
         downloadedQuality != null -> downloadedQuality.title
-        identity?.source == MusicSource.Netease -> (neteaseActual ?: selected).title
+        identity?.sourceId?.builtIn == MusicSource.Netease -> (neteaseActual ?: selected).title
         providerActual != null -> providerActual!!.sceneTitle()
         else -> selected.title
     }

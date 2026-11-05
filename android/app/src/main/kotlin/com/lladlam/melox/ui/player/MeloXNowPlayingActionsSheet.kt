@@ -41,7 +41,7 @@ fun MeloXNowPlayingActionsSheet(
     val context = LocalContext.current.applicationContext
     val identity = state.mediaId?.let(PlaybackTrackIdentity::decode)
     val neteaseId = identity
-        ?.takeIf { it.source == MusicSource.Netease }
+        ?.takeIf { it.sourceId.builtIn == MusicSource.Netease }
         ?.value
         ?.toLongOrNull()
         ?.takeIf { it > 0L }
@@ -90,7 +90,7 @@ fun MeloXNowPlayingActionsSheet(
             )
             val queue = state.queue.mapNotNull { entry ->
                 val entryIdentity = PlaybackTrackIdentity.decode(entry.mediaId) ?: return@mapNotNull null
-                if (entryIdentity.source != MusicSource.Netease) return@mapNotNull null
+                if (entryIdentity.sourceId.builtIn != MusicSource.Netease) return@mapNotNull null
                 val entryId = entryIdentity.value.toLongOrNull()?.takeIf { it > 0L } ?: return@mapNotNull null
                 SearchSong(
                     id = entryId,

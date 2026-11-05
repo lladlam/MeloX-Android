@@ -18,16 +18,23 @@ object PluginOAuth {
     const val REDIRECT_URI = "com.lladlam.melox.plugin:/oauth2redirect"
     internal class Tokens(val accessToken: String, val refreshToken: String?, val expiresAt: Long?)
     private class Pending(val manifest: PluginManifest, val label: String, val state: String, val verifier: String, val started: Long,
-        var exchanging: Boolean = false, var broker: PluginHttpBroker? = null)
+        val replacement: PluginAccountVault.Lease? = null, var exchanging: Boolean = false, var broker: PluginHttpBroker? = null)
     private val lock = Any()
     private val pending = mutableMapOf<SourceId, Pending>()
     private val messages = MutableStateFlow<Map<SourceId, String>>(emptyMap())
     val status = messages.asStateFlow()
 
-    fun begin(context: Context, manifest: PluginManifest, label: String) {
+    fun begin(context: Context, manifest: PluginManifest, label: String) = begin(context, manifest, label, null)
+
+    internal fun beginReplacement(context: Context, manifest: PluginManifest, previous: PluginAccountVault.Lease) {
+        require(previous.source == manifest.sourceId && previous.selectionStamp != null)
+        begin(context, manifest, previous.account.displayName, previous)
+    }
+
+    private fun begin(context: Context, manifest: PluginManifest, label: String, replacement: PluginAccountVault.Lease?) {
         require(label.isNotBlank() && label.length <= 120)
         val configuration = requireNotNull(manifest.authentication?.oauth)
-        val attempt = Pending(manifest, label, random(), random(), SystemClock.elapsedRealtime())
+        val attempt = Pending(manifest, label, random(), random(), SystemClock.elapsedRealtime(), replacement)
         val url = configuration.authorizationEndpoint.toHttpUrl().newBuilder()
             .addQueryParameter("response_type", "code").addQueryParameter("client_id", configuration.clientId)
             .addQueryParameter("redirect_uri", REDIRECT_URI).addQueryParameter("scope", configuration.scopes.joinToString(" "))
@@ -55,6 +62,7 @@ object PluginOAuth {
             check(pending[source] === attempt && !attempt.exchanging) { "OAuth login cancelled or replayed" }
             attempt.exchanging = true
         }
+        var committed = false
         try {
             check(SystemClock.elapsedRealtime() - attempt.started in 0..600_000L) { "OAuth login expired" }
             require(!callback.declined) { "OAuth authorization declined" }
@@ -78,14 +86,22 @@ object PluginOAuth {
                 synchronized(lock) {
                 check(pending[source] === attempt) { "OAuth login cancelled" }
                 val vault = PluginAccountVault(context, source)
-                val account = vault.importOAuth(attempt.label, tokens, requireNotNull(attempt.manifest.authentication))
-                vault.activate(account.id)
+                val policy = requireNotNull(attempt.manifest.authentication)
+                if (attempt.replacement != null) {
+                    vault.reauthorize(attempt.replacement, tokens, policy)
+                } else {
+                    vault.importOAuthAndActivate(attempt.label, tokens, policy)
+                }
+                committed = true
                 pending.remove(source)
                 }
             }
             synchronized(lock) { if (source !in pending) messages.value = messages.value + (source to "登录成功") }
         } catch (error: Exception) {
-            synchronized(lock) { if (pending[source] === attempt) messages.value = messages.value + (source to "登录未完成，请重试") }
+            synchronized(lock) {
+                if (committed && source !in pending) messages.value = messages.value + (source to "授权已保存，但插件恢复失败，请重新启用插件")
+                else if (pending[source] === attempt) messages.value = messages.value + (source to "登录未完成，请重试")
+            }
             throw error
         } finally { synchronized(lock) { if (pending[source] === attempt) pending.remove(source) } }
     }

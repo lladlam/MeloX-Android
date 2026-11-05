@@ -1257,6 +1257,8 @@
     <string name="settings_remember_last_song_note">Show the last song the next time you open the app, without starting playback.</string>
     <string name="settings_heart_mode_on_launch">Start in Heart Mode after sign-in</string>
     <string name="settings_previous_restarts">Previous restarts the song after 5 seconds</string>
+    <string name="settings_artwork_tap_lyrics">Tap artwork to switch lyrics</string>
+    <string name="settings_artwork_swipe_tracks">Swipe artwork to change songs</string>
     <string name="settings_show_quality_tip">Show the quality hint</string>
     <string name="settings_show_quality_tip_note">Controls the quality hint under the progress bar.</string>
     <string name="settings_player_transition_duration">Player expand and collapse duration</string>

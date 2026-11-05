@@ -104,6 +104,83 @@ class PluginManagerTest {
         manager.close()
     }
 
+    @Test fun accountCommitWithdrawsAndClosesPreviousProviderBeforeCredentialMutation() {
+        val repository = MemoryRepository()
+        val registry = registry(DynamicMusicProviders())
+        var closed = 0
+        var account = "first"
+        val manager = PluginManager(repository, registry, PluginManager.ProviderFactory {
+            PluginManager.LoadedProvider(object : MusicProvider {
+                override val sourceId = id
+                override val displayName = account
+                override val capabilities = emptySet<MusicCapability>()
+            }, Closeable { closed++ })
+        })
+        val manifest = manager.install(archive("1.0.0"))
+        manager.enable(id)
+        val previous = registry[id]
+        manager.commitAccount(id, manifest) {
+            assertNull(registry[id])
+            assertEquals(1, closed)
+            account = "second"
+        }
+        assertNotSame(previous, registry[id])
+        assertEquals("second", registry[id]?.displayName)
+        assertEquals(setOf(id), repository.enabledSources())
+        manager.close()
+    }
+
+    @Test fun partiallyFailedAccountMutationNeverRepublishesPreviousProviderAndPreservesPrimaryFailure() {
+        val repository = MemoryRepository()
+        val registry = registry(DynamicMusicProviders())
+        var failPrepare = false
+        val manager = PluginManager(repository, registry, PluginManager.ProviderFactory {
+            check(!failPrepare) { "restore failed" }
+            PluginManager.LoadedProvider(object : MusicProvider {
+                override val sourceId = id
+                override val displayName = "Test"
+                override val capabilities = emptySet<MusicCapability>()
+            }, Closeable {})
+        })
+        val manifest = manager.install(archive("1.0.0"))
+        manager.enable(id)
+        val primary = IllegalStateException("selection write failed")
+        val failure = assertThrows(IllegalStateException::class.java) {
+            manager.changeAccount(id, manifest) {
+                assertNull(registry[id])
+                failPrepare = true
+                throw primary
+            }
+        }
+        assertSame(primary, failure)
+        assertEquals("restore failed", failure.suppressed.single().message)
+        assertNull(registry[id])
+        assertEquals(PluginManager.Status.Failed, manager.plugins.value[id]?.status)
+        assertEquals(setOf(id), repository.enabledSources())
+        manager.close()
+    }
+
+    @Test fun disabledAccountMutationStaysDisabledAndStaleManifestDoesNotRunAction() {
+        val repository = MemoryRepository()
+        val registry = registry(DynamicMusicProviders())
+        val manager = PluginManager(repository, registry, PluginManager.ProviderFactory { error("must not prepare") })
+        val manifest = manager.install(archive("1.0.0"))
+        var mutations = 0
+        manager.changeAccount(id, manifest) { mutations++ }
+        assertEquals(1, mutations)
+        assertNull(registry[id])
+        assertTrue(repository.enabledSources().isEmpty())
+        assertThrows(IllegalStateException::class.java) {
+            manager.commitAccount(id, manifest) { mutations++ }
+        }
+        val stale = PluginArchiveReader.read(archive("2.0.0")).manifest
+        assertThrows(IllegalStateException::class.java) {
+            manager.changeAccount(id, stale) { mutations++ }
+        }
+        assertEquals(1, mutations)
+        manager.close()
+    }
+
     private fun archive(version: String, domains: Set<String> = emptySet()): ByteArray {
         val output = ByteArrayOutputStream()
         ZipOutputStream(output).use { zip ->

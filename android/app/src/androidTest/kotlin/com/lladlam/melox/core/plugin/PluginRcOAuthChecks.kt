@@ -45,9 +45,10 @@ internal object PluginRcOAuthChecks {
         val context = object : ContextWrapper(test.targetContext) {
             override fun startActivity(intent: Intent) { captured = requireNotNull(intent.data).toString() }
         }
-        fun begin(account: String, allow: Boolean = true): String {
+        fun begin(account: String, allow: Boolean = true, replace: Boolean = false): String {
             captured = null
-            PluginOAuth.begin(context, manifest, "Synthetic $account")
+            if (replace) PluginOAuth.beginReplacement(context, manifest, requireNotNull(vault.lease()))
+            else PluginOAuth.begin(context, manifest, "Synthetic $account")
             val authorization = requireNotNull(captured).toHttpUrl()
             check(authorization.queryParameter("code_challenge_method") == "S256")
             check(authorization.queryParameter("redirect_uri") == PluginOAuth.REDIRECT_URI)
@@ -80,6 +81,10 @@ internal object PluginRcOAuthChecks {
                 PluginOAuth.complete(test.targetContext, begin("beta"))
                 val beta = requireNotNull(vault.lease()); check(beta.account.id != alpha.account.id && profile(beta) == "beta")
                 check(runCatching { stale.request(JSONObject().put("url", "$base/api/me").put("credential", "active").toString()) }.isFailure)
+                val selectedProvider = com.lladlam.melox.core.music.provider.MeloXMusicProviders.create(test.targetContext)[source] as PluginMusicProvider
+                val alphaScope = PluginPackageTrust.sha256((source.value + "\n" + alpha.account.id).toByteArray(Charsets.UTF_8))
+                val rejected = runCatching { selectedProvider.mediaBroker(alphaScope).close() }.exceptionOrNull()
+                check(rejected?.message == "DOWNLOAD_ACCOUNT_CHANGED")
             }
             check(vault.accounts().size == 2)
             vault.activate(alpha.account.id); manager.accountChanged(source)
@@ -87,6 +92,7 @@ internal object PluginRcOAuthChecks {
             val oldLease = requireNotNull(vault.lease())
             val refreshed = PluginHttpBroker(manifest, oldLease).use { PluginOAuth.refresh(manifest, oldLease, it) }
             val rotated = vault.replaceTokens(oldLease, refreshed)
+            check(rotated.selectionStamp != oldLease.selectionStamp)
             check(profile(rotated) == "alpha")
             check(runCatching { PluginHttpBroker(manifest, oldLease).use { PluginOAuth.refresh(manifest, oldLease, it) } }.isFailure)
             check(vault.lease()?.token == rotated.token) // Failed refresh/replay never clears the good account.
@@ -106,6 +112,10 @@ internal object PluginRcOAuthChecks {
                 control("fail-refresh"); control("expire")
                 check(runCatching { PluginHttpBroker(manifest, rotated).use { PluginOAuth.refresh(manifest, rotated, it) } }.isFailure)
                 check(vault.lease()?.token == rotated.token)
+                vault.replaceTokens(rotated, PluginOAuth.Tokens(rotated.token, rotated.refreshToken, System.currentTimeMillis() - 1))
+                val provider = com.lladlam.melox.core.music.provider.MeloXMusicProviders.create(test.targetContext)[source] as PluginMusicProvider
+                val expired = kotlinx.coroutines.runBlocking { provider.authenticationStatus() }
+                check(expired == com.lladlam.melox.core.music.model.MusicAuthenticationState.Expired(alpha.account.id))
                 control("allow-refresh")
                 val events = browser.newCall(Request.Builder().url("$base/admin/events").header("X-RC-Admin", secret).build()).execute().use {
                     check(it.code == 200); org.json.JSONArray(requireNotNull(it.body).string())
@@ -114,8 +124,25 @@ internal object PluginRcOAuthChecks {
                     val event = events.getJSONObject(i)
                     if (event.getString("kind") in setOf("token", "api")) check(!event.getBoolean("cookiePresent"))
                 }
-                evidence += "PASS controlled refresh failure preserves account; server audit reports no browser Cookie on token/API calls"
+                evidence += "PASS controlled refresh failure preserves account and reports expired; server audit reports no browser Cookie on token/API calls"
             } else evidence += "NOT_RUN OAuth admin expiry/failure/Cookie audit (no disposable admin secret)"
+            val beforeReauth = requireNotNull(vault.lease())
+            PluginStorage(test.targetContext, source, beforeReauth.account.id).execute("storage.set", "reauthKept", "same-account")
+            PluginOAuth.complete(test.targetContext, begin("alpha", replace = true))
+            val afterReauth = requireNotNull(vault.lease())
+            check(afterReauth.account == beforeReauth.account && afterReauth.selectionStamp != beforeReauth.selectionStamp)
+            check(afterReauth.token != beforeReauth.token && profile(afterReauth) == "alpha")
+            check(vault.accounts().size == 2)
+            check(PluginStorage(test.targetContext, source, afterReauth.account.id).execute("storage.get", "reauthKept") == "same-account")
+            check(runCatching { vault.reauthorize(beforeReauth, PluginOAuth.Tokens("stale-synthetic", null, null), requireNotNull(manifest.authentication)) }.isFailure)
+            val deniedReplacement = begin("alpha", allow = false, replace = true)
+            check(runCatching { PluginOAuth.complete(test.targetContext, deniedReplacement) }.isFailure)
+            check(vault.lease()?.token == afterReauth.token && vault.accounts().size == 2)
+            val switchedReplacement = begin("alpha", replace = true)
+            vault.activate(vault.accounts().first { it.id != alpha.account.id }.id); manager.accountChanged(source)
+            check(runCatching { PluginOAuth.complete(test.targetContext, switchedReplacement) }.isFailure)
+            check(vault.selected() != alpha.account.id && vault.accounts().size == 2)
+            evidence += "PASS explicit reauthorization keeps account/storage without duplicates, revokes prior credential stamp, rejects stale writes, and preserves state after denial/switch"
         } finally {
             PluginOAuth.cancel(source)
             if (source in manager.plugins.value) manager.uninstall(source)

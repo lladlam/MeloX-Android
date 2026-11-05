@@ -114,7 +114,7 @@ internal fun MeloXPlaybackTitleMenu(
 
     val neteaseId = remember(state.mediaId) {
         PlaybackTrackIdentity.decode(state.mediaId.orEmpty())
-            ?.takeIf { it.source == com.lladlam.melox.core.music.model.MusicSource.Netease }
+            ?.takeIf { it.sourceId.builtIn == com.lladlam.melox.core.music.model.MusicSource.Netease }
             ?.value?.toLongOrNull()
     }
 

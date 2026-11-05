@@ -23,6 +23,7 @@ options=()
 if [[ "${MELOX_RC_ONLINE:-0}" == 1 ]]; then options=(-e online true); fi
 if [[ "${MELOX_RC_FAULTS:-0}" == 1 ]]; then options+=(-e faults true); fi
 if [[ "${MELOX_RC_APP_SERVICE:-0}" == 1 ]]; then options+=(-e appService true); fi
+if [[ "${MELOX_RC_PREVIOUS:-0}" == 1 ]]; then options+=(-e previous true); fi
 if [[ "${MELOX_RC_WIRE_FIELDS:-0}" == 1 ]]; then
   "$ADB" -s "$serial" shell run-as "$app" mkdir -p cache
   "$ADB" -s "$serial" shell "run-as '$app' sh -c 'cat > cache/plugin-rc-wire-cases.json'" < plugin-sdk/test/fixtures/wire-cases.json

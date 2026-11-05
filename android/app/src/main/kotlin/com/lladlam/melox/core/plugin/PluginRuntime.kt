@@ -26,48 +26,92 @@ class PluginRuntime(context: Context, private val plugin: PluginArchiveReader.Pa
     private val app = context.applicationContext
     private val closed = AtomicBoolean()
     private val active = AtomicReference<PluginHttpBroker?>()
+    private val interruptCall = AtomicReference<(() -> Unit)?>(null)
+    private val refreshRequested = AtomicBoolean()
+    // Active streams keep their broker alive. Closed/unreferenced brokers do not accumulate
+    // for the lifetime of an enabled plugin (including repeated image loads).
+    private val media = java.util.Collections.newSetFromMap(java.util.WeakHashMap<PluginHttpBroker, Boolean>())
     private val accounts = if (plugin.manifest.authentication?.type in setOf("apiToken", "oauth2Pkce")) PluginAccountVault(app, plugin.manifest.sourceId) else null
     data class LogEntry(val level: String, val message: String)
     private val logEntries = java.util.concurrent.ConcurrentLinkedDeque<LogEntry>()
+    private val diagnostics = PluginDiagnostics(app, plugin.manifest.sourceId)
     fun logs(): List<LogEntry> = logEntries.toList()
-    internal fun mediaBroker(): PluginHttpBroker {
+    internal fun clearLogs() = logEntries.clear()
+    internal fun requestAuthorizationRefresh() {
+        if (!closed.get() && plugin.manifest.authentication?.type == "oauth2Pkce") refreshRequested.set(true)
+    }
+    internal fun downloadResumeScope(): String? {
+        if (closed.get() || plugin.archiveSha256.isEmpty()) return null
+        return PluginPackageTrust.sha256((plugin.manifest.sourceId.value + "\n" + plugin.archiveSha256 + "\n" +
+            accounts?.sessionStamp().orEmpty()).toByteArray(Charsets.UTF_8))
+    }
+    internal fun mediaBroker(expectedAccountScope: String? = null): PluginHttpBroker {
         check(!closed.get()) { "plugin runtime is closed" }
-        val selected = accounts?.sessionStamp()
+        val scopeVault = if (expectedAccountScope != null) accounts ?: PluginAccountVault(app, plugin.manifest.sourceId) else accounts
+        val selected = scopeVault?.sessionStamp()
+        if (expectedAccountScope != null) {
+            val scope = PluginPackageTrust.sha256((plugin.manifest.sourceId.value + "\n" + selected?.substringBefore('\n').orEmpty()).toByteArray(Charsets.UTF_8))
+            check(scope == expectedAccountScope) { "DOWNLOAD_ACCOUNT_CHANGED" }
+        }
         val lease = runCatching { accounts?.lease() }.getOrNull()
-        return PluginHttpBroker(plugin.manifest, lease) { !closed.get() && accounts?.sessionStamp() == selected }
+        check(scopeVault?.sessionStamp() == selected) { "DOWNLOAD_ACCOUNT_CHANGED" }
+        val broker = PluginHttpBroker(plugin.manifest, lease) { !closed.get() && scopeVault?.sessionStamp() == selected }
+        synchronized(media) {
+            if (closed.get()) { broker.close(); error("CANCELLED") }
+            media.add(broker)
+        }
+        return broker
     }
 
     suspend fun invoke(method: String): String = invoke(method, JSONArray())
     override suspend fun invoke(method: String, args: JSONArray): String = runInterruptible(Dispatchers.IO) {
         gate.lockInterruptibly()
+        val started = android.os.SystemClock.elapsedRealtime()
+        var outcome = "OK"
         try {
             check(!closed.get()) { "plugin runtime is closed" }
             invokeBlocking(method, args)
-        } finally { gate.unlock() }
+        } catch (failure: Throwable) {
+            outcome = PluginErrors.code(failure)
+            throw failure
+        } finally {
+            try { runCatching { diagnostics.record(method, outcome, android.os.SystemClock.elapsedRealtime() - started) } }
+            finally { gate.unlock() }
+        }
     }
 
     private fun invokeBlocking(method: String, args: JSONArray): String {
         require(PluginIpcPolicy.methodAllowed(plugin.manifest, method)) { "UNSUPPORTED_OPERATION" }
         require(plugin.script.toByteArray(Charsets.UTF_8).size <= PluginIsolatedService.MAX_BYTES) { "script too large" }
         require(args.toString().toByteArray(Charsets.UTF_8).size <= PluginIsolatedService.MAX_BYTES) { "arguments too large" }
-        val selectedSession = accounts?.sessionStamp()
+        var selectedSession = accounts?.sessionStamp()
         val selectedAccount = selectedSession?.substringBefore('\n')?.takeIf(String::isNotEmpty)
         val storage = PluginStorage(app, plugin.manifest.sourceId, selectedAccount)
         // Public operations stay usable if a saved account's key is unavailable.
         // Explicit credential requests still fail; they never silently become anonymous.
         var lease = runCatching { accounts?.lease() }.getOrNull()
         val currentLease = lease
+        val forceRefresh = refreshRequested.getAndSet(false)
         if (method != "__validate" && currentLease != null && currentLease.policy == plugin.manifest.authentication &&
-            plugin.manifest.authentication?.type == "oauth2Pkce" && currentLease.expiresAt?.let { it <= System.currentTimeMillis() + 30_000 } == true) {
+            plugin.manifest.authentication?.type == "oauth2Pkce" &&
+            (forceRefresh || currentLease.expiresAt?.let { it <= System.currentTimeMillis() + 30_000 } == true)) {
             PluginHttpBroker(plugin.manifest, currentLease) { !closed.get() && accounts?.sessionStamp() == selectedSession }.use { refreshBroker ->
                 active.set(refreshBroker)
                 try {
                     val tokens = PluginOAuth.refresh(plugin.manifest, currentLease, refreshBroker)
                     lease = accounts?.replaceTokens(currentLease, tokens)
+                    selectedSession = lease?.selectionStamp
                 } catch (_: Exception) {
                     // Retain the expired account for reauthorization; credential requests fail explicitly.
                 } finally { active.compareAndSet(refreshBroker, null) }
             }
+        }
+        if (method == "authenticationStatus" && plugin.manifest.authentication != null) {
+            check(!closed.get() && accounts?.sessionStamp() == selectedSession) { "CANCELLED" }
+            if (selectedAccount == null) return JSONObject().put("type", "signedOut").toString()
+            val usable = lease?.let { it.policy == plugin.manifest.authentication &&
+                (it.expiresAt == null || it.expiresAt > System.currentTimeMillis()) } == true
+            if (!usable) return JSONObject().put("type", "expired").put("accountId", selectedAccount).toString()
         }
         val handlerThread = HandlerThread("melox-plugin-ipc").apply { start() }
         val http = Executors.newSingleThreadExecutor()
@@ -121,7 +165,7 @@ class PluginRuntime(context: Context, private val plugin: PluginArchiveReader.Pa
                                  }
                             JSONObject().put("ok", true).put("value", value)
                         } catch (error: Exception) {
-                            val code = error.message?.takeIf { it in setOf("LOGIN_REQUIRED", "AUTH_EXPIRED") } ?: "NETWORK_REQUEST_FAILED"
+                             val code = PluginErrors.code(error).takeIf { it in PluginIpcPolicy.remoteErrors } ?: "NETWORK_REQUEST_FAILED"
                             JSONObject().put("ok", false).put("error", code)
                         }
                         runCatching { remote.get()?.send(Message.obtain(null, PluginIsolatedService.HTTP_RESULT).apply {
@@ -152,6 +196,7 @@ class PluginRuntime(context: Context, private val plugin: PluginArchiveReader.Pa
                 try {
                     val messenger = Messenger(binder)
                     remote.set(messenger)
+                    check(!closed.get()) { "CANCELLED" }
                     messenger.send(Message.obtain(null, PluginIsolatedService.INVOKE).apply {
                         replyTo = reply
                         data = Bundle().apply {
@@ -175,7 +220,18 @@ class PluginRuntime(context: Context, private val plugin: PluginArchiveReader.Pa
             }
         }
         var bound = false
+        val cancel: () -> Unit = {
+            accepting.set(false)
+            failure.compareAndSet(null, IllegalStateException("CANCELLED"))
+            done.countDown()
+            runCatching { remote.get()?.send(Message.obtain(null, PluginIsolatedService.CANCEL).apply {
+                data = Bundle().apply { putString("invocation", invocationId) }
+            }) }
+            Unit
+        }
+        interruptCall.set(cancel)
         try {
+            check(!closed.get()) { "CANCELLED" }
             bound = app.bindService(Intent(app, PluginIsolatedService::class.java), connection, Context.BIND_AUTO_CREATE)
             check(bound) { "cannot bind isolated plugin worker" }
             check(done.await(12, TimeUnit.SECONDS)) { "plugin call timed out" }
@@ -184,6 +240,7 @@ class PluginRuntime(context: Context, private val plugin: PluginArchiveReader.Pa
             failure.get()?.let { throw it }
             return (result.get() ?: error("plugin returned no result")).also { PluginJson.check(it) }
         } finally {
+            interruptCall.compareAndSet(cancel, null)
             accepting.set(false)
             if (bound) runCatching { app.unbindService(connection) }
             broker.close()
@@ -193,10 +250,22 @@ class PluginRuntime(context: Context, private val plugin: PluginArchiveReader.Pa
         }
     }
 
-    override fun close() { closed.set(true); active.getAndSet(null)?.close() }
+    override fun close() {
+        if (!closed.compareAndSet(false, true)) return
+        interruptCall.getAndSet(null)?.invoke()
+        active.getAndSet(null)?.let { runCatching { it.close() } }
+        val brokers = synchronized(media) { media.toList().also { media.clear() } }
+        brokers.forEach { runCatching { it.close() } }
+    }
 
-    private companion object {
+    companion object {
         // The API-24 compatible isolated service is shared, so invocations are serialized across plugins.
-        val gate = ReentrantLock(true)
+        private val gate = ReentrantLock(true)
+
+        /** Raw in-process Binder probes must share the runtime lease with playback/restore calls. */
+        internal fun <T> withWorkerGate(action: () -> T): T {
+            gate.lockInterruptibly()
+            try { return action() } finally { gate.unlock() }
+        }
     }
 }

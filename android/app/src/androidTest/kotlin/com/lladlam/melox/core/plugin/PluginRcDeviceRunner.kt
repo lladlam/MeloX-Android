@@ -24,6 +24,7 @@ class PluginRcDeviceRunner : Instrumentation() {
     private var crashKind = "unsigned"
     private var oauthOrigin: String? = null
     private var appService = false
+    private var previousCommand = false
     private var wireFields = false
     override fun onCreate(arguments: Bundle?) {
         super.onCreate(arguments)
@@ -35,6 +36,7 @@ class PluginRcDeviceRunner : Instrumentation() {
         crashKind = arguments?.getString("storageCrashKind") ?: "unsigned"
         oauthOrigin = arguments?.getString("oauthOrigin")
         appService = arguments?.getString("appService") == "true"
+        previousCommand = arguments?.getString("previous") == "true"
         wireFields = arguments?.getString("wireFields") == "true"
         start()
     }
@@ -46,7 +48,10 @@ class PluginRcDeviceRunner : Instrumentation() {
                 finish(Activity.RESULT_OK, Bundle().apply { putString("rcStatus", "PASS"); putString("result", PluginRcCrashChecks.recover(this@PluginRcDeviceRunner, stage, crashKind)) })
                 return
             }
-            messengerIdentity(evidence)
+            // Restoring an enabled package validates it in the same isolated service.
+            // Raw Binder probes must wait for that invocation before bypassing the host gate.
+            MeloXPlugins.awaitRestored()
+            PluginRuntime.withWorkerGate { messengerIdentity(evidence) }
             packageLifecycle(evidence)
             queuePersistence(evidence)
             runtimeAndStorage(evidence)
@@ -54,9 +59,12 @@ class PluginRcDeviceRunner : Instrumentation() {
             if (faults) PluginRcFaultChecks.run(this, evidence) else evidence += "NOT_RUN isolated resource/storage fault matrix (use -e faults true)"
             oauthOrigin?.let {
                 PluginRcNetworkFaultChecks.run(it, evidence)
+                PluginRcMediaRevocationChecks.run(this, it, evidence)
+                PluginRcDownloadChecks.run(this, it, evidence)
                 PluginRcOAuthChecks.run(this, it, evidence)
             }
             if (appService) PluginRcAppServiceChecks.run(this, evidence)
+            if (previousCommand) PluginRcPlaybackControlChecks.run(this, evidence)
             if (wireFields) PluginRcWireChecks.run(this, evidence)
             if (catalog) PluginRcCatalogChecks.run(this, evidence) else evidence += "NOT_RUN SDK catalog fixture (set MELOX_RC_CATALOG)"
             if (online) PluginRcOnlineChecks.run(this, evidence) else evidence += "NOT_RUN online Coil/Media3 fixtures (use -e online true)"
@@ -184,7 +192,9 @@ class PluginRcDeviceRunner : Instrumentation() {
             check(bound && done.await(15, TimeUnit.SECONDS)) { "Messenger timeout" }
             val result = requireNotNull(received.get())
             check(result.what == PluginIsolatedService.RESULT && result.data.getString("invocation") == token)
-            check(result.data.getString("json") == "[\"search\"]") { "worker rejected real caller or JS failed" }
+            check(result.data.getString("json") == "[\"search\"]") {
+                "worker rejected real caller or JS failed: ${result.data.getString("error")?.take(64)}"
+            }
             check(result.sendingUid != Process.myUid() && result.sendingUid >= 0 && result.sendingUid != 12345)
             check(targetContext.checkPermission(android.Manifest.permission.INTERNET, -1, result.sendingUid) == PackageManager.PERMISSION_DENIED)
             evidence += "PASS Messenger framework UID=${result.sendingUid}, host UID=${Process.myUid()}, INTERNET denied, service not exported"

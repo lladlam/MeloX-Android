@@ -50,6 +50,15 @@ Manifest 需声明 `authentication` capability、受控域名的 `networkDomains
 `adaptive`。`MELOX_RC_OAUTH_ORIGIN` runner 先验证 health，再使用生产 Broker 检查重定向、
 解压后响应体限额、自适应 MIME、媒体禁止跳转和已撤销会话；服务不可达不算策略测试通过。
 
+`/fault/progressive` 返回固定512 KiB合成字节，只用于下载传输验证，不是可播放音频。
+`cut=1` 使首次无 Range 请求在16 KiB处截断，续传请求返回剩余字节；`v=2` 改变字节和
+强 ETag，`mode=ignore|bad-range|weak` 注入忽略范围、错误 Content-Range 和弱 ETag。
+同一 runner 还运行 `PluginRcDownloadChecks`；所有新增场景当前未运行。
+
+`/fault/stall` 先发送1字节，再等待10秒补齐，用于 `PluginRcMediaRevocationChecks` 检查
+运行时关闭会主动取消媒体连接，而非等待 socket 超时。OAuth runner 新增重新授权原账号、
+普通存储保留、旧凭据版本拒绝、切号/拒绝回调和宿主过期状态场景；目前均未运行。
+
 `dns-rebinding.py` 用于真实权威 DNS 实验，默认仅监听回环，必须显式部署到受控 DNS 服务器
 并在父域委派测试主机的子域后才会影响真实解析。它只回答指定主机，TTL=0、不递归，A/AAAA
 分别按计划推进，最后一组答案保持。示意计划（把首组替换为测试 HTTPS 服务真实公网地址）：

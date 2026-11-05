@@ -108,7 +108,7 @@ class PluginHttpBroker internal constructor(
     private fun authorize(url: HttpUrl) {
         require(url.scheme == "https" && url.port == 443 && url.username.isEmpty() && url.password.isEmpty() &&
             url.host in manifest.networkDomains && url.toString().length <= 4096
-        ) { "network permission denied" }
+        ) { "PERMISSION_DENIED" }
     }
 
     fun authorizeMediaUrl(url: String) = authorize(url.toHttpUrl())
@@ -121,6 +121,7 @@ class PluginHttpBroker internal constructor(
         val call = client.newCall(Request.Builder().url(destination).build())
         calls.add(call)
         try {
+            check(!closed && accountCurrent()) { "CANCELLED" }
             call.execute().use { response ->
                 require(response.code == 200 && response.header("Content-Type")?.substringBefore(';')?.lowercase() in
                     setOf("image/png", "image/jpeg", "image/webp")) { "unsupported artwork response" }
@@ -151,6 +152,7 @@ class PluginHttpBroker internal constructor(
         val call = client.newCall(Request.Builder().url(destination).post(body).build())
         calls.add(call)
         try {
+            check(!closed && accountCurrent()) { "CANCELLED" }
             call.execute().use { response ->
                 check(response.code == 200) { "OAuth token exchange failed" }
                 val output = java.io.ByteArrayOutputStream()
@@ -174,9 +176,9 @@ class PluginHttpBroker internal constructor(
     private fun credentialHeader(url: HttpUrl): Pair<String, String> {
         check(accountCurrent()) { "plugin account changed" }
         val auth = manifest.authentication ?: error("credential permission denied")
-        require(auth.type in setOf("apiToken", "oauth2Pkce") && url.host in auth.domains) { "credential domain permission denied" }
+        require(auth.type in setOf("apiToken", "oauth2Pkce") && url.host in auth.domains) { "PERMISSION_DENIED" }
         val lease = credential ?: error("LOGIN_REQUIRED")
-        require(lease.policy == auth) { "credential permission changed; reauthorization required" }
+        require(lease.policy == auth) { "AUTH_EXPIRED" }
         check(lease.expiresAt == null || lease.expiresAt > System.currentTimeMillis()) { "AUTH_EXPIRED" }
         return auth.header to (auth.prefix + lease.token)
     }
@@ -201,7 +203,11 @@ class PluginHttpBroker internal constructor(
                                 throw java.io.IOException("plugin media session revoked")
                             }
                             return try {
-                                val count = super.read(sink, byteCount)
+                                 val count = super.read(sink, byteCount)
+                                 if (closed || !accountCurrent()) {
+                                     call.cancel()
+                                     throw java.io.IOException("plugin media session revoked")
+                                 }
                                 if (count == -1L) calls.remove(call)
                                 count
                             } catch (error: Throwable) { calls.remove(call); throw error }

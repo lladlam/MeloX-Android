@@ -25,6 +25,21 @@ internal fun PluginCatalogBrowser(
     trackContent: @Composable (List<MusicTrack>) -> Unit,
 ) {
     val provider = SourceId.parse(sourceValue)?.let { registry[it] } as? PluginMusicProvider
+    key(sourceValue, provider) {
+        PluginCatalogContent(registry, sourceValue, query, generation, initialSection, provider, trackContent)
+    }
+}
+
+@Composable
+private fun PluginCatalogContent(
+    registry: MusicProviderRegistry,
+    sourceValue: String,
+    query: String,
+    generation: Long,
+    initialSection: String,
+    provider: PluginMusicProvider?,
+    trackContent: @Composable (List<MusicTrack>) -> Unit,
+) {
     var section by remember(sourceValue, initialSection) { mutableStateOf(initialSection) }
     var collection by remember(sourceValue, section, query) { mutableStateOf<Any?>(null) }
     var page by remember(sourceValue, section, query, collection) { mutableIntStateOf(1) }
@@ -92,7 +107,7 @@ internal fun PluginCatalogBrowser(
                 rows = emptyList(); tracks = emptyList(); error = "音源状态已变化"
             }
         } catch (cancelled: CancellationException) { throw cancelled }
-        catch (failure: Exception) { error = failure.message ?: "插件请求失败" }
+        catch (failure: Exception) { error = com.lladlam.melox.core.plugin.PluginErrors.describe(failure) }
         finally { loading = false }
     }
     Column(Modifier.fillMaxSize()) {

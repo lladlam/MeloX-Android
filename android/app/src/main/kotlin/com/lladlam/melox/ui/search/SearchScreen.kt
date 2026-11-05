@@ -317,6 +317,9 @@ fun SearchScreen(
     var query by rememberSaveable(source.name) { mutableStateOf("") }
     var selectedPlugin by rememberSaveable(source.name, pluginSourceId) { mutableStateOf(pluginSourceId) }
     val pluginGeneration by providerRegistry.changes.collectAsState()
+    // Capture the generation-dependent list outside LazyRow's skippable content lambda.
+    // Otherwise a cold-start restore can leave its source chips at the initial empty list.
+    val enabledPluginProviders = remember(providerRegistry, pluginGeneration) { providerRegistry.enabledDynamicProviders() }
     var searchTrigger by rememberSaveable(source.name) { mutableIntStateOf(0) }
     var skipSearchDebounce by rememberSaveable(source.name) { mutableStateOf(false) }
     var kind by rememberSaveable(source.name) { mutableStateOf(MeloXSearchKind.Songs) }
@@ -761,14 +764,14 @@ fun SearchScreen(
             onBack = { if (query.isNotBlank()) query = "" else onSearchExit() },
             onOpenRecognition = onOpenRecognition,
         )
-        if (providerRegistry.enabledDynamicProviders().isNotEmpty() || selectedPlugin != null) {
+        if (enabledPluginProviders.isNotEmpty() || selectedPlugin != null) {
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp)) {
                 item {
                     androidx.compose.material3.TextButton(onClick = { selectedPlugin = null; MusicProviderSelectionStore.setSelectedSource(appContext, source) }) {
                         Text(if (selectedPlugin == null) "✓ ${source.displayName}" else source.displayName)
                     }
                 }
-                items(providerRegistry.enabledDynamicProviders(), key = { it.sourceId.value }) { provider ->
+                items(enabledPluginProviders, key = { it.sourceId.value }) { provider ->
                     androidx.compose.material3.TextButton(onClick = { selectedPlugin = provider.sourceId.value; kind = MeloXSearchKind.Songs; MusicProviderSelectionStore.setSelectedSourceId(appContext, provider.sourceId) }) {
                         Text(if (selectedPlugin == provider.sourceId.value) "✓ ${provider.displayName}" else provider.displayName)
                     }

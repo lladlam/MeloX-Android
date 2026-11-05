@@ -71,6 +71,6 @@ class PluginCatalogProviderTest {
         val input = MusicTrack(MusicResourceId(source, "1"), "Test", emptyList())
         assertFalse(plugin.isFavorite(input)); plugin.setFavorite(input, true); assertTrue(plugin.isFavorite(input))
         val invalid = provider { "\"true\"" }
-        try { invalid.isFavorite(input); fail("coerced favorite state") } catch (_: IllegalStateException) { }
+        try { invalid.isFavorite(input); fail("coerced favorite state") } catch (_: IllegalArgumentException) { }
     }
 }

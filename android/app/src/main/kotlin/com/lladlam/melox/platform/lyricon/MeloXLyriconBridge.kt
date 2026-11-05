@@ -185,7 +185,7 @@ object MeloXLyriconBridge {
 
     private fun lyriconPosition(context: Context, mediaId: String?, positionMs: Long): Long {
         val identity = mediaId?.let(PlaybackTrackIdentity::decode)
-        val offset = if (identity?.source == MusicSource.Bilibili) {
+        val offset = if (identity?.sourceId?.builtIn == MusicSource.Bilibili) {
             BilibiliLyricOffsetStore.read(context, identity.value)
         } else 0
         val advance = MeloXSettingsRuntime.lyricAdvanceMs + offset

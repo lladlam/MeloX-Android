@@ -1,6 +1,10 @@
 package com.lladlam.melox.ui.player
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -16,9 +20,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -27,6 +36,8 @@ import com.lladlam.melox.ui.glass.MeloXGlassIconButton
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.layout.MeloXWindowWidthClass
 import com.lladlam.melox.ui.layout.rememberMeloXWindowInfo
+import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
+import kotlinx.coroutines.launch
 
 /** Classic shell preserves its visual language for every player page and window class. */
 @Composable
@@ -67,7 +78,7 @@ internal fun MeloXClassicNowPlayingScene(
                 ) {
                     Artwork(
                         state.artworkUrl,
-                        Modifier.weight(.46f).fillMaxWidth().clip(RoundedCornerShape(18.dp)),
+                        Modifier.weight(.46f).fillMaxWidth().classicArtworkGestures(state, page, onPageChanged).clip(RoundedCornerShape(18.dp)),
                     )
                     Column(Modifier.weight(.54f).widthIn(max = 560.dp), verticalArrangement = Arrangement.Center) {
                         ClassicMetadata(state)
@@ -79,7 +90,7 @@ internal fun MeloXClassicNowPlayingScene(
                 Box(Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp), contentAlignment = Alignment.Center) {
                     Artwork(
                         state.artworkUrl,
-                        Modifier.size(if (tabletPortrait) 420.dp else minOf(availableWidth - 38.dp, availableHeight * .43f)).clip(RoundedCornerShape(18.dp)),
+                        Modifier.size(if (tabletPortrait) 420.dp else minOf(availableWidth - 38.dp, availableHeight * .43f)).classicArtworkGestures(state, page, onPageChanged).clip(RoundedCornerShape(18.dp)),
                     )
                 }
                 ClassicMetadata(state)
@@ -96,6 +107,7 @@ internal fun MeloXClassicNowPlayingScene(
                         Modifier
                             .weight(.40f)
                             .fillMaxWidth()
+                            .classicArtworkGestures(state, page, onPageChanged)
                             .clip(RoundedCornerShape(18.dp)),
                     )
                     ClassicAlternatePage(
@@ -118,6 +130,63 @@ internal fun MeloXClassicNowPlayingScene(
             }
         }
     }
+}
+
+@Composable
+private fun Modifier.classicArtworkGestures(
+    state: MeloXPlaybackUiState,
+    page: MeloXNowPlayingPage,
+    onPageChanged: (MeloXNowPlayingPage) -> Unit,
+): Modifier {
+    val offset = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val threshold = with(LocalDensity.current) { 64.dp.toPx() }
+    val tap = MeloXSettingsRuntime.artworkTapLyrics && page != MeloXNowPlayingPage.Queue
+    val swipe = MeloXSettingsRuntime.artworkSwipeTracks && page == MeloXNowPlayingPage.Artwork
+    if (!tap && !swipe) return this
+    return this.graphicsLayer { translationX = offset.value }
+        .pointerInput(state, page, tap, swipe, threshold) {
+            awaitEachGesture {
+                val down = awaitFirstDown()
+                var horizontal = 0f
+                var vertical = 0f
+                var dragging = false
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    if (!change.pressed) {
+                        if (!dragging && tap && !change.isConsumed) {
+                            change.consume()
+                            onPageChanged(
+                                if (page == MeloXNowPlayingPage.Artwork) MeloXNowPlayingPage.Lyrics
+                                else MeloXNowPlayingPage.Artwork,
+                            )
+                        }
+                        break
+                    }
+                    val dx = change.position.x - change.previousPosition.x
+                    val dy = change.position.y - change.previousPosition.y
+                    horizontal += dx
+                    vertical += dy
+                    if (swipe && !dragging &&
+                        kotlin.math.abs(horizontal) > viewConfiguration.touchSlop &&
+                        kotlin.math.abs(horizontal) > kotlin.math.abs(vertical)
+                    ) {
+                        dragging = true
+                    }
+                    if (dragging) {
+                        change.consume()
+                        val shown = (horizontal * 0.45f).coerceIn(-threshold, threshold)
+                        scope.launch { offset.snapTo(shown) }
+                    }
+                }
+                if (dragging) {
+                    if (horizontal <= -threshold) state.next()
+                    else if (horizontal >= threshold) state.previousTrack()
+                }
+                scope.launch { offset.animateTo(0f, spring()) }
+            }
+        }
 }
 
 @Composable

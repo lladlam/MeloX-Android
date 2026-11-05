@@ -32,7 +32,10 @@ class PluginMusicProvider(val manifest: PluginManifest, private val runtime: Plu
         }
     }
     private val codec = PluginCatalogCodec(manifest)
-    internal fun mediaBroker(): PluginHttpBroker = (runtime as? PluginRuntime)?.mediaBroker() ?: PluginHttpBroker(manifest)
+    internal fun mediaBroker(expectedAccountScope: String? = null): PluginHttpBroker =
+        (runtime as? PluginRuntime)?.mediaBroker(expectedAccountScope) ?: PluginHttpBroker(manifest)
+    internal fun downloadResumeScope(): String? = (runtime as? PluginRuntime)?.downloadResumeScope()
+    internal fun requestAuthorizationRefresh() { (runtime as? PluginRuntime)?.requestAuthorizationRefresh() }
 
     override suspend fun authenticationStatus(): MusicAuthenticationState {
         val result = JSONObject(call(PluginCapability.Authentication, "authenticationStatus"))

@@ -48,5 +48,7 @@ object MeloXPlugins {
                 PluginManager.LoadedProvider(PluginMusicProvider(plugin.manifest, runtime), runtime)
             } catch (error: Throwable) { runtime.close(); throw error }
         },
+        readPersistentDiagnostics = { source -> PluginDiagnostics(app, source).lines() },
+        erasePersistentDiagnostics = { source -> PluginDiagnostics(app, source).clear() },
     )
 }

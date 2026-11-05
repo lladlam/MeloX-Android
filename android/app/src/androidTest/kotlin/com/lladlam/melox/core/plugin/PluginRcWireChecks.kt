@@ -28,14 +28,23 @@ internal object PluginRcWireChecks {
         values.put("favoriteState", true).put("writeAcknowledgement", JSONObject.NULL)
         val methods = fixture.getJSONObject("methods")
         check(methods.keys().asSequence().toSet() == PluginCapability.entries.flatMap { it.methods }.toSet())
-        val manifest = PluginManifestParser.parse(JSONObject().put("id", "org.melox.rc.wire-fields").put("name", "Wire fields")
+        val manifest = PluginManifestParser.parse(JSONObject().put("id", "org.melox.rc.wire-fields." + java.util.UUID.randomUUID().toString().replace("-", "")).put("name", "Wire fields")
             .put("version", "1.0.0").put("apiVersion", 1).put("entry", "index.js")
             .put("capabilities", JSONArray(PluginCapability.entries.map { it.wireName })).put("networkDomains", JSONArray().put("example.com"))
-            .put("authentication", JSONObject().put("type", "apiToken").put("domains", JSONArray().put("example.com"))).toString())
+            .put("authentication", JSONObject().put("type", "apiToken").put("header", "Authorization").put("prefix", "Bearer ")
+                .put("domains", JSONArray().put("example.com"))).toString())
         val script = "const values=$values;const methods=$methods;globalThis.meloxPlugin={};" +
             "Object.keys(methods).forEach(method=>{meloxPlugin[method]=async()=>values[methods[method]]});"
+        val root = File(test.targetContext.cacheDir, "rc-wire-${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        val sandbox = object : android.content.ContextWrapper(test.targetContext) {
+            override fun getApplicationContext(): android.content.Context = this
+            override fun getNoBackupFilesDir(): File = root
+        }
+        val vault = PluginAccountVault(sandbox, manifest.sourceId)
         try {
-            PluginRuntime(test.targetContext, PluginArchiveReader.Package(manifest, script)).use { runtime ->
+            val account = vault.importToken("Synthetic RC", "synthetic-wire-fixture", requireNotNull(manifest.authentication))
+            vault.activate(account.id)
+            PluginRuntime(sandbox, PluginArchiveReader.Package(manifest, script)).use { runtime ->
                 for (method in methods.keys()) {
                     val raw = runtime.invoke(method)
                     PluginWireContract.check(method, raw)
@@ -75,7 +84,7 @@ internal object PluginRcWireChecks {
                 check(lyric.text == "Text" && lyric.translation == "Translation" && lyric.romanization == "Romanization")
             }
             evidence += "PASS shared full-field fixture: all API-v1 methods preserve raw fields through isolated QuickJS and all 12 Capability Provider mappings execute (not UI/network acceptance)"
-        } finally { file.delete() }
+        } finally { vault.clear(); root.deleteRecursively(); file.delete() }
     }
 
     private fun equal(expected: Any, actual: Any) {

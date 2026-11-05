@@ -102,9 +102,9 @@ is currently marked private and has not been published to npm.
   `[A-Za-z0-9_.-]{1,128}`; at most 64 keys, 16 KiB/value and 64 KiB total. Use no
   credentials here: use the host-managed Keystore account vault. Storage survives package
   updates and is retained on uninstall in the current implementation.
-- `log.info/warn/error`: per-runtime in-memory logs; at most 32 entries/call,
-  400 characters/entry and 100 retained entries. Script messages are not sent to
-  global logcat. A log viewer is not yet supplied.
+- `log.info/warn/error`: at most 32 events per call, with at most 100 in-memory
+  events retained per runtime. Script message bodies are not retained or sent to
+  logcat. The settings diagnostic viewer exposes sanitized event metadata.
 
 Every invocation starts a fresh JS context. Do not rely on module globals
 surviving calls. There is no DOM, WebView, `fetch`, Node.js, timers or platform SDK

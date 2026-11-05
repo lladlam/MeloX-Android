@@ -12,7 +12,7 @@ import java.util.UUID
 /** Opt-in destructive-to-test-worker faults only. No user package/account is changed. */
 internal object PluginRcFaultChecks {
     fun run(test: Instrumentation, evidence: MutableList<String>) = runBlocking {
-        workerDeathAndReplay(test, evidence)
+        PluginRuntime.withWorkerGate { workerDeathAndReplay(test, evidence) }
         val suffix = UUID.randomUUID().toString().replace("-", "")
         val manifest = PluginManifestParser.parse("""{"id":"org.melox.rc.fault$suffix","name":"RC faults","version":"1.0.0","apiVersion":1,"entry":"index.js","capabilities":["search"]}""")
         val bodies = mapOf(
@@ -60,7 +60,7 @@ internal object PluginRcFaultChecks {
                     replyTo = reply
                     data = android.os.Bundle().apply {
                         putString("invocation", token); putString("method", "search"); putString("args", "[]")
-                        putString("script", "globalThis.meloxPlugin={search:()=>{__hostLog('ready');while(true){}}};")
+                        putString("script", "globalThis.meloxPlugin={search:host=>{host.log.info('ready');while(true){}}};")
                     }
                 })
             }
@@ -107,6 +107,15 @@ internal object PluginRcFaultChecks {
             check(PluginStorage(sandbox, first, "deleted-account").execute("storage.get", "kept") == org.json.JSONObject.NULL)
             check(PluginStorage(sandbox, second).execute("storage.get", "kept") == "other-source")
             evidence += "PASS storage v1 migration, v2 deleted-account cleanup and other-source preservation"
+            val diagnostics = PluginDiagnostics(sandbox, first)
+            repeat(105) { diagnostics.record("unknown-sensitive-argument", "OK", it.toLong()) }
+            diagnostics.record("search", "AUTH_EXPIRED", 10)
+            val lines = PluginDiagnostics(sandbox, first).lines()
+            check(lines.size == 100 && lines.last().contains("AUTH_EXPIRED") && lines.none { it.contains("unknown-sensitive-argument") })
+            check(PluginDiagnostics(sandbox, second).lines().isEmpty())
+            diagnostics.clear()
+            check(PluginDiagnostics(sandbox, first).lines().isEmpty())
+            evidence += "PASS durable host diagnostics cap, method sanitization, source isolation, recreation and explicit clear"
         } finally { root.deleteRecursively() }
     }
 }

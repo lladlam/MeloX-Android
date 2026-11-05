@@ -838,6 +838,13 @@ fun MeloXIOSNowPlayingSharedHost(
                 SharedArtworkDestination(
                     state = state,
                     page = page,
+                    onArtworkTap = {
+                        transitionSourcePage = page
+                        page = if (page == MeloXNowPlayingPage.Artwork) MeloXNowPlayingPage.Lyrics else MeloXNowPlayingPage.Artwork
+                        if (rememberPlayerPage) {
+                            MeloXSettingsPreferences.setString(context, "playback_last_page", page.name)
+                        }
+                    },
                     expansionProgress = expansionProgress,
                     hidden = showLandscapeSkyline,
                     // ⚠ 只在「播放页已完全展开（不在转场/收起途中）」才接管封面手势。
@@ -879,6 +886,7 @@ fun MeloXIOSNowPlayingSharedHost(
 private fun SharedArtworkDestination(
     state: MeloXPlaybackUiState,
     page: MeloXNowPlayingPage,
+    onArtworkTap: () -> Unit,
     expansionProgress: Float,
     hidden: Boolean = false,
     gesturesEnabled: Boolean = false,
@@ -977,15 +985,17 @@ private fun SharedArtworkDestination(
     //       多一层手势会改变命中/消费行为，风险远大于收益。
     //    2. 只消费**水平**位移（`dragging` 判定用 `dx`）：竖直方向不消费 ⇒ 下拉收起不受影响。
     //    3. 未展开 / 转场中 / 覆盖层显示时 `enabled=false` ⇒ 手势直接放行（不消费事件）。
-    val artworkGesturesEnabled = rememberUpdatedState(gesturesEnabled && !hidden && isLandscape)
+    val artworkGesturesEnabled = rememberUpdatedState(gesturesEnabled && !hidden)
+    val latestArtworkTap = rememberUpdatedState(onArtworkTap)
     val artworkDrag = remember { Animatable(0f) }
     val artworkGestureScope = rememberCoroutineScope()
     val artworkMaxDragPx = with(LocalDensity.current) { MeloXArtworkSwipeMaxDrag.toPx() }
     val artworkThresholdPx = with(LocalDensity.current) { MeloXArtworkSwipeThreshold.toPx() }
-    val artworkGestureModifier = if (isLandscape) {
-        Modifier.pointerInput(artworkMaxDragPx, artworkThresholdPx) {
+    val artworkGestureModifier = if (isLandscape || MeloXSettingsRuntime.artworkTapLyrics || MeloXSettingsRuntime.artworkSwipeTracks) {
+        Modifier.pointerInput(artworkMaxDragPx, artworkThresholdPx, isLandscape, MeloXSettingsRuntime.artworkTapLyrics, MeloXSettingsRuntime.artworkSwipeTracks, page) {
             meloXArtworkGestures(
                 enabled = { artworkGesturesEnabled.value },
+                swipeEnabled = MeloXSettingsRuntime.artworkSwipeTracks && page == MeloXNowPlayingPage.Artwork || isLandscape && !MeloXSettingsRuntime.artworkSwipeTracks,
                 thresholdPx = artworkThresholdPx,
                 maxDragPx = artworkMaxDragPx,
                 onDragDelta = { delta ->
@@ -1006,10 +1016,13 @@ private fun SharedArtworkDestination(
                     when {
                         // 左滑（位移为负）→ 下一首；右滑 → 上一首（与 mini 播放器一致）。
                         dragged <= -artworkThresholdPx -> state.next()
-                        dragged >= artworkThresholdPx -> state.previous()
+                        dragged >= artworkThresholdPx -> state.previousTrack()
                     }
                 },
                 onDoubleTap = { state.togglePlayPause() },
+                onTap = if (MeloXSettingsRuntime.artworkTapLyrics && page != MeloXNowPlayingPage.Queue) {
+                    { latestArtworkTap.value() }
+                } else null,
             )
         }
     } else {
@@ -1685,11 +1698,13 @@ private const val MeloXArtworkDoubleTapTimeoutMillis = 320L
  */
 private suspend fun PointerInputScope.meloXArtworkGestures(
     enabled: () -> Boolean,
+    swipeEnabled: Boolean,
     thresholdPx: Float,
     maxDragPx: Float,
     onDragDelta: (Float) -> Unit,
     onRelease: (Float) -> Unit,
     onDoubleTap: () -> Unit,
+    onTap: (() -> Unit)?,
 ) {
     var lastTapUptime = 0L
     awaitEachGesture {
@@ -1697,13 +1712,19 @@ private suspend fun PointerInputScope.meloXArtworkGestures(
         // 未启用：本次手势完全不参与（不消费 ⇒ 事件照常传给下层）。
         if (!enabled()) return@awaitEachGesture
         var dragged = 0f
+        var verticalDrag = 0f
         var dragging = false
         val pointerId = down.id
         while (true) {
             val event = awaitPointerEvent()
             val change = event.changes.firstOrNull { it.id == pointerId } ?: break
             if (!change.pressed) {
-                if (!dragging) {
+                if (!dragging && abs(dragged) <= viewConfiguration.touchSlop && abs(verticalDrag) <= viewConfiguration.touchSlop && !change.isConsumed) {
+                    if (onTap != null) {
+                        change.consume()
+                        onTap()
+                        break
+                    }
                     val elapsed = change.uptimeMillis - lastTapUptime
                     if (elapsed in 1..MeloXArtworkDoubleTapTimeoutMillis) {
                         lastTapUptime = 0L
@@ -1717,7 +1738,8 @@ private suspend fun PointerInputScope.meloXArtworkGestures(
             }
             val dx = change.position.x - change.previousPosition.x
             dragged += dx
-            if (!dragging && abs(dragged) > viewConfiguration.touchSlop) dragging = true
+            verticalDrag += change.position.y - change.previousPosition.y
+            if (swipeEnabled && !dragging && abs(dragged) > viewConfiguration.touchSlop && abs(dragged) > abs(verticalDrag)) dragging = true
             if (dragging) {
                 change.consume()
                 // 越界后的多余位移不再叠加，避免"拖到底还能继续拖"的橡皮筋错觉。

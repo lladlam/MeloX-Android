@@ -12,7 +12,7 @@ import com.lladlam.melox.playback.PlaybackTrackIdentity
 internal fun rememberBilibiliLyricOffset(mediaId: String?): Int {
     val context = LocalContext.current.applicationContext
     val identity = remember(mediaId) { mediaId?.let(PlaybackTrackIdentity::decode) }
-    if (identity?.source != MusicSource.Bilibili) return 0
+    if (identity?.sourceId?.builtIn != MusicSource.Bilibili) return 0
     val offset by BilibiliLyricOffsetStore.state(context, identity.value)
     return offset
 }
@@ -21,4 +21,4 @@ internal fun effectiveBilibiliLyricAdvance(globalAdvanceMs: Int, trackOffsetMs: 
     BilibiliLyricOffsetStore.effectiveAdvance(globalAdvanceMs, trackOffsetMs)
 
 internal fun isBilibiliMediaId(mediaId: String?): Boolean =
-    mediaId?.let(PlaybackTrackIdentity::decode)?.source == MusicSource.Bilibili
+    mediaId?.let(PlaybackTrackIdentity::decode)?.sourceId?.builtIn == MusicSource.Bilibili

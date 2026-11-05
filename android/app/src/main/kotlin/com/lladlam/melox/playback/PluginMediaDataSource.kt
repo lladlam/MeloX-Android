@@ -52,7 +52,10 @@ class PluginMediaDataSource(private val fallback: DataSource.Factory) : DataSour
                 error.responseCode in setOf(401, 403, 410)) {
                 checkEnabled(request)
                 retrying = true
-                try { return open(request.reResolve.invoke()) } finally { retrying = false }
+                try {
+                    if (request.credentialRequested && error.responseCode in setOf(401, 403)) request.provider.requestAuthorizationRefresh()
+                    return open(request.reResolve.invoke())
+                } finally { retrying = false }
             }
             throw error
         }

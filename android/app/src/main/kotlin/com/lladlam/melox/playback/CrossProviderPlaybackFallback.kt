@@ -173,7 +173,7 @@ class CrossProviderPlaybackFallbackResolver(
     }
 
     private fun isEligibleFallbackProvider(provider: MusicProvider): Boolean =
-        provider.source in EligibleSources && provider is SearchCapability && provider is PlaybackCapability
+        provider.sourceId.builtIn in EligibleSources && provider is SearchCapability && provider is PlaybackCapability
 
     private fun providerMetadata(request: CrossProviderFallbackRequest): ProviderTrackMetadata = when (request.source) {
         MusicSource.Netease -> ProviderTrackMetadata.Netease(request.songId)

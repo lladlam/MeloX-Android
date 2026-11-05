@@ -12,10 +12,10 @@ internal class PluginPublicDns(
     private val resolve: (String) -> List<InetAddress> = { InetAddress.getAllByName(it).toList() },
 ) : Dns {
     override fun lookup(hostname: String): List<InetAddress> {
-        require(hostname in domains) { "network permission denied" }
+        require(hostname in domains) { "PERMISSION_DENIED" }
         val addresses = resolve(hostname).toList()
         if (addresses.isEmpty() || addresses.any { !PluginHttpBroker.isPublicAddress(it) })
-            throw UnknownHostException("plugin destination is not public")
+            throw UnknownHostException("PERMISSION_DENIED")
         return addresses
     }
 }

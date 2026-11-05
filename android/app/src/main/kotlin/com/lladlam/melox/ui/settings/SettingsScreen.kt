@@ -3181,6 +3181,8 @@ private fun GeneralSettings(context: android.content.Context) {
             grouped = true,
         )
         SettingsToggleRow(context, stringResource(R.string.settings_general_remember_tab), "general_remember_tab", true, grouped = true)
+        SettingsToggleRow(context, stringResource(R.string.settings_artwork_tap_lyrics), "general_artwork_tap_lyrics", false, grouped = true)
+        SettingsToggleRow(context, stringResource(R.string.settings_artwork_swipe_tracks), "general_artwork_swipe_tracks", false, grouped = true)
         MeloXSettingsDropdown(
             title = stringResource(R.string.settings_general_swipe),
             selected = swipeFullAction,

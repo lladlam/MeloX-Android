@@ -601,6 +601,14 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
         }
     }
 
+    /** Swipe gesture: always move to the previous track, never restart the current one. */
+    fun previousTrack() {
+        if (DlnaSession.active) { DlnaSession.previous(); return }
+        controller?.let { player ->
+            if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem()
+        }
+    }
+
     fun previousFromMiniPlayer() {
         controller?.let { player ->
             if (player.mediaItemCount > 1 && player.currentMediaItemIndex <= 0) {

@@ -435,7 +435,9 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
             // previous button must obey the same "restart after 5 seconds"
             // preference. Media3's default uses a 3-second threshold, which is
             // why disabling the setting only worked inside the app.
-            if (playerCommand == Player.COMMAND_SEEK_TO_PREVIOUS) {
+            if (playerCommand == Player.COMMAND_SEEK_TO_PREVIOUS ||
+                playerCommand == Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM) {
+                cancelPreparedMix()
                 val player = session.player
                 val restartAfterFiveSeconds = MeloXSettingsRuntime.previousRestartsAfterFiveSeconds
                 if (restartAfterFiveSeconds && player.currentPosition >= 5_000L) {
@@ -445,7 +447,7 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
                 } else {
                     player.seekTo(0L)
                 }
-                return SessionResult.RESULT_SUCCESS
+                return SessionResult.RESULT_INFO_SKIPPED
             }
             return when (MeloXAutoMixTransportPolicy.action(
                 command = playerCommand,

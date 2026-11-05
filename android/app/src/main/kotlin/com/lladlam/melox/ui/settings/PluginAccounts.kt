@@ -15,6 +15,11 @@ import kotlinx.coroutines.withContext
 
 @Composable
 internal fun PluginAccounts(manifest: PluginManifest, manager: PluginManager) {
+    key(manifest.sourceId, manifest.authentication) { PluginAccountContent(manifest, manager) }
+}
+
+@Composable
+private fun PluginAccountContent(manifest: PluginManifest, manager: PluginManager) {
     if (manifest.authentication?.type !in setOf("apiToken", "oauth2Pkce")) return
     val authentication = requireNotNull(manifest.authentication)
     val context = LocalContext.current
@@ -37,15 +42,35 @@ internal fun PluginAccounts(manifest: PluginManifest, manager: PluginManager) {
         if (busy) return
         busy = true; error = null; status = null
         scope.launch {
-            try { withContext(Dispatchers.IO) { block(); manager.accountChanged(manifest.sourceId) }; revision++ }
+            try {
+                withContext(Dispatchers.IO) {
+                    manager.changeAccount(manifest.sourceId, manifest, block)
+                }
+                revision++
+            }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { error = "账号操作失败：${failure.javaClass.simpleName}"; revision++ }
+            catch (failure: Exception) { error = PluginErrors.describe(failure); revision++ }
+            finally { busy = false }
+        }
+    }
+    fun authorize(replace: Boolean) {
+        if (busy) return
+        busy = true; error = null; status = null
+        scope.launch {
+            try {
+                if (replace) {
+                    val previous = withContext(Dispatchers.IO) { vault.lease() ?: error("LOGIN_REQUIRED") }
+                    PluginOAuth.beginReplacement(context, manifest, previous)
+                } else PluginOAuth.begin(context, manifest, label)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { error = PluginErrors.describe(failure) }
             finally { busy = false }
         }
     }
     LaunchedEffect(manifest.sourceId, revision, oauthStatus[manifest.sourceId], generation) {
         try {
-            withContext(Dispatchers.IO) { accounts = vault.accounts(); selected = vault.selected() }
+            val (loadedAccounts, activeAccount) = withContext(Dispatchers.IO) { vault.accounts() to vault.selected() }
+            accounts = loadedAccounts; selected = activeAccount
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { error = "无法解密账号，原数据已保留：${failure.javaClass.simpleName}" }
     }
@@ -79,14 +104,15 @@ internal fun PluginAccounts(manifest: PluginManifest, manager: PluginManager) {
             visualTransformation = PasswordVisualTransformation(), enabled = !busy)
         Button(enabled = !busy && label.isNotBlank() && token.isNotBlank(), onClick = {
             val name = label; val credential = token; token = ""
-            action { val account = vault.importToken(name, credential, requireNotNull(manifest.authentication)); vault.activate(account.id) }
+            action { vault.importTokenAndActivate(name, credential, requireNotNull(manifest.authentication)) }
         }) { Text("导入并使用凭据") }
         } else {
             Text("通过系统浏览器进行 OAuth2 / PKCE 授权，回调：${PluginOAuth.REDIRECT_URI}")
-            Button(enabled = !busy && label.isNotBlank(), onClick = {
-                try { PluginOAuth.begin(context, manifest, label) }
-                catch (_: Exception) { error = "无法打开浏览器登录" }
-            }) { Text("浏览器授权登录") }
+            Button(enabled = !busy && label.isNotBlank() && registry[manifest.sourceId] != null,
+                onClick = { authorize(replace = false) }) { Text("浏览器授权登录（新账号）") }
+            TextButton(enabled = !busy && selected != null && registry[manifest.sourceId] != null,
+                onClick = { authorize(replace = true) }) { Text("重新授权当前账号（保留账号数据）") }
+            Text("重新授权会替换当前本地账号的凭据，保留其插件存储；请在浏览器选择对应账号。", style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = { PluginOAuth.cancel(manifest.sourceId) }) { Text("取消登录") }
             TextButton(enabled = !busy && selected != null, onClick = {
                 action {
@@ -112,9 +138,15 @@ internal fun PluginAccounts(manifest: PluginManifest, manager: PluginManager) {
             scope.launch {
                 try {
                     val provider = com.lladlam.melox.core.music.provider.MeloXMusicProviders.create(context)[manifest.sourceId] as? PluginMusicProvider
-                    status = provider?.authenticationStatus()?.toString() ?: "音源不可用"
+                    status = when (val state = provider?.authenticationStatus()) {
+                        com.lladlam.melox.core.music.model.MusicAuthenticationState.NotRequired -> "此插件无需登录"
+                        com.lladlam.melox.core.music.model.MusicAuthenticationState.SignedOut -> "尚未登录，请选择账号或授权登录"
+                        is com.lladlam.melox.core.music.model.MusicAuthenticationState.SignedIn -> "已登录：${state.account.displayName}"
+                        is com.lladlam.melox.core.music.model.MusicAuthenticationState.Expired -> "授权已过期，请重新授权当前账号"
+                        null -> "音源不可用"
+                    }
                 } catch (cancelled: CancellationException) { throw cancelled }
-                catch (failure: Exception) { error = failure.message }
+                catch (failure: Exception) { error = PluginErrors.describe(failure) }
                 finally { busy = false }
             }
         }) { Text("检查会话状态") }

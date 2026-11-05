@@ -36,6 +36,11 @@ class PluginIsolatedService : Service() {
             HTTP_RESULT -> if (busy.get() && invocation?.let { PluginIpcPolicy.validToken(it, message.data.getString("invocation")) } == true &&
                 message.arg1 in 1..PluginIpcPolicy.MAX_HOST_CALLS && message.data.getString("json").orEmpty().toByteArray(Charsets.UTF_8).size <= MAX_BYTES && responses.size < 32)
                 responses.add(message.arg1 to message.data.getString("json").orEmpty())
+            CANCEL -> if (busy.get() && invocation?.let { PluginIpcPolicy.validToken(it, message.data.getString("invocation")) } == true) {
+                // A native loop cannot be interrupted on the QuickJS executor. This process
+                // is isolated; the main-handler UID and exact invocation token guard the kill.
+                android.os.Process.killProcess(android.os.Process.myPid())
+            }
         }
         true
     })
@@ -139,6 +144,7 @@ class PluginIsolatedService : Service() {
         const val HTTP_RESULT = 3
         const val RESULT = 4
         const val LOG = 5
+        const val CANCEL = 6
         const val MAX_BYTES = 128 * 1024
         private val BOOTSTRAP = """
             (() => {

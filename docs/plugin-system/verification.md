@@ -1,10 +1,176 @@
 # 实际验证记录
 
+## 2026-11-06 实体手机测试中止
+
+用户说明 `.dev` 为其主要使用的软件之前，误将其视为独立测试安装：设备 Android 17、ARM64，
+命令 `adb install -r` 已覆盖 `com.lladlam.melox.android.dev` 并安装对应 instrumentation APK。
+未执行卸载或清除数据；instrumentation 报 `Process crashed`，没有通过结果。日志
+`/tmp/opencode/melox-plugin-rc-arm64-phone-command.log`。收到说明后停止对手机的测试和修改；
+不能据此断言该手机的数据或用户体验未经影响。后续故障、降级及旧数据试验需要明确的独立测试环境。
+
+用户指定仅用现有模拟器继续：API24 使用独立 AVD 数据目录
+`/mnt/ntfs_files_sda4/melox-rc-api24-isolated.avd` 成功启动，`ro.build.version.sdk=24`，
+ABI 为 `x86_64,x86`；安装当前 ARM64 APK 实际返回 `INSTALL_FAILED_NO_MATCHING_ABIS`。
+故仍没有 API24 应用验收结果；日志 `/tmp/opencode/melox-rc-api24-isolated.log`。
+
+在 API35 x86_64 + ARM 转译模拟器 `emulator-5554` 的独立正式包名测试安装中，下载官方
+0.7.0 APK（`/tmp/opencode/melox-android-0.7.0-release.apk`），SHA-256
+`4c9163b6b7554d3e2c2e4d77b4de2e9217955ae92b287e9c862c47f4a2034aa0` 与官方
+SHA256SUMS 一致，签名为项目正式证书。全新安装旧版并完成首次引导，在 General 将默认启动页
+设置为 Library；`adb install -r` 升级本轮0.7.1正式签名 ARM64 APK后冷启动，General 仍显示
+Library（`/tmp/opencode/melox-upgraded-setting.xml`）。再在模拟器执行 `adb install -r -d`
+降回官方0.7.0，冷启动后同一设置仍显示 Library（`/tmp/opencode/melox-downgraded-setting.xml`）。
+这只证明该模拟器上一个真实旧设置的升级/降级往返，不代表收藏、账号、插件、下载或所有
+未知字段均无损，也不代表任何真实手机允许或完成降级。未使用用户手机执行该实验。
+
+MeloX-Docs 已更新12能力、当前 SDK schema、账号/签名/安全范围及未验收限制；本地站点 typecheck
+与生产 build 成功，分支提交 `4501864`，合并后 main `57615bf87d02bf21de93f586e23387d8ec2841cd`
+已推送且 `git ls-remote` 核实。公开站点 `https://md.lladlam.top/docs/plugin-system/` 已实际
+读取到更新后的 RC 指南及 12 项能力列表。
+
+## 2026-11-06 播放器交互与系统上一首修复
+
+设置 → 通用新增两个默认关闭的开关（`general_artwork_tap_lyrics`、
+`general_artwork_swipe_tracks`）：点击封面在封面/歌词页之间切换；左右滑动封面切歌，
+沿用原有弹簧回弹动画，iOS 与 Classic 播放器均接入。API35 模拟器（320×640）实测：
+导入 rc-app 后点击歌词页头部封面切到封面页、再点大封面回到歌词页；左滑封面由
+RC Silence 1 切到 RC Silence 2，右滑在已播 0:12 时仍切回 RC Silence 1（滑动固定切歌）。
+
+系统上一首修复：原回调只处理 `COMMAND_SEEK_TO_PREVIOUS`、处理完仍返回
+`RESULT_SUCCESS`，Media3 会再执行一次默认 `seekToPrevious`，导致"先回开头又跳到上一首"。
+现在同时拦截 `COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM` 并返回 `RESULT_INFO_SKIPPED`。
+模拟器实测：开启 5 秒设置、播到 1:18 时 `cmd media_session dispatch previous` 只回到
+RC Silence 2 的 0:00；关闭设置后同一命令切到 RC Silence 1。新增
+`PluginRcPlaybackControlChecks` 用真实 MediaController 覆盖 5 秒阈值两侧与关闭设置，
+尚未执行。
+
+歌词跟随：定位超过约 200ms 的跳转（含系统上一首回到开头）会重置"浏览歌词"状态并
+重新对齐焦点。模拟器从 0:00 拖到 1:24 显示"One minute"、拖到 0:30 显示
+"Thirty seconds"，系统上一首回到 0:00 后歌词列表回到第一行。
+
+以上为 API35 模拟器证据，不是实体手机验收；正式 `.dev` 尚未重新安装本轮构建。
+
+`PluginRcPlaybackControlChecks`（真实 `MeloXPlaybackService` + MediaController）在 API35 模拟器
+通过：设置开启且已播 12 秒时上一首只回到本曲开头；开启但仅 1 秒时切到上一首；关闭设置后
+12 秒仍切到上一首。运行时输出 `PASS MediaSession previous obeys 5s restart preference`。
+随后将同一 Debug APK 覆盖安装到用户手机 `.dev`（`adb install -r`，未卸载、未清数据）：
+versionCode 26 / 0.7.1，安装后应用正常启动，音乐库、歌单和当前歌曲仍在；手机端实际
+base.apk 的 SHA-256 `a7592b4480cbcfce93066ec807aada94c39f9e4871fbea3c565778c6a4d10af0`
+与本机构建产物一致，并在包内确认存在新增的两个设置字符串。手机交互验收由用户自行测试。
+
 最新状态见本节；文末“RC 工程验收”以及 478/490/501/510 项记录均有各自历史范围。
 
-## 最新批次：实现优先，集中测试尚未开始
+## 最新批次：功能收拢后进入集中验证
 
-用户要求先完成全部功能代码再测试，本批次没有运行构建、单测、SDK 或设备测试。
+发布操作记录：用户明确要求后，RC 代码已提交 `305801a6ce2257d525ac97ecfbf5eeb6291ec667`
+并推送 main，`git ls-remote origin refs/heads/main` 确认远端一致。提交包含86个文件，
+排除了原有 README、SettingsScreen 背屏入口和 `android/rear-companion` 的独立改动。
+推送是代码检查点，不是测试或发布验收通过。
+
+推送后新增任务持久化、保守 Range 续传、受控错误文案与持久诊断；新增
+`PluginRcDownloadChecks` 在受控 HTTPS 上检查截断保留、Range/If-Range、ETag 变化、
+服务端忽略范围、错误范围、弱校验器、作用域变化和实际任务 AtomicFile 重建。
+`PluginRcFaultChecks` 增加诊断容量/方法名脱敏/来源隔离/重建/清除检查。
+Android 集中构建已通过；API35故障子项和全字段子集已取得结果，完整验收仍未通过。
+
+继续实现批次的设备验收范围：
+- `PluginRcMediaRevocationChecks`：服务端先发1字节、再延迟10秒；运行时关闭后读操作须在2秒内
+  失败，而非等待15秒 socket 超时。该代码经现有受控 HTTPS runner 接入。
+- `PluginRcOAuthChecks` 增加原账号/普通存储保留、无重复账号、凭据戳变化、过期状态、
+  拒绝和切号后旧重新授权回调，以及旧版本凭据写入拒绝检查。
+- `PluginRcDownloadChecks` 增加账号归属摘要的实际 AtomicFile 往返；OAuth runner 检查
+  当前 Provider 拒绝创建另一个账号归属的下载 Broker。
+- 账号/目录/收藏组件状态隔离、失败路径媒体撤销、401/403 单次刷新与下载重解析均仅为
+  已接线实现，未作为 UI 或网络验收通过项。
+
+功能收拢后已启动集中验证：
+- SDK：`npm run typecheck`、`npm run build` 成功；`npm test` **12/12 通过**，无跳过。
+  包含共享全字段 Schema 类型变异与 Capability 方法完整性检查，不代表 Android 解码或 UI 通过。
+- 受控服务 `server.py`、`dns-rebinding.py` 的 Python AST 语法检查通过；未部署或运行服务。
+- `git diff --check` 通过；14份插件文档本地链接目标检查通过；3个设备/强杀/ARM64脚本的 `bash -n` 通过。
+- Android：`:app:assembleDebug :app:testDebugUnitTest :app:assembleDebugAndroidTest` 已启动，
+  首轮日志 `/tmp/opencode/melox-plugin-implementation-check.log`：主代码编译失败，发现隔离服务
+  缺少 CANCEL 消息和设置页缺少 PluginErrors 导入，已修正。CANCEL 仅接受宿主 UID 及当前
+  invocation token，不匹配时忽略；匹配时终止隔离进程以中断 native-loop。
+  第二轮日志 `/tmp/opencode/melox-plugin-implementation-check-2.log`：Debug APK 生成成功；
+  520项 JVM 测试，1失败、3跳过。失败项为 `PluginCatalogProviderTest` 仍捕获旧解码异常，
+  全字段校验现在提前以 IllegalArgumentException 拒绝字符串布尔值，已更新断言。
+  第三轮日志 `/tmp/opencode/melox-plugin-implementation-check-3.log`：**BUILD SUCCESSFUL in 2m 34s**，
+  Debug APK、AndroidTest APK 均生成；汇总 JUnit XML 为 **520项，517通过、0失败、0错误、3跳过**。
+  包含后续下载取消清理修改；前两轮未执行到 AndroidTest 编译。
+- 新增 Manager 回归代码覆盖凭据提交前撤销旧 Provider、部分写失败且恢复失败时保留主异常、
+  禁用状态账号操作和旧 Manifest 拒绝；第二轮 `PluginManagerTest` **6/6 通过**（内存 repository，
+  不代表 Android 文件系统写失败实测）。
+- API35 `emulator-5554`（x86_64 + arm64-v8a 转译）：首轮日志
+  `/tmp/opencode/melox-plugin-rc-latest-device-command.log` 和 `/tmp/opencode/melox-plugin-rc-latest-device.log`。
+  实际通过 UID/Binder、包生命周期、队列存储、QuickJS/storage/watchdog/取消重绑、Keystore、
+  错 token 取消防重放/当前 token 强杀、native循环/堆/栈故障后恢复、storage v1迁移/v2跨来源清理、
+  持久诊断容量/方法名脱敏/隔离/重建/清除。随后全字段 fixture 因漏填认证 header/prefix 失败；
+  首轮整体 rcStatus=FAIL，不能称整轮通过。
+- 补齐 fixture 后仅重建 AndroidTest APK 成功，日志 `/tmp/opencode/melox-plugin-wire-fixture-build.log`；
+  `/tmp/opencode/melox-plugin-rc-wire-latest-command.log` 显示复验 **rcStatus=PASS**，全部API-v1方法
+  的共享全字段 fixture 经真实隔离 QuickJS 往返，12个 Capability Provider 映射执行通过，外部
+  shell 启动服务被拒绝。此命令没有重复运行 faults，也没有开启 OAuth/Range/catalog/online。
+- 正常应用服务复验 `/tmp/opencode/melox-plugin-rc-normal-service-latest.log` 返回 FAIL：当前安装
+  缺少已启用 rc-app fixture，尚未进入播放断言。随后界面 XML `/sdcard/melox-rc-current.xml`
+  显示 `System UI isn't responding`；仍不能记录正常服务/后台/熄屏通过。
+- 15组包提交/回滚强杀恢复 **15/15通过**，输出目录 `/tmp/opencode/melox-rc-crash-latest`，主日志
+  `/tmp/opencode/melox-rc-crash-latest-command.log`。覆盖 unsigned/rotation/downgrade 各自
+  decision/archive/publisher 提交边界和 rollback-archive/rollback-publisher 回滚边界；每组均
+  检查重启后的包版本、匹配的发布者、期望 enabled 状态和 journal 恢复。不等于物理断电或全局事务。
+
+### 正常应用 UI 继续复验（进行中）
+
+- 模拟器进程退出后重启 `melox-http-disk`，保留数据并重新覆盖安装本次 APK；启动期多个 Google
+  系统应用 ANR及高IO等待，日志 `/tmp/opencode/melox-rc-ui-resume-logcat.txt`、
+  `/tmp/opencode/melox-rc-ui-activity-errors.txt`，不能当作应用播放通过证据。
+- 原生界面重新完成引导、设置搜索插件入口、真实 SAF Downloads选择签名rc-app、核对权限/
+  指纹并确认安装、启用、设为主来源及歌曲搜索；点击歌曲显示 MiniPlayer，未再触发原来的
+  `MeloXPlaybackUiState.refresh` 崩溃。截图/XML：`/tmp/opencode/melox-rc-ui-latest/`。
+- 播放仍失败：MediaSession为ERROR，Media3报FLAC首帧sync错误。字节比对发现旧fixture本地237字节，
+  httpbingo实际返回249字节，将引号变为HTML实体，即使audio MIME也如此。替代httpbin端点实测
+  返回237字节且逐字节一致，已修改fixture生成器；这不是正常播放PASS。
+- 同时日志发现Lyricon桥接 `lyriconPosition` 仍读动态身份的`.source`，会捕获异常并关闭桥接。
+  已改为`sourceId.builtIn`；重新构建/单测正在执行，日志`/tmp/opencode/melox-rc-lyricon-fix-build.log`。
+- rc-app更新到1.1.0并新增httpbin域名：真实SAF权限扩张确认可见；先取消后仍为1.0.0 Enabled，
+  再次导入确认后为1.1.0 Enabled，公钥不变。此fixture更新为合成测试包，不是应用版本发布。
+- 正常服务runner首项Binder探针可能与已启用包的启动校验抢用同一服务，返回FAIL；已在原始
+  Binder探针前等待插件启动恢复，验收APK重编译通过，实际复跑待执行。前一次编译120秒超时，
+  重跑日志`/tmp/opencode/melox-rc-runner-restore-gate-build-2.log`。
+- 更新fixture后真实点击歌曲，系统MediaSession **PLAYING(3)**、position=29823、buffered=120000、
+  error=null，元数据为RC Silence 1 / MeloX SDK Example / Test Signals。
+  证据`/tmp/opencode/melox-rc-app-v2-media-session.txt`；这是正常服务实际播放证据，不是完整UI通过。
+- 展开MiniPlayer进入完整播放器时主进程崩溃：`MeloXPlaybackTitleMenu.kt:117` 仍读动态`.source`。
+  日志`/tmp/opencode/melox-rc-player-open-crash.log`；误采集的页面实际为崩溃后Launcher，已命名为
+  `/tmp/opencode/melox-rc-ui-latest/04-player-open-crashed-launcher.{png,xml}`，不可标为播放截图。
+  已补齐标题菜单、操作页、音质chip/弹窗及B站歌词偏移的SourceId安全判断；重新构建尚未完成。
+- Lyricon修复一轮构建成功（8m13s），但不能覆盖随后完整播放器调用点修改；最新日志为
+  `/tmp/opencode/melox-rc-now-playing-sourceid-build.log`。正常服务runner等待restore后仍在原始
+  Binder探针失败，进一步为原始Binder探针和强杀探针接入宿主同一全局worker gate，避免与
+  自动队列恢复/播放解析抢占；此后源码变更尚待构建和复跑，不将原因推断记为已证实PASS。
+- 完整播放器调用点及worker gate修复后构建 **BUILD SUCCESSFUL in 6m**，
+  `/tmp/opencode/melox-rc-now-playing-sourceid-build.log`；JUnit XML汇总520项、0失败/错误、3跳过。
+  最新APK覆盖安装后，`/tmp/opencode/melox-rc-normal-service-worker-gated.log` **rcStatus=PASS**：
+  正常MeloXPlaybackService/MediaController、动态UI state、双歌曲队列、pause/seek/next、歌词Provider、
+  媒体通知、后台/熄屏持续播放及前台服务标志均通过。与单独测试ExoPlayer证据区分。
+- 原生完整播放器成功展开（`05-full-player-sourceid-fixed`），歌词面板实际显示三条合成歌词
+  （`06-lyrics-panel`，绘制文本不在UI XML中）；队列页面可见当前RC Silence 1及下一首RC Silence 2
+  （`09-queue-first-track`），之前标题菜单崩溃未复现。截图均位于`/tmp/opencode/melox-rc-ui-latest/`。
+- 冷启动观察到Search的插件目录可用、Settings显示Enabled，但LazyRow来源chip仍可能保留空列表；
+  已改为按registry generation在LazyRow外获取不可变Provider列表。后续构建日志
+  `/tmp/opencode/melox-rc-search-restore-build.log` **BUILD SUCCESSFUL in 2m27s**；520项单测中
+  517通过、0失败/错误、3跳过。覆盖安装后冷启动来源chip正确显示并选中插件，截图/XML
+  `11-cold-restored-source-chip`；同时MiniPlayer保留原插件歌曲身份。
+- 原生设置页禁用插件后按钮变为“启用”（`10-disabled`）；重新定位到第一首并尝试播放，
+  MediaSession为ERROR、position=0、buffered=0，歌曲元数据仍RC Silence 1。之前已完整缓冲的
+  音频不等于禁用后立即清空解码缓存；不宣称已测量缓冲音频的最长持续时间。证据
+  `/tmp/opencode/melox-rc-before-disable-media.txt`、`melox-rc-disabled-next-media.txt`、
+  `melox-rc-disabled-reopen-media.txt`。随后重新启用并保留当前测试包。
+- 最新构建SHA-256记录：`/tmp/opencode/melox-rc-latest-sha256.txt`。
+  主APK `a1851637793c3891ff9418d635177eaf0e5004c08fa5a133e93c9ad898bcb5dd`；
+  AndroidTest `c9e7e65080cc2433c538fc130b50b2921ca502e8f85246b1709f41cf191d26ef`；
+  rc-app1.1.0 `adf461240202254fce98e7c14c065e1d0ab85184645f90e6d5f20f79b7f6f9b0`。
+
 新增实现不能沿用上一批次的 PASS，整体仍为 **NO_GO**。
 
 此前实际应用操作已观察到：应用引导、SAF 选择签名包、权限/指纹确认、安装、启用、

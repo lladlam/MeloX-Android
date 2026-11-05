@@ -609,6 +609,7 @@ private fun MeloXAppleMusicLyricsPanel(
     }
 
     val lineIndexSeekSignal = remember(mediaId) { Channel<Unit>(Channel.CONFLATED) }
+    var seekGeneration by remember(mediaId) { mutableIntStateOf(0) }
     var previousSeekPositionMs by remember(mediaId) { mutableLongStateOf(state.positionMs) }
     var previousSeekRealtimeMs by remember(mediaId) { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(state.positionMs) {
@@ -618,8 +619,16 @@ private fun MeloXAppleMusicLyricsPanel(
             } else {
                 0L
             }
-            if (kotlin.math.abs(state.positionMs - expected) > 200L) {
+            val driftMs = state.positionMs - expected
+            if (kotlin.math.abs(driftMs) > 200L) {
                 lineIndexSeekSignal.trySend(Unit)
+            }
+            // A real seek (progress bar, queue jump, previous-to-start) can be
+            // several seconds away from the extrapolated position. Only then
+            // re-anchor the focused lyric line and cancel lyric browsing, so a
+            // buffering stall or a late position update does not yank the list.
+            if (kotlin.math.abs(driftMs) > 1_000L) {
+                seekGeneration++
             }
             previousSeekPositionMs = state.positionMs
             previousSeekRealtimeMs = SystemClock.elapsedRealtime()
@@ -703,6 +712,12 @@ private fun MeloXAppleMusicLyricsPanel(
     var isBrowsingLyrics by remember(document) { mutableStateOf(false) }
     var playbackFocusGeneration by remember(document) { mutableIntStateOf(0) }
     var browseGeneration by remember(document) { mutableIntStateOf(0) }
+    LaunchedEffect(seekGeneration) {
+        if (seekGeneration > 0) {
+            isBrowsingLyrics = false
+            playbackFocusGeneration++
+        }
+    }
     var scrollHideDistancePx by remember(document) { mutableStateOf(0f) }
     val latestInterfaceHidden = rememberUpdatedState(isInterfaceHidden)
     val latestVisibilityCallback = rememberUpdatedState(onInterfaceVisibilityChange)
@@ -975,7 +990,12 @@ private fun MeloXAppleMusicLyricsPanel(
                 return@LaunchedEffect
             }
 
-            if (previousIndex == nextIndex) return@LaunchedEffect
+            if (previousIndex == nextIndex) {
+                if (playbackFocusGeneration > 0 && MeloXSettingsRuntime.lyricAutoFollowEnabled) {
+                    listState.scrollToItem(nextIndex + 1, targetOffset)
+                }
+                return@LaunchedEffect
+            }
 
             if (!MeloXSettingsRuntime.lyricAutoFollowEnabled) {
                 handOffFocusScale(previousIndex, nextIndex)
@@ -1000,7 +1020,7 @@ private fun MeloXAppleMusicLyricsPanel(
                     sourceLineActivationTimeMs(lines[index + 1]) -
                         sourceLineActivationTimeMs(lines[index]) <= 280L
                 }
-            val isAdjacentForward = skippedLineCount == 1 || overlappingStep
+            val isAdjacentForward = previousIndex < nextIndex && (skippedLineCount == 1 || overlappingStep)
             val effectivePosition = renderedPositionState.longValue + lyricAdvanceMs
             val remainingMs = sourceRemainingFocusDurationMs(nextIndex, effectivePosition, lines)
 

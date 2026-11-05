@@ -77,11 +77,12 @@ class ProviderPlaybackResolver(
             .build()
     }
 
-    private fun resolveDynamicRequest(dataSpec: DataSpec, source: SourceId): DataSpec {
+    private fun resolveDynamicRequest(dataSpec: DataSpec, source: SourceId, expected: PluginMusicProvider? = null): DataSpec {
         if (providers[source] == null) providers.awaitPluginRestore()
         val generation = providers.generation
         val provider = providers[source] as? PluginMusicProvider
             ?: throw IOException("Music source ${source.value} is missing or disabled")
+        if (expected != null && provider !== expected) throw IOException("Plugin account or package changed before retry")
         if (!provider.supports(com.lladlam.melox.core.music.provider.MusicCapability.Playback))
             throw IOException("Plugin does not support playback")
         val uri = dataSpec.uri
@@ -106,7 +107,7 @@ class ProviderPlaybackResolver(
         }
         return dataSpec.buildUpon().setUri(url).setHttpRequestHeaders(headers)
             .setCustomData(PluginMediaRequest(provider, providers, generation, (resolution as? PlaybackResolution.Playable)?.credentialReference == "active",
-                reResolve = { resolveDynamicRequest(dataSpec, source) }))
+                reResolve = { resolveDynamicRequest(dataSpec, source, provider) }))
             .setKey("plugin:${source.value}:$generation:$url").build()
     }
 

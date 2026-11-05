@@ -346,6 +346,8 @@ object MeloXSettingsRuntime {
     var libraryTabEnabled by mutableStateOf(true)
         internal set
     var rememberLastTab by mutableStateOf(true)
+    var artworkTapLyrics by mutableStateOf(false)
+    var artworkSwipeTracks by mutableStateOf(false)
         internal set
     var disableAutomaticTabBarShrink by mutableStateOf(false)
         internal set
@@ -418,6 +420,8 @@ object MeloXSettingsRuntime {
         downloadsTabPlacement = MeloXSettingsPreferences.boolean(app, "placement_downloads_tab", false)
         cloudTabPlacement = MeloXSettingsPreferences.boolean(app, "placement_cloud_tab", false)
         rememberLastTab = MeloXSettingsPreferences.boolean(app, "general_remember_tab", true)
+        artworkTapLyrics = MeloXSettingsPreferences.boolean(app, "general_artwork_tap_lyrics", false)
+        artworkSwipeTracks = MeloXSettingsPreferences.boolean(app, "general_artwork_swipe_tracks", false)
         disableAutomaticTabBarShrink = MeloXSettingsPreferences.boolean(app, "general_disable_auto_tabbar_shrink", false)
         tabOrder = MeloXSettingsPreferences.string(app, "tab_order", "Home,Explore,Library,Podcasts,Downloads,Cloud,Settings")
             .split(',').filter { it in setOf("Home", "Explore", "Library", "Podcasts", "Downloads", "Cloud", "Settings") }.distinct()
@@ -646,6 +650,8 @@ object MeloXSettingsRuntime {
         exploreTabEnabled = MeloXSettingsPreferences.boolean(app, "tab_explore", true)
         libraryTabEnabled = MeloXSettingsPreferences.boolean(app, "tab_library", true)
         rememberLastTab = MeloXSettingsPreferences.boolean(app, "general_remember_tab", true)
+        artworkTapLyrics = MeloXSettingsPreferences.boolean(app, "general_artwork_tap_lyrics", false)
+        artworkSwipeTracks = MeloXSettingsPreferences.boolean(app, "general_artwork_swipe_tracks", false)
         disableAutomaticTabBarShrink = MeloXSettingsPreferences.boolean(app, "general_disable_auto_tabbar_shrink", false)
         tabOrder = MeloXSettingsPreferences.string(app, "tab_order", "Home,Explore,Library,Podcasts,Downloads,Cloud,Settings")
             .split(',').filter { it in setOf("Home", "Explore", "Library", "Podcasts", "Downloads", "Cloud", "Settings") }.distinct()
@@ -848,6 +854,8 @@ object MeloXSettingsPreferences {
             "tab_explore" -> MeloXSettingsRuntime.exploreTabEnabled = value
             "tab_library" -> MeloXSettingsRuntime.libraryTabEnabled = value
             "general_remember_tab" -> MeloXSettingsRuntime.rememberLastTab = value
+            "general_artwork_tap_lyrics" -> MeloXSettingsRuntime.artworkTapLyrics = value
+            "general_artwork_swipe_tracks" -> MeloXSettingsRuntime.artworkSwipeTracks = value
             "general_disable_auto_tabbar_shrink" -> MeloXSettingsRuntime.disableAutomaticTabBarShrink = value
             "library_remember_page" -> MeloXSettingsRuntime.rememberLibraryPage = value
             "download_lyrics" -> MeloXSettingsRuntime.downloadLyricsEnabled = value

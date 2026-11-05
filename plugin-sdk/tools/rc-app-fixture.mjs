@@ -7,11 +7,14 @@ import {spawnSync} from 'node:child_process';
 const [output, key, version = '1.0.0'] = process.argv.slice(2);
 if (!output || !key) throw new Error('Usage: node tools/rc-app-fixture.mjs output-prefix private.pem [version]');
 const flac = 'ZkxhQ4AAACL/////AAANAAANAfQA8AAOpgDQUc/5J9TOKKtyIV5Dovsr//h0CAD//rYAAADTbv/4dAgB//7dAAAATm//+HQIAv/+YAAAAGlp//h0CAP//gsAAAD0aP/4dAgE//4dAAAASx3/+HQIBf/+dgAAANYc//h0CAb//ssAAADxGv/4dAgH//6gAAAAbBv/+HQICP/+5wAAAA/1//h0CAn//owAAACS9P/4dAgK//4xAAAAtfL/+HQIC//+WgAAACjz//h0CAz//kwAAACXhv/4dAgN//4nAAAACof/+HQIDqYN/AAAAMfH';
-const url = 'https://httpbingo.org/base64/' + encodeURIComponent(flac) + '?content-type=audio%2Fflac';
+// httpbingo's base64 response HTML-escapes quotes even with an audio content type,
+// corrupting binary FLAC frames. httpbin returns the decoded bytes unchanged.
+const url = 'https://httpbin.org/base64/' + encodeURIComponent(flac);
 const catalog = fileURLToPath(new URL('../examples/catalog/index.ts', import.meta.url));
 const manifest = JSON.parse(await (await import('node:fs/promises')).readFile(new URL('../examples/catalog/manifest.json', import.meta.url)));
 manifest.id = 'org.melox.rc-app'; manifest.name = 'MeloX RC Synthetic App'; manifest.version = version;
 manifest.author = 'Local RC fixture (CC0)';
+manifest.networkDomains = [...new Set([...manifest.networkDomains, 'httpbin.org'])];
 await writeFile(output+'.json', JSON.stringify(manifest));
 await writeFile(output+'.ts', `import catalog from ${JSON.stringify(catalog)};
 const tracks=Array.from({length:45},(_,i)=>({id:'rc-'+(i+1),title:'RC Silence '+(i+1),artists:[{id:'author',name:'MeloX SDK Example'}],album:{id:'signal-album',name:'Test Signals'},durationMs:120000}));

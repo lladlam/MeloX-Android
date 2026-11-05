@@ -36,10 +36,28 @@ class PluginAccountVault(context: Context, private val source: SourceId) {
         require(policy.type == "apiToken" && policy.domains.isNotEmpty())
         create(displayName, token, policy, null, null)
     }
+    fun importTokenAndActivate(displayName: String, token: String, policy: PluginAuthentication): Account = synchronized(lock) {
+        activateNew { importToken(displayName, token, policy) }
+    }
 
     internal fun importOAuth(displayName: String, tokens: PluginOAuth.Tokens, policy: PluginAuthentication): Account = synchronized(lock) {
         require(policy.type == "oauth2Pkce" && policy.oauth != null)
         create(displayName, tokens.accessToken, policy, tokens.refreshToken, tokens.expiresAt)
+    }
+    internal fun importOAuthAndActivate(displayName: String, tokens: PluginOAuth.Tokens, policy: PluginAuthentication): Account = synchronized(lock) {
+        activateNew { importOAuth(displayName, tokens, policy) }
+    }
+
+    private fun activateNew(create: () -> Account): Account {
+        val account = create()
+        try { activate(account.id) }
+        catch (failure: Throwable) {
+            // A failed AtomicFile selection write preserves its prior value. Remove only the
+            // just-created credential slot, leaving all previously saved accounts untouched.
+            runCatching { remove(account.id) }.exceptionOrNull()?.let(failure::addSuppressed)
+            throw failure
+        }
+        return account
     }
 
     private fun create(displayName: String, token: String, policy: PluginAuthentication, refreshToken: String?, expiresAt: Long?): Account {
@@ -57,7 +75,7 @@ class PluginAccountVault(context: Context, private val source: SourceId) {
             encrypt(Lease(source, account, token, policy, refreshToken, expiresAt), key)
             account
         } catch (error: Throwable) {
-            keys().deleteEntry(alias(account.id))
+            runCatching { file(account.id).delete(); keys().deleteEntry(alias(account.id)) }.exceptionOrNull()?.let(error::addSuppressed)
             throw error
         }
     }
@@ -82,15 +100,28 @@ class PluginAccountVault(context: Context, private val source: SourceId) {
 
     /** Compare-and-swap prevents a late refresh from resurrecting a deleted/logged-out account. */
     internal fun replaceTokens(previous: Lease, tokens: PluginOAuth.Tokens): Lease = synchronized(lock) {
+        replaceAuthorization(previous, tokens, requireNotNull(previous.policy), retainRefreshToken = true)
+    }
+
+    /** Explicit browser reauthorization replaces this local slot, not its identity/storage. */
+    internal fun reauthorize(previous: Lease, tokens: PluginOAuth.Tokens, policy: PluginAuthentication): Lease = synchronized(lock) {
+        require(policy.type == "oauth2Pkce" && policy.oauth != null)
+        replaceAuthorization(previous, tokens, policy, retainRefreshToken = false)
+    }
+
+    private fun replaceAuthorization(previous: Lease, tokens: PluginOAuth.Tokens, policy: PluginAuthentication, retainRefreshToken: Boolean): Lease {
         require(previous.source == source) { "credential source mismatch" }
         check(selected() == previous.account.id) { "account changed" }
         check(previous.selectionStamp != null && sessionStamp() == previous.selectionStamp) { "account session changed" }
         val current = decrypt(previous.account.id)
         check(current.token == previous.token && current.policy == previous.policy) { "account changed" }
-        val updated = Lease(source, current.account, tokens.accessToken, current.policy, tokens.refreshToken ?: current.refreshToken, tokens.expiresAt, previous.selectionStamp)
+        val updated = Lease(source, current.account, tokens.accessToken, policy,
+            tokens.refreshToken ?: current.refreshToken.takeIf { retainRefreshToken }, tokens.expiresAt)
         val key = keys().getKey(alias(current.account.id), null) as? SecretKey ?: error("account key unavailable")
         encrypt(updated, key)
-        updated
+        // The ciphertext digest in the stamp revokes old leases in the same durable write;
+        // there is no second selection-file write that could fail after replacing credentials.
+        return Lease(source, updated.account, updated.token, updated.policy, updated.refreshToken, updated.expiresAt, sessionStamp())
     }
 
     fun accounts(): List<Account> = synchronized(lock) {
@@ -101,11 +132,16 @@ class PluginAccountVault(context: Context, private val source: SourceId) {
             }
     }
     fun selected(): String? = synchronized(lock) {
-        sessionStamp()?.substringBefore('\n')?.takeIf { it.isNotEmpty() }
+        selection()?.substringBefore('\n')?.takeIf { it.isNotEmpty() }
     }
-    internal fun sessionStamp(): String? = synchronized(lock) {
-        try { read(selectedFile, 128).toString(Charsets.UTF_8) }
+    private fun selection(): String? = try { read(selectedFile, 128).toString(Charsets.UTF_8) }
         catch (_: FileNotFoundException) { null }
+    internal fun sessionStamp(): String? = synchronized(lock) {
+        val selection = selection() ?: return@synchronized null
+        val id = selection.substringBefore('\n').takeIf(String::isNotEmpty) ?: return@synchronized selection
+        val fingerprint = try { PluginPackageTrust.sha256(read(file(id), 16 * 1024)) }
+            catch (_: FileNotFoundException) { "missing" }
+        "$selection\ncredential:$fingerprint"
     }
     fun activate(id: String?) = synchronized(lock) {
         if (id != null) decrypt(id)

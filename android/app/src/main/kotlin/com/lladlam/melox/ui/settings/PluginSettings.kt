@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import com.lladlam.melox.core.plugin.MeloXPlugins
 import com.lladlam.melox.core.plugin.PluginArchiveReader
 import com.lladlam.melox.core.plugin.PluginManager
+import com.lladlam.melox.core.plugin.PluginErrors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -37,13 +38,14 @@ internal fun PluginSettings() {
     var cleanPrivateData by remember { mutableStateOf(false) }
     var pendingRemoval by remember { mutableStateOf<com.lladlam.melox.core.music.model.SourceId?>(null) }
     var diagnostics by remember { mutableStateOf<List<String>?>(null) }
+    var diagnosticSource by remember { mutableStateOf<com.lladlam.melox.core.music.model.SourceId?>(null) }
     fun perform(block: suspend () -> Unit) {
         if (busy) return
         busy = true; error = null
         scope.launch {
             try { withContext(Dispatchers.IO) { block() } }
             catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-            catch (failure: Exception) { error = "插件操作失败：${failure.javaClass.simpleName}" }
+            catch (failure: Exception) { error = PluginErrors.describe(failure) }
             finally { busy = false }
         }
     }
@@ -123,7 +125,14 @@ internal fun PluginSettings() {
     diagnostics?.let { lines ->
         AlertDialog(onDismissRequest = { diagnostics = null }, title = { Text("插件诊断") },
             text = { Text(lines.joinToString("\n"), Modifier.heightIn(max = 420.dp).verticalScroll(androidx.compose.foundation.rememberScrollState())) },
-            confirmButton = { TextButton(onClick = { diagnostics = null }) { Text("关闭") } })
+            confirmButton = { TextButton(onClick = { diagnostics = null }) { Text("关闭") } },
+            dismissButton = { TextButton(enabled = !busy && diagnosticSource != null, onClick = {
+                diagnosticSource?.let { source -> perform {
+                    manager.clearDiagnostics(source)
+                    val lines = manager.diagnostics(source)
+                    withContext(Dispatchers.Main.immediate) { diagnostics = lines }
+                } }
+            }) { Text("清除诊断记录") } })
     }
     Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("音乐源插件（开发中）", style = MaterialTheme.typography.titleLarge)
@@ -156,10 +165,10 @@ internal fun PluginSettings() {
             OutlinedButton(enabled = plugin.status == PluginManager.Status.Enabled, onClick = {
                 com.lladlam.melox.core.music.provider.MusicProviderSelectionStore.setSelectedSourceId(context, id)
             }) { Text(if (selectedSource == id) "✓ 当前主音乐源" else "设为主音乐源") }
-            plugin.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            plugin.error?.let { Text(PluginErrors.message(it), color = MaterialTheme.colorScheme.error) }
             TextButton(enabled = !busy, onClick = { perform {
                 val lines = manager.diagnostics(id)
-                withContext(Dispatchers.Main.immediate) { diagnostics = lines }
+                withContext(Dispatchers.Main.immediate) { diagnosticSource = id; diagnostics = lines }
             } }) { Text("查看诊断（不包含凭据与脚本日志正文）") }
             PluginAccounts(plugin.manifest, manager)
             if (com.lladlam.melox.core.plugin.PluginCapability.Search in plugin.manifest.capabilities) {

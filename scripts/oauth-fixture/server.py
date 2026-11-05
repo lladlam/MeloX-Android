@@ -129,6 +129,55 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(body)
             elif path.path == '/fault/adaptive':
                 self.reply(200, '#EXTM3U\n', {'Content-Type': 'application/vnd.apple.mpegurl'})
+            elif path.path == '/fault/stall':
+                self.send_response(200)
+                self.send_header('Content-Type', 'audio/flac')
+                self.send_header('Content-Length', '4096')
+                self.send_header('Cache-Control', 'no-store')
+                self.end_headers()
+                self.wfile.write(b'x'); self.wfile.flush()
+                threading.Event().wait(10)
+                try:
+                    self.wfile.write(b'x' * 4095)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+            elif path.path == '/fault/progressive':
+                query = parse_qs(path.query, keep_blank_values=True, max_num_fields=8)
+                version = query.get('v', ['1'])[0]
+                mode = query.get('mode', ['normal'])[0]
+                if version not in ('1', '2') or mode not in ('normal', 'ignore', 'bad-range', 'weak'):
+                    raise ValueError('invalid fixture mode')
+                payload = bytes(range(256)) * 2048
+                if version == '2':
+                    payload = payload[::-1]
+                etag = '"melox-rc-progressive-'+version+'"'
+                if mode == 'weak':
+                    etag = 'W/'+etag
+                start = 0
+                status = 200
+                requested = self.headers.get('Range', '')
+                if requested and mode != 'ignore' and self.headers.get('If-Range') == etag:
+                    match = re.fullmatch(r'bytes=([0-9]+)-', requested)
+                    if not match or not 0 <= int(match[1]) < len(payload):
+                        self.reply(416, '', {'Content-Range': 'bytes */'+str(len(payload))}); return
+                    start, status = int(match[1]), 206
+                self.send_response(status)
+                self.send_header('Content-Type', 'audio/flac')
+                self.send_header('Content-Length', str(len(payload)-start))
+                self.send_header('Accept-Ranges', 'bytes')
+                self.send_header('ETag', etag)
+                self.send_header('Cache-Control', 'no-store')
+                if status == 206:
+                    wire_start = start+1 if mode == 'bad-range' else start
+                    self.send_header('Content-Range', 'bytes %d-%d/%d' % (wire_start, len(payload)-1, len(payload)))
+                self.end_headers()
+                # Intentionally NOT a decodable audio fixture: tests here check download bytes,
+                # never playback. A cut first response exercises actual truncated HTTP framing.
+                if query.get('cut', ['0'])[0] == '1' and not requested:
+                    self.wfile.write(payload[:16384]); self.wfile.flush()
+                    self.close_connection = True
+                else:
+                    self.wfile.write(payload[start:])
             elif path.path == '/admin/events' and self.admin():
                 with lock:
                     self.reply(200, list(events))
