@@ -93,12 +93,15 @@ class PluginIsolatedService : Service() {
             require(account.toByteArray(Charsets.UTF_8).size <= 4096)
             // Parse/serialize before embedding so Binder input is never JavaScript source.
             val accountJson = if (account == "null") "null" else JSONObject(account).toString()
+            PluginJson.check(args)
             val argumentsJson = org.json.JSONArray(args).toString()
             js.evaluate("__invoke(${JSONObject.quote(method)}, $argumentsJson, $accountJson)", "melox-call.js")
             while (result == null) {
                 responses.poll()?.let { (id, json) ->
                     require(json.toByteArray(Charsets.UTF_8).size <= MAX_BYTES)
-                    js.evaluate("__settle($id, $json)")
+                    PluginJson.check(json)
+                    val envelope = JSONObject(json).toString()
+                    js.evaluate("__settle($id, $envelope)")
                 }
                 // The wrapper drains QuickJS pending Promise jobs at evaluation boundaries.
                 js.evaluate("void 0")

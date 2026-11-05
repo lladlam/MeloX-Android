@@ -1,5 +1,16 @@
 # MeloX Plugin SDK — development preview
 
+RC package/security details and device automation: [RC acceptance](../docs/plugin-system/rc-acceptance.md).
+API v1 is unchanged. Newly packed archives include an SHA-256 integrity file; optionally append
+`--sign-key /path/to/private.pem` to `pack` to sign it with an RSA 2048–4096-bit PKCS#8 PEM key.
+Keep private keys outside the repository and plugin ZIP. The host displays a public-key fingerprint;
+first-time trust requires independent verification, and a signature does not certify plugin safety.
+
+**Progressive audio only.** HLS (`.m3u8`/`hls`), DASH (`.mpd`/`dash`) and DRM/license configurations
+are unsupported and explicitly rejected by the Android host. Do not declare a playable resolution for
+content the host cannot decode; return an appropriate unavailable/rights state. Standard response schemas
+check structure; DNS, actual content MIME, account/domain authorization and resource limits are host policy.
+
 The SDK builds and packages API-v1 JavaScript plugins. Android host integration
 is under development: **a successful SDK build does not establish that the plugin
 works on a device**. See [verification](../docs/plugin-system/verification.md).
@@ -9,7 +20,8 @@ works on a device**. See [verification](../docs/plugin-system/verification.md).
 The Android source implements `search`, `playback`, `lyrics`, `playlists`, `albums`,
 `artists`, `rankings`, `homeFeed`, `userLibrary`, `favorites`, `download`, and
 `authentication`. These paths are connected to the existing Search, song-action,
-download and plugin Settings UI; they have **not been device-validated**.
+download and plugin Settings UI. API 35 emulator checks now cover runtime/Keystore and a synthetic
+Coil/Media3 path; **full capability UI, API 24, physical-device and OAuth acceptance remain incomplete**.
 The complete required-method table is `schema/manifest.schema.json` →
 `x-capability-methods`; Kotlin and SDK tests check this same contract.
 
@@ -123,12 +135,14 @@ manifest fixtures, not generated classes. Full model conformance is still pendin
 Android Settings → Extensions → Music source plugins has Import/Update, Enable,
 Disable and Uninstall actions. New installs are disabled. Enabling first loads the
 entry and checks declared methods in the worker, then registers the Provider.
-Select an enabled source in the existing Search screen.
+Select an enabled source in the service center, plugin Settings or existing Search screen.
 
 Updates require the same ID and strictly higher SemVer precedence. The new entry
 is prepared before the existing package is replaced using Android `AtomicFile`.
 A preparation/write failure keeps the previous package; enabled providers are
-swapped in the shared registry. This is not publisher signature verification.
+swapped in the shared registry. RC builds also verify package integrity and optional publisher signatures;
+publisher changes require explicit approval bound to the candidate archive hash. Local TOFU records
+survive uninstall; they are not a global publisher certificate or a guarantee that plugin code is safe.
 
 Disable/uninstall removes the Provider, not saved tracks or listening history.
 Missing sources retain their IDs and fail resolution rather than becoming

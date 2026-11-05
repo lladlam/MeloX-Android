@@ -9,6 +9,19 @@ import org.junit.Test
 
 /** Keeps built-in IDs stable and checks the new codec no longer loses dynamic identities. */
 class PluginLegacyCompatibilityTest {
+    @Test fun futureEnumsAndTypeSpecificMetadataExtensionsSurviveKnownFieldEdits() {
+        val original = JSONObject("""{"source":"netease","id":"1","title":"Before","artists":[{"name":"Artist"}],
+            "availability":"FutureAvailability","bestQuality":"FutureQuality",
+            "metadata":{"type":"netease","numericId":1,"hash":"future-netEase-extension"}}""")
+        val track = requireNotNull(MeloXTrackJson.decode(original))
+        val rewritten = MeloXTrackJson.encode(track.copy(title = "After"))
+        assertEquals("After", rewritten.getString("title"))
+        assertEquals("FutureAvailability", rewritten.getString("availability"))
+        assertEquals("FutureQuality", rewritten.getString("bestQuality"))
+        assertEquals("future-netEase-extension", rewritten.getJSONObject("metadata").getString("hash"))
+        assertEquals(AudioQualityTier.Standard.name, MeloXTrackJson.encode(track.copy(bestQuality = AudioQualityTier.Standard)).getString("bestQuality"))
+    }
+
     @Test fun builtInStorageIdsRemainStable() {
         val expected = listOf(
             "netease", "qq_music", "kugou", "kugou_lite", "kuwo", "apple_music",
@@ -35,9 +48,9 @@ class PluginLegacyCompatibilityTest {
         }
         assertEquals(2, rewritten.length())
         val result = rewritten.getJSONObject(0)
-        assertFalse(result.has("futureField"))
+        assertEquals("keep", result.getString("futureField"))
         assertEquals("plugin:example.catalog", result.getJSONArray("artists").getJSONObject(0).getString("artistSource"))
         assertEquals("plugin:example.catalog", result.getJSONObject("album").getString("albumSource"))
-        assertEquals("empty", result.getJSONObject("metadata").getString("type"))
+        assertEquals("future", result.getJSONObject("metadata").getString("type"))
     }
 }

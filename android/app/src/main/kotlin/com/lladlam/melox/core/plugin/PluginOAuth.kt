@@ -17,7 +17,8 @@ import org.json.JSONObject
 object PluginOAuth {
     const val REDIRECT_URI = "com.lladlam.melox.plugin:/oauth2redirect"
     internal class Tokens(val accessToken: String, val refreshToken: String?, val expiresAt: Long?)
-    private class Pending(val manifest: PluginManifest, val label: String, val state: String, val verifier: String, val started: Long, var exchanging: Boolean = false)
+    private class Pending(val manifest: PluginManifest, val label: String, val state: String, val verifier: String, val started: Long,
+        var exchanging: Boolean = false, var broker: PluginHttpBroker? = null)
     private val lock = Any()
     private val pending = mutableMapOf<SourceId, Pending>()
     private val messages = MutableStateFlow<Map<SourceId, String>>(emptyMap())
@@ -33,7 +34,7 @@ object PluginOAuth {
             .addQueryParameter("state", attempt.state).addQueryParameter("code_challenge_method", "S256")
             .addQueryParameter("code_challenge", challenge(attempt.verifier)).build()
         synchronized(lock) {
-            pending[manifest.sourceId] = attempt
+            pending.put(manifest.sourceId, attempt)?.broker?.close()
             messages.value = messages.value + (manifest.sourceId to "等待浏览器授权，可在此取消")
         }
         try { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url.toString())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
@@ -41,7 +42,7 @@ object PluginOAuth {
     }
 
     fun cancel(source: SourceId) = synchronized(lock) {
-        pending.remove(source)
+        pending.remove(source)?.broker?.close()
         messages.value = messages.value + (source to "登录已取消")
     }
 
@@ -64,7 +65,12 @@ object PluginOAuth {
             val config = requireNotNull(attempt.manifest.authentication?.oauth)
             // Claim the state before network I/O; keep it cancellable until credential commit.
             synchronized(lock) { check(pending[source] === attempt) { "OAuth login cancelled" } }
-            val tokens = PluginHttpBroker(attempt.manifest).use { broker -> parseTokens(broker.tokenRequest(config.tokenEndpoint, mapOf(
+            val tokens = PluginHttpBroker(attempt.manifest, accountCurrent = { synchronized(lock) { pending[source] === attempt } }).use { broker ->
+                synchronized(lock) {
+                    check(pending[source] === attempt) { "OAuth login cancelled" }
+                    attempt.broker = broker
+                }
+                parseTokens(broker.tokenRequest(config.tokenEndpoint, mapOf(
                 "grant_type" to "authorization_code", "code" to code, "client_id" to config.clientId,
                 "redirect_uri" to REDIRECT_URI, "code_verifier" to attempt.verifier))) }
             // Hold the lifecycle gate over the final identity check and commit.
@@ -77,14 +83,15 @@ object PluginOAuth {
                 pending.remove(source)
                 }
             }
-            synchronized(lock) { messages.value = messages.value + (source to "登录成功") }
+            synchronized(lock) { if (source !in pending) messages.value = messages.value + (source to "登录成功") }
         } catch (error: Exception) {
-            synchronized(lock) { messages.value = messages.value + (source to "登录未完成，请重试") }
+            synchronized(lock) { if (pending[source] === attempt) messages.value = messages.value + (source to "登录未完成，请重试") }
             throw error
         } finally { synchronized(lock) { if (pending[source] === attempt) pending.remove(source) } }
     }
 
     internal fun refresh(manifest: PluginManifest, lease: PluginAccountVault.Lease, broker: PluginHttpBroker): Tokens {
+        require(lease.source == manifest.sourceId) { "credential source mismatch" }
         require(lease.policy == manifest.authentication) { "credential policy changed" }
         val config = requireNotNull(manifest.authentication?.oauth)
         val refresh = lease.refreshToken ?: error("AUTH_EXPIRED")

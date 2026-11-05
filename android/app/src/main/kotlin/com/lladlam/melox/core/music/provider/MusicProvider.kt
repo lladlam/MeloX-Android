@@ -238,6 +238,7 @@ interface ArtistCapability {
 class MusicProviderRegistry(
     providers: Iterable<MusicProvider>,
     private val dynamic: DynamicMusicProviders = DynamicMusicProviders(),
+    private val awaitDynamicReady: () -> Unit = {},
 ) {
     private val providersBySource = providers.associateBy(MusicProvider::source)
 
@@ -257,6 +258,7 @@ class MusicProviderRegistry(
 
     val generation: Long get() = dynamic.generation
     val changes: StateFlow<Long> get() = dynamic.changes
+    fun awaitPluginRestore() = awaitDynamicReady()
 
     fun registerDynamic(provider: MusicProvider, enabled: Boolean = true) = dynamic.register(provider, enabled)
 

@@ -84,6 +84,7 @@ class PluginRuntime(context: Context, private val plugin: PluginArchiveReader.Pa
         val seenCalls = mutableSetOf<Int>()
         val accepting = AtomicBoolean(true)
         val reply = Messenger(Handler(handlerThread.looper) { message ->
+            try {
             if (!accepting.get() || !PluginIpcPolicy.validToken(invocationId, message.data.getString("invocation")) ||
                 message.sendingUid < 0 || message.sendingUid == android.os.Process.myUid()) return@Handler true
             workerUid.compareAndSet(-1, message.sendingUid)
@@ -109,10 +110,15 @@ class PluginRuntime(context: Context, private val plugin: PluginArchiveReader.Pa
                     if (!http.isShutdown) runCatching { http.execute {
                         val response = try {
                             check(accepting.get() && !closed.get() && accounts?.sessionStamp() == selectedSession) { "plugin session revoked" }
-                            val input = JSONObject(request)
-                            val operation = input.getString("operation")
-                            val value = if (operation == "http") JSONObject(broker.request(input.getJSONObject("request").toString()))
-                                else storage.execute(operation, input.getString("key"), input.optString("value"))
+                            PluginJson.check(request, 48 * 1024)
+                             val input = JSONObject(request)
+                             require(input.opt("operation") is String) { "invalid host operation" }
+                             val operation = input.getString("operation")
+                             val value = if (operation == "http") JSONObject(broker.request(input.getJSONObject("request").toString()))
+                                 else {
+                                     require(input.opt("key") is String && (operation != "storage.set" || input.opt("value") is String)) { "invalid storage model" }
+                                     storage.execute(operation, input.getString("key"), if (operation == "storage.set") input.getString("value") else null)
+                                 }
                             JSONObject().put("ok", true).put("value", value)
                         } catch (error: Exception) {
                             val code = error.message?.takeIf { it in setOf("LOGIN_REQUIRED", "AUTH_EXPIRED") } ?: "NETWORK_REQUEST_FAILED"
@@ -133,6 +139,11 @@ class PluginRuntime(context: Context, private val plugin: PluginArchiveReader.Pa
                         while (logEntries.size > 100) logEntries.pollFirst()
                     }
                 }
+            }
+            } catch (_: Exception) {
+                accepting.set(false)
+                failure.set(IllegalStateException("INVALID_PLUGIN_IPC"))
+                done.countDown()
             }
             true
         })
@@ -171,7 +182,7 @@ class PluginRuntime(context: Context, private val plugin: PluginArchiveReader.Pa
             check(!closed.get()) { "plugin runtime is closed" }
             check(accounts?.sessionStamp() == selectedSession) { "plugin account changed" }
             failure.get()?.let { throw it }
-            return result.get() ?: error("plugin returned no result")
+            return (result.get() ?: error("plugin returned no result")).also { PluginJson.check(it) }
         } finally {
             accepting.set(false)
             if (bound) runCatching { app.unbindService(connection) }

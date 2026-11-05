@@ -2,8 +2,9 @@
 
 ## 结论
 
-当前代码已贯通 12 项能力及主要原生入口，Android Debug 构建通过；501 项 Kotlin 测试中
-498 项通过、3 项跳过，SDK 8 项通过。没有连接设备，**不是正式稳定发布验收通过**。
+当前代码已贯通 12 项能力及主要原生入口，Android Debug/AndroidTest 构建通过；510 项 Kotlin 测试中
+507 项通过、3 项跳过，SDK 10 项通过。API 35 转译模拟器已有真实设备子集依据，
+**不是正式稳定发布验收通过**；最新 [RC 安全与设备报告](rc-acceptance.md)。
 完整证据见 [verification.md](verification.md)，缺口见 [remaining-work.md](remaining-work.md)。
 
 ## 核心链路
@@ -15,7 +16,8 @@ generation；持久化资源使用 SourceId，未知来源不回退内置源。�
 
 ## 能力与证据
 
-下表“接线”指源码实现；所有行的 Android 设备执行均为**未执行**。Node 示例在 vm 中运行，
+下表“接线”指源码实现；Playback 的 QuickJS/Media3 与底层运行时、Keystore 等已有 API 35
+子集实测，其余各能力的完整原生 UI 仍未完成验收。Node 示例在 vm 中运行，
 不提供 Android 沙箱证明。标准模型由 Kotlin 显式校验，尚未全量代码生成或完成全部恶意字段的双端一致性测试。
 
 | Capability | 原生接线 | 自动化依据 |
@@ -39,7 +41,8 @@ Keystore、实际 OAuth 服务和完整下载到磁盘的正确性仍需设备�
 ## 修改文件及用途索引
 
 下述 Android 路径均相对 `android/app/src/main/kotlin/com/lladlam/melox/`。
-这是本次插件系列工作区的功能索引，包含前阶段累积内容；尚未形成发布提交。
+这是本次插件系列工作区的功能索引，包含前阶段累积内容；开发预览检查点 `4af356f` 已推送，
+后续 RC 修改保留本地，尚未形成正式发布。
 
 ### 协议、生命周期与安全
 
@@ -107,8 +110,28 @@ Keystore、实际 OAuth 服务和完整下载到磁盘的正确性仍需设备�
 
 ## 产物与发布前缺口
 
+### RC 新增文件与用途
+
+- `core/plugin/PluginPackageTrust.kt`：完整性、RSA 公钥/签名、精确包哈希批准。
+- `core/plugin/PluginJson.kt`：递归 JSON 解析前的字节/深度边界。
+- `core/plugin/PluginMediaFormats.kt`：不支持的自适应媒体/DRM 显式拒绝。
+- `android/app/src/androidTest/kotlin/com/lladlam/melox/core/plugin/PluginRcDeviceRunner.kt`：
+  真实 UID、Keystore、取消/watchdog、文件生命周期与队列验收。
+- 同目录 `PluginRcOnlineChecks.kt`：公开合成 PNG/WAV 的真实 Coil/Media3 验收。
+- 同目录 `PluginRcCatalogChecks.kt`：SDK 签名包在实际隔离 QuickJS 中执行全部 12 能力。
+- `android/app/src/test/kotlin/com/lladlam/melox/core/plugin/PluginRcSecurityTest.kt`：签名/篡改/资源/HTTP/媒体回归。
+- `android/app/src/test/kotlin/com/lladlam/melox/core/music/model/PluginDataUpgradeTest.kt`：嵌套未知字段与旧数据。
+- `android/app/src/test/kotlin/com/lladlam/melox/core/recommendation/RecommendationSourceIdTest.kt`：推荐身份回归。
+- `playback/MeloXPlaybackQueueStore.kt`：新增到改动清单，保存完整动态 Track JSON 和身份 extras。
+- `scripts/plugin-rc-device-check.sh`：安装、运行 instrumentation、校验 PASS 与外部非导出拒绝。
+- `plugin-sdk/tools/package-trust.mjs`、`test/package-trust.test.mjs`：SDK 签名包与结构回归。
+- `docs/plugin-system/rc-acceptance.md`、`sdk-consistency.md`：审查、设备复现和能力核对。
+
+其余 RC 修改集中于上述已列出的包存储/Manager/设置确认、账号清理、HTTP/JSON/返回校验、
+Track codec、下载/推荐索引及队列/播放路由，详见最新 verification.md 与 git 工作区差异。
+
 Debug APK 位于 `android/app/build/outputs/apk/debug/`（arm64-v8a、armeabi-v7a）。三个示例包路径
-及结果见 verification.md。源码、SDK 和文档仍在本地工作区；外部文档站 PR/合并/部署尚未完成。
+及结果见 verification.md。开发预览检查点 `4af356f` 已推送，RC 后续修改保留本地；外部文档站 PR/合并/部署尚未完成。
 
 正式发布前至少需要 API 24 与较新设备完整执行验收，完成安全故障注入、全仓通用调用点与
 数据无损确认，并处理发布者信任、损坏包管理、数据清理和剩余交互；不能用单测通过替代。

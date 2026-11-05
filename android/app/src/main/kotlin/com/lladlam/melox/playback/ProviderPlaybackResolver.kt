@@ -78,6 +78,7 @@ class ProviderPlaybackResolver(
     }
 
     private fun resolveDynamicRequest(dataSpec: DataSpec, source: SourceId): DataSpec {
+        if (providers[source] == null) providers.awaitPluginRestore()
         val generation = providers.generation
         val provider = providers[source] as? PluginMusicProvider
             ?: throw IOException("Music source ${source.value} is missing or disabled")
@@ -86,7 +87,13 @@ class ProviderPlaybackResolver(
         val uri = dataSpec.uri
         val value = uri.pathSegments.getOrNull(1)?.takeIf { it.isNotBlank() }
             ?: throw IOException("Invalid plugin resource ID")
-        val track = MusicTrack(MusicResourceId(source, value), uri.getQueryParameter(TrackTitleQuery).orEmpty(),
+        val restored = uri.getQueryParameter("standardTrack")?.let { raw ->
+            runCatching {
+                com.lladlam.melox.core.plugin.PluginJson.check(raw)
+                com.lladlam.melox.core.music.model.MeloXTrackJson.decode(org.json.JSONObject(raw))
+            }.getOrNull()?.takeIf { it.id == MusicResourceId(source, value) }
+        }
+        val track = restored ?: MusicTrack(MusicResourceId(source, value), uri.getQueryParameter(TrackTitleQuery).orEmpty(),
             uri.getQueryParameter(TrackArtistsQuery).orEmpty().split('\u001f').filter { it.isNotBlank() }
                 .map { com.lladlam.melox.core.music.model.MusicArtistRef(name = it) },
             durationMs = uri.getQueryParameter(TrackDurationQuery)?.toLongOrNull())
@@ -113,6 +120,7 @@ class ProviderPlaybackResolver(
     }
 
     internal fun prefetch(uri: Uri) {
+        if (uri.pathSegments.firstOrNull()?.let(SourceId::parse)?.builtIn == null) return
         if (isProviderTrackUri(uri)) resolveProviderRequest(uri)
     }
 
@@ -347,6 +355,8 @@ class ProviderPlaybackResolver(
             .appendQueryParameter(TrackTitleQuery, track.title)
             .appendQueryParameter(TrackArtistsQuery, track.artists.joinToString("\u001f") { it.name })
             .apply { track.durationMs?.let { appendQueryParameter(TrackDurationQuery, it.toString()) } }
+            .apply { if (track.id.sourceId.builtIn == null) appendQueryParameter("standardTrack",
+                com.lladlam.melox.core.music.model.MeloXTrackJson.encode(track).toString()) }
             .apply {
                 when (val metadata = track.providerMetadata) {
                     is ProviderTrackMetadata.QQMusic -> {

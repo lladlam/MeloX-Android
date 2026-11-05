@@ -54,11 +54,11 @@ internal class PluginCatalogCodec(private val manifest: PluginManifest) {
     fun track(value: JSONObject): MusicTrack = tracks(JSONObject().put("page", 1).put("pageSize", 1)
         .put("hasMore", false).put("items", JSONArray().put(value)), 1, 1).items.single()
     fun account(value: JSONObject): MusicAccountSummary = MusicAccountSummary(source, text(value, "id", 4096),
-        text(value, "displayName", 512), subtitle = optionalText(value, "subtitle"))
+        text(value, "displayName", 512), avatarUrl = PluginArtwork.wrap(manifest, optionalText(value, "avatarUrl")), subtitle = optionalText(value, "subtitle"))
 
     fun text(value: JSONObject, key: String, maximum: Int = 4096): String {
         require(value.opt(key) is String) { "$key must be a string" }
-        return value.getString(key).also { require(it.isNotBlank() && it.length <= maximum) { "invalid $key" } }
+        return value.getString(key).also { require(it.isNotBlank() && it.codePointCount(0, it.length) <= maximum) { "invalid $key" } }
     }
     fun optionalText(value: JSONObject, key: String, maximum: Int = 4096): String? =
         if (value.has(key)) text(value, key, maximum) else null

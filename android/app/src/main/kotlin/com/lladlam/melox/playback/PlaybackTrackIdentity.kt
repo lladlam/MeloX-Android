@@ -21,6 +21,16 @@ object PlaybackTrackIdentity {
     const val AlbumExtra = "melox.track.album"
     const val ArtworkExtra = "melox.track.artwork"
     const val IsFavoriteExtra = "melox.track.is_favorite"
+    const val TrackJsonExtra = "melox.track.standard_json"
+
+    internal fun restoredTrack(item: MediaItem): com.lladlam.melox.core.music.model.MusicTrack? {
+        val identity = fromMediaItem(item) ?: return null
+        val raw = item.mediaMetadata.extras?.getString(TrackJsonExtra) ?: return null
+        return runCatching {
+            com.lladlam.melox.core.plugin.PluginJson.check(raw)
+            com.lladlam.melox.core.music.model.MeloXTrackJson.decode(org.json.JSONObject(raw))?.takeIf { it.id == identity }
+        }.getOrNull()
+    }
 
     fun encode(id: MusicResourceId): String = if (id.sourceId.builtIn == null)
         SourceResourceUri.encode(id.sourceId, id.value)

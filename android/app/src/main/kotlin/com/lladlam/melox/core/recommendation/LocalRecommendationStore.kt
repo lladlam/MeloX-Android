@@ -90,6 +90,7 @@ object LocalRecommendationStore {
             array.put(JSONObject().apply {
                 put("source", track.id.sourceId.value); put("id", track.id.value); put("title", track.title)
                 put("artist", track.artistText); put("artwork", track.artworkUrl); put("durationMs", track.durationMs ?: 0L)
+                put("track", com.lladlam.melox.core.music.model.MeloXTrackJson.encode(track))
             })
         }
         prefs(context).edit().putString("candidate_tracks", array.toString()).apply()
@@ -100,18 +101,24 @@ object LocalRecommendationStore {
         buildList {
             for (index in 0 until array.length()) {
                 val item = array.optJSONObject(index) ?: continue
-                val source = com.lladlam.melox.core.music.model.MusicSource.fromStorageValue(item.optString("source"))
-                add(com.lladlam.melox.core.music.model.MusicTrack(
-                    id = com.lladlam.melox.core.music.model.MusicResourceId(source, item.optString("id")),
-                    title = item.optString("title"),
-                    artists = listOf(com.lladlam.melox.core.music.model.MusicArtistRef(name = item.optString("artist"))),
-                    artworkUrl = item.optString("artwork").takeIf(String::isNotBlank),
-                    durationMs = item.optLong("durationMs").takeIf { it > 0L },
-                    availability = com.lladlam.melox.core.music.model.TrackAvailability.Playable,
-                ))
+                decodeCandidate(item)?.let { add(it) }
             }
         }
     }.getOrDefault(emptyList())
+
+    internal fun decodeCandidate(item: JSONObject): com.lladlam.melox.core.music.model.MusicTrack? {
+        val source = com.lladlam.melox.core.music.model.SourceId.parse(item.optString("source")) ?: return null
+        val id = item.optString("id").takeIf(String::isNotBlank) ?: return null
+        val identity = com.lladlam.melox.core.music.model.MusicResourceId(source, id)
+        item.optJSONObject("track")?.let {
+            return com.lladlam.melox.core.music.model.MeloXTrackJson.decode(it)?.takeIf { track -> track.id == identity }
+        }
+        return com.lladlam.melox.core.music.model.MusicTrack(identity, item.optString("title"),
+            listOf(com.lladlam.melox.core.music.model.MusicArtistRef(name = item.optString("artist"))),
+            artworkUrl = item.optString("artwork").takeIf(String::isNotBlank),
+            durationMs = item.optLong("durationMs").takeIf { it > 0L },
+            availability = com.lladlam.melox.core.music.model.TrackAvailability.Playable)
+    }
 
     fun readRecommendedTracks(context: Context): List<com.lladlam.melox.core.music.model.MusicTrack> {
         val candidates = readCandidateTracks(context)

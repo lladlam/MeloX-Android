@@ -2,6 +2,24 @@
 
 保留前序审计与架构方案。当前进入核心接线及集中验证阶段，**整套插件系统尚未完成**。
 
+## 最新实现批次：先完成代码，再集中测试
+
+按用户要求暂停构建和设备测试。以下新增实现、测试代码和执行脚本均为 **NOT_RUN**，
+前轮 510 项 Kotlin/SDK/设备子集结果不能作为本批次回归证据：
+
+- 修复正常播放器 `MeloXPlaybackUiState.refresh` 对动态来源读取 built-in getter 的崩溃；
+  歌词绑定、预加载和缓存键继续迁移 SourceId，保留旧内置来源字段读取。
+- 凭据 Lease 显式绑定 SourceId；存储 v2 按来源分目录、v1 回退迁移、删除账号可选清存储。
+- 包/TOFU 提交增加预写恢复日志，保留旧 trust 快照；冷启动枚举恢复未完成事务，恢复错误可见。
+- 启动恢复门闩接入动态播放解析；损坏启用状态可显式重置，保留包和用户数据。
+- 媒体调用加入撤销集合，读取期间复查会话；OAuth 取消/重新开始会撤销正在兑换的网络请求。
+- 下载索引合并保留无法解码行及未知字段；Track 保留未来质量/可用性枚举和类型专属 metadata 扩展。
+- 全 Provider 方法统一通过 `PluginWireContract`；共享全字段 fixture、Kotlin/Schema 类型变异测试。
+- 新增合成 OAuth HTTPS 服务、插件示例、真实 HTTPS 兑换 runner、资源耗尽 runner、
+  包持久化边界强杀/恢复脚本、正常 MeloXPlaybackService/controller 验收代码和实体 ARM64 准备脚本。
+
+实现与验收边界、真实应用崩溃及模拟器环境记录见 [verification.md](verification.md)。
+
 ## 已编写并接线
 
 - `SourceId` 成为 `MusicResourceId` 的主身份，保留内置来源构造器；动态/缺失来源不回退网易云。
@@ -31,15 +49,17 @@
 ## 自动化验证
 
 详见 [verification.md](verification.md)，其中保留前序 478 项结果与后续扩展验证记录。
-当前最终 Debug 构建成功；501 项 Kotlin 测试，498 项通过、3 项跳过。专用 broker 实际取得 Range 206/416。
+当前最终 Debug/AndroidTest 构建成功；510 项 Kotlin 测试，507 项通过、3 项跳过。专用 broker 实际取得 Range 206/416。
 
-SDK 类型检查/构建、8 项 Node 测试已通过。Manifest 共用 fixture 和能力必需方法表在双端验证。
+SDK 类型检查/构建、10 项 Node 测试已通过。Manifest 共用 fixture 和能力必需方法表在双端验证。
 实际访问公开测试服务已取得 HTTP 200、2044 字节 WAV；最终 SDK 包已被编译后的 Kotlin
 PluginArchiveReader 接受。这些检查不是 Android/Media3 端到端验证。
 
 ## 未完成
 
 参考 [remaining-work.md](remaining-work.md)。完整 SourceId 迁移、旧 Activity 全路径统一、
-发布者信任、流媒体、持久诊断及数据清理等仍未完成。动态身份保留旧版 built-in-only getter，未完成全仓库
-所有路径迁移。没有连接 Android 设备，也未通过插件运行时隔离、死循环、Binder、OAuth/Keystore、
-实际 Media3/歌词显示和安装升级的设备测试。不宣称系统完整或安全验证完成。
+信任撤销、流媒体、持久诊断及完整孤儿数据清理等仍未完成。动态身份保留旧版 built-in-only getter，未完成全仓库
+所有路径的设备验收。API 35 转译模拟器现已执行 IPC、watchdog/取消、Keystore、包生命周期、
+队列、Coil 与真实 Media3 播放子集；最新构建 510 项 Kotlin 测试中 507 通过、3 跳过，SDK 10 项通过。
+签名/TOFU、隔离包恢复、JSON 深度和嵌套数据保留已补入 RC；详见 [RC 验收](rc-acceptance.md)。
+API 24/真机、SAF、OAuth、后台服务及安全故障注入仍未完成，不宣称系统完整或安全验证完成。

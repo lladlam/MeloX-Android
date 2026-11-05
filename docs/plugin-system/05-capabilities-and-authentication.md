@@ -71,8 +71,9 @@ host.account 只包含不透明账号 ID 和名称。Token 不通过 Binder 给 
 
 每个插件/账号使用独立 Keystore AES-256-GCM 密钥和带身份 AAD 的 AtomicFile 密文，存放在
 noBackupFilesDir。损坏/丢失密钥不会重置其他账号或静默覆盖原密文。升级/卸载保留账号数据；
-账号绑定导入时的完整凭据策略，升级改变策略需要重新授权。没有发布者签名保证，导入新包
-仍需信任其发布者。账号切换/删除后重建运行时、变更 registry generation；旧请求及媒体读取失效。
+账号绑定导入时的完整凭据策略，升级改变策略需要重新授权。RC 包可验证可选发布者签名与
+本地公钥指纹，首次导入仍需信任并独立核对发布者。账号切换/删除后重建运行时、变更 registry
+generation；会话戳使切走再切回的旧请求也失效。卸载可选清除本地账号，不代表服务器撤销。
 
 ## OAuth2 / PKCE
 
@@ -109,6 +110,7 @@ API Token 的失效/平台会话状态由 authenticationStatus 转换为标准 s
 
 ## 验证边界
 
-源码接线和自动化通过不等于设备验收。当前没有设备连接；真实 OAuth 服务、Keystore、
-隔离 UID、Binder、SAF 和 Media3 的验收步骤见 [device-acceptance.md](device-acceptance.md)。
+源码接线和自动化通过不等于全部设备验收。API 35 已实测 Keystore 合成账号、隔离 UID、
+Binder 与 Media3 子集；真实 OAuth、SAF、API 24 与完整后台播放仍待验收，步骤见
+[device-acceptance.md](device-acceptance.md)，实际证据见 [verification.md](verification.md)。
 剩余功能与限制见 [remaining-work.md](remaining-work.md)。

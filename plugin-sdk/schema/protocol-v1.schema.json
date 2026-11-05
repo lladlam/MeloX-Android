@@ -42,7 +42,8 @@
           "credential": { "const": "active" },
           "headers": { "type": "object", "maxProperties": 32, "additionalProperties": { "type": "string", "maxLength": 4096 } },
           "actualQuality": { "$ref": "#/$defs/quality" }, "bitrate": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
-          "format": { "type": "string", "maxLength": 64 },
+          "format": { "type": "string", "maxLength": 64, "not": { "pattern": "^(?:[hH][lL][sS]|[dD][aA][sS][hH]|[mM]3[uU]8|[mM][pP][dD]|[dD][rR][mM])$" } },
+          "drm": false, "licenseUrl": false,
           "expiresAtEpochMs": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
         } },
         { "type": "object", "required": ["type", "url"], "properties": { "type": { "const": "preview" }, "url": { "type": "string", "maxLength": 4096 }, "durationMs": { "type": "integer", "minimum": 1, "maximum": 86400000 } } },
@@ -53,26 +54,26 @@
     "playlist": {
       "type": "object", "required": ["id", "title"], "properties": {
         "id": { "$ref": "#/$defs/resourceId" }, "title": { "$ref": "#/$defs/catalogText" },
-        "creatorName": { "$ref": "#/$defs/catalogText" }, "description": { "$ref": "#/$defs/catalogText" },
+        "creatorName": { "$ref": "#/$defs/catalogText" }, "description": { "$ref": "#/$defs/catalogText" }, "artworkUrl": { "type": "string", "maxLength": 4096 },
         "trackCount": { "type": "integer", "minimum": 0, "maximum": 2147483647 }, "playCount": { "$ref": "#/$defs/count" }
       }
     },
     "album": {
       "type": "object", "required": ["id", "title"], "properties": {
         "id": { "$ref": "#/$defs/resourceId" }, "title": { "$ref": "#/$defs/catalogText" },
-        "artists": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/artistRef" } },
+        "artists": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/artistRef" } }, "artworkUrl": { "type": "string", "maxLength": 4096 },
         "trackCount": { "$ref": "#/$defs/count" }, "releaseDate": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "\\S" }
       }
     },
     "artist": {
       "type": "object", "required": ["id", "name"], "properties": {
         "id": { "$ref": "#/$defs/resourceId" }, "name": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "\\S" },
-        "description": { "$ref": "#/$defs/catalogText" }, "songCount": { "$ref": "#/$defs/count" }, "albumCount": { "$ref": "#/$defs/count" }
+        "description": { "$ref": "#/$defs/catalogText" }, "songCount": { "$ref": "#/$defs/count" }, "albumCount": { "$ref": "#/$defs/count" }, "artworkUrl": { "type": "string", "maxLength": 4096 }
       }
     },
     "ranking": {
       "type": "object", "required": ["id", "title"], "properties": {
-        "id": { "$ref": "#/$defs/resourceId" }, "title": { "$ref": "#/$defs/catalogText" }, "subtitle": { "$ref": "#/$defs/catalogText" }
+        "id": { "$ref": "#/$defs/resourceId" }, "title": { "$ref": "#/$defs/catalogText" }, "subtitle": { "$ref": "#/$defs/catalogText" }, "artworkUrl": { "type": "string", "maxLength": 4096 }
       }
     },
     "catalogText": { "type": "string", "minLength": 1, "maxLength": 4096, "pattern": "\\S" },
@@ -99,9 +100,10 @@
     },
     "account": {
       "type": "object", "required": ["id", "displayName"], "properties": {
-        "id": { "$ref": "#/$defs/resourceId" }, "displayName": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "\\S" }, "subtitle": { "$ref": "#/$defs/catalogText" }
+        "id": { "$ref": "#/$defs/resourceId" }, "displayName": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "\\S" }, "subtitle": { "$ref": "#/$defs/catalogText" }, "avatarUrl": { "type": "string", "maxLength": 4096 }
       }
     },
+    "accountSummary": { "anyOf": [{ "$ref": "#/$defs/account" }, { "type": "null" }] },
     "authenticationStatus": {
       "oneOf": [
         { "type": "object", "required": ["type"], "properties": { "type": { "enum": ["notRequired", "signedOut"] } } },

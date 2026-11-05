@@ -770,9 +770,9 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
                 if (player.isPlaying) player.pause() else player.play()
             }
             ACTION_ANALYZE_PLAYLIST -> {
-                val source = MusicSource.fromStorageValue(intent.getStringExtra(EXTRA_ANALYSIS_SOURCE))
+                val source = intent.getStringExtra(EXTRA_ANALYSIS_SOURCE)?.let(com.lladlam.melox.core.music.model.SourceId::parse)?.builtIn
                 val playlistId = intent.getStringExtra(EXTRA_ANALYSIS_PLAYLIST_ID)
-                if (!playlistId.isNullOrBlank()) startPlaylistAnalysis(source, playlistId)
+                if (source != null && !playlistId.isNullOrBlank()) startPlaylistAnalysis(source, playlistId)
             }
         }
         return super.onStartCommand(intent, flags, startId)
@@ -2851,6 +2851,7 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
     }
 
     private fun buildMusicTrackFromMediaItem(item: MediaItem, identity: MusicResourceId): MusicTrack {
+        PlaybackTrackIdentity.restoredTrack(item)?.takeIf { it.id == identity }?.let { return it }
         val extras = item.mediaMetadata.extras
         val title = extras?.getString(PlaybackTrackIdentity.TitleExtra)
             ?.takeIf { it.isNotBlank() }

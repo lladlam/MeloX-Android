@@ -1,0 +1,22 @@
+{
+  "models": {
+    "track": {"id":"opaque-track","title":"Title","artists":[{"id":"artist","name":"Artist"}],"album":{"id":"album","name":"Album","artworkUrl":"https://example.com/a.png"},"artworkUrl":"https://example.com/t.png","durationMs":120000,"availability":"playable","bestQuality":"lossless","bestBitrate":1000000},
+    "playlist": {"id":"playlist","title":"Playlist","artworkUrl":"https://example.com/p.png","creatorName":"Creator","description":"Description","trackCount":1,"playCount":3},
+    "album": {"id":"album","title":"Album","artists":[{"id":"artist","name":"Artist"}],"artworkUrl":"https://example.com/a.png","trackCount":1,"releaseDate":"2026-11-05"},
+    "artist": {"id":"artist","name":"Artist","artworkUrl":"https://example.com/r.png","description":"Description","songCount":1,"albumCount":1},
+    "ranking": {"id":"ranking","title":"Ranking","subtitle":"Subtitle","artworkUrl":"https://example.com/r.png"},
+    "account": {"id":"account","displayName":"Synthetic","subtitle":"Fixture","avatarUrl":"https://example.com/user.png"},
+    "playbackResolution": {"type":"playable","url":"https://example.com/a.flac","headers":{"X-Test":"value"},"actualQuality":"lossless","bitrate":1000000,"format":"flac","expiresAtEpochMs":4102444800000,"credential":"active"},
+    "lyrics": {"isUnsynchronized":false,"lines":[{"timeMs":0,"durationMs":1000,"text":"Text","translation":"Translation","romanization":"Romanization"}]}
+  },
+  "methods": {
+    "search":"searchPage", "rankingTracks":"searchPage",
+    "playlists":"playlistPage", "searchPlaylists":"playlistPage", "userPlaylists":"playlistPage",
+    "searchAlbums":"albumPage", "savedAlbums":"albumPage",
+    "searchArtists":"artistPage", "followedArtists":"artistPage", "rankings":"rankingPage",
+    "playlistDetail":"playlistDetail", "albumDetail":"albumDetail", "artistDetail":"artistDetail",
+    "homeFeed":"homeFeed", "accountSummary":"accountSummary", "authenticationStatus":"authenticationStatus",
+    "resolvePlayback":"playbackResolution", "resolveDownload":"playbackResolution", "lyrics":"lyrics",
+    "isFavorite":"favoriteState", "setFavorite":"writeAcknowledgement"
+  }
+}

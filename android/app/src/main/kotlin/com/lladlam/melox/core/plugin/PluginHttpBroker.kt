@@ -2,17 +2,16 @@ package com.lladlam.melox.core.plugin
 
 import java.net.InetAddress
 import java.net.Proxy
-import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import okhttp3.Call
-import okhttp3.Dns
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.buffer
 import org.json.JSONObject
 
 /** Per-invocation broker. Never shares the app's cookies, interceptors, proxy or authenticators. */
@@ -21,6 +20,7 @@ class PluginHttpBroker internal constructor(
     private val credential: PluginAccountVault.Lease? = null,
     private val accountCurrent: () -> Boolean = { true },
 ) : java.io.Closeable {
+    init { require(credential == null || credential.source == manifest.sourceId) { "credential source mismatch" } }
     private val requests = AtomicInteger()
     private val calls = java.util.concurrent.ConcurrentHashMap.newKeySet<Call>()
     @Volatile private var closed = false
@@ -30,21 +30,15 @@ class PluginHttpBroker internal constructor(
         .retryOnConnectionFailure(false)
         .callTimeout(5, TimeUnit.SECONDS)
         .connectTimeout(3, TimeUnit.SECONDS).readTimeout(3, TimeUnit.SECONDS)
-        .dns(object : Dns {
-            override fun lookup(hostname: String): List<InetAddress> {
-                require(hostname in manifest.networkDomains) { "network permission denied" }
-                val addresses = InetAddress.getAllByName(hostname).toList()
-                if (addresses.isEmpty() || addresses.any { !isPublicAddress(it) }) {
-                    throw UnknownHostException("plugin destination is not public")
-                }
-                return addresses
-            }
-        }).build()
+        .dns(PluginPublicDns(manifest.networkDomains)).build()
 
     fun request(json: String): String {
         check(!closed) { "plugin request cancelled" }
         require(json.toByteArray(Charsets.UTF_8).size <= 48 * 1024) { "request too large" }
+        PluginJson.check(json, 48 * 1024)
         val input = JSONObject(json)
+        require(input.opt("url") is String && (!input.has("method") || input.opt("method") is String) &&
+            (!input.has("body") || input.opt("body") is String) && (!input.has("headers") || input.opt("headers") is JSONObject)) { "invalid HTTP request model" }
         val wantsCredential = if (input.has("credential")) {
             require(input.getString("credential") == "active") { "unknown credential reference" }
             true
@@ -62,6 +56,7 @@ class PluginHttpBroker internal constructor(
             require(requests.incrementAndGet() <= 8) { "plugin request quota exceeded" }
             val builder = Request.Builder().url(url)
             headers.keys().forEach { name ->
+                require(headers.opt(name) is String) { "HTTP header must be a string" }
                 require(name.lowercase(java.util.Locale.ROOT) !in FORBIDDEN_HEADERS) { "forbidden request header" }
                 val value = headers.getString(name)
                 require(value.length <= 4096) { "request header too large" }
@@ -168,7 +163,9 @@ class PluginHttpBroker internal constructor(
                     }
                 }
                 check(!closed && accountCurrent()) { "plugin session revoked" }
-                return JSONObject(output.toString("UTF-8"))
+                val raw = output.toString("UTF-8")
+                PluginJson.check(raw, 16 * 1024)
+                return JSONObject(raw)
             }
         } finally { calls.remove(call) }
     }
@@ -185,14 +182,58 @@ class PluginHttpBroker internal constructor(
     }
 
     fun mediaClient(credentialRequested: Boolean = false): OkHttpClient = client.newBuilder().callTimeout(0, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS).addNetworkInterceptor { chain ->
+        .readTimeout(15, TimeUnit.SECONDS).addInterceptor { chain ->
+            val call = chain.call()
+            calls.add(call)
+            try {
+                check(!closed && accountCurrent()) { "plugin media session revoked" }
+                authorize(chain.request().url)
+                val response = chain.proceed(chain.request())
+                val body = response.body
+                if (body == null) {
+                    calls.remove(call)
+                    response
+                } else {
+                    val guarded = object : okio.ForwardingSource(body.source()) {
+                        override fun read(sink: okio.Buffer, byteCount: Long): Long {
+                            if (closed || !accountCurrent()) {
+                                call.cancel()
+                                throw java.io.IOException("plugin media session revoked")
+                            }
+                            return try {
+                                val count = super.read(sink, byteCount)
+                                if (count == -1L) calls.remove(call)
+                                count
+                            } catch (error: Throwable) { calls.remove(call); throw error }
+                        }
+                        override fun close() {
+                            try { super.close() } finally { calls.remove(call) }
+                        }
+                    }.buffer()
+                    response.newBuilder().body(object : okhttp3.ResponseBody() {
+                        override fun contentType() = body.contentType()
+                        override fun contentLength() = body.contentLength()
+                        override fun source() = guarded
+                    }).build()
+                }
+            } catch (error: Throwable) { calls.remove(call); throw error }
+        }.addNetworkInterceptor { chain ->
             authorize(chain.request().url)
-            check(accountCurrent()) { "plugin account changed" }
+            check(!closed && accountCurrent()) { "plugin account changed" }
             val request = if (credentialRequested) {
                 val (name, value) = credentialHeader(chain.request().url)
                 chain.request().newBuilder().header(name, value).build()
             } else chain.request()
-            chain.proceed(request)
+            val response = chain.proceed(request)
+            if (closed || !accountCurrent()) {
+                response.close()
+                throw java.io.IOException("plugin media session revoked")
+            }
+            if (PluginMediaFormats.unsupportedMime(response.header("Content-Type").orEmpty())) {
+                response.close()
+                throw java.io.IOException("UNSUPPORTED_MEDIA_FORMAT")
+            }
+            response
         }.build()
 
     override fun close() {

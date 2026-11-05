@@ -3,6 +3,7 @@ package com.lladlam.melox.core.lyrics
 import android.content.Context
 import com.lladlam.melox.core.music.model.MusicResourceId
 import com.lladlam.melox.core.music.model.MusicSource
+import com.lladlam.melox.core.music.model.SourceId
 import org.json.JSONObject
 
 enum class BoundLyricSource { AmlL, Provider }
@@ -14,8 +15,9 @@ data class LyricBinding(
     val title: String,
     val artist: String,
     val durationMs: Long,
+    val providerSourceId: SourceId? = provider?.let(SourceId::fromBuiltIn),
 ) {
-    fun stableKey(): String = listOf(source.name, provider?.storageValue.orEmpty(), resourceValue).joinToString(":")
+    fun stableKey(): String = listOf(source.name, providerSourceId?.value.orEmpty(), resourceValue).joinToString(":")
 }
 
 object LyricBindingStore {
@@ -27,11 +29,12 @@ object LyricBindingStore {
             val value = JSONObject(raw)
             LyricBinding(
                 source = BoundLyricSource.valueOf(value.getString("source")),
-                provider = value.optString("provider").takeIf(String::isNotBlank)?.let(MusicSource::fromStorageValue),
+                provider = SourceId.parse(value.optString("provider"))?.builtIn,
                 resourceValue = value.getString("resourceValue"),
                 title = value.optString("title"),
                 artist = value.optString("artist"),
                 durationMs = value.optLong("durationMs"),
+                providerSourceId = SourceId.parse(value.optString("provider")),
             )
         }.getOrNull()
     }
@@ -39,7 +42,7 @@ object LyricBindingStore {
     fun write(context: Context, playbackId: MusicResourceId, binding: LyricBinding) {
         val value = JSONObject()
             .put("source", binding.source.name)
-            .put("provider", binding.provider?.storageValue ?: "")
+            .put("provider", binding.providerSourceId?.value ?: "")
             .put("resourceValue", binding.resourceValue)
             .put("title", binding.title)
             .put("artist", binding.artist)
@@ -54,5 +57,5 @@ object LyricBindingStore {
     private fun preferences(context: Context) =
         context.applicationContext.getSharedPreferences(PreferencesName, Context.MODE_PRIVATE)
 
-    private fun MusicResourceId.key(): String = "${source.storageValue}:$value"
+    private fun MusicResourceId.key(): String = "${sourceId.value}:$value"
 }

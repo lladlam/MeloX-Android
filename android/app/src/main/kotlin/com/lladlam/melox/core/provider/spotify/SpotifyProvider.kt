@@ -129,7 +129,7 @@ class SpotifyProvider(
      */
     override suspend fun resolvePlayback(track: MusicTrack, quality: AudioQualityTier): PlaybackResolution =
         coroutineScope {
-            if (track.id.source != MusicSource.Spotify) {
+            if (track.id.sourceId.builtIn != MusicSource.Spotify) {
                 return@coroutineScope PlaybackResolution.Unavailable("Spotify provider 只能解析 Spotify 曲目")
             }
             val spSession = SpotifySessionStore.read(appContext)
@@ -158,7 +158,7 @@ class SpotifyProvider(
         }
 
     override suspend fun resolveDownload(track: MusicTrack, quality: AudioQualityTier): PlaybackResolution {
-        if (track.id.source != MusicSource.Spotify) {
+        if (track.id.sourceId.builtIn != MusicSource.Spotify) {
             return PlaybackResolution.Unavailable("Spotify provider 只能下载 Spotify 曲目")
         }
         val session = SpotifySessionStore.read(appContext)
@@ -181,7 +181,7 @@ class SpotifyProvider(
         }
         val query = "${track.title} ${track.artists.first().name}"
         val providers = playbackProviders().filter {
-            it.source != MusicSource.Spotify && it is SearchCapability && it is PlaybackCapability
+            it.sourceId.builtIn != null && it.sourceId.builtIn != MusicSource.Spotify && it is SearchCapability && it is PlaybackCapability
         }
         val candidates = coroutineScope {
             providers.map { provider ->
@@ -193,7 +193,7 @@ class SpotifyProvider(
         }.awaitAll().flatten()
         val ranked = SpotifyTrackMatcher.rank(track, candidates)
         for (match in ranked) {
-            val provider = providers.firstOrNull { it.source == match.candidate.id.source }
+            val provider = providers.firstOrNull { it.sourceId == match.candidate.id.sourceId }
             val playback = provider as? PlaybackCapability ?: continue
             when (val resolution = runCatching { playback.resolvePlayback(match.candidate, quality) }.getOrNull()) {
                 is PlaybackResolution.Playable, is PlaybackResolution.Preview -> return resolution

@@ -20,7 +20,7 @@ import org.json.JSONObject
 class PluginAccountVault(context: Context, private val source: SourceId) {
     init { require(source.value.startsWith("plugin:")) { "plugin account namespace required" } }
     data class Account(val id: String, val displayName: String)
-    internal class Lease(val account: Account, val token: String, val policy: PluginAuthentication? = null,
+    internal class Lease(val source: SourceId, val account: Account, val token: String, val policy: PluginAuthentication? = null,
         val refreshToken: String? = null, val expiresAt: Long? = null, val selectionStamp: String? = null)
     private val namespace = digest(source.value)
     private val root = File(context.applicationContext.noBackupFilesDir, "melox-plugin-accounts-v1/$namespace")
@@ -54,7 +54,7 @@ class PluginAccountVault(context: Context, private val source: SourceId) {
             .setKeySize(256).setRandomizedEncryptionRequired(true).build())
         val key = generator.generateKey()
         return try {
-            encrypt(Lease(account, token, policy, refreshToken, expiresAt), key)
+            encrypt(Lease(source, account, token, policy, refreshToken, expiresAt), key)
             account
         } catch (error: Throwable) {
             keys().deleteEntry(alias(account.id))
@@ -63,6 +63,7 @@ class PluginAccountVault(context: Context, private val source: SourceId) {
     }
 
     private fun encrypt(lease: Lease, key: SecretKey) {
+        require(lease.source == source) { "credential source mismatch" }
         val policy = requireNotNull(lease.policy)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key)
@@ -81,11 +82,12 @@ class PluginAccountVault(context: Context, private val source: SourceId) {
 
     /** Compare-and-swap prevents a late refresh from resurrecting a deleted/logged-out account. */
     internal fun replaceTokens(previous: Lease, tokens: PluginOAuth.Tokens): Lease = synchronized(lock) {
+        require(previous.source == source) { "credential source mismatch" }
         check(selected() == previous.account.id) { "account changed" }
         check(previous.selectionStamp != null && sessionStamp() == previous.selectionStamp) { "account session changed" }
         val current = decrypt(previous.account.id)
         check(current.token == previous.token && current.policy == previous.policy) { "account changed" }
-        val updated = Lease(current.account, tokens.accessToken, current.policy, tokens.refreshToken ?: current.refreshToken, tokens.expiresAt, previous.selectionStamp)
+        val updated = Lease(source, current.account, tokens.accessToken, current.policy, tokens.refreshToken ?: current.refreshToken, tokens.expiresAt, previous.selectionStamp)
         val key = keys().getKey(alias(current.account.id), null) as? SecretKey ?: error("account key unavailable")
         encrypt(updated, key)
         updated
@@ -115,9 +117,15 @@ class PluginAccountVault(context: Context, private val source: SourceId) {
         file(id).delete()
         keys().deleteEntry(alias(id))
     }
+    fun clear() = synchronized(lock) {
+        activate(null)
+        val store = keys()
+        store.aliases().toList().filter { it.startsWith("melox.plugin.account.v1.$namespace.") }.forEach(store::deleteEntry)
+        check(!root.exists() || root.deleteRecursively()) { "cannot remove plugin credentials" }
+    }
     internal fun lease(): Lease? = synchronized(lock) {
         val stamp = sessionStamp()
-        selected()?.let { id -> decrypt(id).let { Lease(it.account, it.token, it.policy, it.refreshToken, it.expiresAt, stamp) } }
+        selected()?.let { id -> decrypt(id).let { Lease(source, it.account, it.token, it.policy, it.refreshToken, it.expiresAt, stamp) } }
     }
     private fun decrypt(id: String): Lease {
         val data = read(file(id), 16 * 1024)
@@ -136,7 +144,7 @@ class PluginAccountVault(context: Context, private val source: SourceId) {
             PluginOAuthConfiguration(it.getString("authorizationEndpoint"), it.getString("tokenEndpoint"), it.getString("clientId"),
                 (0 until scopes.length()).map { index -> scopes.getString(index) })
         }
-        return Lease(Account(id, value.getString("displayName")), value.getString("token"),
+        return Lease(source, Account(id, value.getString("displayName")), value.getString("token"),
             PluginAuthentication(policy.getString("type"), policy.getString("header"), policy.getString("prefix"),
                 (0 until domains.length()).map { domains.getString(it) }.toSet(), oauth),
             if (value.has("refreshToken")) value.getString("refreshToken") else null,

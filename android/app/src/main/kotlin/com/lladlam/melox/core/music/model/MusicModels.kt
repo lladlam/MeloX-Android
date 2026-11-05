@@ -165,6 +165,8 @@ data class MusicTrack(
     val bestQuality: AudioQualityTier? = null,
     /** Best advertised bitrate in bits per second, when known. */
     val bestBitrate: Int? = null,
+    /** Opaque persistence extensions, never passed to plugin code or used for network authorization. */
+    val persistenceExtras: String? = null,
 ) {
     val artistText: String
         get() = artists.joinToString(" / ") { it.name }.ifBlank { "未知歌手" }

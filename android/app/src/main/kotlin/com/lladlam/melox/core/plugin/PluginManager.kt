@@ -20,12 +20,30 @@ class PluginManager(
 
     data class LoadedProvider(val provider: MusicProvider, val resources: Closeable)
     enum class Status { Disabled, Enabled, Failed }
-    data class State(val manifest: PluginManifest, val status: Status, val error: String? = null)
+    data class State(val manifest: PluginManifest, val status: Status, val error: String? = null,
+        val publisher: PluginPackageTrust.Publisher? = null, val archiveSha256: String = "", val integrityChecked: Boolean = false)
 
     private val lock = Any()
     private val loaded = mutableMapOf<SourceId, LoadedProvider>()
     private val state = MutableStateFlow<Map<SourceId, State>>(emptyMap())
     val plugins = state.asStateFlow()
+    private val damaged = MutableStateFlow<List<PluginPackageStore.Installed>>(emptyList())
+    val damagedPackages = damaged.asStateFlow()
+    private val recoveryIssue = MutableStateFlow<String?>(null)
+    val recoveryError = recoveryIssue.asStateFlow()
+    fun resetEnabledState() = synchronized(lock) {
+        checkOpen()
+        store.setEnabledSources(emptySet())
+        loaded.forEach { (source, item) -> registry.unregisterDynamic(source); runCatching { item.resources.close() } }
+        loaded.clear()
+        recoveryIssue.value = null
+        restore()
+    }
+    fun publisherFingerprint(source: SourceId): String? = synchronized(lock) { store.publisherFingerprint(source) }
+    fun dismissDamaged(storageKey: String) = synchronized(lock) {
+        store.dismissDamaged(storageKey)
+        damaged.value = damaged.value.filterNot { it.storageKey == storageKey }
+    }
     fun diagnostics(source: SourceId): List<String> = synchronized(lock) {
         val entry = state.value[source] ?: return@synchronized listOf("插件未安装：${source.value}")
         buildList {
@@ -38,8 +56,15 @@ class PluginManager(
     }
     private var closed = false
 
-    fun install(archive: ByteArray): PluginManifest = synchronized(lock) {
+    fun install(archive: ByteArray, approvedPublisherArchive: String? = null): PluginManifest = synchronized(lock) {
         checkOpen()
+        val candidate = PluginArchiveReader.read(archive)
+        require(store.read(candidate.manifest.sourceId) == null) { "plugin already installed" }
+        val remembered = store.publisherFingerprint(candidate.manifest.sourceId)
+        require(remembered == null || remembered == (candidate.publisher?.fingerprint ?: PluginPackageTrust.UNSIGNED) || approvedPublisherArchive == candidate.archiveSha256) {
+            "PUBLISHER_CHANGE_APPROVAL_REQUIRED"
+        }
+        store.setEnabledSources(store.enabledSources() - candidate.manifest.sourceId)
         val manifest = store.install(archive)
         publish(State(manifest, Status.Disabled))
         manifest
@@ -48,7 +73,11 @@ class PluginManager(
     fun restore(): List<PluginPackageStore.Installed> = synchronized(lock) {
         checkOpen()
         val installed = store.installed()
-        val desired = store.enabledSources()
+        damaged.value = installed.filter { it.manifest == null }
+        val desired = try { store.enabledSources() } catch (error: Exception) {
+            recoveryIssue.value = "插件启用状态无法读取：${error.javaClass.simpleName}。包和用户数据已保留，可重置为全部禁用。"
+            emptySet()
+        }
         installed.forEach { item ->
             val manifest = item.manifest ?: return@forEach
             if (manifest.sourceId !in loaded) {
@@ -66,6 +95,8 @@ class PluginManager(
         checkOpen()
         if (source in loaded) return@synchronized
         val plugin = store.read(source) ?: error("plugin is not installed")
+        val pinned = store.publisherFingerprint(source)
+        require(pinned == null || pinned == (plugin.publisher?.fingerprint ?: PluginPackageTrust.UNSIGNED)) { "PUBLISHER_RECORD_MISMATCH" }
         val candidate = try { factory.prepare(plugin) }
         catch (error: Exception) {
             publish(State(plugin.manifest, Status.Failed, error.javaClass.simpleName))
@@ -100,14 +131,16 @@ class PluginManager(
         state.value[source]?.let { publish(it.copy(status = Status.Disabled, error = null)) }
     }
 
-    fun update(source: SourceId, archive: ByteArray, approvedManifest: PluginManifest? = null): PluginManifest = synchronized(lock) {
+    fun update(source: SourceId, archive: ByteArray, approvedManifest: PluginManifest? = null, approvedPublisherArchive: String? = null): PluginManifest = synchronized(lock) {
         checkOpen()
         PluginOAuth.cancel(source)
         val previous = loaded[source]
         var candidate: LoadedProvider? = null
         try {
             val manifest = store.update(source, archive) { plugin ->
-                val prior = store.read(source)?.manifest ?: error("plugin is not installed")
+                val priorPackage = store.read(source) ?: error("plugin is not installed")
+                PluginPackageTrust.requireUpdate(priorPackage, plugin, approvedPublisherArchive)
+                val prior = priorPackage.manifest
                 require(!PluginPermissions.expands(prior, plugin.manifest) || approvedManifest == plugin.manifest) {
                     "PLUGIN_PERMISSION_APPROVAL_REQUIRED"
                 }
@@ -165,6 +198,10 @@ class PluginManager(
         state.value = emptyMap()
     }
 
-    private fun publish(value: State) { state.value = state.value + (value.manifest.sourceId to value) }
+    private fun publish(value: State) {
+        val installed = store.read(value.manifest.sourceId)
+        state.value = state.value + (value.manifest.sourceId to value.copy(publisher = installed?.publisher,
+            archiveSha256 = installed?.archiveSha256.orEmpty(), integrityChecked = installed?.integrityChecked == true))
+    }
     private fun checkOpen() { check(!closed) { "plugin manager is closed" } }
 }

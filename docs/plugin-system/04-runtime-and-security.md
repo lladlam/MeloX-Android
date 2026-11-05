@@ -16,8 +16,8 @@
 7. 恢复：重新验证包并恢复已启用来源。单个损坏包作为错误条目返回，不阻止其他包枚举。
 
 包文件更新失败有 AtomicFile 回滚；尚未进行断电/进程死亡注入测试。候选脚本执行带来的
-外部服务或存储副作用不在包文件事务内。当前没有发布者签名验证；同 ID 更新只校验本地
-身份与版本，不能据此认定发布者一致。错误条目的完整 UI、显式重装后清除数据选项仍待补。
+外部服务或存储副作用不在包文件事务内。RC 已加入完整性/可选签名、TOFU 公钥记录及密钥变化
+单独批准，损坏包隔离与可选卸载清理；协议与保守回滚边界见 [RC 验收](rc-acceptance.md)。
 
 ## 独立执行环境
 
@@ -69,7 +69,8 @@ DNS 校验返回的同一地址列表交给 OkHttp 建立连接，避免“校�
 AES-256-GCM key，密文位于 noBackupFilesDir，AAD 绑定 SourceId 和账号 ID。
 API Token 与 OAuth2/PKCE 凭据只在宿主代理中使用，具体约束见
 [能力与认证接入](05-capabilities-and-authentication.md)。WebView/Cookie 登录不受支持。
-这些安全路径尚未做设备验证，不代表已完成隔离/Keystore 故障测试。
+API 35 已完成隔离身份、取消/watchdog、Keystore 合成账号与受控图片/媒体测试子集；尚未
+完成 API 24、密钥失效、native 耗尽及全部恶意网络故障测试。详情见 verification.md。
 
 封面使用带 SourceId 的 `melox-plugin-image` URI，经 Coil 自定义 Fetcher 进入独立 broker，
 不接收账号凭据，不重定向，不使用图片内存/磁盘缓存。仅 PNG/JPEG/WebP，最大 2 MiB、

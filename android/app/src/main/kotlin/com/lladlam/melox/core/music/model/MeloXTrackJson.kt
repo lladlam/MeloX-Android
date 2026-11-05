@@ -40,6 +40,39 @@ internal object MeloXTrackJson {
         track.bestQuality?.let { put("bestQuality", it.name) }
         track.bestBitrate?.let { put("bestBitrate", it) }
         put("metadata", encodeMetadata(track.providerMetadata))
+        track.persistenceExtras?.let { raw ->
+            val original = JSONObject(raw)
+            if (original.optString("source") == track.id.sourceId.value && original.optString("id") == track.id.value) {
+                copyUnknown(original, this, trackKeys)
+                val priorAvailability = original.optString("availability")
+                if (track.availability == TrackAvailability.Unknown && priorAvailability.isNotEmpty() && TrackAvailability.entries.none { it.name == priorAvailability })
+                    put("availability", original.get("availability"))
+                val priorQuality = original.optString("bestQuality")
+                if (track.bestQuality == null && priorQuality.isNotEmpty() && AudioQualityTier.entries.none { it.name == priorQuality })
+                    put("bestQuality", original.get("bestQuality"))
+                val oldArtists = original.optJSONArray("artists")
+                val newArtists = getJSONArray("artists")
+                for (i in 0 until newArtists.length()) {
+                    val fresh = newArtists.getJSONObject(i)
+                    val old = (0 until (oldArtists?.length() ?: 0)).mapNotNull { oldArtists?.optJSONObject(it) }.firstOrNull {
+                        it.optString("name") == fresh.optString("name") && it.optString("artistSource") == fresh.optString("artistSource") &&
+                            it.optString("artistId") == fresh.optString("artistId")
+                    }
+                    if (old != null) copyUnknown(old, fresh, artistKeys)
+                }
+                val oldAlbum = original.optJSONObject("album")
+                val freshAlbum = optJSONObject("album")
+                if (oldAlbum != null && freshAlbum != null && oldAlbum.optString("albumSource") == freshAlbum.optString("albumSource") &&
+                    oldAlbum.optString("albumId") == freshAlbum.optString("albumId") && oldAlbum.optString("name") == freshAlbum.optString("name")) {
+                    copyUnknown(oldAlbum, freshAlbum, albumKeys)
+                }
+                original.optJSONObject("metadata")?.let { old ->
+                    val fresh = getJSONObject("metadata")
+                    if (track.providerMetadata == ProviderTrackMetadata.Empty && old.optString("type") !in metadataTypes) put("metadata", old)
+                    else if (old.optString("type") == fresh.optString("type")) copyUnknown(old, fresh, metadataKeys(old.optString("type")))
+                }
+            }
+        }
     }
 
     fun decode(value: JSONObject): MusicTrack? {
@@ -91,7 +124,38 @@ internal object MeloXTrackJson {
             }.getOrNull(),
             bestBitrate = value.optInt("bestBitrate", 0).takeIf { it > 0 },
             providerMetadata = decodeMetadata(value.optJSONObject("metadata")),
+            persistenceExtras = value.toString().takeIf { hasExtensions(value) },
         )
+    }
+
+    private val trackKeys = setOf("source", "id", "title", "artists", "album", "artwork", "durationMs", "availability", "bestQuality", "bestBitrate", "metadata")
+    private val artistKeys = setOf("name", "artistSource", "artistId")
+    private val albumKeys = setOf("name", "albumSource", "albumId", "artworkUrl")
+    private fun metadataKeys(type: String): Set<String> = setOf("type") + when (type) {
+        "netease" -> setOf("numericId")
+        "qq" -> setOf("songMid", "mediaMid", "numericSongId")
+        "kugou" -> setOf("hash", "albumAudioId", "albumId")
+        "kuwo" -> setOf("mid")
+        "apple" -> setOf("catalogId", "storefront", "previewUrl")
+        "bilibili" -> setOf("bvid", "cid", "aid", "page")
+        "spotify" -> setOf("trackId", "isrc")
+        "youtube" -> setOf("videoId", "setVideoId")
+        "local" -> setOf("contentUri", "fileKey")
+        else -> emptySet()
+    }
+    private val metadataTypes = setOf("empty", "netease", "qq", "kugou", "kuwo", "apple", "bilibili", "spotify", "youtube", "local")
+    private fun copyUnknown(old: JSONObject, fresh: JSONObject, known: Set<String>) {
+        old.keys().asSequence().filter { it !in known }.forEach { fresh.put(it, old.get(it)) }
+    }
+    private fun hasExtensions(value: JSONObject): Boolean {
+        if (value.has("availability") && TrackAvailability.entries.none { it.name == value.optString("availability") }) return true
+        if (value.has("bestQuality") && AudioQualityTier.entries.none { it.name == value.optString("bestQuality") }) return true
+        if (value.keys().asSequence().any { it !in trackKeys }) return true
+        if (value.optJSONObject("album")?.keys()?.asSequence()?.any { it !in albumKeys } == true) return true
+        val artists = value.optJSONArray("artists")
+        if ((0 until (artists?.length() ?: 0)).any { artists?.optJSONObject(it)?.keys()?.asSequence()?.any { key -> key !in artistKeys } == true }) return true
+        val metadata = value.optJSONObject("metadata") ?: return false
+        return metadata.optString("type") !in metadataTypes || metadata.keys().asSequence().any { it !in metadataKeys(metadata.optString("type")) }
     }
 
     private fun encodeMetadata(metadata: ProviderTrackMetadata): JSONObject = JSONObject().apply {

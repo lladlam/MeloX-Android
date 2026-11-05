@@ -9,6 +9,7 @@ const segment = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}$/;
 const version = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 
 export function validateManifest(value) {
+  if (["manifest.json", "integrity.json", "publisher.json"].includes(value.entry)) throw new Error("Reserved plugin entry");
   if (value.homepage !== undefined) {
     const url = new URL(value.homepage);
     if (url.protocol !== "https:" || url.username || url.password || !url.hostname) throw new Error("Invalid plugin homepage");

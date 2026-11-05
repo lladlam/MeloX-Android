@@ -1,6 +1,7 @@
 # 插件设备验收清单
 
-**当前状态：未执行。** `adb devices -l` 未列出设备；不得用 JVM/Node 单测替代以下结果。
+**当前状态：部分执行。** API 35 转译模拟器已完成 RC 自动化子集，详情见
+[verification.md](verification.md)；API 24 和实体 ARM 设备仍未执行，不得用 JVM/Node 单测替代。
 准备 API 24 与较新 Android 设备、授权的公开 HTTPS 测试 API/音频/OAuth 服务，记录 APK
 版本、插件包哈希、设备/API、操作、预期、实际及可复现日志。不要保存 Token 或账号隐私。
 
@@ -18,7 +19,7 @@ adb install -r android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
 adb push /tmp/opencode/melox-catalog-hardening.melox-plugin /sdcard/Download/
 adb push /tmp/opencode/melox-test-tone-hardening.melox-plugin /sdcard/Download/
 adb push /tmp/opencode/melox-api-token-hardening.melox-plugin /sdcard/Download/
-adb shell monkey -p com.lladlam.melox -c android.intent.category.LAUNCHER 1
+adb shell monkey -p com.lladlam.melox.android.dev -c android.intent.category.LAUNCHER 1
 ```
 
 在“设置 → 音乐源插件”通过系统文件选择器导入；核对确认页并安装、启用，设置为主来源。
@@ -26,8 +27,8 @@ adb shell monkey -p com.lladlam.melox -c android.intent.category.LAUNCHER 1
 
 ```sh
 adb shell ps -A -o UID,PID,NAME
-adb shell dumpsys activity services com.lladlam.melox
-adb shell dumpsys package com.lladlam.melox
+adb shell dumpsys activity services com.lladlam.melox.android.dev
+adb shell dumpsys package com.lladlam.melox.android.dev
 # 缺失来源链接应显示来源不可用，不自动安装、启用或回退
 adb shell am start -a android.intent.action.VIEW -d 'melox://plugin-track?source=plugin%3Aorg.example.missing&id=opaque&title=Missing'
 # 未知 OAuth state 必须拒绝且不创建账号
@@ -93,4 +94,4 @@ adb shell am start -a android.intent.action.VIEW -d 'com.lladlam.melox.plugin:/o
 - 开启显式跨源搜索，插件成功/失败/取消互不覆盖，停用或卸载选中的插件保留失败来源身份。
 - 回归内置源登录、播放、歌词、LX 补源、收藏和下载；不把在线服务故障误记为插件回归。
 
-以上每组填写“通过 / 失败 / 未执行”和证据，再更新 verification.md。当前所有设备项均为未执行。
+以上每组填写“通过 / 失败 / 未执行”和证据，再更新 verification.md。已测子集不代表整组通过。

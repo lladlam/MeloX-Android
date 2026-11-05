@@ -331,7 +331,7 @@ class MeloXPlaybackUiState internal constructor(private val appContext: Context)
             ?: player.mediaMetadata
         val itemExtras = item.mediaMetadata.extras
         val extras = metadata.extras ?: itemExtras
-        val providerSource = PlaybackTrackIdentity.fromMediaItem(item)?.source
+        val providerSource = PlaybackTrackIdentity.fromMediaItem(item)?.sourceId?.builtIn
 
         mediaId = item?.mediaId
         val originalTitle = extras?.getString("melox.system.original_title")

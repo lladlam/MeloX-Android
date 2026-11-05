@@ -43,6 +43,7 @@ object PluginManifestParser {
     /** Reject unsupported versions and capabilities instead of silently granting them. */
     fun parse(json: String): PluginManifest {
         require(json.toByteArray(Charsets.UTF_8).size <= MaxManifestBytes) { "manifest too large" }
+        PluginJson.check(json, 32 * 1024)
         val value = JSONObject(json)
         listOf("id", "name", "version", "entry").forEach { require(value.opt(it) is String) { "manifest field must be a string: $it" } }
         val rawId = value.getString("id")

@@ -48,6 +48,7 @@ class PluginMusicProvider(val manifest: PluginManifest, private val runtime: Plu
     private suspend fun call(capability: PluginCapability, method: String, vararg args: Any): String {
         require(capability in manifest.capabilities && method in capability.methods) { "UNSUPPORTED_OPERATION" }
         val result = runtime.invoke(method, JSONArray(args.toList()))
+        PluginWireContract.check(method, result)
         require(result.toByteArray(Charsets.UTF_8).size <= PluginIsolatedService.MAX_BYTES) { "plugin result too large" }
         return result
     }
@@ -155,6 +156,7 @@ class PluginMusicProvider(val manifest: PluginManifest, private val runtime: Plu
                 val expires = optionalNumber(result, "expiresAtEpochMs", 9_007_199_254_740_991L)
                 require(expires == null || expires > System.currentTimeMillis()) { "expired playback URL" }
                 val format = if (result.has("format")) { require(result.opt("format") is String); result.getString("format").also { require(it.length <= 64) } } else null
+                PluginMediaFormats.check(url, format, result.has("drm") || result.has("licenseUrl"))
                 PlaybackResolution.Playable(url, headers, quality,
                     actualQuality = result.optString("actualQuality").takeIf { it.isNotEmpty() }?.let { value ->
                         AudioQualityTier.entries.firstOrNull { wire(it.name) == value } ?: error("invalid quality")
@@ -166,6 +168,7 @@ class PluginMusicProvider(val manifest: PluginManifest, private val runtime: Plu
             }
             "preview" -> {
                 val url = result.getString("url"); validateMediaUrl(url)
+                PluginMediaFormats.check(url, drm = result.has("drm") || result.has("licenseUrl"))
                 PlaybackResolution.Preview(url, optionalNumber(result, "durationMs", 86_400_000))
             }
             "loginRequired" -> PlaybackResolution.LoginRequired
@@ -193,7 +196,7 @@ class PluginMusicProvider(val manifest: PluginManifest, private val runtime: Plu
             fun lyricText(key: String): String? {
                 if (!line.has(key)) return null
                 require(line.opt(key) is String) { "lyric text must be a string" }
-                return line.getString(key).also { require(it.length <= 4096) { "lyric text too long" } }
+                return line.getString(key).also { require(it.codePointCount(0, it.length) <= 4096) { "lyric text too long" } }
             }
             val text = requireNotNull(lyricText("text"))
             LyricLine(timeMs = time, text = text,

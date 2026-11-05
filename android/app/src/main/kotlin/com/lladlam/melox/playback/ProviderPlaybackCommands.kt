@@ -159,6 +159,8 @@ object ProviderPlaybackCommands {
             putString(PlaybackTrackIdentity.ArtistExtra, artistText)
             putString(PlaybackTrackIdentity.AlbumExtra, album?.name.orEmpty())
             putString(PlaybackTrackIdentity.ArtworkExtra, artworkUrl.orEmpty())
+            if (id.sourceId.builtIn == null) putString(PlaybackTrackIdentity.TrackJsonExtra,
+                com.lladlam.melox.core.music.model.MeloXTrackJson.encode(this@toMediaItem).toString())
             // Seed value for MediaSession FAVORITE custom action toggle state.
             // Providers read the *current* favorite state via FavoriteCapability
             // on demand; the extras copy is what external controllers (vivo

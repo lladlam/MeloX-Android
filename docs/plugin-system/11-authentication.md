@@ -1,7 +1,7 @@
 # 插件认证：现有账号系统审计
 
 状态：**前序审计与设计约束**。当前已编写的插件 API Token、Keystore 和公开客户端 OAuth2/PKCE
-另见 [能力与认证接入](05-capabilities-and-authentication.md)，尚未通过设备验证。本文件保留对
+另见 [能力与认证接入](05-capabilities-and-authentication.md) 及 [实际验证](verification.md)，仅完成部分设备子集。本文件保留对
 内置账号系统的审计，不意味着其平台专属登录方式均可用于插件。源码基线和总体风险见
 [01-repository-audit.md](01-repository-audit.md)、[02-architecture.md](02-architecture.md)。以下路径相对于 `android/app/src/main/kotlin/com/lladlam/melox/`。
 

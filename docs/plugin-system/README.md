@@ -1,6 +1,6 @@
 # MeloX 插件开发文档
 
-**状态：核心、目录、账号及下载接线的开发预览；仍有剩余工作，未完成真机端到端验证。**
+**状态：RC 工程验收中。核心链路与 API 35 转译模拟器子集已验证；API 24、实体真机、完整 UI/OAuth/后台验收仍未完成。**
 
 ## 开发者入口
 
@@ -13,6 +13,8 @@
 7. [全部已接线 Capability、API Token 与 OAuth2/PKCE](05-capabilities-and-authentication.md)
 8. [完整设备验收清单](device-acceptance.md)
 9. [交付文件、核心链路及 12 项能力证据表](delivery.md)
+10. [RC 安全审查、签名包、数据策略与设备自动化](rc-acceptance.md)
+11. [12 项能力 SDK／宿主协议一致性核对](sdk-consistency.md)
 
 ## 工程背景
 

@@ -46,6 +46,8 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
     private val jobs = ConcurrentHashMap<String, Job>()
     private val pluginDownloadSlots = kotlinx.coroutines.sync.Semaphore(2)
     private val recordsByKey = ConcurrentHashMap<String, MeloXProviderDownloadedSong>()
+    private val indexLock = Any()
+    private val removedIndexKeys = ConcurrentHashMap.newKeySet<String>()
 
     val downloads = mutableStateListOf<MeloXProviderDownloadedSong>()
     val activeDownloads = mutableStateMapOf<String, Boolean>()
@@ -66,7 +68,8 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
         scope.launch {
             val restored = withContext(Dispatchers.IO) { readIndex() }
             restored.forEach { record ->
-                if (recordsByKey.putIfAbsent(key(record.track.id), record) == null) downloads += record
+                val idKey = key(record.track.id)
+                if (idKey !in removedIndexKeys && recordsByKey.putIfAbsent(idKey, record) == null) downloads += record
             }
         }
     }
@@ -82,12 +85,15 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
 
     fun remove(id: MusicResourceId) {
         val idKey = key(id)
-        jobs.remove(idKey)?.cancel()
+        removedIndexKeys.add(idKey)
+        // Keep the slot until cancellation cleanup finishes: a retry must not race the old
+        // download's temporary file or have its Job removed by the old coroutine's finally.
+        jobs[idKey]?.cancel()
         recordsByKey.remove(idKey)?.let { record ->
             File(directory, record.fileName).delete()
             downloads.removeAll { key(it.track.id) == idKey }
-            scope.launch(Dispatchers.IO) { writeIndex(recordsByKey.values.toList()) }
         }
+        scope.launch(Dispatchers.IO) { writeIndex() }
     }
 
     fun localPlaybackUri(id: MusicResourceId): Uri? = recordsByKey[key(id)]
@@ -131,12 +137,13 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
                     downloadedAt = System.currentTimeMillis(),
                 )
                 withContext(Dispatchers.Main.immediate) {
+                    removedIndexKeys.remove(idKey)
                     recordsByKey[idKey] = record
                     downloads.removeAll { key(it.track.id) == idKey }
                     downloads += record
                     attempts.remove(idKey)
                 }
-                withContext(Dispatchers.IO) { writeIndex(recordsByKey.values.toList()) }
+                withContext(Dispatchers.IO) { writeIndex() }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main.immediate) { attempts.remove(idKey); downloadErrors.remove(idKey) }
                 throw cancelled
@@ -196,14 +203,16 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
 
     private fun readIndex(): List<MeloXProviderDownloadedSong> = runCatching {
         if (!indexFile.isFile) return emptyList()
-        val array = JSONArray(indexFile.readText())
+        val array = synchronized(indexLock) { readRawIndex() }
         buildList {
             for (index in 0 until array.length()) {
+                try {
                 val json = array.getJSONObject(index)
                 val source = com.lladlam.melox.core.music.model.SourceId.parse(json.optString("source")) ?: continue
                 val id = json.optString("id").takeIf(String::isNotBlank) ?: continue
                 val fileName = json.optString("fileName").takeIf(String::isNotBlank) ?: continue
-                val track = MusicTrack(
+                if (!fileName.matches(Regex("[a-f0-9]{64}\\.(mp3|m4a|ogg|audio)"))) continue
+                val track = json.optJSONObject("track")?.let { com.lladlam.melox.core.music.model.MeloXTrackJson.decode(it) } ?: MusicTrack(
                     id = MusicResourceId(source, id),
                     title = json.optString("title", "未知歌曲"),
                     artists = json.optString("artists").split(" / ").filter(String::isNotBlank)
@@ -216,6 +225,7 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
                         ProviderTrackMetadata.Spotify(id)
                     } else ProviderTrackMetadata.Empty,
                 )
+                if (track.id != MusicResourceId(source, id)) continue
                 val file = File(directory, fileName)
                 if (file.isFile) add(
                     MeloXProviderDownloadedSong(
@@ -229,17 +239,19 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
                         downloadedAt = json.optLong("downloadedAt"),
                     ),
                 )
+                } catch (_: Exception) { /* Preserve opaque row in readRawIndex; other records remain usable. */ }
             }
         }
     }.getOrDefault(emptyList())
 
-    private fun writeIndex(records: List<MeloXProviderDownloadedSong>) {
+    private fun writeIndex() = synchronized(indexLock) {
         val array = JSONArray()
-        records.forEach { record ->
+        recordsByKey.values.forEach { record ->
             val track = record.track
             array.put(JSONObject().apply {
                 put("source", track.id.sourceId.value)
                 put("id", track.id.value)
+                put("track", com.lladlam.melox.core.music.model.MeloXTrackJson.encode(track))
                 put("title", track.title)
                 put("artists", track.artistText)
                 put("album", track.album?.name.orEmpty())
@@ -253,8 +265,25 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
                 put("downloadedAt", record.downloadedAt)
             })
         }
-        indexFile.writeText(array.toString())
+        val merged = ProviderDownloadIndexCodec.merge(readRawIndex(), array, removedIndexKeys.toSet())
+        val atomic = android.util.AtomicFile(indexFile)
+        val output = atomic.startWrite()
+        try { output.write(merged.toString().toByteArray(Charsets.UTF_8)); atomic.finishWrite(output) }
+        catch (error: Throwable) { atomic.failWrite(output); throw error }
     }
+
+    private fun readRawIndex(): JSONArray = try {
+        android.util.AtomicFile(indexFile).openRead().use { input ->
+            val bytes = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(8192)
+            while (true) {
+                val count = input.read(buffer); if (count < 0) break
+                require(bytes.size() + count <= 16 * 1024 * 1024) { "download index too large" }
+                bytes.write(buffer, 0, count)
+            }
+            JSONArray(bytes.toString("UTF-8"))
+        }
+    } catch (_: java.io.FileNotFoundException) { JSONArray() }
 
     private fun extensionFor(format: String?): String = when (format?.lowercase()) {
         "mp3" -> "mp3"

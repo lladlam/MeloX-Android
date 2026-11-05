@@ -9,7 +9,7 @@ internal object PluginIpcPolicy {
     fun methodAllowed(manifest: PluginManifest, method: String): Boolean = method == "__validate" || manifest.capabilities.any { method in it.methods }
     fun errorCode(raw: String): String {
         if (raw.toByteArray(Charsets.UTF_8).size > 1024) return "PLUGIN_EXECUTION_FAILED"
-        val code = runCatching { org.json.JSONObject(raw).opt("code") as? String }.getOrNull()
+        val code = runCatching { PluginJson.check(raw, 1024); org.json.JSONObject(raw).opt("code") as? String }.getOrNull()
         return code?.takeIf { it in setOf("UNSUPPORTED_OPERATION", "INVALID_ARGUMENT", "LOGIN_REQUIRED", "AUTH_EXPIRED",
             "PERMISSION_DENIED", "RATE_LIMITED", "NETWORK_REQUEST_FAILED", "NOT_FOUND", "PLUGIN_ERROR") } ?: "PLUGIN_EXECUTION_FAILED"
     }

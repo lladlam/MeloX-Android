@@ -1,0 +1,17 @@
+{
+  "id": "org.melox.oauth-fixture",
+  "name": "MeloX Synthetic OAuth Fixture",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "entry": "index.js",
+  "capabilities": ["authentication", "search"],
+  "networkDomains": ["oauth.example.com"],
+  "authentication": {
+    "type": "oauth2Pkce",
+    "authorizationEndpoint": "https://oauth.example.com/authorize",
+    "tokenEndpoint": "https://oauth.example.com/token",
+    "clientId": "melox-rc-public",
+    "scopes": ["music.read"],
+    "domains": ["oauth.example.com"]
+  }
+}

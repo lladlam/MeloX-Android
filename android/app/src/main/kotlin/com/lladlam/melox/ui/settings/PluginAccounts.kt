@@ -31,6 +31,8 @@ internal fun PluginAccounts(manifest: PluginManifest, manager: PluginManager) {
     var error by remember { mutableStateOf<String?>(null) }
     var revision by remember { mutableIntStateOf(0) }
     var status by remember { mutableStateOf<String?>(null) }
+    var deleting by remember(manifest.sourceId) { mutableStateOf<PluginAccountVault.Account?>(null) }
+    var clearStorage by remember(manifest.sourceId) { mutableStateOf(false) }
     fun action(block: () -> Unit) {
         if (busy) return
         busy = true; error = null; status = null
@@ -46,6 +48,26 @@ internal fun PluginAccounts(manifest: PluginManifest, manager: PluginManager) {
             withContext(Dispatchers.IO) { accounts = vault.accounts(); selected = vault.selected() }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (failure: Exception) { error = "无法解密账号，原数据已保留：${failure.javaClass.simpleName}" }
+    }
+    deleting?.let { account ->
+        AlertDialog(onDismissRequest = { if (!busy) deleting = null }, title = { Text("删除插件账号") }, text = {
+            Column {
+                Text("删除 ${account.displayName} 的本地凭据。收藏、历史和下载保留。")
+                Row {
+                    Checkbox(checked = clearStorage, onCheckedChange = { clearStorage = it }, enabled = !busy)
+                    Text("同时清除此账号的插件普通存储")
+                }
+            }
+        }, confirmButton = {
+            TextButton(enabled = !busy, onClick = {
+                val removeStorage = clearStorage
+                deleting = null
+                action {
+                    vault.remove(account.id)
+                    if (removeStorage) PluginStorage.clearAccount(context, manifest.sourceId, account.id)
+                }
+            }) { Text("删除账号") }
+        }, dismissButton = { TextButton(enabled = !busy, onClick = { deleting = null }) { Text("取消") } })
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("插件独立账号", style = MaterialTheme.typography.titleSmall)
@@ -81,7 +103,7 @@ internal fun PluginAccounts(manifest: PluginManifest, manager: PluginManager) {
                 TextButton(enabled = !busy, onClick = { action { vault.activate(account.id) } }) {
                     Text(if (selected == account.id) "✓ ${account.displayName}" else account.displayName)
                 }
-                TextButton(enabled = !busy, onClick = { action { vault.remove(account.id) } }) { Text("删除账号") }
+                TextButton(enabled = !busy, onClick = { clearStorage = false; deleting = account }) { Text("删除账号") }
             }
         }
         TextButton(enabled = !busy, onClick = { PluginOAuth.cancel(manifest.sourceId); action { vault.activate(null) } }) { Text("注销当前账号（保留凭据）") }

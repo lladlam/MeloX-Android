@@ -74,6 +74,7 @@ object MeloXMusicProviders {
                 playbackProviders = { nativeProviders },
             ),
             dynamic = dynamicProviders,
+            awaitDynamicReady = { com.lladlam.melox.core.plugin.MeloXPlugins.awaitRestored() },
         )
     }
 
@@ -132,6 +133,7 @@ object MeloXMusicProviders {
                 playbackProviders = { nativeProviders },
             ),
             dynamic = dynamicProviders,
+            awaitDynamicReady = { com.lladlam.melox.core.plugin.MeloXPlugins.awaitRestored() },
         )
     }
 }

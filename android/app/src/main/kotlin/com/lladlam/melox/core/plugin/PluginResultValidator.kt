@@ -53,7 +53,7 @@ object PluginResultValidator {
     }
     private fun text(item: JSONObject, key: String, maximum: Int): String {
         require(item.opt(key) is String) { "$key must be a string" }
-        return item.getString(key).also { require(it.isNotBlank() && it.length <= maximum) { "invalid $key" } }
+        return item.getString(key).also { require(it.isNotBlank() && it.codePointCount(0, it.length) <= maximum) { "invalid $key" } }
     }
     private fun url(item: JSONObject, key: String): String? = if (!item.has(key)) null
         else text(item, key, 4096).also(::validateUrlSyntax)
@@ -76,6 +76,7 @@ object PluginResultValidator {
 
     private fun parse(json: String): JSONObject {
         require(json.toByteArray(Charsets.UTF_8).size <= MAX_RESULT_BYTES) { "plugin result too large" }
+        PluginJson.check(json)
         return JSONObject(json)
     }
 }

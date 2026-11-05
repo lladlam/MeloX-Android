@@ -68,7 +68,7 @@ export class PluginError extends Error {
 }
 
 export interface PlaylistSummary { id: string; title: string; artworkUrl?: string; creatorName?: string; description?: string; trackCount?: number; playCount?: number }
-export interface AlbumSummary { id: string; title: string; artists: Array<{ id?: string; name: string }>; artworkUrl?: string; trackCount?: number; releaseDate?: string }
+export interface AlbumSummary { id: string; title: string; artists?: Array<{ id?: string; name: string }>; artworkUrl?: string; trackCount?: number; releaseDate?: string }
 export interface ArtistSummary { id: string; name: string; artworkUrl?: string; description?: string; songCount?: number; albumCount?: number }
 export interface RankingSummary { id: string; title: string; subtitle?: string; artworkUrl?: string }
 export interface CollectionDetail<T> { summary: T; tracks: MusicPage<MusicTrack> }

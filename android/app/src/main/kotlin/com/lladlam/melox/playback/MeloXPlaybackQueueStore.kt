@@ -42,6 +42,9 @@ internal object MeloXPlaybackQueueStore {
                 put("originalIndex", extras?.getInt(PlaybackCommands.QUEUE_ORIGINAL_INDEX_KEY, -1) ?: -1)
                 put("entryId", extras?.getString(PlaybackCommands.QUEUE_ENTRY_ID_KEY))
                 put("durationMs", extras?.getLong(PlaybackTrackIdentity.DurationMsExtra, 0L) ?: 0L)
+                put("standardTrack", extras?.getString(PlaybackTrackIdentity.TrackJsonExtra))
+                put("source", extras?.getString(PlaybackTrackIdentity.SourceExtra))
+                put("resourceId", extras?.getString(PlaybackTrackIdentity.ResourceIdExtra))
             })
         }
         val currentIndex = player.currentMediaItemIndex.coerceIn(0, player.mediaItemCount - 1)
@@ -86,6 +89,9 @@ internal object MeloXPlaybackQueueStore {
                         putString(PlaybackCommands.QUEUE_ENTRY_ID_KEY, it)
                     }
                     putLong(PlaybackTrackIdentity.DurationMsExtra, value.optLong("durationMs", 0L))
+                    value.optString("standardTrack").takeIf(String::isNotBlank)?.let { putString(PlaybackTrackIdentity.TrackJsonExtra, it) }
+                    value.optString("source").takeIf(String::isNotBlank)?.let { putString(PlaybackTrackIdentity.SourceExtra, it) }
+                    value.optString("resourceId").takeIf(String::isNotBlank)?.let { putString(PlaybackTrackIdentity.ResourceIdExtra, it) }
                 }
                 add(
                     MediaItem.Builder()

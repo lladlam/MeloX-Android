@@ -8,7 +8,7 @@ class PluginCredentialPolicyTest {
 
     @Test fun credentialRequestsCannotEscapeTheirSubsetOfNetworkPermissions() {
         val manifest = PluginManifestParser.parse(base)
-        val lease = PluginAccountVault.Lease(PluginAccountVault.Account("opaque", "Test"), "secret-not-logged", manifest.authentication)
+        val lease = PluginAccountVault.Lease(manifest.sourceId, PluginAccountVault.Account("opaque", "Test"), "secret-not-logged", manifest.authentication)
         PluginHttpBroker(manifest, lease).use { broker ->
             assertThrows(IllegalArgumentException::class.java) {
                 broker.request("""{"url":"https://public.example.com/","credential":"active"}""")
@@ -37,11 +37,18 @@ class PluginCredentialPolicyTest {
     @Test fun updateCannotReuseAnAccountWithExpandedCredentialPermissions() {
         val oldManifest = PluginManifestParser.parse(base)
         val updated = oldManifest.copy(authentication = oldManifest.authentication!!.copy(domains = oldManifest.networkDomains))
-        val lease = PluginAccountVault.Lease(PluginAccountVault.Account("opaque", "Test"), "secret", oldManifest.authentication)
+        val lease = PluginAccountVault.Lease(oldManifest.sourceId, PluginAccountVault.Account("opaque", "Test"), "secret", oldManifest.authentication)
         PluginHttpBroker(updated, lease).use { broker ->
             assertThrows(IllegalArgumentException::class.java) {
                 broker.request("""{"url":"https://public.example.com/","credential":"active"}""")
             }
         }
+    }
+
+    @Test fun identicalAuthPoliciesDoNotAllowCrossPluginCredentialLeases() {
+        val first = PluginManifestParser.parse(base)
+        val second = PluginManifestParser.parse(base.replace("org.example.auth", "org.example.other"))
+        val lease = PluginAccountVault.Lease(first.sourceId, PluginAccountVault.Account("opaque", "Test"), "synthetic", first.authentication)
+        assertThrows(IllegalArgumentException::class.java) { PluginHttpBroker(second, lease) }
     }
 }
