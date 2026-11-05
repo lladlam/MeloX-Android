@@ -1567,4 +1567,6 @@
     <string name="youtube_login_retry">重试</string>
     <string name="settings_lyrics_qq_bracket_backing">QQ 音乐：括号歌词识别为伴唱</string>
     <string name="settings_lyrics_qq_bracket_backing_note">整行括号（…）的内容会作为上一句的伴唱：从上一句结束时开始，结束时间沿用原歌词。</string>
+    <string name="settings_listen_solo">单人模式（保持房间在线）</string>
+    <string name="settings_listen_solo_note">保持一起听房间在线，但只控制本机播放：你的切歌和暂停不会影响对方，房间仍显示原来的歌。关闭后会同步回对方的当前播放。</string>
 </resources>

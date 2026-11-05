@@ -1567,4 +1567,6 @@
     <string name="youtube_login_retry">Retry</string>
     <string name="settings_lyrics_qq_bracket_backing">QQ Music: bracket lines as backing vocals</string>
     <string name="settings_lyrics_qq_bracket_backing_note">Lines wrapped entirely in parentheses (…) become the backing vocal of the previous line. They start when that line ends and keep their original end time.</string>
+    <string name="settings_listen_solo">Solo listening (keep room online)</string>
+    <string name="settings_listen_solo_note">Keep the room online but control only this device. Your playback is not sent to the other listener, and the room keeps its current song. Turn off to sync back to the room.</string>
 </resources>

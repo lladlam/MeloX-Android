@@ -315,4 +315,6 @@
     <string name="youtube_login_retry">Tekrar dene</string>
     <string name="settings_lyrics_qq_bracket_backing">QQ Music: parantezli satırları geri vokal olarak kullan</string>
     <string name="settings_lyrics_qq_bracket_backing_note">Tamamen parantez içine alınmış (…) satırlar önceki satırın geri vokali olur. Önceki satır bittiğinde başlar ve özgün bitiş zamanını korur.</string>
+    <string name="settings_listen_solo">Tek başına dinleme (oda çevrimiçi kalır)</string>
+    <string name="settings_listen_solo_note">Oda çevrimiçi kalır ama yalnızca bu cihazı kontrol edersiniz. Şarkı değiştirme ve duraklatma karşı tarafa gönderilmez; odada özgün şarkı görünür. Kapatınca karşı tarafın mevcut oynatımına geri dönersiniz.</string>
 </resources>

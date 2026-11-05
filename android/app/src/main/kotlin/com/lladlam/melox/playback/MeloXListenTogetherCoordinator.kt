@@ -50,6 +50,8 @@ object MeloXListenTogetherCoordinator {
         val room: MeloXListenTogetherRoom? = null,
         val consecutiveFailures: Int = 0,
         val lastError: String? = null,
+        /** Keep the room online while local playback is decoupled from it. */
+        val solo: Boolean = false,
     )
 
     @Volatile
@@ -65,6 +67,7 @@ object MeloXListenTogetherCoordinator {
     fun state(context: Context): StateFlow<State> { ensureStarted(context); return runtime!!.state }
     fun adoptRoom(context: Context, room: MeloXListenTogetherRoom) { ensureStarted(context); runtime!!.adoptRoom(room) }
     fun clearRoom(context: Context) { ensureStarted(context); runtime!!.clearRoom() }
+    fun setSolo(context: Context, enabled: Boolean) { ensureStarted(context); runtime!!.setSolo(enabled) }
 
     private class Runtime(private val appContext: Context) {
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -96,6 +99,12 @@ object MeloXListenTogetherCoordinator {
         private var statusTick = 0
         private var firstSyncForRoom = true
         private var controllerConnectionPending = false
+        private var solo = false
+        private var deferredSnapshot: MeloXListenTogetherSnapshot? = null
+        private var forceResyncOnExit = false
+        private var roomHeartbeatSongId: Long? = null
+        private var roomHeartbeatIsPlaying = false
+        private var roomHeartbeatProgressMs = 0L
 
         private val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -139,6 +148,20 @@ object MeloXListenTogetherCoordinator {
         }
 
         init { scope.launch { monitorLoop() } }
+
+        fun setSolo(enabled: Boolean) {
+            if (solo == enabled) return
+            solo = enabled
+            if (enabled) {
+                deferredSnapshot = null
+            } else {
+                // Apply the room's latest state on the next 1s poll without
+                // sending anything back. The other listener is untouched.
+                forceResyncOnExit = true
+            }
+            mutableState.value = mutableState.value.copy(solo = enabled)
+        }
+
         fun adoptRoom(latest: MeloXListenTogetherRoom) {
             room = latest
             failures = 0
@@ -148,6 +171,12 @@ object MeloXListenTogetherCoordinator {
             playlistVersion = 1
             heartbeatTick = HEARTBEAT_EVERY_TICKS
             statusTick = 0
+            solo = false
+            deferredSnapshot = null
+            forceResyncOnExit = false
+            roomHeartbeatSongId = null
+            roomHeartbeatIsPlaying = false
+            roomHeartbeatProgressMs = 0L
             mutableState.value = State(Phase.Connected, latest)
             connectController()
         }
@@ -217,7 +246,12 @@ object MeloXListenTogetherCoordinator {
                 runCatching { transport.playback(activeRoom.id) }
                     .onSuccess { snapshot ->
                         failures = 0
-                        mutableState.value = State(Phase.Connected, activeRoom)
+                        mutableState.value = mutableState.value.copy(
+                            phase = Phase.Connected,
+                            room = activeRoom,
+                            consecutiveFailures = failures,
+                            lastError = null,
+                        )
                         synchronizeRemote(activeRoom, snapshot)
                     }
                     .onFailure(::recordFailure)
@@ -261,6 +295,21 @@ object MeloXListenTogetherCoordinator {
             activeRoom: MeloXListenTogetherRoom,
             snapshot: MeloXListenTogetherSnapshot,
         ) {
+            rememberRoomHeartbeat(snapshot)
+            if (solo) {
+                deferredSnapshot = snapshot
+                firstSyncForRoom = false
+                return
+            }
+            if (forceResyncOnExit) {
+                forceResyncOnExit = false
+                deferredSnapshot = null
+                firstSyncForRoom = false
+                applyRemoteSnapshot(snapshot, force = true)
+                lastRemoteQueueSignature = computeQueueSignature(snapshot)
+                lastRemoteCommandSignature = computeCommandSignature(snapshot)
+                return
+            }
             val selfId = currentUserId()
             val isCreator = selfId != null && activeRoom.creatorId == selfId.toString()
             val active = controller ?: return
@@ -275,29 +324,42 @@ object MeloXListenTogetherCoordinator {
                 return
             }
 
-            val queueSignature = buildString {
-                append(snapshot.playMode.orEmpty()).append('|')
-                append(snapshot.displaySongIds.joinToString(",")).append('|')
-                append(snapshot.randomSongIds.joinToString(","))
-            }
+            val queueSignature = computeQueueSignature(snapshot)
             if (queueSignature != lastRemoteQueueSignature) {
                 lastRemoteQueueSignature = queueSignature
                 applyRemoteQueue(snapshot)
             }
 
-            val commandSignature = listOf(
-                snapshot.serverSequence,
-                snapshot.clientSequence,
-                snapshot.commandUserId.orEmpty(),
-                snapshot.targetSongId ?: -1L,
-                snapshot.progressMs,
-                snapshot.isPlaying,
-            ).joinToString(":")
+            val commandSignature = computeCommandSignature(snapshot)
             val commandFromSelf = selfId != null && snapshot.commandUserId == selfId.toString()
             if (!commandFromSelf && commandSignature != lastRemoteCommandSignature) {
                 lastRemoteCommandSignature = commandSignature
                 applyRemoteCommand(snapshot)
             }
+        }
+
+        private fun computeQueueSignature(snapshot: MeloXListenTogetherSnapshot): String = buildString {
+            append(snapshot.playMode.orEmpty()).append('|')
+            append(snapshot.displaySongIds.joinToString(",")).append('|')
+            append(snapshot.randomSongIds.joinToString(","))
+        }
+
+        private fun computeCommandSignature(snapshot: MeloXListenTogetherSnapshot): String = listOf(
+            snapshot.serverSequence,
+            snapshot.clientSequence,
+            snapshot.commandUserId.orEmpty(),
+            snapshot.targetSongId ?: -1L,
+            snapshot.progressMs,
+            snapshot.isPlaying,
+        ).joinToString(":")
+
+        /** Keeps the room's own "now playing" for heartbeats while solo. */
+        private fun rememberRoomHeartbeat(snapshot: MeloXListenTogetherSnapshot) {
+            roomHeartbeatSongId = snapshot.targetSongId
+                ?: snapshot.playbackSongIds.firstOrNull()
+                ?: roomHeartbeatSongId
+            roomHeartbeatIsPlaying = snapshot.isPlaying
+            roomHeartbeatProgressMs = snapshot.progressMs
         }
 
         private suspend fun applyRemoteSnapshot(snapshot: MeloXListenTogetherSnapshot, force: Boolean) {
@@ -372,6 +434,7 @@ object MeloXListenTogetherCoordinator {
             targetSongId: Long,
             formerSongId: Long?,
         ) {
+            if (solo) return
             val activeRoom = room ?: return
             val active = controller ?: return
             scope.launch {
@@ -392,7 +455,7 @@ object MeloXListenTogetherCoordinator {
         }
 
         private fun scheduleQueueReport() {
-            if (room == null) return
+            if (solo || room == null) return
             queueReportJob?.cancel()
             queueReportJob = scope.launch {
                 delay(QUEUE_DEBOUNCE_MS)
@@ -423,13 +486,18 @@ object MeloXListenTogetherCoordinator {
 
         private suspend fun sendHeartbeat(activeRoom: MeloXListenTogetherRoom) {
             val active = controller ?: return
-            val songId = active.currentMediaItem?.mediaId?.toLongOrNull() ?: return
+            val localSongId = active.currentMediaItem?.mediaId?.toLongOrNull()
+            // While solo, keep reporting the room's own state so the other
+            // listener's view does not jump to this device's private track.
+            val songId = (if (solo) roomHeartbeatSongId else localSongId) ?: return
+            val isPlaying = if (solo) roomHeartbeatIsPlaying else active.isPlaying
+            val progressMs = if (solo) roomHeartbeatProgressMs else active.currentPosition
             runCatching {
                 transport.heartbeat(
                     roomId = activeRoom.id,
                     songId = songId,
-                    isPlaying = active.isPlaying,
-                    progressMs = active.currentPosition.coerceAtLeast(0L),
+                    isPlaying = isPlaying,
+                    progressMs = progressMs.coerceAtLeast(0L),
                 )
             }.onFailure(::recordFailure)
         }
@@ -474,7 +542,7 @@ object MeloXListenTogetherCoordinator {
 
         private fun recordFailure(error: Throwable) {
             failures = (failures + 1).coerceAtMost(99)
-            mutableState.value = State(
+            mutableState.value = mutableState.value.copy(
                 phase = if (room == null) Phase.Idle else Phase.Reconnecting,
                 room = room,
                 consecutiveFailures = failures,
@@ -496,6 +564,12 @@ object MeloXListenTogetherCoordinator {
             controller?.removeListener(listener)
             controller?.release()
             controller = null
+            solo = false
+            deferredSnapshot = null
+            forceResyncOnExit = false
+            roomHeartbeatSongId = null
+            roomHeartbeatIsPlaying = false
+            roomHeartbeatProgressMs = 0L
             mutableState.value = State()
         }
     }

@@ -2757,6 +2757,17 @@ private fun ListenTogetherSettings(context: android.content.Context) {
                     MeloXListenTogetherCoordinator.Phase.Idle -> stringResource(R.string.settings_listen_resuming)
                 },
             )
+            MeloXIosListRow(
+                title = stringResource(R.string.settings_listen_solo),
+                subtitle = stringResource(R.string.settings_listen_solo_note),
+                leading = { MeloXSymbolIcon(MeloXSymbol.Person, Modifier.size(24.dp), MeloXSystemColors.Red) },
+                trailing = {
+                    MeloXGlassToggle(
+                        checked = state.solo,
+                        onCheckedChange = { MeloXListenTogetherCoordinator.setSolo(app, it) },
+                    )
+                },
+            )
         }
         Spacer(Modifier.height(10.dp))
         SettingsActionButton(stringResource(R.string.settings_listen_share)) {
