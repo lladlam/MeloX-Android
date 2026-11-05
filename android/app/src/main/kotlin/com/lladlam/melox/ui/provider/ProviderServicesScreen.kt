@@ -287,12 +287,6 @@ fun ProviderServicesScreen(
                 val account = accountManager.state(source)
                 MeloXIosListRow(
                     title = source.displayName,
-                    subtitle = when {
-                        source == selectedId.builtIn && account.loggedIn -> stringResource(R.string.provider_source_logged_in)
-                        source == selectedId.builtIn -> stringResource(R.string.provider_source_logged_out)
-                        account.loggedIn -> stringResource(R.string.provider_logged_in)
-                        else -> stringResource(R.string.provider_not_signed_in)
-                    },
                     leading = {
                         MeloXSymbolIcon(
                             MeloXSymbol.MusicNote,

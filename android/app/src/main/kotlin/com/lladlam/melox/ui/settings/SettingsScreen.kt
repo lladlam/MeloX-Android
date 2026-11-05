@@ -453,7 +453,6 @@ private fun SettingsAccountCard(
         if (onOpenServices != null) {
             MeloXIosListRow(
                 title = stringResource(R.string.tab_services),
-                subtitle = stringResource(R.string.settings_services_subtitle),
                 leading = { MeloXSymbolIcon(MeloXSymbol.MusicNote, Modifier.size(30.dp), accent) },
                 chevronTint = accent,
                 onClick = onOpenServices,
