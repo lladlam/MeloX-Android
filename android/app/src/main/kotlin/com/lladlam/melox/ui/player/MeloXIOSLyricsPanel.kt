@@ -120,8 +120,7 @@ import com.lladlam.melox.core.lyrics.LyricRomanizationAligner
 import com.lladlam.melox.core.lyrics.LyricsDocument
 import com.lladlam.melox.core.lyrics.withPseudoTiming
 import com.lladlam.melox.core.lyrics.withQqBracketBackingVocals
-import com.lladlam.melox.core.music.model.MusicSource
-import com.lladlam.melox.playback.PlaybackTrackIdentity
+import com.lladlam.melox.core.lyrics.withoutOuterBrackets
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.meloXEdgeOverscrollHaptic
 import com.lladlam.melox.MeloXAppVisibility
@@ -537,11 +536,13 @@ private fun MeloXAppleMusicLyricsPanel(
     val document = lyrics
     val pseudoTimingEnabled = MeloXSettingsRuntime.lyricPseudoTimingEnabled
     val qqBracketBackingEnabled = MeloXSettingsRuntime.qqBracketBackingVocals
-    val qqTrack = remember(mediaId) {
-        PlaybackTrackIdentity.decode(mediaId.orEmpty())?.sourceId?.builtIn == MusicSource.QQMusic
-    }
-    val renderedDocument = remember(document, pseudoTimingEnabled, qqBracketBackingEnabled, qqTrack) {
-        val withBackingVocals = if (qqBracketBackingEnabled && qqTrack) {
+    // Downloaded lyrics are re-parsed as LyricSource.Local and online QQ
+    // documents can be replaced by AMLL/NetEase, so the provider that authored
+    // the text is not reliably recoverable here. The line-level pattern (the
+    // whole line is one bracket pair) is the actual contract; the switch is
+    // opt-in and only rewrites those lines.
+    val renderedDocument = remember(document, pseudoTimingEnabled, qqBracketBackingEnabled) {
+        val withBackingVocals = if (qqBracketBackingEnabled) {
             document?.withQqBracketBackingVocals()
         } else {
             document
@@ -1605,7 +1606,14 @@ private fun MeloXTimedAccompaniment(
         enter = fadeIn(tween(600)) + slideInVertically(tween(600)) { it / 2 } + expandVertically(tween(600)),
         exit = fadeOut(tween(600)) + slideOutVertically(tween(600)) { it / 2 } + shrinkVertically(tween(600)),
     ) {
-        val vocalLine = LyricLine(vocal.timeMs, vocal.durationMs, vocal.text, vocal.syllables, agent = vocal.agent)
+        val vocalSyllables = vocal.syllables.withoutOuterBrackets()
+        val vocalLine = LyricLine(
+            vocal.timeMs,
+            vocal.durationMs,
+            vocal.text.withoutOuterBrackets(),
+            vocalSyllables,
+            agent = vocal.agent,
+        )
         // Lead vocals stay on the line clock. Accompaniment keeps its own
         // syllable times, so only the words already reached light up.
         MeloXGlyphLyricText(

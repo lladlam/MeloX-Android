@@ -103,6 +103,18 @@ class QqBracketBackingTest {
     }
 
     @Test
+    fun stripsOuterBracketsFromAccompanimentTextAndSyllables() {
+        assertEquals("伴唱", "（伴唱）".withoutOuterBrackets())
+        assertEquals("la la", "( la la )".withoutOuterBrackets())
+        assertEquals("主(伴)唱", "主(伴)唱".withoutOuterBrackets())
+        val syllables = listOf(
+            LyricSyllable("（伴", 0, 500),
+            LyricSyllable("唱）", 500, 1_000),
+        )
+        assertEquals(listOf("伴", "唱"), syllables.withoutOuterBrackets().map { it.text })
+    }
+
+    @Test
     fun transformIsIdempotent() {
         val document = LyricsDocument(
             lines = listOf(

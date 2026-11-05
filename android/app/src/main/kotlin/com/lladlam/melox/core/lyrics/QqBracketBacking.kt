@@ -44,7 +44,7 @@ fun LyricsDocument.withQqBracketBackingVocals(): LyricsDocument {
             timeMs = start,
             durationMs = originalEnd - start,
             text = inner,
-            syllables = line.syllables.shiftedTo(line.timeMs, start, originalEnd),
+            syllables = line.syllables.withoutOuterBrackets().shiftedTo(line.timeMs, start, originalEnd),
             translation = line.translation,
             romanization = line.romanization,
             // Keep the lead line's alignment; a backing vocal should not jump
@@ -69,6 +69,40 @@ private fun LyricLine.bracketInnerText(): String? {
     val closes = trimmed.last() == ')' || trimmed.last() == '）'
     if (!opens || !closes) return null
     return trimmed.substring(1, trimmed.length - 1).trim().takeIf(String::isNotBlank)
+}
+
+/** Removes one outer ASCII/full-width bracket pair when the whole text is wrapped. */
+internal fun String.withoutOuterBrackets(): String {
+    val trimmed = trim()
+    if (trimmed.length < 2) return this
+    val opens = trimmed.first() == '(' || trimmed.first() == '（'
+    val closes = trimmed.last() == ')' || trimmed.last() == '）'
+    return if (opens && closes) trimmed.substring(1, trimmed.length - 1).trim() else this
+}
+
+/** Removes the outer brackets from the first/last authored syllables as well. */
+internal fun List<LyricSyllable>.withoutOuterBrackets(): List<LyricSyllable> {
+    if (isEmpty()) return this
+    val joined = joinToString("") { it.text }
+    if (joined.withoutOuterBrackets() == joined) return this
+    val result = toMutableList()
+    val firstIndex = result.indexOfFirst { it.text.isNotBlank() }
+    if (firstIndex >= 0) {
+        val syllable = result[firstIndex]
+        val text = syllable.text.trimStart()
+        result[firstIndex] = syllable.copy(
+            text = text.removePrefix("(").removePrefix("（"),
+        )
+    }
+    val lastIndex = result.indexOfLast { it.text.isNotBlank() }
+    if (lastIndex >= 0) {
+        val syllable = result[lastIndex]
+        val text = syllable.text.trimEnd()
+        result[lastIndex] = syllable.copy(
+            text = text.removeSuffix(")").removeSuffix("）"),
+        )
+    }
+    return result
 }
 
 private fun fallbackDurationMs(line: LyricLine): Long =

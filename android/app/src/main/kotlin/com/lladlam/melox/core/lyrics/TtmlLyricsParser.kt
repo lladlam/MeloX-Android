@@ -125,11 +125,12 @@ object TtmlLyricsParser {
         val translation = selected?.text ?: translations[key]?.text?.splitTranslation()?.let { it.second ?: it.first }
         val start = element.attr("begin")?.parseTime() ?: syllables.first().startTimeMs
         val end = element.attr("end")?.parseTime() ?: syllables.last().endTimeMs
+        val strippedSyllables = syllables.withoutOuterBrackets()
         return LyricAccompaniment(
             timeMs = start,
             durationMs = (end - start).coerceAtLeast(1L),
-            text = syllables.joinToString("") { it.text }.trim(),
-            syllables = syllables,
+            text = strippedSyllables.joinToString("") { it.text }.trim(),
+            syllables = strippedSyllables,
             translation = translation,
             agent = parentAgent,
         )
