@@ -70,6 +70,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -392,13 +393,19 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
             }
         }
     }
-    var songList by remember { mutableStateOf<HomeSongList?>(null) }
+    var songList by rememberSaveable(stateSaver = HomeSongListSaver) { mutableStateOf<HomeSongList?>(null) }
     // 「每日推荐 / 热歌榜 / 私人雷达」歌单页的内容持有物。与 selectedCollection 同理：
     // 可见性看 songList（返回时置空，让底下首页复位），内容另存 overlaySongList、返回时不清。
     // 两边共用一个 state 的话，返回瞬间 content lambda 取到的是 null，AnimatedVisibility
     // 的退场过渡在演一个空壳 ⇒ 观感就是「没有返回动画」。
     var overlaySongList by remember { mutableStateOf<HomeSongList?>(null) }
+    LaunchedEffect(songList) {
+        if (songList != null && overlaySongList == null) overlaySongList = songList
+    }
     var activeAction by remember { mutableStateOf<String?>(null) }
+    // Reopening a loaded quick action (daily/ranked/radar) must not depend on a
+    // second upstream request: the first request may be rate-limited by NetEase.
+    val quickActionCache = remember { mutableStateMapOf<String, List<SearchSong>>() }
     var localRecommendations by remember { mutableStateOf(emptyList<com.lladlam.melox.core.recommendation.LocalRecommendationItem>()) }
     var localCandidates by remember { mutableStateOf(emptyList<MusicTrack>()) }
     val homeCacheKey = "${session.cookie.hashCode()}_${MeloXSettingsRuntime.musicArea}_${MeloXSettingsRuntime.podcastsEnabled}"
@@ -552,6 +559,25 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
                 }
                 activeAction = action
                 scope.launch {
+                    quickActionCache[action]?.takeIf(List<SearchSong>::isNotEmpty)?.let { songs ->
+                        if (action in HomeSongListActions) {
+                            val list = HomeSongList(
+                                title = action,
+                                subtitle = "网易云音乐 · ${songs.size} 首歌曲",
+                                artworkUrl = songs.firstOrNull()?.artworkUrl,
+                                songs = songs,
+                            )
+                            onDetailSelected()
+                            songList = list
+                            overlaySongList = list
+                        } else {
+                            songs.firstOrNull()?.let {
+                                PlaybackCommands.playQueue(context, songs, it.id, heartMode = action == "心动模式")
+                            }
+                        }
+                        activeAction = null
+                        return@launch
+                    }
                     runCatching {
                         when (action) {
                             "每日推荐" -> client.dailyRecommendedSongs()
@@ -576,6 +602,7 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
                             else -> emptyList()
                         }
                     }.onSuccess { songs ->
+                        if (songs.isNotEmpty()) quickActionCache[action] = songs
                         if (action in HomeSongListActions && songs.isNotEmpty()) {
                             val list = HomeSongList(
                                 title = action,
@@ -683,6 +710,63 @@ private data class HomeSongList(
     val subtitle: String,
     val artworkUrl: String?,
     val songs: List<SearchSong>,
+)
+
+private fun encodeHomeSongList(list: HomeSongList?): String? {
+    if (list == null) return null
+    return runCatching {
+        JSONObject()
+            .put("title", list.title)
+            .put("subtitle", list.subtitle)
+            .put("artworkUrl", list.artworkUrl.orEmpty())
+            .put("songs", org.json.JSONArray().apply {
+                list.songs.forEach { song ->
+                    put(JSONObject()
+                        .put("id", song.id)
+                        .put("name", song.name)
+                        .put("artists", song.artists)
+                        .put("album", song.album)
+                        .put("albumId", song.albumId ?: -1L)
+                        .put("artistId", song.artistId ?: -1L)
+                        .put("artworkUrl", song.artworkUrl.orEmpty())
+                        .put("durationMs", song.durationMs))
+                }
+            })
+            .toString()
+    }.getOrNull()
+}
+
+private fun decodeHomeSongList(raw: String?): HomeSongList? {
+    if (raw.isNullOrBlank()) return null
+    return runCatching {
+        val value = JSONObject(raw)
+        val songs = value.optJSONArray("songs") ?: org.json.JSONArray()
+        HomeSongList(
+            title = value.optString("title"),
+            subtitle = value.optString("subtitle"),
+            artworkUrl = value.optString("artworkUrl").takeIf(String::isNotBlank),
+            songs = buildList {
+                for (index in 0 until songs.length()) {
+                    val song = songs.optJSONObject(index) ?: continue
+                    add(SearchSong(
+                        id = song.optLong("id"),
+                        name = song.optString("name"),
+                        artists = song.optString("artists"),
+                        album = song.optString("album"),
+                        albumId = song.optLong("albumId", -1L).takeIf { it > 0L },
+                        artistId = song.optLong("artistId", -1L).takeIf { it > 0L },
+                        artworkUrl = song.optString("artworkUrl").takeIf(String::isNotBlank),
+                        durationMs = song.optLong("durationMs"),
+                    ))
+                }
+            },
+        )
+    }.getOrNull()
+}
+
+private val HomeSongListSaver: Saver<HomeSongList?, String> = Saver(
+    save = { encodeHomeSongList(it) },
+    restore = { decodeHomeSongList(it) },
 )
 
 @OptIn(ExperimentalSharedTransitionApi::class)
