@@ -7,6 +7,9 @@ import com.lladlam.melox.core.music.provider.loadAllMusicPages
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.IndicationNodeFactory
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.Arrangement
@@ -63,6 +66,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
@@ -73,6 +77,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -186,6 +191,13 @@ private val EXPLORE_COLLAPSE_SCROLL = 120.dp
 // overlay 层真正收干净，再解锁并放开卡片。给少了会在切换瞬间看到 overlay 残影。
 private const val DiscoveryOverlaySettleMillis = 60L
 
+/** Home cards animate/press via navigation and haptics; disable the rectangular ripple. */
+private object HomeNoIndication : IndicationNodeFactory {
+    override fun create(interactionSource: InteractionSource): DelegatableNode = object : Modifier.Node() {}
+    override fun hashCode(): Int = 0
+    override fun equals(other: Any?): Boolean = other === this
+}
+
 private sealed interface DiscoveryTrack {
     val key: String
     val title: String
@@ -244,38 +256,70 @@ private sealed interface DiscoveryCollection {
 }
 
 
+/** Serializes only NetEase cards; provider collections are not persisted. */
+private fun encodeDiscoveryCollection(collection: DiscoveryCollection?): String? =
+    (collection as? DiscoveryCollection.Netease)?.playlist?.let { playlist ->
+        JSONObject()
+            .put("id", playlist.id)
+            .put("name", playlist.name)
+            .put("cover", playlist.coverUrl.orEmpty())
+            .put("count", playlist.trackCount)
+            .put("creator", playlist.creatorName)
+            .put("playCount", playlist.playCount)
+            .put("description", playlist.description.orEmpty())
+            .toString()
+    }
+
+private fun decodeDiscoveryCollection(raw: String?): DiscoveryCollection? {
+    if (raw.isNullOrBlank()) return null
+    return runCatching {
+        val value = JSONObject(raw)
+        DiscoveryCollection.Netease(
+            NeteasePlaylistSummary(
+                id = value.getLong("id"),
+                name = value.optString("name", "歌单"),
+                coverUrl = value.optString("cover").takeIf(String::isNotBlank),
+                trackCount = value.optInt("count"),
+                creatorName = value.optString("creator"),
+                playCount = value.optLong("playCount"),
+                description = value.optString("description").takeIf(String::isNotBlank),
+            ),
+        )
+    }.getOrNull()
+}
+
 /** Restores a NetEase playlist card after activity/process recreation. */
 private val DiscoveryCollectionSaver: Saver<DiscoveryCollection?, String> = Saver(
-    save = { collection ->
-        (collection as? DiscoveryCollection.Netease)?.playlist?.let { playlist ->
-            JSONObject()
-                .put("id", playlist.id)
-                .put("name", playlist.name)
-                .put("cover", playlist.coverUrl.orEmpty())
-                .put("count", playlist.trackCount)
-                .put("creator", playlist.creatorName)
-                .put("playCount", playlist.playCount)
-                .put("description", playlist.description.orEmpty())
-                .toString()
-        }
-    },
-    restore = { raw ->
-        runCatching {
-            val value = JSONObject(raw)
-            DiscoveryCollection.Netease(
-                NeteasePlaylistSummary(
-                    id = value.getLong("id"),
-                    name = value.optString("name", "歌单"),
-                    coverUrl = value.optString("cover").takeIf(String::isNotBlank),
-                    trackCount = value.optInt("count"),
-                    creatorName = value.optString("creator"),
-                    playCount = value.optLong("playCount"),
-                    description = value.optString("description").takeIf(String::isNotBlank),
-                ),
-            )
-        }.getOrNull()
-    },
+    save = { encodeDiscoveryCollection(it) },
+    restore = { decodeDiscoveryCollection(it) },
 )
+
+private const val LastCollectionKey = "home_last_collection"
+private const val LastCollectionAtKey = "home_last_collection_at"
+private const val LastCollectionTtlMs = 30L * 60L * 1000L
+
+private fun rememberLastCollection(context: android.content.Context, collection: DiscoveryCollection?) {
+    val prefs = context.applicationContext.getSharedPreferences("melox_app_settings", android.content.Context.MODE_PRIVATE)
+    val encoded = encodeDiscoveryCollection(collection)
+    if (encoded == null) {
+        prefs.edit().remove(LastCollectionKey).remove(LastCollectionAtKey).apply()
+    } else {
+        prefs.edit()
+            .putString(LastCollectionKey, encoded)
+            .putLong(LastCollectionAtKey, System.currentTimeMillis())
+            .apply()
+    }
+}
+
+private fun restoreLastCollection(context: android.content.Context): DiscoveryCollection? {
+    val prefs = context.applicationContext.getSharedPreferences("melox_app_settings", android.content.Context.MODE_PRIVATE)
+    val savedAt = prefs.getLong(LastCollectionAtKey, 0L)
+    if (savedAt <= 0L || System.currentTimeMillis() - savedAt > LastCollectionTtlMs) {
+        prefs.edit().remove(LastCollectionKey).remove(LastCollectionAtKey).apply()
+        return null
+    }
+    return decodeDiscoveryCollection(prefs.getString(LastCollectionKey, null))
+}
 
 private data class HomeAccountUi(
     val name: String,
@@ -334,6 +378,18 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
     LaunchedEffect(selectedCollection) {
         if (selectedCollection != null && overlayCollection == null) {
             overlayCollection = selectedCollection
+        }
+        rememberLastCollection(context, selectedCollection)
+    }
+    // A process killed while the playlist was open has no saved instance state
+    // when relaunched from the launcher. Reopen the last NetEase playlist for a
+    // short window; an explicit back clears it immediately.
+    LaunchedEffect(Unit) {
+        if (selectedCollection == null) {
+            restoreLastCollection(context)?.let {
+                selectedCollection = it
+                overlayCollection = it
+            }
         }
     }
     var songList by remember { mutableStateOf<HomeSongList?>(null) }
@@ -462,6 +518,7 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
             homeRecede.animateTo(target, meloXPageRedirectSpec())
         }
         Box(Modifier.fillMaxSize().meloXPageRecede { homeRecede.value }) {
+        CompositionLocalProvider(LocalIndication provides HomeNoIndication) {
         MeloXHomeLayout(
             source = MusicSource.Netease,
             account = account,
@@ -548,6 +605,7 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
             selectedCollectionKey = selectedCollection?.key,
             sharedTransitionScope = sharedScope,
         )
+        }
         } // Box: 被 hero 推入页盖住的旧页（退让 1/3 屏宽）
 
         // 首页留在底下。歌单页只是叠上去，打开时从右侧滑入，预见式返回滑开时露出首页。
@@ -998,10 +1056,13 @@ private fun HomeQuickActions(source: MusicSource, active: String?, perform: (Str
     // a swipe never rests on a half-visible tile.
     HorizontalPager(
         state = pagerState,
-        pageSpacing = 0.dp,
+        // Left edge follows the normal 20dp gutter; the right side keeps a
+        // 44dp peek of the next pair so the carousel reads as swipeable.
+        contentPadding = PaddingValues(start = 20.dp, end = 44.dp),
+        pageSpacing = 12.dp,
     ) { page ->
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             pages[page].forEach { action ->
