@@ -1542,4 +1542,27 @@
     <string name="autosync_dict_confirm">现在下载词典？需要约 24 MB 流量与 102 MB 存储空间。</string>
     <string name="autosync_dict_ready">日文模型与词典齐备</string>
     <string name="autosync_dict_license">词典内含 %1$s 修改版 BSD 许可证。</string>
+    <string name="settings_artwork_tap_lyrics">点击封面切换到歌词页</string>
+    <string name="settings_artwork_swipe_tracks">左右滑动封面切换歌曲</string>
+    <string name="settings_about_sponsor_amount_12_24">12.24 元</string>
+    <string name="settings_about_sponsor_amount_20">20 元</string>
+    <string name="settings_about_sponsor_amount_8_88">8.88 元</string>
+    <string name="settings_about_sponsor_zhongmo">中末</string>
+    <string name="youtube_login_validation_failed">YouTube Music 登录校验失败：%1$s</string>
+    <string name="qishui_login_title">登录汽水音乐</string>
+    <string name="qishui_account_title">汽水音乐账号</string>
+    <string name="qishui_qr_content_description">汽水音乐登录二维码</string>
+    <string name="qishui_qr_loading">正在获取二维码…</string>
+    <string name="qishui_qr_scan_instruction">请使用已登录的汽水音乐 App 扫码，并在手机上确认</string>
+    <string name="qishui_qr_scanned">已扫码，请在汽水音乐 App 中确认登录</string>
+    <string name="qishui_qr_confirmed">已确认，正在等待汽水音乐登录会话…</string>
+    <string name="qishui_qr_expired">二维码已失效或已取消，请刷新后重试</string>
+    <string name="qishui_qr_timeout">二维码已超时，请刷新后重试</string>
+    <string name="qishui_login_failed">汽水音乐登录失败，请重试</string>
+    <string name="qishui_profile_missing">汽水音乐没有返回账号资料</string>
+    <string name="qishui_qr_hint">请使用汽水音乐手机客户端扫码。抖音扫码会打开已失效的旧页面并提示「无法访问页面」；二维码过期时点下方刷新。</string>
+    <string name="qishui_refresh_qr">刷新二维码</string>
+    <string name="youtube_login_network_error">无法加载 Google 登录页（%1$d：%2$s）。请检查网络或 VPN 后重试。</string>
+    <string name="youtube_login_http_error">Google 登录页返回 HTTP %1$d，请稍后重试。</string>
+    <string name="youtube_login_retry">重试</string>
 </resources>

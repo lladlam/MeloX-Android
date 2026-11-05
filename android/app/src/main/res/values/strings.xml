@@ -1548,4 +1548,21 @@
     <string name="autosync_dict_confirm">Download the dictionary now? It needs about 24 MB of network and 102 MB of storage.</string>
     <string name="autosync_dict_ready">Japanese model + dictionary ready</string>
     <string name="autosync_dict_license">%1$s modified BSD licence is included with the dictionary and shown in Settings.</string>
+    <string name="youtube_login_validation_failed">YouTube Music sign-in check failed: %1$s</string>
+    <string name="qishui_login_title">Sign in to Qishui Music</string>
+    <string name="qishui_account_title">Qishui Music account</string>
+    <string name="qishui_qr_content_description">Qishui Music sign-in QR code</string>
+    <string name="qishui_qr_loading">Getting QR code…</string>
+    <string name="qishui_qr_scan_instruction">Scan with the signed-in Qishui Music app, then confirm on your phone</string>
+    <string name="qishui_qr_scanned">Scanned. Confirm sign-in in the Qishui Music app</string>
+    <string name="qishui_qr_confirmed">Confirmed. Waiting for the Qishui Music session…</string>
+    <string name="qishui_qr_expired">The QR code expired or was cancelled. Refresh and try again.</string>
+    <string name="qishui_qr_timeout">The QR code expired. Refresh and try again.</string>
+    <string name="qishui_login_failed">Qishui Music sign-in failed. Please try again.</string>
+    <string name="qishui_profile_missing">Qishui Music did not return the account profile</string>
+    <string name="qishui_qr_hint">Scan with the Qishui Music mobile app. Douyin opens the retired page and reports "Unable to access page"; refresh below if the code expires.</string>
+    <string name="qishui_refresh_qr">Refresh QR code</string>
+    <string name="youtube_login_network_error">Couldn\'t load Google sign-in (%1$d: %2$s). Check your network or VPN and retry.</string>
+    <string name="youtube_login_http_error">Google sign-in returned HTTP %1$d. Try again later.</string>
+    <string name="youtube_login_retry">Retry</string>
 </resources>

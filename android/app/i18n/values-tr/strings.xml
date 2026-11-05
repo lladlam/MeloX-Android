@@ -294,4 +294,23 @@
     <string name="library_remove_song">Çalma listesinden kaldır</string>
     <string name="library_remove_failed">Şarkı kaldırılamadı</string>
     <string name="library_add_failed">Kitaplığınıza eklenemedi</string>
+    <string name="settings_artwork_swipe_tracks">Şarkı değiştirmek için kapağı kaydırın</string>
+    <string name="settings_artwork_tap_lyrics">Şarkı sözlerine geçmek için kapağa dokunun</string>
+    <string name="youtube_login_validation_failed">YouTube Music oturum açma doğrulaması başarısız: %1$s</string>
+    <string name="qishui_login_title">Qishui Music\'e giriş yap</string>
+    <string name="qishui_account_title">Qishui Music hesabı</string>
+    <string name="qishui_qr_content_description">Qishui Music giriş QR kodu</string>
+    <string name="qishui_qr_loading">QR kodu alınıyor…</string>
+    <string name="qishui_qr_scan_instruction">Oturum açmış Qishui Music uygulamasıyla tarayın ve telefonunuzda onaylayın</string>
+    <string name="qishui_qr_scanned">Tarandı. Girişi Qishui Music uygulamasında onaylayın</string>
+    <string name="qishui_qr_confirmed">Onaylandı. Qishui Music oturumu bekleniyor…</string>
+    <string name="qishui_qr_expired">QR kodunun süresi doldu veya iptal edildi. Yenileyip tekrar deneyin.</string>
+    <string name="qishui_qr_timeout">QR kodunun süresi doldu. Yenileyip tekrar deneyin.</string>
+    <string name="qishui_login_failed">Qishui Music oturum açma başarısız. Lütfen tekrar deneyin.</string>
+    <string name="qishui_profile_missing">Qishui Music hesap profilini döndürmedi</string>
+    <string name="qishui_qr_hint">Qishui Music mobil uygulamasıyla tarayın. Douyin kullanımdan kaldırılmış sayfayı açar ve "Sayfaya erişilemiyor" der; kodun süresi dolarsa aşağıdan yenileyin.</string>
+    <string name="qishui_refresh_qr">QR kodunu yenile</string>
+    <string name="youtube_login_network_error">Google oturum açma sayfası yüklenemedi (%1$d: %2$s). Ağınızı veya VPN\'inizi kontrol edip tekrar deneyin.</string>
+    <string name="youtube_login_http_error">Google oturum açma sayfası HTTP %1$d döndürdü. Daha sonra tekrar deneyin.</string>
+    <string name="youtube_login_retry">Tekrar dene</string>
 </resources>

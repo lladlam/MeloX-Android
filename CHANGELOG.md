@@ -4,6 +4,8 @@
 
 ## 未发布
 
+- 修复 YouTube Music 登录白屏：WebView 在加载过程中被 Compose 释放，销毁仍挂载的实例会带崩共享渲染进程；改为在 `onRelease` 中销毁，并补充网络/VPN 错误提示与重试按钮。
+- 补齐 i18n：简中、繁中、日文现在覆盖全部 1560 个资源 key（占位符已校验），土耳其语补充本次新增条目；汽水音乐扫码与 YouTube 登录文案改为资源字符串。
 - 修复汽水音乐扫码登录：上游 `get_qrcode` 返回的二维码仍指向已 404 的 `ucenter_web/app/sdk-next`，抖音扫码立即提示「无法访问页面」。现在用 passport token 本地生成 `light/invoke/scan_login` 二维码，并提示使用汽水音乐手机客户端扫码。
 - LX 音源运行时逐项对照官方 `lx-music-mobile` v1.9.1 与 `lx-music-source` 审计修复：按官方 `toOldMusicInfo` 扁平契约补齐脚本可见的顶层 musicInfo 字段（tx 的 `strMediaMid`/`albumMid`/数值 `songId`、kg 的 `hash`/`albumId`、`img`、`types`/`_types`、`typeUrl`，修复官方 QQ 源必然失败的问题）；`lx.request` 响应头改为小写键与逗号拼接字符串，错误参数包装为 `Error`；响应体对齐 `JSON.parse` 尽力解析且不再覆盖真实顶层键；`send`/`on` 对齐官方一次性守卫与事件校验，`updateAlert` 记录进日志；AES 未知模式改为抛错；`inited` 声明按宿主白名单过滤；脚本 console 输出脱敏后进入导出日志；补 `Function.prototype.toString` 伪装与测试。
 

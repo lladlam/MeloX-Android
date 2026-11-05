@@ -27,6 +27,8 @@ import com.lladlam.melox.ui.glass.MeloXGlassButtonStyle
 import com.lladlam.melox.ui.glass.MeloXPinnedListPage
 import com.lladlam.melox.ui.legal.MeloXLegalLinks
 import com.lladlam.melox.ui.MeloXBottomContentClearance
+import androidx.compose.ui.res.stringResource
+import com.lladlam.melox.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -40,7 +42,8 @@ fun QishuiLoginScreen(onDismiss: () -> Unit, onLoggedIn: () -> Unit) {
     var refresh by remember { mutableIntStateOf(0) }
     var resumed by remember { mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
     var qr by remember { mutableStateOf<QishuiApiClient.Qr?>(null) }
-    var status by remember { mutableStateOf("正在获取二维码…") }
+    val loadingText = stringResource(R.string.qishui_qr_loading)
+    var status by remember { mutableStateOf(loadingText) }
     var error by remember { mutableStateOf<String?>(null) }
     val latestOnLoggedIn by rememberUpdatedState(onLoggedIn)
     DisposableEffect(lifecycle) {
@@ -51,11 +54,11 @@ fun QishuiLoginScreen(onDismiss: () -> Unit, onLoggedIn: () -> Unit) {
     BackHandler(onBack = onDismiss)
     LaunchedEffect(refresh, resumed) {
         if (!resumed) return@LaunchedEffect
-        qr = null; error = null; status = "正在获取二维码…"
+        qr = null; error = null; status = loadingText
         try {
             val created = api.createQr()
             qr = created
-            status = "请使用已登录的汽水音乐 App 扫码，并在手机上确认"
+            status = context.getString(R.string.qishui_qr_scan_instruction)
             repeat(100) {
                 delay(2_000)
                 val state = api.pollQr(created.token)
@@ -64,7 +67,7 @@ fun QishuiLoginScreen(onDismiss: () -> Unit, onLoggedIn: () -> Unit) {
                         sessionId = state.sessionId,
                         cookie = state.cookie,
                     )
-                    val profile = QishuiApiClient({ temporary }).profile() ?: throw IllegalStateException("汽水音乐没有返回账号资料")
+                    val profile = QishuiApiClient({ temporary }).profile() ?: throw IllegalStateException(context.getString(R.string.qishui_profile_missing))
                     coroutineContext.ensureActive()
                     QishuiSessionStore.save(context, state.sessionId, state.cookie, profile.id, profile.displayName)
                     latestOnLoggedIn()
@@ -72,18 +75,18 @@ fun QishuiLoginScreen(onDismiss: () -> Unit, onLoggedIn: () -> Unit) {
                 }
                 when (state.status.lowercase()) {
                     "expired", "cancelled", "canceled", "refused" -> {
-                        status = "二维码已失效或已取消，请刷新后重试"
+                        status = context.getString(R.string.qishui_qr_expired)
                         return@LaunchedEffect
                     }
-                    "scanned", "scaned" -> status = "已扫码，请在汽水音乐 App 中确认登录"
-                    "confirmed" -> status = "已确认，正在等待汽水音乐登录会话…"
+                    "scanned", "scaned" -> status = context.getString(R.string.qishui_qr_scanned)
+                    "confirmed" -> status = context.getString(R.string.qishui_qr_confirmed)
                 }
             }
-            status = "二维码已超时，请刷新后重试"
+            status = context.getString(R.string.qishui_qr_timeout)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            error = failure.message ?: "汽水音乐登录失败，请重试"
+            error = failure.message ?: context.getString(R.string.qishui_login_failed)
         }
     }
     val bitmap = remember(qr) { qr?.let { value ->
@@ -101,17 +104,17 @@ fun QishuiLoginScreen(onDismiss: () -> Unit, onLoggedIn: () -> Unit) {
             }
         }.getOrNull()
     } }
-    MeloXPinnedListPage(title = "登录汽水音乐", onNavigateBack = onDismiss, bottomPadding = MeloXBottomContentClearance) {
+    MeloXPinnedListPage(title = stringResource(R.string.qishui_login_title), onNavigateBack = onDismiss, bottomPadding = MeloXBottomContentClearance) {
         item {
             Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                Text("汽水音乐账号", style = MaterialTheme.typography.titleLarge)
-                if (bitmap != null) Image(bitmap.asImageBitmap(), "汽水音乐登录二维码", Modifier.size(240.dp))
+                Text(stringResource(R.string.qishui_account_title), style = MaterialTheme.typography.titleLarge)
+                if (bitmap != null) Image(bitmap.asImageBitmap(), stringResource(R.string.qishui_qr_content_description), Modifier.size(240.dp))
                 else if (error == null && qr == null) CircularProgressIndicator()
                 Text(error ?: status, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .72f))
-                Text("请使用汽水音乐手机客户端扫码。抖音扫码会打开已失效的旧页面并提示\"无法访问页面\"；二维码过期时点下方刷新。",
+                Text(stringResource(R.string.qishui_qr_hint),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .52f))
-                MeloXGlassButton(onClick = { refresh++ }, style = MeloXGlassButtonStyle.BorderedProminent) { Text("刷新二维码") }
+                MeloXGlassButton(onClick = { refresh++ }, style = MeloXGlassButtonStyle.BorderedProminent) { Text(stringResource(R.string.qishui_refresh_qr)) }
                 MeloXLegalLinks()
             }
         }

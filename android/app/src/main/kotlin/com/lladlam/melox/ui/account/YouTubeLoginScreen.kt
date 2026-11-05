@@ -3,23 +3,21 @@ package com.lladlam.melox.ui.account
 import android.annotation.SuppressLint
 import android.webkit.CookieManager
 import android.webkit.WebView
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebViewClient
-import androidx.compose.runtime.DisposableEffect
+import com.lladlam.melox.BuildConfig
+import com.lladlam.melox.R
+import com.lladlam.melox.ui.glass.MeloXGlassButton
+import com.lladlam.melox.ui.glass.MeloXGlassButtonStyle
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.ui.unit.dp
-import com.lladlam.melox.core.provider.youtubemusic.hasYouTubeAuthCookie
-import com.lladlam.melox.core.provider.youtubemusic.isYouTubeMusicPage
-import com.lladlam.melox.core.provider.youtubemusic.mergeYouTubeCookies
-import com.lladlam.melox.core.provider.youtubemusic.normalizeYouTubeContextToken
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.CancellationException
-import kotlin.coroutines.resume
-import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,13 +26,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
+import com.lladlam.melox.core.provider.youtubemusic.hasYouTubeAuthCookie
+import com.lladlam.melox.core.provider.youtubemusic.isYouTubeMusicPage
+import com.lladlam.melox.core.provider.youtubemusic.mergeYouTubeCookies
+import com.lladlam.melox.core.provider.youtubemusic.normalizeYouTubeContextToken
 import com.lladlam.melox.core.provider.youtubemusic.YouTubeSession
 import com.lladlam.melox.core.provider.youtubemusic.YouTubeSessionStore
 import com.metrolist.innertube.YouTube
+import kotlin.coroutines.resume
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONArray
 
 /**
@@ -66,7 +73,7 @@ fun YouTubeLoginScreen(
     fun complete(abandonIfMissing: Boolean) {
         if (completing) return
         val view = webView
-        if (view == null || !isYouTubeMusicPage(view.url)) {
+        if (view == null || !isYouTubeMusicPage(runCatching { view.url }.getOrNull())) {
             if (abandonIfMissing) onDismiss()
             return
         }
@@ -80,7 +87,7 @@ fun YouTubeLoginScreen(
                     if (continuation.isActive) continuation.resume(decodeJsPair(value))
                 }
             }
-            if (!isYouTubeMusicPage(view.url)) return@launch
+            if (!isYouTubeMusicPage(runCatching { view.url }.getOrNull())) return@launch
             val cookie = youtubeSessionCookie()
             if (!hasYouTubeAuthCookie(cookie)) {
                 if (abandonIfMissing) onDismiss()
@@ -123,7 +130,7 @@ fun YouTubeLoginScreen(
           } catch (error: CancellationException) {
             throw error
           } catch (error: Exception) {
-            loginError = "YouTube Music 登录校验失败：${error.message.orEmpty().take(500)}"
+            loginError = context.getString(R.string.youtube_login_validation_failed, error.message.orEmpty().take(500))
             YouTubeSessionStore.apply(context, force = true)
           } finally {
             completing = false
@@ -134,7 +141,8 @@ fun YouTubeLoginScreen(
     LaunchedEffect(webView) {
         val view = webView ?: return@LaunchedEffect
         while (isActive) {
-            if (!completing && loginError == null && isYouTubeMusicPage(view.url) && hasYouTubeAuthCookie(youtubeSessionCookie())) {
+            val currentUrl = runCatching { view.url }.getOrNull()
+            if (!completing && loginError == null && isYouTubeMusicPage(currentUrl) && hasYouTubeAuthCookie(youtubeSessionCookie())) {
                 complete(abandonIfMissing = false)
             }
             delay(600)
@@ -145,28 +153,67 @@ fun YouTubeLoginScreen(
         val view = webView
         // Google's flow is several pages deep, so back should walk it rather than
         // abandoning a sign-in halfway through.
-        if (view?.canGoBack() == true) view.goBack() else complete(abandonIfMissing = true)
+        val canGoBack = runCatching { view?.canGoBack() == true }.getOrDefault(false)
+        if (canGoBack) view?.goBack() else complete(abandonIfMissing = true)
     }
 
-    DisposableEffect(webView) {
-        val view = webView
-        onDispose { view?.stopLoading(); view?.destroy() }
-    }
     Column(Modifier.fillMaxSize()) {
         loginError?.let { message ->
             Text(message, Modifier.fillMaxWidth().padding(16.dp), color = MaterialTheme.colorScheme.error)
+            MeloXGlassButton(
+                onClick = { webView?.reload() },
+                modifier = Modifier.padding(horizontal = 16.dp),
+                style = MeloXGlassButtonStyle.BorderedProminent,
+            ) {
+                Text(stringResource(R.string.youtube_login_retry))
+            }
         }
         AndroidView(
             modifier = Modifier.fillMaxWidth().weight(1f),
             factory = { viewContext ->
+                if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
                 WebView(viewContext).apply {
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
+                    settings.loadsImagesAutomatically = true
+                    settings.useWideViewPort = true
+                    settings.loadWithOverviewMode = true
                     webViewClient = object : WebViewClient() {
+                        override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+                            loginError = null
+                        }
+
                         override fun onPageFinished(view: WebView, url: String?) {
                             if (isYouTubeMusicPage(url)) {
                                 loginError = null
                                 complete(abandonIfMissing = false)
+                            }
+                        }
+
+                        override fun onReceivedError(
+                            view: WebView,
+                            request: WebResourceRequest,
+                            error: WebResourceError,
+                        ) {
+                            if (request.isForMainFrame) {
+                                loginError = view.context.getString(
+                                    R.string.youtube_login_network_error,
+                                    error.errorCode,
+                                    error.description?.toString().orEmpty(),
+                                )
+                            }
+                        }
+
+                        override fun onReceivedHttpError(
+                            view: WebView,
+                            request: WebResourceRequest,
+                            errorResponse: WebResourceResponse,
+                        ) {
+                            if (request.isForMainFrame && errorResponse.statusCode >= 400) {
+                                loginError = view.context.getString(
+                                    R.string.youtube_login_http_error,
+                                    errorResponse.statusCode,
+                                )
                             }
                         }
                     }
@@ -176,6 +223,16 @@ fun YouTubeLoginScreen(
                     webView = this
                     loadUrl(SIGN_IN_URL)
                 }
+            },
+            // Destroy exactly when Compose releases this view. The previous
+            // DisposableEffect(webView) could destroy a still-attached WebView while
+            // the Google page was loading, taking the shared renderer process down
+            // with it (blank white page).
+            onRelease = { released ->
+                if (webView === released) webView = null
+                released.stopLoading()
+                released.loadUrl("about:blank")
+                released.destroy()
             },
         )
     }
@@ -209,4 +266,4 @@ private val COOKIE_URLS = listOf(
 private const val CONFIG_SCRIPT =
     "(function(){var c=window.yt&&window.yt.config_;if(!c)return '';return (c.VISITOR_DATA||'')+'\\u001f'+(c.DATASYNC_ID||'')+'\\u001f'+(c.SESSION_INDEX||'0');})()"
 private const val SIGN_IN_URL =
-    "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fmusic.youtube.com"
+    "https://accounts.google.com/ServiceLogin?ltmpl=music&service=youtube&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F"
