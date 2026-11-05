@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- RemoteViews for the rear panel. Kept to RemoteViews-safe views only. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="10dp">
+
+    <!--
+      Fully qualify framework widgets so AppCompat's host-side LayoutInflater cannot
+      replace them with AppCompatImageView/AppCompatImageButton. RemoteViews actions
+      are only permitted on the framework implementations.
+    -->
+    <android.widget.ImageView
+        android:id="@+id/art"
+        android:layout_width="52dp"
+        android:layout_height="52dp"
+        android:scaleType="centerCrop"
+        android:src="@drawable/ic_launcher" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:paddingStart="10dp"
+        android:paddingEnd="6dp">
+
+        <android.widget.TextView
+            android:id="@+id/title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:text="YTRear" />
+
+        <android.widget.TextView
+            android:id="@+id/artist"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textColor="#B3FFFFFF"
+            android:textSize="12sp"
+            android:text="—" />
+    </LinearLayout>
+
+    <android.widget.ImageButton
+        android:id="@+id/prev"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="@android:color/transparent"
+        android:scaleType="fitCenter"
+        android:padding="8dp"
+        android:src="@drawable/ic_prev"
+        android:contentDescription="Previous" />
+
+    <android.widget.ImageButton
+        android:id="@+id/playpause"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="@android:color/transparent"
+        android:scaleType="fitCenter"
+        android:padding="8dp"
+        android:src="@drawable/ic_pause"
+        android:contentDescription="Play or pause" />
+
+    <android.widget.ImageButton
+        android:id="@+id/next"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="@android:color/transparent"
+        android:scaleType="fitCenter"
+        android:padding="8dp"
+        android:src="@drawable/ic_next"
+        android:contentDescription="Next" />
+</LinearLayout>

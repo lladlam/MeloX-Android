@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand">#1558C2</color>
+    <color name="on_brand">#FFFFFF</color>
+    <color name="state_ok">#1E8E3E</color>
+    <color name="state_wait">#B26A00</color>
+    <color name="state_bad">#C5221F</color>
+</resources>

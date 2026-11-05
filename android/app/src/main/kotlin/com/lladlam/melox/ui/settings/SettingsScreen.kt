@@ -199,6 +199,7 @@ enum class SettingsRoute(private val fallbackTitle: String, private val titleRes
     SystemPlayback("系统歌词显示", R.string.settings_route_system_playback),
     SkylineLyrics("全屏天际歌词", R.string.settings_route_skyline),
     FloatingLyrics("悬浮窗歌词", R.string.settings_route_floating),
+    RearDisplay("背屏控制"),
     Plugins("音乐源插件"),
     ContentFeatures("功能模块", R.string.settings_route_features),
     Blocklist("屏蔽管理"),
@@ -249,6 +250,7 @@ private val SettingsSections = listOf(
         SettingsItem(SettingsRoute.TabLayout, "首页、标签栏与音乐库页面", "▥", "首页 标签栏 排序 推荐 歌单 历史"),
         SettingsItem(SettingsRoute.SystemPlayback, "通知、锁屏和系统媒体信息", "▣", "控制中心 通知 锁屏 Media3"),
         SettingsItem(SettingsRoute.FloatingLyrics, "Android 悬浮歌词能力与权限", "▤", "画中画 悬浮窗 其他应用"),
+        SettingsItem(SettingsRoute.RearDisplay, "下载实验性小米背屏控制应用", "▣", "小米 背屏 副屏 HyperOS Rear 下载"),
     )),
     SettingsSection("关于", listOf(
         SettingsItem(SettingsRoute.RemoteConfig, "签名配置状态、平台熔断声明与本地缓存", "⌁", "远程 配置 云控 签名 熔断 兼容 GitHub"),
@@ -508,6 +510,7 @@ internal fun SettingsDetailScreen(route: SettingsRoute, source: MusicSource, ses
                     SettingsRoute.General -> GeneralSettings(context)
                     SettingsRoute.RemoteConfig -> RemoteConfigSettings()
                     SettingsRoute.About -> AboutSettings(context)
+                    SettingsRoute.RearDisplay -> RearDisplaySettings(context)
                     SettingsRoute.Plugins -> PluginSettings()
                     SettingsRoute.Legal -> LegalSettings(context)
                     SettingsRoute.Privacy -> PrivacySettings(context)
@@ -3736,6 +3739,8 @@ private fun AboutSettings(context: android.content.Context) {
                     "jayfunc/BetterLyrics：逐字歌词渲染、光效与动效参考\n" +
                     "WXRIW/Lyricify-Lyrics-Helper：QQ 匿名搜索与歌词协议、纯音乐占位识别、网易云 YRC、Lyricify Lines / Syllable 格式参考（Apache-2.0）\n" +
                     "https://github.com/WXRIW/Lyricify-Lyrics-Helper\n" +
+                    "megadonkatsu/YTRear：实验性独立背屏应用 MeloX Rear 的源码来源，上游未声明许可证\n" +
+                    "https://github.com/megadonkatsu/YTRear\n" +
                     "neteasecloudmusicapienhanced/api-enhanced：听歌识曲与音频指纹运行时\n" +
                     "DanteAlighieri13210914/pv-tool：文字 PV 原始实现（Non-Commercial License）\n" +
                      "mjhydri/BeatNet：自动混音节拍/重拍/速度分析（CC BY 4.0）\n" +
@@ -3913,6 +3918,40 @@ private fun AboutSettings(context: android.content.Context) {
             }
         }
     }
+}
+
+@Composable
+private fun RearDisplaySettings(context: android.content.Context) {
+    var error by remember { mutableStateOf<String?>(null) }
+    SettingsGlassGroup {
+        Column(Modifier.padding(16.dp)) {
+            Text("MeloX Rear · 实验版", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                "独立背屏控制应用，基于 YTRear。安装后需授予通知读取权限并选择 MeloX；" +
+                    "它会暂缓原播放器媒体通知，改由代理通知显示。\n\n" +
+                    "此应用使用 com.luna.music 包名，不能与汽水音乐同时安装。" +
+                    "HyperOS 4 与 MeloX 尚未真机验证；当前 APK 为 Debug 签名，后续版本可能无法覆盖安装。",
+                modifier = Modifier.padding(top = 10.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f),
+                fontSize = 13.sp,
+                lineHeight = 20.sp,
+            )
+        }
+    }
+    Spacer(Modifier.height(14.dp))
+    fun open(url: String) {
+        runCatching {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }.onFailure { error = it.message ?: "无法打开下载链接" }
+    }
+    SettingsActionButton("下载 MeloX Rear 0.1.0 APK") {
+        open("https://github.com/lladlam/YTRear/releases/download/melox-rear-v0.1.0/MeloX-Rear-0.1.0-debug.apk")
+    }
+    Spacer(Modifier.height(10.dp))
+    SettingsActionButton("查看背屏应用发布页") {
+        open("https://github.com/lladlam/YTRear/releases")
+    }
+    error?.let { Text(it, modifier = Modifier.padding(top = 10.dp), color = MaterialTheme.colorScheme.error) }
 }
 
 @Composable

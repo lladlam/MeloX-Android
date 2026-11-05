@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MeloX Rear Companion</string>
+    <string name="tagline">Rear-screen controls for your music player</string>
+
+    <!-- Primary actions -->
+    <string name="choose_player">Choose player</string>
+    <string name="selected_player">Player: %1$s</string>
+    <string name="choose_player_title">Which player do you want to proxy?</string>
+    <string name="player_picker_detail">Choose MeloX or another installed app with a standard Android media session. This experimental companion uses the package com.luna.music and cannot coexist with the genuine Qishui Music app.</string>
+    <string name="search_apps">Search apps or package names</string>
+    <string name="keep_current_player">Keep current</string>
+    <string name="not_now">Not now</string>
+    <string name="enable_notification_access">Enable notification access</string>
+    <string name="start_rear_controls">Start rear controls</string>
+    <string name="refresh_rear_controls">Refresh rear controls</string>
+    <string name="daily_hint">Choose a player, then open it and press play — the rear card appears on its own.</string>
+
+    <!-- Status card -->
+    <string name="state_player_title">Choose a player</string>
+    <string name="state_player_detail">Select the app whose playback you want on the rear screen.</string>
+    <string name="state_setup_title">Setup needed</string>
+    <string name="state_setup_detail">MeloX Rear Companion needs notification access to read the selected player's media session.</string>
+    <string name="state_start_title">Almost ready</string>
+    <string name="state_start_detail">Tap “Start rear controls” once to publish the rear-screen card.</string>
+    <string name="state_waiting_title">Waiting for music</string>
+    <string name="state_waiting_detail">Open the selected player and press play. The rear card appears within a second or two.</string>
+    <string name="state_linking_title">Connecting</string>
+    <string name="state_linking_detail">Handing playback to the rear screen…</string>
+    <string name="state_ready_title">Rear controls active</string>
+    <string name="state_ready_detail">Proxy connected. Rear-screen controls depend on the device and firmware and require physical testing.</string>
+    <string name="unknown_track">Unknown track</string>
+    <string name="unknown_artist">Unknown artist</string>
+    <string name="album_art">Album art</string>
+
+    <!-- Diagnostics -->
+    <string name="show_advanced">Advanced</string>
+    <string name="hide_advanced">Hide advanced</string>
+    <string name="advanced_note">Developer probes from the rear-display research. Not needed for daily use.</string>
+    <string name="action_refresh">Refresh</string>
+    <string name="action_overlay_permission">Overlay permission</string>
+    <string name="action_show_activity">Show (activity)</string>
+    <string name="action_show_service">Show (service)</string>
+    <string name="action_hide">Hide rear overlay</string>
+    <string name="label_status">Status</string>
+    <string name="label_displays">Displays</string>
+    <string name="label_log">Log</string>
+</resources>

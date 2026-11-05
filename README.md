@@ -308,6 +308,7 @@ The glass effect is still experimental.
 
 ### API and UI references
 
+- [megadonkatsu/YTRear](https://github.com/megadonkatsu/YTRear) — source for the experimental optional [MeloX Rear fork](https://github.com/lladlam/YTRear); the upstream repository does not specify a license.
 - [WXRIW/Lyricify-Lyrics-Helper](https://github.com/WXRIW/Lyricify-Lyrics-Helper) — QQ Music anonymous search and lyric protocols, instrumental-placeholder detection, NetEase YRC, Lyricify Lines and Lyricify Syllable format references (Apache-2.0). See [LYRICS.md](docs/LYRICS.md).
 - [guowenye/qishui-api](https://github.com/guowenye/qishui-api) — Qishui Music native API, QR sign-in, catalog, lyric, and playback-field reference. MIT; scope and validation: [QISHUI.md](docs/QISHUI.md).
 - [NEORUAA/MeiloX](https://github.com/NEORUAA/MeiloX) — Mei-based Apple Music style NetEase client used as a UI reference.
