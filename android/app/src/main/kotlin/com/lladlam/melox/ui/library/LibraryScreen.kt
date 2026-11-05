@@ -2477,10 +2477,21 @@ private fun MeloXPlaylistDetailScreen(
                 }
             }.onFailure { errorMessage = it.message ?: "歌单加载失败" }
         } else {
+            // Render the summary + first 100 tracks as soon as playlist/detail
+            // returns, then fill the remaining track ids in parallel. Large
+            // playlists used to keep the spinner until every 100-id batch
+            // finished serially.
+            val fast = runCatching {
+                withContext(Dispatchers.IO) { client.playlistDetailFastBlocking(initialPlaylist.id) }
+            }.getOrNull()
+            if (fast != null) {
+                detail = fast
+                loading = false
+            }
             runCatching { client.playlistDetail(initialPlaylist.id) }
-                .onSuccess {
-                    detail = it
-                    cache.savePlaylistDetail(initialPlaylist.id, it)
+                .onSuccess { full ->
+                    detail = full
+                    cache.savePlaylistDetail(initialPlaylist.id, full)
                 }
                 .onFailure { errorMessage = it.message ?: "歌单加载失败" }
         }

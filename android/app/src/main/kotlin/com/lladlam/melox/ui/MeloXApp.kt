@@ -274,7 +274,7 @@ fun MeloXApp(
             )
         }.getOrDefault(AppTab.Home)
     }
-    var selectedTab by remember { mutableStateOf(initialTab) }
+    var selectedTab by rememberSaveable { mutableStateOf(initialTab) }
     var messagesVisible by remember { mutableStateOf(false) }
     BackHandler(enabled = messagesVisible) { messagesVisible = false }
     var recognitionVisible by remember { mutableStateOf(false) }

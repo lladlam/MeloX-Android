@@ -69,6 +69,8 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,6 +78,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.zIndex
+import org.json.JSONObject
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.graphics.Color
@@ -240,6 +243,40 @@ private sealed interface DiscoveryCollection {
     }
 }
 
+
+/** Restores a NetEase playlist card after activity/process recreation. */
+private val DiscoveryCollectionSaver: Saver<DiscoveryCollection?, String> = Saver(
+    save = { collection ->
+        (collection as? DiscoveryCollection.Netease)?.playlist?.let { playlist ->
+            JSONObject()
+                .put("id", playlist.id)
+                .put("name", playlist.name)
+                .put("cover", playlist.coverUrl.orEmpty())
+                .put("count", playlist.trackCount)
+                .put("creator", playlist.creatorName)
+                .put("playCount", playlist.playCount)
+                .put("description", playlist.description.orEmpty())
+                .toString()
+        }
+    },
+    restore = { raw ->
+        runCatching {
+            val value = JSONObject(raw)
+            DiscoveryCollection.Netease(
+                NeteasePlaylistSummary(
+                    id = value.getLong("id"),
+                    name = value.optString("name", "歌单"),
+                    coverUrl = value.optString("cover").takeIf(String::isNotBlank),
+                    trackCount = value.optInt("count"),
+                    creatorName = value.optString("creator"),
+                    playCount = value.optLong("playCount"),
+                    description = value.optString("description").takeIf(String::isNotBlank),
+                ),
+            )
+        }.getOrNull()
+    },
+)
+
 private data class HomeAccountUi(
     val name: String,
     val avatarUrl: String?,
@@ -288,10 +325,17 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
     var content by remember { mutableStateOf<NeteaseHomeContent?>(null) }
     var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var selectedCollection by remember { mutableStateOf<DiscoveryCollection?>(null) }
+    var selectedCollection by rememberSaveable(stateSaver = DiscoveryCollectionSaver) { mutableStateOf<DiscoveryCollection?>(null) }
     // 内容与可见性分开持有：返回时只把 selectedCollection 置空（让列表卡片重新进入过渡），
     // overlayCollection 保留，退出过渡期间详情仍被组合 → 封面才能一镜到底地 morph 回卡片。
     var overlayCollection by remember { mutableStateOf<DiscoveryCollection?>(null) }
+    // Activity/process recreation restores selectedCollection; the transient
+    // overlay content must be repopulated or the detail would render nothing.
+    LaunchedEffect(selectedCollection) {
+        if (selectedCollection != null && overlayCollection == null) {
+            overlayCollection = selectedCollection
+        }
+    }
     var songList by remember { mutableStateOf<HomeSongList?>(null) }
     // 「每日推荐 / 热歌榜 / 私人雷达」歌单页的内容持有物。与 selectedCollection 同理：
     // 可见性看 songList（返回时置空，让底下首页复位），内容另存 overlaySongList、返回时不清。

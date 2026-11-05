@@ -9,6 +9,9 @@ import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
@@ -42,8 +45,23 @@ class NeteaseLibraryClient(
         NeteaseLibrarySnapshot(playlists = playlists, likedSongs = liked, recentSongs = recent, likedPlaylistId = likedPlaylistId)
     }
 
-    suspend fun playlistDetail(playlistId: Long): NeteasePlaylistDetail =
-        withContext(Dispatchers.IO) { playlistDetailBlocking(playlistId) }
+    suspend fun playlistDetail(playlistId: Long): NeteasePlaylistDetail = withContext(Dispatchers.IO) {
+        val base = fetchPlaylistBase(playlistId)
+        val missing = base.desiredIds.filterNot(base.byId::containsKey)
+        val extra = if (missing.isEmpty()) emptyList() else coroutineScope {
+            // A 1000-track playlist otherwise needs ten serial song-detail calls;
+            // fetching the 100-id chunks in parallel cuts first-open latency.
+            missing.chunked(100)
+                .map { chunk -> async(Dispatchers.IO) { songDetailsBlocking(chunk) } }
+                .awaitAll()
+                .flatten()
+        }
+        assemblePlaylistDetail(base, extra)
+    }
+
+    /** Summary plus the tracks already embedded in playlist/detail; no extra requests. */
+    fun playlistDetailFastBlocking(playlistId: Long): NeteasePlaylistDetail =
+        assemblePlaylistDetail(fetchPlaylistBase(playlistId), emptyList())
 
     /**
      * Server-side playlist shuffle ("云端随机"), mirroring Mei's
@@ -331,12 +349,25 @@ class NeteaseLibraryClient(
     }
 
     fun playlistDetailBlocking(playlistId: Long): NeteasePlaylistDetail {
+        val base = fetchPlaylistBase(playlistId)
+        val missing = base.desiredIds.filterNot(base.byId::containsKey)
+        val extra = missing.chunked(100).flatMap(::songDetailsBlocking)
+        return assemblePlaylistDetail(base, extra)
+    }
+
+    private data class PlaylistDetailBase(
+        val summary: NeteasePlaylistSummary,
+        val desiredIds: List<Long>,
+        val byId: Map<Long, SearchSong>,
+    )
+
+    private fun fetchPlaylistBase(playlistId: Long): PlaylistDetailBase {
         val authenticated = NeteaseSessionStore.containsMusicU(cookieProvider())
         val response = eapi(
             uri = "/api/v6/playlist/detail",
             data = JSONObject()
                 .put("id", playlistId)
-                .put("n", 100)
+                .put("n", 1000)
                 .put("s", 8),
             authenticated = authenticated,
         )
@@ -358,18 +389,21 @@ class NeteaseLibraryClient(
         for (index in 0 until initialTracks.length()) {
             parseSong(initialTracks.optJSONObject(index))?.let { byId[it.id] = it }
         }
-        val missing = desiredIds.filterNot(byId::containsKey)
-        if (missing.isNotEmpty()) {
-            missing.chunked(100).forEach { page ->
-                songDetailsBlocking(page).forEach { byId[it.id] = it }
-            }
-        }
-        val songs = if (desiredIds.isNotEmpty()) {
-            desiredIds.mapNotNull(byId::get)
+        return PlaylistDetailBase(summary, desiredIds, byId)
+    }
+
+    private fun assemblePlaylistDetail(
+        base: PlaylistDetailBase,
+        extra: List<SearchSong>,
+    ): NeteasePlaylistDetail {
+        val byId = LinkedHashMap(base.byId)
+        extra.forEach { byId[it.id] = it }
+        val songs = if (base.desiredIds.isNotEmpty()) {
+            base.desiredIds.mapNotNull(byId::get)
         } else {
             byId.values.toList()
         }
-        return NeteasePlaylistDetail(summary, songs)
+        return NeteasePlaylistDetail(base.summary, songs)
     }
 
     fun songDetailsBlocking(ids: List<Long>): List<SearchSong> {
