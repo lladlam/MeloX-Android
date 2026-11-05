@@ -100,7 +100,6 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTask"
             android:alwaysRetainTaskState="true"
             android:resizeableActivity="true"
             android:supportsPictureInPicture="true"
