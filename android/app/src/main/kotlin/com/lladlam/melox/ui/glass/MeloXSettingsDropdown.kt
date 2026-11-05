@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.lerp as lerpDp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
@@ -186,9 +187,13 @@ private fun <T> MeloXPopupSelector(
                 Text(value, style = MeloXTypography.body.inheritAmbientFamily(), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                 MeloXSymbolIcon(
                     MeloXSymbol.ChevronUpDown,
-                    Modifier.size(15.dp).padding(start = 7.dp),
+                    Modifier.padding(start = 9.dp),
                     MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-            )
+                    // SF glyphs render at iconSize; a fixed Modifier.size() only
+                    // constrains the layout box and lets the 24sp ink overflow
+                    // into the value text.
+                    iconSize = 13.sp,
+                )
         }
 
         if (popupAlive && anchorSize != IntSize.Zero) {
