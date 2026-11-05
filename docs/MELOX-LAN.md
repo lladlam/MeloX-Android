@@ -67,7 +67,7 @@ Announce (unicast back to the sender's source address/port):
   "name": "Pixel 9 · MeloX",
   "platform": "android",
   "model": "Pixel 9",
-  "appVersion": "0.7.1",
+  "appVersion": "0.7.2",
   "port": 47831,
   "pinRequired": true,
   "trusted": false,
@@ -110,7 +110,7 @@ The client sends a `hello` first:
   "deviceId": "8f3c…",
   "deviceName": "MacBook · MeloX",
   "platform": "windows",
-  "appVersion": "0.7.1",
+  "appVersion": "0.7.2",
   "pin": "0427"
 }
 ```

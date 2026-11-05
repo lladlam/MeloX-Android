@@ -29,16 +29,19 @@ The **Windows** and **Linux** editions are in their final verification stage. If
 
 > MeloX Android is an unofficial open-source project. It is not affiliated with, partnered with, or authorized by NetEase Cloud Music, Xiaomi, Apple, or their related companies.
 
-## Current version: 0.7.1
+## Current version: 0.7.2
 
-`0.7.1` (versionCode **26**, 2026-10-27) fixes third-party HTTP music sources and LX script threading, widens the experimental USB exclusive output to full-speed and high-speed UAC1 with exportable diagnostics, and hardens startup plus optional integrations.
+`0.7.2` (versionCode **27**, 2026-11-06) adds the experimental Plugin API v1 music-source system and an optional MeloX Rear companion entry, while completing background page restoration, the reworked home quick actions, Listen Together solo mode and QQ bracket backing vocals.
 
-- Third-party sources now import, request and play over an isolated HTTP channel that supports dynamic domains, redirects and media Range requests without inheriting account cookies. LX script sessions stay on their own QuickJS thread with waits that cover the default HTTP timeout.
-- USB exclusive output accepts full-speed and high-speed UAC1 adaptive/synchronous endpoints with 16–32-bit PCM containers (widened from PCM16; not bit-perfect), schedules packets per USB microframe, keeps the buffer on pause, flushes stale audio on seek, and appends USB descriptors and speed results to exported logs. UAC2 and asynchronous feedback remain unsupported pending real-DAC validation.
-- Startup hardening covers account-encryption migration failures, audio-controller binding and volume broadcasts, external lyric bridges, and optional Xiaomi/超级岛 services; Android 10/EMUI output panels and PiP/service-type version checks are corrected. AutoMix and LAN cast can no longer interrupt or unmute a USB exclusive session.
+- Experimental dynamic plugin sources: bounded package and signature validation, explicit permission confirmation, an isolated QuickJS runtime and account-scoped storage, wired through 12 capabilities from search and playback to lyrics, favorites, downloads and authentication. This is an RC engineering preview; API 24, complete UI/OAuth/background flows and physical-device acceptance are still pending. See [the plugin docs](docs/plugin-system/README.md).
+- Background restoration now keeps the active page and loaded data across stopped-Activity destruction for home/explore collections and charts, search results and details, library subpages, podcasts, downloads, cloud drive, messages and the full-screen player. Daily recommendations and charts also stop coming back blank on the second open.
+- Home quick actions use two half-width cards per snapped page with a left gutter and a 44dp right peek; card press ripples and rectangular shadows are gone. Added a configurable playback cache limit (256MB–2GB, LRU).
+- Listen Together gains a solo mode that keeps the room online without sending local commands. QQ Music bracket lines can become backing vocals of the previous line (off by default). Fixed the blank YouTube Music sign-in WebView, Qishui QR sign-in, and completed zh-Hans/zh-Hant/ja translations.
+- An optional experimental MeloX Rear companion entry appears under Settings → Experimental; the separate YTRear-derived app is not distributed with this release and its upstream license is still pending.
 
-- Download and full notes: [GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.7.1)
+- Download and full notes: [GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.7.2)
 - Version history: [CHANGELOG.md](CHANGELOG.md)
+- This release: [docs/releases/0.7.2.md](docs/releases/0.7.2.md)
 
 > [!WARNING]
 > Third-party music sources are imported by the user and depend on external services. Sources used for testing before release have failed because of dead endpoints, rate limits, DNS or certificate errors, or unplayable URLs. MeloX cannot guarantee that any third-party source works. If you hit a problem, open Settings → About, scroll to the bottom, export all MeloX logs, and send them to `lladlam114@gmail.com`. Logs may contain account state, song metadata, request URLs, or other private data. Review them before sending.
