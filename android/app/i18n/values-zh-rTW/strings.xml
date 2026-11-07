@@ -863,6 +863,16 @@
     <string name="settings_section_app">App</string>
     <string name="settings_section_more">擴充功能</string>
     <string name="settings_section_about">關於</string>
+    <string name="settings_section_history">歷史</string>
+    <string name="settings_route_daily_history">歷史日推</string>
+    <string name="daily_history_month">%1$d 年 %2$d 月</string>
+    <string name="daily_history_today">今天</string>
+    <string name="daily_history_previous_month">上個月</string>
+    <string name="daily_history_next_month">下個月</string>
+    <string name="daily_history_empty_all">尚無歷史記錄，開啟「每日推薦」後會自動歸檔</string>
+    <string name="daily_history_empty_day">這一天沒有歸檔記錄</string>
+    <string name="daily_history_open_playlist">以歌單開啟</string>
+    <string name="daily_history_song_count">%1$d 首歌曲</string>
     <string name="settings_sub_general">主題、啟動行為與連結處理</string>
     <string name="settings_kw_general">主題 淺色 深色 跟隨系統 預設頁面 剪貼簿</string>
     <string name="settings_sub_appearance">背景、封面動畫與螢幕恆亮</string>

@@ -863,6 +863,16 @@
     <string name="settings_section_app">アプリ</string>
     <string name="settings_section_more">その他</string>
     <string name="settings_section_about">情報</string>
+    <string name="settings_section_history">履歴</string>
+    <string name="settings_route_daily_history">デイリー推薦の履歴</string>
+    <string name="daily_history_month">%1$d 年 %2$d 月</string>
+    <string name="daily_history_today">今日</string>
+    <string name="daily_history_previous_month">前の月</string>
+    <string name="daily_history_next_month">次の月</string>
+    <string name="daily_history_empty_all">履歴はまだありません。「デイリー推薦」を開くと自動的に保存されます。</string>
+    <string name="daily_history_empty_day">この日の保存記録はありません。</string>
+    <string name="daily_history_open_playlist">プレイリストとして開く</string>
+    <string name="daily_history_song_count">%1$d 曲</string>
     <string name="settings_sub_general">テーマ、起動時の動作、リンクの扱い</string>
     <string name="settings_kw_general">テーマ ライト ダーク システムに合わせる 既定のページ クリップボード theme light dark</string>
     <string name="settings_sub_appearance">背景、アートワークの動き、画面の常時点灯</string>
