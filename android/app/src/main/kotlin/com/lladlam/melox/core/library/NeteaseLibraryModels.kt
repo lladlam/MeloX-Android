@@ -8,6 +8,8 @@ data class NeteasePlaylistSummary(
     val name: String,
     val coverUrl: String?,
     val trackCount: Int,
+    /** 服务端歌单类型；`5` 即「我喜欢的音乐」。字段缺失时为空（历史/非标准接口返回）。 */
+    val specialType: Int? = null,
     val creatorName: String,
     val creatorUserId: Long? = null,
     val playCount: Long = 0L,

@@ -119,6 +119,13 @@
     <string name="settings_cloud_shuffle_note">网易云 çalma listelerinde sunucu sırasını tercih eder; kullanılamazsa yerel rastgeleye döner.</string>
     <string name="settings_skip_unavailable">Ses kaynağı olmayanları atla</string>
     <string name="settings_skip_unavailable_note">VIP, telif veya bölge kısıtı nedeniyle oynatılamayan parçada sonrakine geç.</string>
+    <string name="settings_player_transition_duration">Oynatıcı açılma ve kapanma süresi</string>
+    <string name="settings_duration_ms">%1$d ms</string>
+    <string name="settings_transition_duration_very_fast">Çok hızlı</string>
+    <string name="settings_transition_duration_fast">Hızlı</string>
+    <string name="settings_transition_duration_standard">Standart</string>
+    <string name="settings_transition_duration_slow">Yavaş</string>
+    <string name="settings_transition_duration_very_slow">Çok yavaş</string>
     <string name="player_sleep_remaining">Yaklaşık %1$d dakika kaldı</string>
     <string name="player_sleep_end_at">Yaklaşık %1$s civarında durur</string>
     <string name="player_cancel_sleep">Zamanlayıcıyı iptal et</string>

@@ -78,6 +78,27 @@ class NeteaseSessionStore(
         isRefreshing = false
     }
 
+    /**
+     * 重新读取磁盘上持久化的登录态，并同步到本实例的 Compose 状态。
+     *
+     * ⚠ 2026-10-16：登录是在 `MeloXNeteaseLoginActivity`（**独立 Activity**）里完成的，
+     *   它把 cookie 写进加密存储；而首页 / 设置页持有的这个 store 实例只在**构造时**
+     *   读过一次 cookie ⇒ 登录返回后界面依旧显示「未登录」，要等进程重启才刷新。
+     *   故由界面回到前台时调用本方法把最新 cookie 拉回（幂等，只在真的变化时写状态）。
+     *
+     * @return cookie 是否发生变化（变化即触发依赖它的组合重组）。
+     */
+    fun reloadFromStorage(): Boolean {
+        val persisted = preferences.getString(KEY_COOKIE, "").orEmpty()
+        if (persisted == cookie) return false
+        cookie = persisted
+        if (persisted.isBlank()) {
+            profile = null
+            errorMessage = null
+        }
+        return true
+    }
+
     fun clear() {
         preferences.edit().remove(KEY_COOKIE).apply()
         cookie = ""

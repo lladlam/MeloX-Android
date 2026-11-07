@@ -1411,6 +1411,13 @@ private fun PlaybackSettings(context: android.content.Context) {
             stringResource(R.string.settings_show_quality_tip_note),
             grouped = true,
         )
+        // ⚠⚠ 2026-10-29：档位表重划（240/300/360/460/600 → 270/360/460/600/780），
+        //   且**不再显示 ms 数值**，改用**文字档位**（Very fast / Fast / Standard / Slow / Very slow）。
+        //   ⚠ 档位值与文案都取自 `MeloXPlayerTransitionDurationTier`（**单一真源**）——
+        //     枚举把 millis 和 labelRes 绑在一起 ⇒ 文案与数值不可能错位。
+        //   ⚠ 标签必须先在 **Composable 作用域**取好：`stringResource` 只能在 Composable 里
+        //     调用，而 `LyricsChoiceSetting` 的 `label` 是普通 `(Int) -> String`。
+        val transitionDurationLabels = meloXTransitionDurationLabels()
         LyricsChoiceSetting(
             context,
             stringResource(R.string.settings_player_transition_duration),
@@ -1421,9 +1428,9 @@ private fun PlaybackSettings(context: android.content.Context) {
             //   ⇒ 走专用读取函数：读 + 迁移 + 写回同一处，保证「显示 == 实际」。
             key = MeloXSettingsPreferences.KEY_PLAYER_TRANSITION_DURATION_MS,
             selectedProvider = { MeloXSettingsPreferences.playerTransitionDurationMs(context) },
-            values = listOf(240, 300, 360, 460, 600),
+            values = MeloXPlayerTransitionDurationTier.allMillis,
             grouped = true,
-        ) { "${it}ms" }
+        ) { ms -> transitionDurationLabels[ms] ?: ms.toString() }
     }
     Spacer(Modifier.height(10.dp))
     EqualizerSettings(context)
@@ -2205,6 +2212,31 @@ private fun LyricsChoiceSetting(
     grouped = grouped,
     label = label,
 )
+
+/**
+ * 播放器时长的**文字档位表**：`millis → 显示文案`。
+ *
+ * ⚠⚠ 2026-10-29：设置页**不再显示 ms 数值**，改用文字档位
+ *   （Very fast / Fast / Standard / Slow / Very slow）。
+ *
+ * ### 为什么单独抽一个函数
+ * `stringResource` 是 `@Composable`，**只能在 Composable 作用域里调用**；
+ * 而 `LyricsChoiceSetting` 的 `label` 是普通函数类型 `(Int) -> String` ⇒
+ * 不能在里面现取文案，必须**先在 Composable 里解析好**再传进去。
+ *
+ * ### 为什么文案跟着枚举走
+ * 档位**数值**与档位**文案**必须同源（同一个 `MeloXPlayerTransitionDurationTier`），
+ * 否则就会出现老 bug：「**不要实际变，设置显示没变**」——
+ * 数值改了文案没改（或反之）⇒ 显示与实际对不上。
+ */
+@Composable
+private fun meloXTransitionDurationLabels(): Map<Int, String> {
+    val labels = LinkedHashMap<Int, String>(MeloXPlayerTransitionDurationTier.entries.size)
+    for (tier in MeloXPlayerTransitionDurationTier.entries) {
+        labels[tier.millis] = stringResource(tier.labelRes)
+    }
+    return labels
+}
 
 /**
  * `selectedProvider` 重载（2026-10-03）。
@@ -3881,7 +3913,7 @@ private fun AboutSettings(context: android.content.Context) {
                 )
             }
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 SettingsActionButton(stringResource(R.string.action_cancel), Modifier.weight(1f)) { showLogExportInfo = false }

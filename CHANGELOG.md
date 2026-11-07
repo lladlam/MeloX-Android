@@ -4,6 +4,8 @@
 
 ## 未发布
 
+- Providers & settings: stop NetEase auto-refresh from dropping liked songs and page/cache the cloud library on disk; parallelize QQ rich-lyrics requests and memoize QRC decryption; show player transition tiers by name and sync remote-config defaults.
+
 ## 0.7.2 — 2026-11-06
 
 - 版本号升级为 `0.7.2`，`versionCode` 提升至 **27**；发布标签 `0.7.2`，正式产物为 `MeloX-Android-0.7.2-arm64-v8a.apk` 与 `MeloX-Android-0.7.2-armeabi-v7a.apk`。
