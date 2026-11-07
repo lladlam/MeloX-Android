@@ -1,5 +1,6 @@
 package com.lladlam.melox.ui.player
 
+import android.os.SystemClock
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -203,26 +204,59 @@ private fun OutputPanelSlider(
     val change by rememberUpdatedState(onChange)
     val finish by rememberUpdatedState(onFinish)
     val start by rememberUpdatedState(onStart)
+    // ⚠ 用 State 而不是 `by` 解包：pointerInput 协程会活过多次重组，
+    //   直接捕获 value 会拿到按下那一刻的旧值（相对拖动的基准必须是最新原进度）。
+    val valueState = rememberUpdatedState(value)
+    // ★ 统一「按压放大 + 相对拖动」（与播放页进度条 / 音量条同一份交互状态）。
+    val gesture = rememberMeloXRelativeSliderGesture()
     BoxWithConstraints(
         Modifier.fillMaxWidth().height(32.dp)
+            .meloXRelativeSliderPress(gesture, enabled)
             .semantics {
                 contentDescription = label
                 progressBarRangeInfo = ProgressBarRangeInfo(value.coerceIn(0f, 1f), 0f..1f)
                 if (enabled) setProgress { start(); change(it.coerceIn(0f, 1f)); finish(); true }
             }
             .pointerInput(enabled) {
-                if (enabled) detectTapGestures { offset ->
-                    start(); change((offset.x / size.width.coerceAtLeast(1)).coerceIn(0f, 1f)); finish()
-                }
+                // ★ 2026-11-07：点按与「按住不跳 / 拖动相对」**共存**。
+                //   · 快速点一下（未拖动 + 按压时长 ≤ 窗口）⇒ 松手时跳到点按位置；
+                //   · 按住不放再松手 ⇒ 不跳（保持「首次按下不改值」的原始口径）；
+                //   · 拖动 ⇒ 走下面的 detectDragGestures，按相对位移增减。
+                //   与 Material3 那些滑条共用 [MeloXSliderTapMaxDurationMs] 同一套判据。
+                if (!enabled) return@pointerInput
+                var pressAtMs = 0L
+                detectTapGestures(
+                    onPress = { pressAtMs = SystemClock.uptimeMillis() },
+                    onTap = { offset ->
+                        val heldMs = SystemClock.uptimeMillis() - pressAtMs
+                        if (pressAtMs != 0L && heldMs <= MeloXSliderTapMaxDurationMs) {
+                            val frac = (offset.x / size.width.coerceAtLeast(1)).coerceIn(0f, 1f)
+                            start(); change(frac); finish()
+                        }
+                        pressAtMs = 0L
+                    },
+                )
             }
             .pointerInput(enabled) {
-                if (enabled) detectDragGestures(
-                    onDragStart = { start(); change((it.x / size.width.coerceAtLeast(1)).coerceIn(0f, 1f)) },
-                    onDragEnd = { finish() },
-                    onDragCancel = { finish() },
-                ) { event, _ ->
-                    event.consume()
-                    change((event.position.x / size.width.coerceAtLeast(1)).coerceIn(0f, 1f))
+                if (enabled) {
+                    var started = false
+                    detectDragGestures(
+                        onDragStart = { gesture.reset(); started = false },
+                        onDragEnd = { if (gesture.finish().dragged) finish() },
+                        onDragCancel = { if (gesture.finish().dragged) finish() },
+                    ) { event, dragAmount ->
+                        event.consume()
+                        // ★ 只吃每帧相对位移 dragAmount.x，基准是按下瞬间的原进度；
+                        //   原实现用 event.position.x（绝对位置）⇒ 手指落哪就跳到哪。
+                        gesture.onDragAmount(
+                            dragAmount.x,
+                            size.width,
+                            valueState.value,
+                        )?.let { next ->
+                            if (!started) { started = true; start() }
+                            change(next)
+                        }
+                    }
                 }
             },
         contentAlignment = Alignment.CenterStart,

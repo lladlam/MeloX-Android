@@ -31,6 +31,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -375,6 +376,18 @@ fun MeloXGlassTextField(
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     onFocusChanged: ((Boolean) -> Unit)? = null,
 ) {
+    // ⚠ 深色模式可读性：`textStyle` 默认值是 `TextStyle.Default`，它的 color 是
+    // `Color.Unspecified`，BasicTextField 解析不到主题色时文字会掉成黑色 ——
+    // 深色玻璃面上直接看不见（2026-10-23 用户在「解析接口」对话框里踩到）。
+    // 调用方没显式给颜色时统一补 `onSurface`；给了就尊重调用方（例如叠在
+    // 深色浮层上的 `Color.White`）。光标同理，否则深色下是黑光标。
+    // ⚠ 用 `== Color.Unspecified` 而不是 `isUnspecified`：后者是扩展属性，
+    // 本文件没导入，且与 material3 的 TextStyle typealias 放一起更容易踩导入冲突。
+    val resolvedTextStyle = if (textStyle.color == Color.Unspecified) {
+        textStyle.merge(TextStyle(color = MaterialTheme.colorScheme.onSurface))
+    } else {
+        textStyle
+    }
     Row(
         modifier = modifier
             .heightIn(min = 50.dp)
@@ -394,7 +407,8 @@ fun MeloXGlassTextField(
             onValueChange = onValueChange,
             enabled = enabled,
             singleLine = singleLine,
-            textStyle = textStyle,
+            textStyle = resolvedTextStyle,
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
             keyboardOptions = keyboardOptions,
             keyboardActions = keyboardActions,
             modifier = Modifier

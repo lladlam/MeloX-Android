@@ -1196,6 +1196,11 @@
     <string name="settings_show_quality_tip_note">進行バーの下にある音質のヒントを制御します。</string>
     <string name="settings_player_transition_duration">プレーヤーの展開と収納にかかる時間</string>
     <string name="settings_duration_ms">%1$d ms</string>
+    <string name="settings_transition_duration_very_fast">とても速い</string>
+    <string name="settings_transition_duration_fast">速い</string>
+    <string name="settings_transition_duration_standard">標準</string>
+    <string name="settings_transition_duration_slow">遅い</string>
+    <string name="settings_transition_duration_very_slow">とても遅い</string>
     <string name="settings_equalizer">イコライザー</string>
     <string name="settings_equalizer_note">現在のプレーヤーの音声セッションに、Android のマルチバンド DSP を使います。</string>
     <string name="settings_eq_presets">プリセット</string>

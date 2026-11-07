@@ -185,13 +185,48 @@ internal fun meloXPlayerLinearFloatSpec() = tween<Float>(
 //     · 与旧曲线的差别：旧曲线前段是「甩出去」（速度先冲到峰值再骤降），新曲线是
 //       「一路连续减速」——这正是「丝滑优雅」的来源。
 private const val MeloXPlayerSpringK = 6f
+
+/**
+ * 起步**初速度比** α：补掉「ζ = 1 临界阻尼起步斜率 = 0」这个天生缺点。
+ *
+ * ### 数学
+ * 临界阻尼、起点 0 / 终点 1、带初速度 `v₀` 的解（令 `α = v₀/ω`）：
+ * ```
+ * x(f) = [1 − (1 + (1−α)·z)·e^−z] / End ,  z = k·f ,  End = x(1)
+ * ```
+ * 起步斜率 `dx/df|₀ = k·α / End`（均速 = 1 ⇒ 该值即「× 均速」）。
+ *
+ * ⚠ `α = 0` 时**严格退化**为原式 `1 − (1+z)·e^−z` ⇒ 本参数是**一键可回退的纯增量**。
+ *
+ * ### 为什么加它
+ * 纯临界阻尼（α = 0）的起步斜率是 **0×** —— 动画开头「先憋一拍才起来」，
+ * 是「有点迟、不够跟手」的来源。对照按 iPhone 14 Pro Max / iOS 16.3 逐帧拟合出的
+ * Flutter `Curves.fastEaseInToSlowEaseOut` 等效弹簧（ζ = 1.00 / ω = 18.35），
+ * 其起步斜率 = **0.96× 均速**；而本曲线在 u ≥ 0.3 之后与该拟合曲线差 ≤ 2.3pp
+ * ⇒ 中后段形状不必动，只补起步。
+ *
+ * ### 取值（k = 6 实测扫描）
+ * | α | 起步斜率 | u=0.1 | u=0.3 | u≥0.7 |
+ * |---|---|---|---|---|
+ * | 0.00（原式） | 0.00× | 0.124 | 0.547 | ≈不变 |
+ * | 0.10 | 0.61× | 0.157 | 0.576 | ≈不变 |
+ * | **0.15 ← 采用** | **0.91×** | 0.174 | 0.591 | ≈不变 |
+ * | 0.20 | 1.22× | 0.190 | 0.605 | ≈不变 |
+ * ⛔ α ≥ 0.20 起步斜率 > 1.2×，会回到「先甩出去」的急感。
+ *
+ * ⚠ 单调性仍成立（`dx/dz = e^−z·[α + (1−α)·z] > 0`，α < 1 时恒正）⇒ **无过冲**，
+ *   圆角不会提前坐平、`shellSettledOpen` 那条状态机判据依旧成立。
+ */
+private const val MeloXPlayerSpringInitialVelocity = 0.15f
 private val MeloXPlayerSpringEnd =
-    1f - (1f + MeloXPlayerSpringK) * kotlin.math.exp(-MeloXPlayerSpringK)
+    1f - (1f + (1f - MeloXPlayerSpringInitialVelocity) * MeloXPlayerSpringK) *
+        kotlin.math.exp(-MeloXPlayerSpringK)
 
 internal val MeloXPlayerAppleEasing: Easing = Easing { fraction ->
     val f = fraction.coerceIn(0f, 1f)
     val z = MeloXPlayerSpringK * f
-    (1f - (1f + z) * kotlin.math.exp(-z)) / MeloXPlayerSpringEnd
+    (1f - (1f + (1f - MeloXPlayerSpringInitialVelocity) * z) * kotlin.math.exp(-z)) /
+        MeloXPlayerSpringEnd
 }
 
 

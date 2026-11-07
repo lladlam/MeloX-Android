@@ -4,6 +4,7 @@ import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalView
 import com.kyant.backdrop.Backdrop
+import com.lladlam.melox.BuildConfig
 import com.lladlam.melox.core.diagnostics.MeloXCrashRecorder
 
 /*

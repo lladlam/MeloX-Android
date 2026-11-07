@@ -114,6 +114,9 @@ class QQMusicProvider(
         val needsTranslation = rich.lines.none { !it.translation.isNullOrBlank() }
         val needsRomanization = rich.lines.none { !it.romanization.isNullOrBlank() }
         if (!needsTranslation && !needsRomanization) return rich
+        // QQ 的 trans/roma 只服务外语歌曲：实测《红尘客栈》四个 profile 的 trans/roma
+        // 长度都是 0，中文歌这次 legacy 往返必然空手而归，却要白等一整个 round-trip。
+        if (isChineseLyric(rich)) return rich
 
         // QQ occasionally serves genuine QRC timing while the rich translation
         // field is empty. The ordinary lyric endpoint can still contain the
@@ -121,6 +124,25 @@ class QQMusicProvider(
         // annotations from the line-timed response.
         val fallback = runCatching { api.lyrics(track) }.getOrNull() ?: return rich
         return mergeFallbackAnnotations(rich, fallback)
+    }
+
+    /**
+     * 歌词正文是否以中文为主（CJK 表意文字多于其他字母）。
+     *
+     * 中文歌在 QQ 侧没有翻译/音译数据，[lyrics] 里那次 legacy 合并可以直接跳过。
+     */
+    private fun isChineseLyric(document: LyricsDocument): Boolean {
+        var cjk = 0
+        var otherLetters = 0
+        for (line in document.lines) {
+            for (character in line.text) {
+                when {
+                    character.code in CJK_UNIFIED_IDEOGRAPHS || character.code in CJK_EXTENSION_A -> cjk++
+                    character.isLetter() -> otherLetters++
+                }
+            }
+        }
+        return cjk > 0 && cjk > otherLetters
     }
 
     override suspend fun resolvePlayback(
@@ -201,5 +223,9 @@ class QQMusicProvider(
 
     private companion object {
         const val AnnotationToleranceMs = 1_500L
+
+        /** CJK 统一表意文字（基本区 + 扩展 A）。 */
+        val CJK_UNIFIED_IDEOGRAPHS = 0x4E00..0x9FFF
+        val CJK_EXTENSION_A = 0x3400..0x4DBF
     }
 }

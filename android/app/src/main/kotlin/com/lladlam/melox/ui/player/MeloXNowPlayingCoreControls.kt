@@ -215,6 +215,8 @@ internal fun SceneProgressControl(
     var localProgress by remember(state.mediaId) { mutableFloatStateOf(sourceProgress) }
     var scrubMediaId by remember(state.mediaId) { mutableStateOf<String?>(null) }
     var scrubDurationMs by remember(state.mediaId) { mutableLongStateOf(0L) }
+    // ★ 统一「按压放大 + 相对拖动」：首次按下不跳值，拖动按相对位移增减。
+    val sliderGesture = rememberMeloXRelativeSliderGesture()
     val trackHeight by animateDpAsState(
         targetValue = if (scrubbing) 6.dp else 4.dp,
         animationSpec = tween(120),
@@ -234,24 +236,39 @@ internal fun SceneProgressControl(
         Slider(
             enabled = !state.isInTransition,
             value = localProgress,
-            onValueChange = {
-                if (!scrubbing) {
-                    scrubMediaId = state.mediaId
-                    scrubDurationMs = state.durationMs
+            onValueChange = { raw ->
+                // 首次按下只锚定、返回 null ⇒ 进度绝不跳到手指位置。
+                sliderGesture.onAbsoluteValue(raw, localProgress)?.let { v ->
+                    if (!scrubbing) {
+                        scrubMediaId = state.mediaId
+                        scrubDurationMs = state.durationMs
+                    }
+                    scrubbing = true
+                    localProgress = v.coerceIn(0f, 1f)
                 }
-                scrubbing = true
-                localProgress = it.coerceIn(0f, 1f)
             },
             onValueChangeFinished = {
-                if (scrubMediaId == state.mediaId && scrubDurationMs > 0L) {
-                    state.seekTo((scrubDurationMs * localProgress).roundToLong())
+                // ★ 拖动 / 快速点按 / 只按住 三种收尾互斥分流：
+                //   · dragged  ⇒ 提交拖动末值（原行为）
+                //   · tapValue ⇒ 快速点一下，松手时跳到该位置（与「按下不跳」共存）
+                //   · 都不成立 ⇒ 按住超过点按窗口又没动，什么都不做（不触发无意义 seek）
+                val end = sliderGesture.finish()
+                val tap = end.tapValue
+                if (end.dragged) {
+                    if (scrubMediaId == state.mediaId && scrubDurationMs > 0L) {
+                        state.seekTo((scrubDurationMs * localProgress).roundToLong())
+                    }
+                    scrubbing = false
+                    scrubMediaId = null
+                } else if (tap != null && state.durationMs > 0L) {
+                    localProgress = tap
+                    state.seekTo((state.durationMs * tap).roundToLong())
                 }
-                scrubbing = false
-                scrubMediaId = null
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(20.dp),
+                .height(20.dp)
+                .meloXRelativeSliderPress(sliderGesture, enabled = !state.isInTransition),
             thumb = { Spacer(Modifier.size(0.dp)) },
             track = {
                 Box(
@@ -478,7 +495,11 @@ private fun ScenePlayPauseButton(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(CircleShape)
+            // ★ 2026-11-07（用户：「pause 放大回退时会被切掉」）：**不要**在这里 clip 圆形。
+            //   形变回弹的弹簧会过冲到 ~1.099，字形按画布矩阵放大后墨迹探出这个固定
+            //   `buttonSize` 的圆 ⇒ 过冲那一帧的暂停竖条上下外角 / 播放三角尖被裁掉。
+            //   而这颗键 `indication = null`、又没有任何背景，clip 除了裁字形之外毫无作用。
+            //   ⚠ 命中区由 `.size(buttonSize)` 决定，与 clip 无关 ⇒ 删掉不改变交互。
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -961,6 +982,14 @@ private fun SceneVolumeControl(
         animationSpec = tween(120),
         label = "scene-volume-track-height",
     )
+    // ★ "手指按在音量区上" = 整行膨胀判据（只旁听、不消费事件）。
+    var pressing by remember { mutableStateOf(false) }
+    val controlsEnabled = LocalMeloXPlayerControlsEnabled.current
+    // ★ 统一「按压放大 + 相对拖动」（与进度条同一份交互状态）。
+    val sliderGesture = rememberMeloXRelativeSliderGesture()
+    // ★ 整行（滑块 + 左右两个喇叭）**共用一份**按压弹簧：只缩放中间 Slider 会让
+    //   两侧图标纹丝不动，观感「一半大一半小」。缩放层挂在 Row 上，三者也一起放大。
+    val pressScale = rememberMeloXSliderPressScale(dragging || pressing)
 
     Row(
         modifier = modifier
@@ -968,7 +997,42 @@ private fun SceneVolumeControl(
             .height(42.dp)
             // ★ 音量区内的**竖直**拖拽必须在本层吃掉，不能冒泡到页面级「下拉收起」
             //   （2026-10-07 用户报障，完整根因见函数注释）。
-            .meloXVolumeAreaBlocksPageCollapse(),
+            .meloXVolumeAreaBlocksPageCollapse()
+            // ★ "手指按在音量区上" = 膨胀判据。只**旁听**（Initial pass、不消费任何事件）
+            //   ⇒ Slider 照常拿手势、点击/拖动/无障碍全不受影响。
+            //   ⚠ key 用 `controlsEnabled`：转场期控件禁用时不该膨胀，且 key 变化会让本
+            //      协程重启 —— `finally` 会把 `pressing` 复位，不会卡住。
+            .pointerInput(controlsEnabled) {
+                if (!controlsEnabled) return@pointerInput
+                try {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val down = awaitFirstDown(
+                                requireUnconsumed = false,
+                                pass = PointerEventPass.Initial,
+                            )
+                            // 整行都是「按下区」（含两侧喇叭）⇒ 由这一层统一锚定手势起点，
+                            // Slider 内部不再重复锚定（见下面 `.meloXSliderPressDetector`）。
+                            sliderGesture.reset()
+                            pressing = true
+                            // 跟踪这根手指直到抬起/取消。
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (!change.pressed) break
+                            }
+                            pressing = false
+                        }
+                    }
+                } finally {
+                    // ⚠ `finally` 必须有：组合被取消 / key 变化时协程直接死掉，
+                    //   没有它 `pressing` 会永久卡在 true（本项目踩过的布尔卡死坑）。
+                    pressing = false
+                }
+            }
+            // ★ 整行一体缩放（滑块 + 左右喇叭）：只改绘制、不动布局与命中测试，
+            //   静息 s==1f 直接透传 ⇒ 静止态逐像素不变。
+            .meloXSliderPressVisual(pressScale),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 10.dp),
     ) {
@@ -984,26 +1048,42 @@ private fun SceneVolumeControl(
             value = shownVolume,
             // ⚠ 过渡期禁用（用户报障「缩小播放器里的音量还能点/拖」）。
             enabled = LocalMeloXPlayerControlsEnabled.current,
-            onValueChange = {
-                // beginVolumeDrag：拖动期间抑制系统音量回灌（广播 + 轮询），
-                // 否则系统回读的**跳格**值会与手指**连续**位置打架 ⇒ 抽搐。
-                state.beginVolumeDrag()
-                dragging = true
-                dragVolume = it.coerceIn(0f, 1f)
-                state.changeVolume(dragVolume)
+            onValueChange = { raw ->
+                // 首次按下只锚定、返回 null ⇒ 音量绝不跳到手指位置。
+                sliderGesture.onAbsoluteValue(raw, shownVolume)?.let { v ->
+                    // beginVolumeDrag：拖动期间抑制系统音量回灌（广播 + 轮询），
+                    // 否则系统回读的**跳格**值会与手指**连续**位置打架 ⇒ 抽搐。
+                    state.beginVolumeDrag()
+                    dragging = true
+                    dragVolume = v.coerceIn(0f, 1f)
+                    state.changeVolume(dragVolume)
+                }
             },
             onValueChangeFinished = {
-                // 拖动结束：解除抑制，让轮询/广播重新接管（对齐到系统真实档位）。
-                dragging = false
-                state.endVolumeDrag()
-                // 松手瞬间取一次权威值，让滑块精确落在真实系统档位上（不靠估算）。
-                // ⚠ 走 Dispatchers.Default 异步：这里是同步 binder（getStreamVolume），
-                //   跑在主线程会与拖动末帧抢时间 ⇒ 掉帧闪一下。
-                scope.launch(Dispatchers.Default) { state.syncSystemVolume() }
+                val end = sliderGesture.finish()
+                val tap = end.tapValue
+                when {
+                    // 拖动结束：解除抑制，让轮询/广播重新接管（对齐到系统真实档位）。
+                    end.dragged -> {
+                        dragging = false
+                        state.endVolumeDrag()
+                        // 松手瞬间取一次权威值，让滑块精确落在真实系统档位上（不靠估算）。
+                        // ⚠ 走 Dispatchers.Default 异步：这里是同步 binder（getStreamVolume），
+                        //   跑在主线程会与拖动末帧抢时间 ⇒ 掉帧闪一下。
+                        scope.launch(Dispatchers.Default) { state.syncSystemVolume() }
+                    }
+                    // ★ 快速点一下：直接跳到该音量（与「按下不跳、拖动相对」共存）。
+                    //   `changeVolume` 内部自己处理档位量化与「只在跨格时下发」，
+                    //   显示侧由跟随弹簧滑过去，不会瞬移。
+                    tap != null -> state.changeVolume(tap.coerceIn(0f, 1f))
+                    // 只按住又没动（超过点按窗口）：什么都不做，begin/end 严格成对。
+                }
             },
             modifier = Modifier
                 .weight(1f)
-                .height(32.dp),
+                .height(32.dp)
+                // ⚠ 只旁听、不缩放：缩放已由外层 Row 统一负责，这里再缩放会叠成 1.21 倍。
+                .meloXSliderPressDetector(sliderGesture, enabled = controlsEnabled),
             thumb = { Spacer(Modifier.size(0.dp)) },
             track = {
                 val h = trackHeight
