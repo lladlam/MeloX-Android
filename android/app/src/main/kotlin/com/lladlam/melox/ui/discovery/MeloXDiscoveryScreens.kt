@@ -110,6 +110,9 @@ import com.lladlam.melox.core.account.NeteaseAccountProfile
 import com.lladlam.melox.R
 import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.account.rememberNeteaseSessionStore
+import com.lladlam.melox.core.dailyhistory.DailyHistoryStore
+import com.lladlam.melox.core.dailyhistory.MeloXDailyClock
+import com.lladlam.melox.core.dailyhistory.accountKeyOf
 import com.lladlam.melox.core.library.NeteaseHomeContent
 import com.lladlam.melox.core.library.NeteaseLibraryCache
 import com.lladlam.melox.core.library.NeteaseLibraryClient
@@ -560,6 +563,24 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
                             onDetailSelected()
                             songList = list
                             overlaySongList = list
+                            // 查看即归档：命中进程内缓存同样记一次，跨零点按本次展示当天算。
+                            if (action == "每日推荐") {
+                                val profileUserId = session.profile?.userId
+                                scope.launch(Dispatchers.IO) {
+                                    runCatching {
+                                        DailyHistoryStore.archive(
+                                            context = context,
+                                            accountKey = accountKeyOf(
+                                                NeteaseSessionStore.readCookie(context),
+                                                profileUserId,
+                                            ),
+                                            dateKey = MeloXDailyClock.todayKey(),
+                                            songs = songs,
+                                            userId = profileUserId,
+                                        )
+                                    }
+                                }
+                            }
                         } else {
                             songs.firstOrNull()?.let {
                                 PlaybackCommands.playQueue(context, songs, it.id, heartMode = action == "心动模式")
@@ -603,6 +624,24 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
                             onDetailSelected()
                             songList = list
                             overlaySongList = list
+                            // 查看即归档：网络首拉成功同样记一次，与缓存路径共用同一日期口径。
+                            if (action == "每日推荐") {
+                                val profileUserId = session.profile?.userId
+                                scope.launch(Dispatchers.IO) {
+                                    runCatching {
+                                        DailyHistoryStore.archive(
+                                            context = context,
+                                            accountKey = accountKeyOf(
+                                                NeteaseSessionStore.readCookie(context),
+                                                profileUserId,
+                                            ),
+                                            dateKey = MeloXDailyClock.todayKey(),
+                                            songs = songs,
+                                            userId = profileUserId,
+                                        )
+                                    }
+                                }
+                            }
                         } else {
                             songs.firstOrNull()?.let {
                                 PlaybackCommands.playQueue(context, songs, it.id, heartMode = action == "心动模式")

@@ -216,7 +216,8 @@ enum class SettingsRoute(private val fallbackTitle: String, private val titleRes
     Legal("隐私政策与免责声明", R.string.settings_route_legal),
     Privacy("隐私与本地算法", R.string.settings_route_privacy),
     Developer("开发者选项", R.string.settings_route_developer),
-    Experimental("测试功能尝鲜", R.string.settings_route_experimental);
+    Experimental("测试功能尝鲜", R.string.settings_route_experimental),
+    DailyHistory("历史日推", R.string.settings_route_daily_history);
 
     val title: String
         @Composable get() = if (titleRes == 0) fallbackTitle else stringResource(titleRes)
@@ -258,6 +259,9 @@ private val SettingsSections = listOf(
         SettingsItem(SettingsRoute.Legal, "查看隐私政策、免责声明与同意版本", "▤", "隐私 政策 免责声明 法律 条款 数据"),
         SettingsItem(SettingsRoute.Developer, "播放器诊断与迁移状态", "⌘", "BeatNet 节拍 调试 日志"),
         SettingsItem(SettingsRoute.Experimental, "预览尚未稳定的新功能", "✦", "实验 测试 歌词 强绑定"),
+    )),
+    SettingsSection("历史", listOf(
+        SettingsItem(SettingsRoute.DailyHistory, "自动归档每天查看的每日推荐，可按日期回看", "◷", "历史 日推 每日推荐 归档 日历 回看 记录 history daily archive calendar"),
     )),
 )
 
@@ -350,6 +354,7 @@ fun SettingsScreen(
                 stringResource(when (section.title) {
                     "应用" -> R.string.settings_section_app
                     "扩展" -> R.string.settings_section_more
+                    "历史" -> R.string.settings_section_history
                     else -> R.string.settings_section_about
                 }),
                 modifier = Modifier.padding(start = 8.dp, bottom = 8.dp, top = 8.dp),
@@ -485,6 +490,13 @@ private fun SettingsSectionCard(section: SettingsSection, onOpen: (SettingsRoute
 @Composable
 internal fun SettingsDetailScreen(route: SettingsRoute, source: MusicSource, session: NeteaseSessionStore, onBack: () -> Unit) {
     val context = LocalContext.current
+    // 历史日推需要在「日历页」与「全屏歌单详情页」之间整体切换形态；塞进下方
+    // item { Column { ... } } 会让详情页的 fillMaxSize + 自带 LazyColumn 拿到无限
+    // 高度约束并造成同向嵌套滚动异常，故在此提前分派，其余路由完全不受影响。
+    if (route == SettingsRoute.DailyHistory) {
+        DailyHistoryRoute(title = route.title, onBack = onBack)
+        return
+    }
     MeloXPinnedListPage(
         title = route.title,
         onNavigateBack = onBack,
