@@ -4,6 +4,8 @@
 
 ## 未发布
 
+- 按 24dp 网格重绘 Material Symbols 图标并修正光学对齐，补充图标度量单测。
+
 ## 0.7.2 — 2026-11-06
 
 - 版本号升级为 `0.7.2`，`versionCode` 提升至 **27**；发布标签 `0.7.2`，正式产物为 `MeloX-Android-0.7.2-arm64-v8a.apk` 与 `MeloX-Android-0.7.2-armeabi-v7a.apk`。
