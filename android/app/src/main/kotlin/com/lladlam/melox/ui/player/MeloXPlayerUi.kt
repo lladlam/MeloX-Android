@@ -1316,6 +1316,8 @@ private fun MeloXProgressControl(state: MeloXPlaybackUiState) {
     } else {
         0f
     }
+    // ★ 统一「按压放大 + 相对拖动」：首次按下不跳值，拖动按相对位移增减。
+    val sliderGesture = rememberMeloXRelativeSliderGesture()
 
     Column(
         modifier = Modifier
@@ -1325,14 +1327,25 @@ private fun MeloXProgressControl(state: MeloXPlaybackUiState) {
     ) {
         Slider(
             value = progress,
-            onValueChange = { value ->
-                if (state.durationMs > 0L) {
-                    state.seekTo((state.durationMs * value).roundToLong())
+            onValueChange = { raw ->
+                // 首次按下只锚定、返回 null ⇒ 进度绝不跳到手指位置。
+                sliderGesture.onAbsoluteValue(raw, progress)?.let { value ->
+                    if (state.durationMs > 0L) {
+                        state.seekTo((state.durationMs * value).roundToLong())
+                    }
+                }
+            },
+            onValueChangeFinished = {
+                // ★ 拖动时 onValueChange 已逐帧 seek；这里只补「快速点一下 ⇒ 跳到该位置」。
+                val tap = sliderGesture.finish().tapValue
+                if (tap != null && state.durationMs > 0L) {
+                    state.seekTo((state.durationMs * tap).roundToLong())
                 }
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(20.dp),
+                .height(20.dp)
+                .meloXRelativeSliderPress(sliderGesture),
             colors = SliderDefaults.colors(
                 thumbColor = Color.Transparent,
                 activeTrackColor = Color.White,
@@ -1426,10 +1439,16 @@ private fun MeloXTransportButton(
 
 @Composable
 private fun MeloXVolumeControl(state: MeloXPlaybackUiState) {
+    // ★ 统一「按压放大 + 相对拖动」（与进度条同一份交互状态）。
+    val sliderGesture = rememberMeloXRelativeSliderGesture()
+    // ★ 整行（滑块 + 左右喇叭）共用一份按压弹簧 ⇒ 图标跟着滑块一起放大。
+    val pressScale = rememberMeloXSliderPressScale(sliderGesture.pressed)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(42.dp),
+            .height(42.dp)
+            // ★ 整行一体缩放：滑块与两侧喇叭同步放大，静止态逐像素不变。
+            .meloXSliderPressVisual(pressScale),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -1438,10 +1457,23 @@ private fun MeloXVolumeControl(state: MeloXPlaybackUiState) {
             value = state.volume,
             // ⚠ 过渡期禁用（收起动画中/收尾瞬间音量仍可被点到，用户报障）。
             enabled = LocalMeloXPlayerControlsEnabled.current,
-            onValueChange = state::changeVolume,
+            onValueChange = { raw ->
+                // 首次按下只锚定、返回 null ⇒ 音量绝不跳到手指位置。
+                sliderGesture.onAbsoluteValue(raw, state.volume)?.let(state::changeVolume)
+            },
+            onValueChangeFinished = {
+                val end = sliderGesture.finish()
+                // ★ 快速点一下 ⇒ 跳到该音量（与「按下不跳、拖动相对」共存）。
+                end.tapValue?.let { tap -> state.changeVolume(tap.coerceIn(0f, 1f)) }
+            },
             modifier = Modifier
                 .weight(1f)
-                .height(28.dp),
+                .height(28.dp)
+                // ⚠ 只旁听、不缩放：缩放由外层 Row 统一负责。
+                .meloXSliderPressDetector(
+                    sliderGesture,
+                    enabled = LocalMeloXPlayerControlsEnabled.current,
+                ),
             colors = SliderDefaults.colors(
                 thumbColor = Color.White,
                 activeTrackColor = Color.White.copy(alpha = 0.78f),

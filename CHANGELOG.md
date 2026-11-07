@@ -4,6 +4,8 @@
 
 ## 未发布
 
+- Player foundation: give the open/close easing a non-zero initial slope (no more "stall before start"); press-scale feedback and relative-drag for progress/volume sliders; classify devices as phone / tablet / car-head-unit with a corrected two-pane gate; keep the system display corner stable across rotation; and add a shared motion runtime used by the player rework.
+
 ## 0.7.2 — 2026-11-06
 
 - 版本号升级为 `0.7.2`，`versionCode` 提升至 **27**；发布标签 `0.7.2`，正式产物为 `MeloX-Android-0.7.2-arm64-v8a.apk` 与 `MeloX-Android-0.7.2-armeabi-v7a.apk`。
