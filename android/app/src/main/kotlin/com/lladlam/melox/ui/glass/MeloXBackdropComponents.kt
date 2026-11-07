@@ -1,4 +1,4 @@
-﻿/*
+/*
  * MeloX Backdrop controls
  *
  * Adapted from the LiquidButton and LiquidBottomTabs examples in
@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
@@ -41,6 +42,7 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
+import com.lladlam.melox.BuildConfig
 import com.lladlam.melox.ui.theme.isMeloXDarkTheme
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.glass.publicdemo.PublicInteractiveHighlight
@@ -66,6 +68,21 @@ val LocalMeloXBackdrop = staticCompositionLocalOf<Backdrop?> { null }
  * 生产者见 `BottomBarToneSampler.kt`。
  */
 val LocalBottomBarTone = staticCompositionLocalOf<Float> { Float.NaN }
+
+/**
+ * 底部 chrome 的**亮度采样源图层**（2026-10-19）。
+ *
+ * 由 `MeloXApp` 用 `rememberGraphicsLayer()` 建、Provide 给底部 chrome 子树；
+ * 只有**导航胶囊那一个玻璃面**会把它传进 `meloXLiquidBottomBar(luminanceLayer = …)`，
+ * 在 `onDrawBackdrop` 里把「背板内容」顺手录进去。
+ *
+ * ⚠ **只允许一个消费点**：多个玻璃面（搜索键 / 迷你栏 / 水珠）各自 record 会互相覆盖，
+ *   采到的就变成「最后一个画的那个面的背景」，不再是底栏背后的内容。
+ *   ⇒ 这也是它写成 CompositionLocal 而不是自动注入的原因 —— 必须在调用点显式点名。
+ *
+ * 未 Provide 时恒为 null ⇒ 材质侧完全走原路径（零额外绘制）。
+ */
+val LocalBottomBarLuminanceLayer = staticCompositionLocalOf<GraphicsLayer?> { null }
 
 /** 读取当前暗度；未被 Provide 时退回主题二值。 */
 @Composable
@@ -123,6 +140,7 @@ internal fun bottomGlassFallbackColor(): Color {
  */
 internal const val BOTTOM_GLASS_SURFACE_ALPHA = 0.52f
 
+
 /**
  * 水珠 `lens` 的等比换算系数 = MeloX 水珠高 ÷ kyant0 官方基准水珠高。
  *
@@ -133,6 +151,13 @@ internal const val BOTTOM_GLASS_SURFACE_ALPHA = 0.52f
  * ⚠ `refractionHeight` 是「从水珠轮廓向内取样的深度」。水珠越小，同一条「胶囊边 ↔
  *   边界外背景」分界线在相对尺度上越靠外 —— 照搬 56dp 的绝对值会让折射带相对过深。
  *   改 `DropletHeight`（即 `MeloXApp.kt` 里的 `navHeight - 8.dp`）必须同步改这里。
+ *
+ * 🔴 2026-10-27 横屏修（用户报「横屏长按指示器折射范围错了、都折射进 tab」）：
+ *   本常量只是**竖屏展开态(49dp)的兜底默认值**。真实场景水珠高度会变 ——
+ *   横屏 `splitBottomDock` 下 `navHeight = 48dp ⇒ 水珠 = 40dp`（不是 49dp）。
+ *   ⇒ 调用方**必须**把实际水珠高度传给 `meloXLiquidTabSelection(dropletHeight=...)`，
+ *   由它现算 `dropletHeight/56dp`；否则横屏按 49dp 算 ⇒ 折射带相对过深 ⇒
+ *   长按时整条折射带折进 tab 内（只剩被放大的图标内容 = 用户说的「折射到 tab 内」）。
  */
 internal const val MeloXDropletLensScale = 49f / 56f
 
@@ -147,10 +172,67 @@ class MeloXLiquidInteraction internal constructor(
 )
 
 @Composable
-fun rememberMeloXLiquidInteraction(): MeloXLiquidInteraction {
+fun rememberMeloXLiquidInteraction(
+    /**
+     * 见 `PublicInteractiveHighlight.softwareFocusGlow`。
+     * 默认 false = 保持上游行为；迷你栏传 true（低版本没有 AGSL 时用纯 Compose
+     * 径向渐变复刻手指光斑，照样跟随手指移动）。
+     */
+    softwareFocusGlow: Boolean = false,
+    /**
+     * 见 `PublicInteractiveHighlight.focusGlowRadiusRatio`。
+     *
+     * 默认 1.5 = 上游口径（宿主是 200×48dp 胶囊时「渐变环」正好落在按钮内）。
+     * ⚠ **宿主小就要调小**：40dp 圆钮沿用 1.5 时平顶半径(30dp) > 按钮半对角(28.3dp)
+     *   ⇒ 整个按钮都在平顶里，手指怎么动观感都不变（= 用户报的「不跟随」）。
+     *   迷你栏那颗 40dp 圆钮传 0.5（见 `MINI_FOCUS_GLOW_RADIUS_RATIO`）。
+     */
+    focusGlowRadiusRatio: Float = 1.5f,
+    /**
+     * 见 `PublicInteractiveHighlight.allowPointerGlowOverflow`。
+     *
+     * 默认 false = 上游口径（光斑被节点矩形限制、面板提亮是整块矩形）。
+     * 迷你栏传 true：调用点同时要把 `press.highlight.modifier` 放在
+     * `clip(CircleShape)` **之前**，光斑才能真的画出圆钮之外。
+     */
+    allowPointerGlowOverflow: Boolean = false,
+    /**
+     * 见 `PublicInteractiveHighlight.focusGlowPlateau`。
+     *
+     * 默认 0.5 = 上游（宿主是 200×48dp 胶囊 ⇒ 平顶覆盖整颗胶囊）。
+     * 小宿主必须调小，否则亮核只占按钮中心一小块（用户：「只有一小团」）。
+     */
+    focusGlowPlateau: Float = 0.5f,
+    /** 光斑纵向压缩（1 = 正圆）。见 `PublicInteractiveHighlight.focusGlowSquash`。 */
+    focusGlowSquash: Float = 1f,
+    /** 面板提亮峰值（上游 0.08）。小宿主面积小，需要更亮才等效。 */
+    panelGlowAlpha: Float = 0.08f,
+    /** 手指光斑峰值（上游 0.15）。同上。 */
+    focusGlowAlpha: Float = 0.15f,
+): MeloXLiquidInteraction {
     val animationScope = rememberCoroutineScope()
-    return remember(animationScope) {
-        MeloXLiquidInteraction(PublicInteractiveHighlight(animationScope))
+    return remember(
+        animationScope,
+        softwareFocusGlow,
+        focusGlowRadiusRatio,
+        allowPointerGlowOverflow,
+        focusGlowPlateau,
+        focusGlowSquash,
+        panelGlowAlpha,
+        focusGlowAlpha,
+    ) {
+        MeloXLiquidInteraction(
+            PublicInteractiveHighlight(
+                animationScope,
+                panelGlowAlpha = panelGlowAlpha,
+                focusGlowAlpha = focusGlowAlpha,
+                softwareFocusGlow = softwareFocusGlow,
+                focusGlowRadiusRatio = focusGlowRadiusRatio,
+                allowPointerGlowOverflow = allowPointerGlowOverflow,
+                focusGlowPlateau = focusGlowPlateau,
+                focusGlowSquash = focusGlowSquash,
+            ),
+        )
     }
 }
 
@@ -338,6 +420,16 @@ fun Modifier.meloXBackdropBlur(
     blurRadius: Dp = 20.dp,
     surfaceColor: Color = Color.Transparent,
 ): Modifier {
+    // ★ 2026-10-23：半径 0 时**根本不进背板采样管道**。
+    //   `drawBackdrop(effects = { blur(0.dp) })` 并不等于「什么都不做」：它仍要把背板
+    //   录成一层、再 `toImageBitmap()` 读回来才能施加 RenderEffect —— 每次一套
+    //   `HardwareRenderer` + `ImageReader` + GPU 上下文（真机实测 8.6ms/次，最坏 90ms，
+    //   而且和主窗口抢同一块 GPU）。转屏时 `orientationAnimating` 本来就把这块面板的
+    //   半径压到 0dp（见 `MeloXIOSNowPlayingScene` 控件条处注释），也就是**意图上**已经
+    //   关掉了高斯，但这段管道照跑 ⇒ 意图没兑现，转屏最重的那几帧全砸在这里。
+    //   半径 0 时「模糊 0 的背板 + tint」与「不画背板、只铺 surfaceColor」逐像素等价
+    //   （背板自己已经在更下层画过了），所以这是零观感改动。
+    if (blurRadius <= 0.dp) return background(surfaceColor, shape)
     val backdrop = meloXGlassBackdrop()
     if (backdrop == null) return background(surfaceColor, shape)
     return drawBackdrop(
@@ -384,12 +476,168 @@ fun Modifier.meloXLiquidBottomBar(
     tint: Color,
     surfaceColor: Color,
     pressProgress: Float = 0f,
-    // 官方面板 lens 是固定 24dp；此参数仅为兼容既有调用点保留，不再参与 lens。
-    // （照搬官方之后 lens 值由本函数内部固定，不由调用方注入。）
+    /**
+     * 折射**内深**（从轮廓向内多深参与折射）。与 [lensRadius] 是两个独立量：
+     *   · `lensRadius`   → 折射球面的曲率 ⇒ 决定**液态强度**（弯折有多狠）；
+     *   · `refractionHeight` → 折射**作用带有多厚** ⇒ 只决定「边缘那一圈」的宽度。
+     *
+     * 🔴 2026-11-02（第十六轮，本轮真因）：**这个参数此前被写死成等于 `lensRadius`**，
+     *   形参注释里还写着「仅为兼容既有调用点保留，不再参与 lens」。
+     *
+     *   ### 为什么这一条解释了全部症状
+     *   迷你栏竖屏只有 **48dp 高**，而 `lens(r, r)` 把内深也设成 **24dp**
+     *   ⇒ 24dp ≥ 半高 24dp ⇒ **整个表面都在折射**，没有一圈平直区。
+     *   于是四个角的球面在条的中心相遇，一整块玻璃退化成一颗「凸透镜」：
+     *     · 四个角被弯折成一圈，那圈采的是**未模糊的原始背板**（kyant 的 lens
+     *       在 shader 里 `content.eval()` 原始内容，绕过了 blur）⇒ 背景一动它就变
+     *       ⇒ 用户看到的「四个角有动态背景颜色的弧在闪」；
+     *     · 处处贴边采样 ⇒ AGSL 大量 miss + clamp ⇒ 那几十帧极贵（「非常卡顿」）。
+     *   ⇒ 把内深与强度**解耦**：`radius` 保持官方 24dp（液态强度一分不减），
+     *     内深由调用方给（迷你栏 8dp）⇒ 折射只发生在边缘一圈宽 8dp 的带子里，
+     *     中间 32dp 是平直区，直接显示**已模糊**的内容 ⇒ 弧变窄 + 闪大减 + GPU 变便宜。
+     *
+     *   ⚠ 默认值 **24dp** 是刻意保留的：既有点一律不传此参数 ⇒ 仍是 `lens(24, 24)`，
+     *     与本参数接入前**逐字等价**（nav 胶囊 / 搜索球 / 水珠零影响）。
+     */
     refractionHeight: Dp = 24.dp,
+    /**
+     * 是否启用透镜折射（`lens`）。默认 true，与既有行为完全一致。
+     *
+     * ⚠⚠ 为什么需要这个开关（2026-10-31）：kyant 的 `lens` 有一条硬性类型检查 ——
+     *   **只接受 `RoundedRectangularShape` / `CornerBasedShape`**，其余形状直接抛
+     *   `UnsupportedOperationException: Only RoundedRectangularShape or CornerBasedShape
+     *   is supported in lens effects.`，且抛在 **draw 阶段** ⇒ **主线程崩溃**。
+     *
+     *   迷你播放器玻璃层与外壳要用**同一个** squircle `MeloSmoothCornerShape`
+     *   （普通 `: Shape`，不是 `CornerBasedShape`）才能让两层轮廓逐点重合、消除
+     *   收回末尾那条 1~3px 的背景色接缝；此时必须关掉 lens，否则一展开就崩。
+     *   （`MeloSmoothCornerShape` 不能改成 `CornerBasedShape`：fillMaxSize + morph
+     *     拉伸会在测量阶段抛 `LookaheadDelegate has not been measured yet`。）
+     */
+    lensEnabled: Boolean = true,
+    /**
+     * 透镜折射半径。默认 24dp（= kyant0 官方面板值，既有调用点行为不变）。
+     *
+     * 🔴 2026-11-02 新增，修「收缩态（迷你栏与底栏两个圆球同一行）四角出现
+     *   动态背景色弧线并闪烁 + 明显卡顿」。
+     *
+     *   ### 根因
+     *   `lens` 的折射半径若**接近形状自身的圆角/半高**，圆角处会被 5× 折射链
+     *   放大成一圈（同文件 L645 段已记录过这个同源故障：把它照搬到 40dp 圆盘上
+     *   就是"圆周被放大弯折成一圈 + 白环"）。
+     *
+     *   迷你栏在竖屏有两档高度（`MeloXIOSMiniPlayer` 的 `miniHeight`）：
+     *     · 展开态（在底栏上方）→ 236dp，半高 118dp ≫ 24dp ⇒ 安全；
+     *     · 收缩态（与两个圆球同一行）→ **48dp，半高正好 24dp == lens 半径**
+     *       ⇒ 四个圆角各被弯折出一圈，采到的正是邻域里**逐帧流动的动态背景**，
+     *       所以是"四个角有背景色的弧在闪"。
+     *   ⇒ 半径必须**随形状高度收缩**，不能写死 24dp。调用方按高度算好传进来。
+     *
+     *   ⚠ 只动半径、不动 lens 本身：稳态折射一点不少（大纲要的液态折射保留），
+     *     而且半径小于半高后既不再弯折，也把 AGSL 的采样环带缩掉一大半
+     *     （收缩态那几十帧的 GPU 开销主要就在这里）。
+     */
+    lensRadius: Dp = 24.dp,
+    /**
+     * 液态折射的**瞬时强度系数**（0..1），**在绘制期求值**。
+     *
+     * 🔴 2026-11-03 新增。用户口径：「播放页打开/关闭动画期间，迷你栏出现的阶段都是
+     *   完全完整液态玻璃 —— 能不能在动画期间降低液态甚至关掉，只在**肉眼可识别**的
+     *   阶段（= 转场落定之后）用完整液态，切换要平滑。」
+     *
+     *   ### 为什么可以「平滑」而不用布尔开关
+     *   反编译 `io.github.kyant0:backdrop:2.0.0` 的 `LensKt` 实测：AGSL 源里
+     *   `refractionHeight` / `refractionAmount` / `cornerRadii` 全是 **uniform**，
+     *   而且配套有 `RuntimeShaderCache.obtainRuntimeShader(源码, key)`（按源码字符串缓存）。
+     *   ⇒ 折射参数**逐帧改只是 `setFloatUniform`**，不触发 AGSL 重编译、不新建 shader。
+     *   所以「强度」可以像任何 Float 一样连续插值 —— 这是本参数成立的前提。
+     *   ⛔ 别把它改成 `Boolean`：二分开关在 48dp 小面上仍能被肉眼抓到一帧硬切。
+     *
+     *   ### 强度 → 半径的映射
+     *   传 `s` 时实际调用 `lens(lensRadius × s, lensRadius × s)`：
+     *     · `s = 1` ⇒ 与不传本参数**逐字等价**（官方 24dp，液态一分不减）；
+     *     · `s → 0` ⇒ 折射半径趋零 ⇒ 球面收成一点，液态观感连续消失；
+     *     · `s ≤ 0.002` ⇒ **整条 `lens` 不挂**（此时半径 < 0.05dp，肉眼零差异），
+     *       顺带把那几十帧的 AGSL 折射链整段省掉。
+     *   ⚠ 半径只会**变小**，不会超过形状半高 ⇒ 不会引出「圆角被弯折成一圈」那条旧故障
+     *     （见 [lensRadius] 的整段说明）。
+     *
+     *   ### 谁在用
+     *   只有迷你播放栏传它（转场期降级）。nav 胶囊 / 搜索球 / 水珠一律不传 ⇒ `null`
+     *   ⇒ 恒 `1f` ⇒ 与本参数出现之前**逐字等价**。
+     *
+     *   ⚠ 必须是 `() -> Float` 而不是 `Float`：绘制期读 ⇒ 逐帧变化**不触发重组**
+     *     （本函数的 `effects` lambda 在 draw 阶段执行）。传值会把
+     *     `MeloXIOSMiniPlayer` 那上千行按帧重组。
+     */
+    liquidScale: (() -> Float)? = null,
+    /**
+     * 本面板 blur 半径。默认 `2.dp`（本项目 2026-09-25 用户拍板的「更透、更少奶油感」
+     * 值，偏离 kyant0 官方的 8dp；既有调用点行为不变）。
+     *
+     * 🔴 2026-11-02 新增，配合 `lensRadius` 一起修「收缩态迷你栏四角随背景闪」。
+     *
+     *   ### 为什么提高 blur 比「提高 surfaceColor 不透明度」正确
+     *   闪烁的能量完全来自**透出的背板内容帧间变化**。压它有两条路：
+     *     · 提高 `surfaceColor` 的 alpha ⇒ 透光变少，但**液态折射一起被压死**
+     *       （折射位移虽与 alpha 无关，可见性却线性依赖透光量）。用户口径：
+     *       「静态的液态效果直接丢失了，不值得」—— 已实测否决这条路。
+     *     · 提高 blur ⇒ 透光量一分不减（**通透和折射全部保留**），只是把透进来的
+     *       内容糊得更狠。滚动一帧位移约 20px，2dp(≈6px) 完全糊不住，
+     *       4dp(≈12px) 起才真正开始吃掉帧间差异。
+     *   ⇒ 默认值不变（导航胶囊 / 搜索球 / 水珠零影响），只由需要的调用方抬高。
+     *
+     *   ⚠ 有一条既有约束：**面板 blur 必须 ≥ 捕获层 blur**。抬高只会更安全。
+     *   ⚠ 历史上「极端折射诊断」遗留 2dp 时曾出现「指示器颜色混乱」，那是
+     *     **配合写死 24dp 的 lens** 才成立的组合；抬高 blur 是朝官方 8dp 方向走，
+     *     不会重现那条故障。
+     */
+    blurRadius: Dp = 2.dp,
     exportedBackdrop: LayerBackdrop? = null,
+    /**
+     * 显式指定本面要采样的背板；null = 照旧走 `meloXGlassBackdrop()`（读
+     * [LocalMeloXBackdrop]，含硬件加速/遮挡门控）。
+     *
+     * 🔴 2026-11-02 新增，修「收缩态迷你栏在下沉末段底色从专辑橙跳成主页深灰」。
+     *
+     *   ### 为什么「同一份背板」比「把播放页背景淡掉」正确
+     *   换色的本质是**采样对象换了**：迷你栏真实节点在底栏子树里，`LocalMeloXBackdrop`
+     *   被 `MeloXApp` 显式 provide 成 `bottomChromeBackdrop`（录制的是主页 recede 页）；
+     *   而转场期这一份是渲进**共享元素 overlay** 的副本，overlay 是 `SharedTransitionLayout`
+     *   下的独立 subcomposition，拿到的是外层那个 `pageBackdrop`（/ 或宿主侧背板）
+     *   ⇒ 两者**根本不是同一个 Backdrop 对象**，转场一结束就换源，一帧内 ΔR≈86。
+     *
+     *   ⇒ 之前那版修法是「让播放页背景在末段淡出，使换源前的画面提前变主页」，用户判
+     *     「这种显隐对观感的牺牲太大了」—— 对，因为它拿整页的观感去补一个**对象不统一**
+     *     的缺陷。本参数走另一条路：**把同一个 Backdrop 对象直接喂进来**，于是
+     *     overlay 副本与稳态节点逐帧采同一份内容，「换源」这个事件在结构上不存在，
+     *     播放页一个像素都不用淡。
+     *
+     *   ⚠ 必须由**调用方组合期一次性传入**（不是绘制期回读）：overlay 副本与真实节点
+     *     是同一次 composable 调用的两个渲染位置，参数天然一致 ⇒ 两侧严格同源。
+     *   ⚠ 传 null 时行为与本参数出现之前**逐字相同**，既有调用点（nav 胶囊 / 搜索键 /
+     *     水珠…）一律不受影响。
+     */
+    backdropOverride: Backdrop? = null,
+    /**
+     * 亮度采样源图层（2026-10-19，见 [LocalBottomBarLuminanceLayer]）。
+     *
+     * 传非 null 时，本面在画背板的那一笔里**顺手**把背板内容录一份到该图层
+     * （`onDrawBackdrop` ⇒ 零 PixelCopy、零窗口截屏）。录的是**背板原始内容**，
+     * 不含本面自己的 vibrancy / 涂层 / 高光，所以采样器拿到的就是「底栏背后是什么」。
+     *
+     * ⚠ 只能有一个面传它（现在只有导航胶囊），否则会互相覆盖。
+     */
+    luminanceLayer: GraphicsLayer? = null,
 ): Modifier {
-    val backdrop = meloXGlassBackdrop()
+    // ⚠ 显式背板优先（overlay 副本与稳态节点同源，见 `backdropOverride` 的说明）；
+    //   但仍要过硬件加速判定：不可用时必须走下面的不透明回落，否则软件渲染下
+    //   `drawBackdrop` 白跑甚至崩。
+    val backdrop = if (backdropOverride != null && meloXGlassAvailable()) {
+        backdropOverride
+    } else {
+        meloXGlassBackdrop()
+    }
     if (backdrop == null) {
         // Flatten the requested translucent material over the current page
         // color. Raising a dark tint to a fixed 48% made light segmented
@@ -406,6 +654,12 @@ fun Modifier.meloXLiquidBottomBar(
             shadow = null,
             innerShadow = null,
             exportedBackdrop = exportedBackdrop,
+            onDrawBackdrop = { drawBackdrop ->
+                drawBackdrop()
+                luminanceLayer?.recordLuminanceSource(this, layoutDirection, size) {
+                    drawBackdrop()
+                }
+            },
             onDrawSurface = { drawRect(surfaceColor) },
         )
     }
@@ -434,8 +688,27 @@ fun Modifier.meloXLiquidBottomBar(
             //   ⚠ 不变约束：面板 blur 必须 ≥ 捕获层 blur（现二者相等，均为 2dp）。
             //   ⚠ 若真机再现「指示器 / 折射混乱」，**第一嫌疑就是本行的低 blur** ——
             //     排查第一步应是把它改回 8dp 验一次，别先去动 lens。
-            blur(2.dp.toPx())
-            lens(24.dp.toPx(), 24.dp.toPx())
+            //   ★ 2026-11-02：改为可配 `blurRadius`（默认仍是 2dp ⇒ 既有调用点逐字不变）。
+            //     收缩态迷你栏传 4dp，把「透进来的滚动内容」糊掉一档，从而压住
+            //     四角那圈随背景变色的闪 —— 只动模糊、不动透光量 ⇒ 液态折射全部保留。
+            blur(blurRadius.toPx())
+            // ⚠ squircle（`MeloSmoothCornerShape : Shape`）不满足 kyant lens 的类型检查
+            //   ⇒ 调用方必须传 `lensEnabled = false`。默认 true，既有调用点行为不变。
+            // ⚠ 半径必须 < 形状半高（见 `lensRadius` 的说明），否则圆角被放大弯折成一圈。
+            // ⚠ 2026-11-02（第十六轮）：曾把第二参数接成 `refractionHeight`（10dp）以消除
+            //   48dp 薄条上「上下折射在中轴相遇」的缝。实测用户判定「毁了迷你栏的常态观感」
+            //   ⇒ **回退**，两个参数仍取同一个值（= 官方面板的写法）。
+            // ★ 2026-11-03：强度系数在**绘制期**读（`liquidScale` 是 provider）。
+            //   与 `pressProgress` 那条「不能喂逐帧值」的教训不冲突：这里的读者是 draw 阶段的
+            //   `effects` lambda，不是组合期的常量计算 ⇒ 只让图层失效，不重组。
+            if (lensEnabled) {
+                val scale = liquidScale?.invoke()?.coerceIn(0f, 1f) ?: 1f
+                // 半径 < 0.05dp 时肉眼已零差异 ⇒ 整条 lens 不挂，省掉折射链。
+                if (scale > 0.002f) {
+                    val r = (lensRadius * scale).toPx().coerceAtLeast(0.05f)
+                    lens(r, r)
+                }
+            }
         },
         highlight = {
             Highlight.Default.copy(
@@ -462,6 +735,20 @@ fun Modifier.meloXLiquidBottomBar(
             scaleY = scale
         },
         exportedBackdrop = exportedBackdrop,
+        // ★ 亮度采样源（2026-10-19）：在**画背板的那一笔里**顺手录一份。
+        //   背板 `drawBackdrop()` 本来就要执行一次，这里只是把它重复记录进一个
+        //   等比缩小的 GraphicsLayer —— CPU 侧只多记一条绘制指令，GPU 侧多一次
+        //   小尺寸 drawLayer（96px 宽），换掉原来每 120ms 一次的 `PixelCopy`
+        //   （RenderThread 同步等 GPU，实测单次 3~16ms）。
+        //   ⚠ 录到的**不含** effects（vibrancy/blur/lens 是加在 kyant0 自己那层
+        //     `renderEffect` 上的），所以是纯净的背景内容 ⇒ 采样器不再需要
+        //     「避开自己玻璃」的那套补偿，也不会再有自反馈翻转。
+        onDrawBackdrop = { drawBackdrop ->
+            drawBackdrop()
+            luminanceLayer?.recordLuminanceSource(this, layoutDirection, size) {
+                drawBackdrop()
+            }
+        },
         onDrawSurface = {
             drawRect(surfaceColor)
         },
@@ -534,7 +821,7 @@ fun Modifier.meloXScenePageDisc(
  * `highlight × p`、`drawRect(containerColor)`，**同样没有 shadow / innerShadow**。
  *
  * 而 `meloXLiquidBottomBar` 是**面板材质**，三处都不一样：
- * ① `lens(10dp, 28dp)` **不乘 p** —— 面板恒折（对面板是对的）；
+ * ① `lens(24dp, 24dp)` **不乘 p** —— 面板恒折（对面板是对的）；
  * ② 带 `Shadow(24dp, dy≈4dp)`；
  * ③ 带 `InnerShadow(4dp + 8dp·p)`，而 `InnerShadow` 的默认 offset 是
  *    `DpOffset(0, radius)`（`shadow/InnerShadow.kt`）⇒ **这条暗带只压顶沿**。
@@ -557,6 +844,14 @@ fun Modifier.meloXLiquidCaptureLayer(
     pressProgress: Float,
     refractionHeight: Dp = 10.dp,
     refractionAmount: Dp = 28.dp,
+    /**
+     * `lens` 深度相对「竖屏展开态胶囊(高 49dp)」的换算系数。
+     *
+     * 🔴 2026-10-27 横屏修：默认 1f = 竖屏展开态逐像素不变。横屏 `splitBottomDock`
+     *   下胶囊高 40dp ⇒ 传 `40/49 ≈ 0.816`，让折射深度与竖屏**同比例**，
+     *   而不是把 24dp 的绝对值硬套到更矮的胶囊上（那样相对过深 ⇒ 折进 tab 内）。
+     */
+    lensScale: Float = 1f,
 ): Modifier {
     val backdrop = meloXGlassBackdrop() ?: return this
     val p = safeProgress(pressProgress)
@@ -597,7 +892,9 @@ fun Modifier.meloXLiquidCaptureLayer(
             //   甚至触发 GPU fault）。
             //   跳过 lens 的输出与「提前返回」逐像素相同 —— 折痕本来就只在按压时出现。
             if (p > 0.001f) {
-                lens(24.dp.toPx() * p, 24.dp.toPx() * p)
+                // 🔴 2026-10-27 横屏修：乘 `lensScale`（按实际胶囊高度换算），竖屏=1f 不变。
+                val lp = (p * lensScale).coerceIn(0f, 2f)
+                lens(24.dp.toPx() * lp, 24.dp.toPx() * lp)
             }
         },
         highlight = { Highlight.Default.copy(alpha = p) },
@@ -619,6 +916,29 @@ fun Modifier.meloXLiquidTabSelection(
     tint: Color,
     panelBackdrop: Backdrop? = null,
     pressProgress: Float = 0f,
+    /**
+     * 水珠**实际高度**。传了就按它现算 `lens` 换算系数（[dropletHeight]/56dp），
+     * 不传则退回竖屏常数 [MeloXDropletLensScale]。
+     *
+     * 🔴 2026-10-27 横屏修（根因）：`lens` 深度必须与该水珠高度成正比。竖屏展开 49dp
+     *   → 49/56=0.875；横屏 `splitBottomDock` 水珠仅 40dp → 若仍按 0.875 算，折射带
+     *   相对过深、长按时整条折进 tab 内。⇒ 由调用方（`MeloXApp.kt`）把真实 `dropletHeight`
+     *   传进来，横屏自动变 40/56≈0.714，与竖屏观感一致。
+     */
+    dropletHeight: Dp? = null,
+    /**
+     * 折射**深度/位移**的额外衰减系数（默认 1f = 照常）。
+     *
+     * 🔴 2026-11-07 横屏修（用户报「横屏小底栏按住 tab 的水珠折射范围过大，
+     * 垂直方向同时折到了图标和文字」）：横屏 `splitBottomDock` 下水珠仅 40dp 高，
+     * 且 `compactMetrics` 把图标+文字挤得更满更密 —— 即便折射深度已按
+     * `40/56` 等比换算（比例与竖屏一致），同样的相对深度在**矮而满**的水珠里
+     * 也更容易刮到图标下方的文字行。⇒ 由调用方（`MeloXApp.kt`）在横屏档传
+     * `lensDepthScale < 1`，把折射带收窄到只碰图标、不再折进文字。
+     *
+     * ⚠ 只该在「水珠比竖屏矮/内容更满」的档位用；竖屏展开态保持 1f 逐像素不变。
+     */
+    lensDepthScale: Float = 1f,
     // 按压放大走的层内缩放（= 官方 `LiquidBottomTabs` 水珠的 layerBlock）。
     layerBlock: (GraphicsLayerScope.() -> Unit)? = null,
 ): Modifier {
@@ -677,16 +997,22 @@ fun Modifier.meloXLiquidTabSelection(
             //     ⇒ 8.75dp / 12.25dp。
             //   ⚠ 之所以要换算：`refractionHeight` 是**从轮廓向内取样的深度**，水滴越小、
             //     同一条边界线在相对尺度上越"靠外"，照搬 56dp 的绝对值会让折射带相对过深。
-            //   本函数拿不到水珠高度（modifier 里无 size），故用官方基准 56dp 与 MeloX
-            //   展开态 49dp 的比值作为固定系数；`DropletHeight` 若再改，改这一个常量。
-            val dropletLensScale = MeloXDropletLensScale
+            //   本函数拿不到水珠高度（modifier 里无 size）—— 🔴 2026-10-27 横屏修：
+            //   **改为由调用方把真实 `dropletHeight` 传进来现算**（横屏水珠 40dp 时
+            //   必须是 40/56，而非竖屏的 49/56；否则折射带相对过深、长按时折进 tab 内）。
+            //   未传（其它调用点/旧路径）才退回竖屏常数。
+            val dropletLensScale = dropletHeight
+                ?.let { (it.value / 56f).coerceIn(0.5f, 1.2f) }
+                ?: MeloXDropletLensScale
             // ⚠ 同 `meloXLiquidCaptureLayer`：静息（p≈0）**整段跳过**，不传 lens(0, 0)。
             //   这里还是带色散的 `RefractionWithDispersion` shader（uniform 更多），
             //   除零产生的 NaN 波及面比普通 lens 更大。跳过后的输出与原「提前返回」一致。
             if (p > 0.001f) {
+                // ⚠ 2026-11-07：乘 `lensDepthScale`（横屏矮水珠时收紧折射带，默认 1f 不变）。
+                val depthScale = (p * dropletLensScale * lensDepthScale).coerceIn(0f, 2f)
                 lens(
-                    refractionHeight = 10.dp.toPx() * p * dropletLensScale,
-                    refractionAmount = 14.dp.toPx() * p * dropletLensScale,
+                    refractionHeight = 10.dp.toPx() * depthScale,
+                    refractionAmount = 14.dp.toPx() * depthScale,
                     chromaticAberration = true,
                 )
             }

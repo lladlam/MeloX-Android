@@ -126,6 +126,7 @@ internal fun MeloXClassicNowPlayingScene(
                     onPageChanged = onPageChanged,
                     onShowQuality = onShowQuality,
                     modifier = Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp),
+                    compactQueueControls = window.isLandscape,
                 )
             }
         }
@@ -196,6 +197,8 @@ private fun ClassicAlternatePage(
     onPageChanged: (MeloXNowPlayingPage) -> Unit,
     onShowQuality: () -> Unit,
     modifier: Modifier,
+    // 横屏几何 ⇒ 队列页四键栏走紧凑档（64 → 30dp）；竖屏恒 false。
+    compactQueueControls: Boolean = false,
 ) {
     Column(modifier) {
         ClassicMetadata(state)
@@ -211,6 +214,8 @@ private fun ClassicAlternatePage(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 showSongHeader = false,
                 interactive = true,
+                // 横屏几何 ⇒ 四键栏走紧凑档（64 → 30dp），竖屏恒 false。
+                compact = compactQueueControls,
             )
             MeloXNowPlayingPage.Artwork -> Unit
         }

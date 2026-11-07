@@ -6,13 +6,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 三档识别的配置矩阵守卫：**互斥**（任一尺寸只落一档）+ **不漏**（车机几何不被漏判）。
+ * 三档识别矩阵守卫（2026-11-07 加固）。
  *
- * 两条断言分别对应两类历史错判：
- *  · 串 = 手机横屏（含 20:9 / 21:9 / 三折叠展开）被判成 [MeloXDeviceProfile.CarHeadUnit]，
- *    进而套上只给超宽屏准备的左右并排布局；
- *  · 漏 = 真车机几何（1920×720 / 1280×400 / 1600×640）被判成手机单栏，
- *    矮屏会被 `heightClass == Compact` 整段踢掉。
+ * 用户口径：「手机、平板、车机识别加固，**不准串 也不准漏**」。本测试把这两个词落成
+ * 两条可执行断言：
+ *  · 不串 = 手机横屏（含 20:9 / 21:9 / 三折叠展开）任何尺寸都**不得**判成 CarHeadUnit，
+ *    否则会套上只给超宽屏准备的左封面 + 右歌词布局；
+ *  · 不漏 = 真车机几何（1920×720 / 1280×400 / K20P 模拟 1600×640）都必须判成
+ *    CarHeadUnit，否则矮屏会被 heightClass=Compact 踢回手机单栏。
  *
  * ⚠ 已知取舍（写在这里免得日后又被当 bug 修）：**无 automotive 信号**的低分辨率车机
  *   （1920×720@320dpi = 960×360dp）在几何上与 21:9 手机横屏不可区分，宁可漏也不串；
@@ -65,7 +66,7 @@ class MeloXDeviceProfileTest {
 
     @Test
     fun ultrawideCarGeometryWithoutSignalIsRecognized() {
-        // 2400×960 @ 240dpi ⇒ 1600×640dp
+        // K20P 模拟车机 2400×960@240dpi ⇒ 1600×640dp
         assertProfile(MeloXDeviceProfile.CarHeadUnit, 1600, 640)
         assertProfile(MeloXDeviceProfile.CarHeadUnit, 1920, 720)
         // ★ 2026-11-07 高度门槛 420 → 380：低矮中控（1280×400 / 1024×390）不再被漏判。
@@ -94,7 +95,7 @@ class MeloXDeviceProfileTest {
 
     @Test
     fun ultrawideGeometryIsIndependentOfDeviceProfile() {
-        // 几何超宽为真：2.5:1 车机、21:9 手机横屏。
+        // 几何超宽为真：车机 2.5:1、21:9 手机、K20P 模拟屏。
         assertTrue(meloXIsUltrawide(2400, 960))
         assertTrue(meloXIsUltrawide(1600, 640))
         assertTrue(meloXIsUltrawide(916, 393))

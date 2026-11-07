@@ -151,12 +151,16 @@ private fun MessagesConversationList(
             .statusBarsPadding(),
     ) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            // ⚠ 2026-10-17 修「消息标题不居中」：左侧返回键 44dp、右侧两枚按钮 ≈96dp，
+            //   原 `weight(1f)` 只在**两侧剩余空间内**居中 ⇒ 标题实际偏左 ~26dp。
+            //   改为 Box 叠层：标题对**整行**居中，按钮两端对齐 —— 与两侧宽度无关。
+            Box(
+                Modifier.fillMaxWidth().height(58.dp),
             ) {
                 Box(
                     Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 12.dp)
                         .size(44.dp)
                         .meloXLiquidButton(
                             shape = CircleShape,
@@ -173,14 +177,17 @@ private fun MessagesConversationList(
                 }
                 Text(
                     text = context.getString(R.string.tab_messages),
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.align(Alignment.Center),
                     color = MaterialTheme.colorScheme.onBackground,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     MessageGlassIconButton(onClick = onStartMessage) {
                         MeloXSymbolIcon(MeloXSymbol.Person, Modifier.size(21.dp), MaterialTheme.colorScheme.primary)
                     }

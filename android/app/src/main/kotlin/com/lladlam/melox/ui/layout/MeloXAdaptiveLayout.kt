@@ -71,8 +71,8 @@ private const val CAR_RATIO_TIMES_TEN = 22 // width * 10 >= height * 22
  *   · 设备档回答「这是车机 / 平板 / 手机」——决定圆角基准、尺寸策略；
  *   · 本判据回答「这块屏够不够宽，宽到能左列播放器 + 右列内容并排」。
  *   只看设备档会**串**：ROM 报 automotive 但比例正常的中控（1024×600 / 1280×720，
- *   比值 1.7~1.78）会被判成车机档，若再无条件套超宽布局，两列内容都会被挤窄 ⇒
- *   反而不如平板双栏舒展。反过来只看几何会**漏**：
+ *   比值 1.7~1.78）会被判成车机，若再无条件套超宽布局，右列被 [MeloXUltrawideMinPaneWidth]
+ *   顶掉、封面被纵向预算压小 ⇒ 反而不如平板双栏舒展。反过来只看几何会**漏**：
  *   真车机即使比例不极端也该算车机档。⇒ 两个维度分别判、在
  *   [MeloXWindowInfo.ultrawidePlayer] 里取交集。
  */
@@ -173,14 +173,14 @@ data class MeloXWindowInfo(
 
     /**
      * 「超宽横屏」（车机 / 带鱼屏）档布局闸门：关掉封面态右移、让右列歌词常驻，
-     * 并把播放器与内容横向并排。
+     * 并把封面与控制条横向并排（见 `MeloXIOSNowPlayingScene`）。
      *
      * ⚠ **已内含 [supportsPlayerTwoPane]**：手机横屏、竖屏、用户关闭分屏时恒 false，
      *   下游不必（也不应）再自己拼 `twoPane &&`，从源头杜绝「识别成车机却按手机画」的串味。
      * ⚠ **必须同时满足 [ultrawideGeometry]**：车机档 ≠ 超宽屏。1024×600 / 1280×720 的
      *   中控（比值 1.7~1.78）设备档是 [MeloXDeviceProfile.CarHeadUnit]，但套超宽布局只会
-     *   把两列都挤窄 ⇒ 这类车机走**平板双栏**更舒展（[supportsPlayerTwoPane] 仍为 true，
-     *   布局不会退回手机单栏）。
+     *   把右列压到 [MeloXUltrawideMinPaneWidth] 下限、封面被纵向预算挤小 ⇒ 这类车机走
+     *   **平板双栏**更舒展（[supportsPlayerTwoPane] 仍为 true，布局不会退回手机单栏）。
      * · 输入与 widthClass 同用 `containerSize`（`LocalMeloXPaneSize ?: LocalWindowInfo`），
      *   Scene 与 SharedHost 都走 [rememberMeloXWindowInfo] ⇒ 单点真源，两处不会错拍。
      */

@@ -459,7 +459,7 @@ private fun MeloXProgressControlV3(state: MeloXPlaybackUiState) {
     // ★ 统一「按压放大 + 相对拖动」：首次按下不跳值，拖动按相对位移增减。
     val sliderGesture = rememberMeloXRelativeSliderGesture()
     val trackHeight by animateDpAsState(
-        targetValue = if (scrubbing) 6.dp else 4.dp,
+        targetValue = if (scrubbing) MeloXMediaBarThicknessActive else MeloXMediaBarThickness,
         animationSpec = tween(120),
         label = "progress-track-height",
     )
@@ -820,7 +820,7 @@ private fun MeloXVolumeControlV3(state: MeloXPlaybackUiState) {
         label = "volume-thumb-size",
     )
     val trackHeight by animateDpAsState(
-        targetValue = if (dragging) 4.dp else 3.dp,
+        targetValue = if (dragging) MeloXMediaBarThicknessActive else MeloXMediaBarThickness,
         animationSpec = tween(120),
         label = "volume-track-height",
     )

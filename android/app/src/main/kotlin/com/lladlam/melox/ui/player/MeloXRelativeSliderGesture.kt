@@ -148,9 +148,10 @@ internal class MeloXRelativeSliderGesture(
             if (downAtMs == 0L) downAtMs = SystemClock.uptimeMillis()
             startValue = currentValue.coerceIn(valueRange.start, valueRange.endInclusive)
         }
-        // ★ 累积位移必须跟值域一起钳制：不钳的话，拖到两端后手指继续滑的那段会被白记进
-        //   [accumulated]，回拖时得先把这段「空转」走完才动 ⇒ 表现为「往回拖了但数值不变」
-        //   （迟滞），拖得越远滞后越久，松手前会误以为控件卡死。钳到「从 `startValue` 出发
+        // ★ 累积位移必须跟值域一起钳制（2026-11-07 加固）：
+        //   不钳的话，拖到两端后手指继续滑的那段会被白记进 [accumulated]，回拖时
+        //   得先把这段「空转」走完才动 ⇒ 表现为「往回拖了但数值不变」（迟滞），
+        //   拖得越远滞后越久，松手前会误以为控件卡死。钳到「从 startValue 出发
         //   可实际到达的位移区间」后，反向拖动立刻生效。
         //   `startValue` 已在上方按值域钳过 ⇒ minAcc ≤ 0 ≤ maxAcc，区间永远合法。
         val minAcc = valueRange.start - startValue

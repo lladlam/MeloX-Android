@@ -20,16 +20,13 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.shape.RoundedCornerShape
+import com.lladlam.melox.ui.theme.MeloXBrandLogo
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.lladlam.melox.core.network.parseNeteaseListenTogetherInvitation
 import com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigRuntime
@@ -120,7 +117,10 @@ class MainActivity : ComponentActivity(), MeloXDetailPageOwner {
                     label = "melox-start-icon",
                 )
                 LaunchedEffect(coldStart, returnFromBackground, pipModeState.value) {
-                    if (coldStart && !returnFromBackground && !pipModeState.value) delay(1_000L)
+                    // 冷启 splash 停留 1000ms：盖住首帧组合 + 暖机（JIT/类加载/首次布局）成本，
+                    // 避免迷你栏冷启后的第一次动画在暖机未完成时直接暴露给用户。不要为了「冷启更快」
+                    // 缩短这里——那是把卡顿提前暴露，不是消除。要治本得修迷你栏首动画本身的卡顿。
+                    if (coldStart && !returnFromBackground && !pipModeState.value) delay(1000L)
                     splashVisible = false
                 }
                 Box(Modifier.fillMaxSize()) {
@@ -138,13 +138,10 @@ class MainActivity : ComponentActivity(), MeloXDetailPageOwner {
                         }
                     }
                     if (splashAlpha > 0f) {
-                        Image(
-                            painter = painterResource(R.drawable.ic_launcher_foreground),
-                            contentDescription = null,
+                        MeloXBrandLogo(
+                            boxSize = 104.dp,
                             modifier = Modifier
                                 .align(Alignment.Center)
-                                .size(104.dp)
-                                .clip(RoundedCornerShape(24.dp))
                                 .alpha(splashAlpha),
                         )
                     }
