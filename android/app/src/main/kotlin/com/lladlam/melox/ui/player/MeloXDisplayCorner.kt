@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.ViewCompat
+import com.lladlam.melox.ui.layout.MeloXDeviceProfile
 import com.lladlam.melox.ui.layout.rememberMeloXWindowInfo
 import kotlinx.coroutines.delay
 
@@ -50,13 +51,22 @@ private val FRAMEWORK_CORNER_DIMENS = listOf(
  *   补上源 2 后本机可经 dimen 拿到真值；Pixel 等走源 1。两者皆失才落硬编码兜底。
  */
 internal fun meloXSystemCornerRadiusPx(view: View): Pair<Float, String>? {
+    // 屏幕短边一半（px）作为物理上限：个别 ROM（如红米 K20P 转屏过渡态）会在
+    // `WindowInsets` 里瞬时回报一个异常大的圆角值，若不拦截会被当作真值采用，
+    // 导致圆角「突然变大再恢复」。
+    val dm = view.resources.displayMetrics
+    val maxValidPx = minOf(dm.widthPixels, dm.heightPixels).toFloat() * 0.5f
     // 源 1：WindowInsets（API 31+ 官方入口）
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         val fromInsets = meloXDisplayCornerRadiusPxS(view)
-        if (fromInsets != null && fromInsets > 0f) return fromInsets to "insets"
+        // ★ 加物理边界校验：超出短边一半的瞬时异常值直接丢弃，退回源 2（框架 dimen 恒定）。
+        //   旧实现 `fromInsets > 0f` 就采用 ⇒ 转屏 insets 瞬时大值被当场当成真值，根因在此。
+        if (fromInsets != null && fromInsets > 0.5f && fromInsets <= maxValidPx) {
+            return fromInsets to "insets"
+        }
     }
-    // 源 2：框架 dimen（所有 API 可用）
-    return frameworkCornerRadiusPx()
+    val dimen = frameworkCornerRadiusPx()
+    return dimen
 }
 
 @RequiresApi(Build.VERSION_CODES.S)
@@ -78,13 +88,19 @@ private fun meloXDisplayCornerRadiusPxS(view: View): Float? {
  */
 private fun frameworkCornerRadiusPx(): Pair<Float, String>? {
     val res = Resources.getSystem()
+    // 与源 1 同一道物理边界：dimen / 数组也可能被 OEM 配错 —— 多显示器机型
+    // （`config_roundedCornerRadiusArray` 非空）取最大项时，外接副屏 / 电视的大圆角
+    // 会盖过内屏；个别 RRO 也会把别的量填进 dimen。超边界的候选直接丢弃，
+    // 全部越界则返回 null 落硬编码兜底。
+    val dm = res.displayMetrics
+    val maxValidPx = minOf(dm.widthPixels, dm.heightPixels).toFloat() * 0.5f
     var bestPx = 0
     var bestLabel = ""
     for ((name, label) in FRAMEWORK_CORNER_DIMENS) {
         val id = runCatching { res.getIdentifier(name, "dimen", "android") }.getOrDefault(0)
         if (id == 0) continue
         val px = runCatching { res.getDimensionPixelSize(id) }.getOrDefault(0)
-        if (px > bestPx) {
+        if (px > bestPx && px <= maxValidPx) {
             bestPx = px
             bestLabel = label
         }
@@ -97,7 +113,7 @@ private fun frameworkCornerRadiusPx(): Pair<Float, String>? {
     }.getOrDefault(0)
     if (arrayId != 0) {
         val maxPx = runCatching { res.getIntArray(arrayId).maxOrNull() ?: 0 }.getOrDefault(0)
-        if (maxPx > bestPx) {
+        if (maxPx > bestPx && maxPx <= maxValidPx) {
             bestPx = maxPx
             bestLabel = "dimen:array"
         }
@@ -127,7 +143,7 @@ internal data class MeloXDisplayCornerInfo(
  *   这里最多试 [MELOX_CORNER_POLL_ATTEMPTS] 次（每次间隔 [MELOX_CORNER_POLL_DELAY_MS]），
  *   任一来源拿到**落在物理合理区间**的值才采用；超时/不合理则用
  *   [MeloXPlayerRecedeCompatFallbackDp]（46dp，与 iQOO 15 的系统真值等值）。
- *   **平板档（[MeloXWindowInfo.supportsPlayerTwoPane]）不走这套手机比例判据**，
+ *   **平板 / 车机档（[MeloXDeviceProfile]）不走这套手机比例判据**，
  *   直接采用 [MeloXTabletDisplayCornerDp]，理由见该常量。
  *
  * ⚠ 合理性判据只做**物理边界**（0 < r ≤ 屏幕短边一半）。旧实现用「屏宽 8%~20%」的手机专属
@@ -142,18 +158,22 @@ internal fun rememberMeloXDisplayCornerInfo(): MeloXDisplayCornerInfo {
     val view = LocalView.current
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
+    val window = rememberMeloXWindowInfo()
     // 平板档（双栏大屏）不吃手机那套比例判据，见 [MeloXTabletDisplayCornerDp]。
-    val tablet = rememberMeloXWindowInfo().supportsPlayerTwoPane
+    // 判据用**设备档**而不是 `supportsPlayerTwoPane`：后者含 `splitScreenEnabled`
+    // （用户开关），关掉分屏时同一台平板的圆角会从 18dp 突跳回手机兜底 46dp。
+    // 屏幕圆角是物理属性，只该由屏幕尺寸 + ROM 信号决定。
+    val tablet = window.deviceProfile != MeloXDeviceProfile.Phone
     val fallbackPx = with(density) { MeloXPlayerRecedeCompatFallbackDp.dp.toPx() }
     val tabletPx = with(density) { MeloXTabletDisplayCornerDp.dp.toPx() }
-    val widthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
-    val heightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
-    var info by remember(
-        view,
-        configuration.screenWidthDp,
-        configuration.screenHeightDp,
-        tablet,
-    ) {
+    // ⚠ 修复（2026-11-07）：系统屏幕圆角是**物理**尺寸，与横竖屏无关；转屏复轮询会在 insets
+    //   过渡态用 `WindowInsets` 的**瞬时偏大值**覆盖已拿到的真值 ⇒ 圆角「突然变大再恢复」。
+    //   iQOO 15 真值恰 = 46dp 兜底 ⇒ 看不出；k20p 等真值 ≠ 46dp 的机型会闪。两道闸：
+    //   1) `remember` 的 key 只认 `view` / `tablet`（结构性变化才重置到兜底），转屏保留上一次拿到的值，
+    //      不再被重置回 46dp 兜底；
+    //   2) 下方 `LaunchedEffect` 轮询写入加「粘性闸」：已拿到真值（source ≠ "fallback"）就绝不覆盖，
+    //      转屏复轮询的瞬时偏大值无法改写；仅仍处兜底占位时才写入（首启/转屏补轮询的恢复路径）。
+    var info by remember(view, tablet) {
         mutableStateOf(
             MeloXDisplayCornerInfo(
                 runtimePx = null,
@@ -162,6 +182,10 @@ internal fun rememberMeloXDisplayCornerInfo(): MeloXDisplayCornerInfo {
             ),
         )
     }
+    // ★ key 仍含 `screenWidthDp/Height` ⇒ 转屏会复轮询（保留首启失败后的恢复路径）；
+    //   但下方写入加了「粘性闸」：已拿到真值（source ≠ "fallback"）就绝不覆盖，转屏期
+    //   `WindowInsets` 的瞬时偏大值不会改写 ⇒ 圆角零跳变。`remember(view, tablet)` 又保证
+    //   转屏不把 `info` 重置回兜底（见上方注释）。两闸合起来：转屏全程圆角恒定。
     LaunchedEffect(view, configuration.screenWidthDp, configuration.screenHeightDp, tablet) {
         if (tablet) {
             // 平板档：**不参与**手机比例判据（见 [MeloXTabletDisplayCornerDp]），
@@ -185,16 +209,17 @@ internal fun rememberMeloXDisplayCornerInfo(): MeloXDisplayCornerInfo {
             if (hit != null) {
                 val radius = hit.first
                 val source = hit.second
-                // 物理边界校验：圆角不可能超过屏幕短边的一半（个别 ROM 会把别的量当 radius 报）。
-                val maxValid = minOf(widthPx, heightPx) * 0.5f
-                info = if (radius > 0.5f && radius <= maxValid) {
-                    MeloXDisplayCornerInfo(runtimePx = radius, usedPx = radius, source = source)
-                } else {
-                    MeloXDisplayCornerInfo(
-                        runtimePx = radius,
-                        usedPx = fallbackPx,
-                        source = "fallback",
-                    )
+                // 物理边界校验已在 [meloXSystemCornerRadiusPx] 内部按**物理屏**口径做完
+                // （源 1 insets 与源 2 dimen 都过同一道 `≤ 短边一半` 闸），到这里的一定是
+                // 合法值 ⇒ 直接采用。
+                // ⚠ 这里**不要**再用 `configuration.screenWidthDp / screenHeightDp` 复算：
+                //   分屏 / 自由窗口 / 桌面模式下 configuration 是**窗口**尺寸而非屏幕尺寸，
+                //   窗口一矮就会把合法真值误杀成兜底（两套口径不一致的根因）。
+                // ★ 粘性闸：已拿到真值（source ≠ "fallback"）**绝不覆盖** —— 转屏复轮询时
+                //   `WindowInsets` 可能瞬时回报偏大值，绝不能拿它覆盖已稳定的真值（否则圆角
+                //   「突然变大再恢复」）。仅当仍处兜底占位时才写入（首启 / 转屏补轮询的恢复路径）。
+                if (info.source == "fallback") {
+                    info = MeloXDisplayCornerInfo(runtimePx = radius, usedPx = radius, source = source)
                 }
                 return@LaunchedEffect
             }

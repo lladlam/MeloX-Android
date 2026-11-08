@@ -8,10 +8,20 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Persistent metadata cache with one network refresh per cold-start process. */
-class NeteaseLibraryCache(context: Context) {
-    private val directory = File(context.applicationContext.filesDir, "netease_library_cache")
+/**
+ * Persistent metadata cache with one network refresh per cold-start process.
+ *
+ * 公开构造接收 Android [Context]，目录固定在 `filesDir/netease_library_cache`；
+ * [internal] 构造接收任意 [File]，仅供单元测试注入临时目录（JVM 测试没有 [Context]）。
+ */
+class NeteaseLibraryCache internal constructor(
+    private val directory: File,
+) {
     internal val cacheDir: File get() = directory
+
+    constructor(context: Context) : this(
+        File(context.applicationContext.filesDir, "netease_library_cache"),
+    )
 
     suspend fun loadSnapshot(userId: Long): NeteaseLibrarySnapshot? = readJson(
         file = File(directory, "library_$userId.json"),
@@ -90,11 +100,32 @@ class NeteaseLibraryCache(context: Context) {
         pruneCache()
     }
 
-    private fun pruneCache() {
+    /**
+     * 清理缓存目录里的「瞬态」文件：home / explore / playlist 这类随浏览、刷新反复落盘
+     * 的文件。
+     *
+     * ⚠ **「我喜欢的音乐」快照 (`library_*.json`) 受保护，永不在此被删除。**
+     * 原因：所有缓存共用 `files/netease_library_cache` 一个目录，而 `pruneCache` 按
+     * `lastModified` 倒序、越过 `MAX_CACHE_FILES` 就删。library 快照只在冷启动刷新或
+     * 点赞切换时重写，比 home / explore / playlist 少得多 ⇒ 它几乎永远是目录里最旧
+     * 的文件，一旦瞬态缓存文件累计超过 128 个，library 快照会第一个被清掉。清掉之后
+     * `loadSnapshot` 返回 null，而本进程的冷启动刷新闸门 (`refreshedLibraries`) 已经
+     * 放过一次 ⇒ 收藏列表会一直空白到进程重启。这正是「收藏的歌过段时间消失、消失时间
+     * 不固定」的根因。把 library 快照排除出按时间/数量的淘汰，就能杜绝这一路径。
+     *
+     * 字节上限同样只对瞬态文件生效：统计/删除都不计入受保护的 library 快照，因此即便
+     * 收藏非常多，也不会因为「目录总字节超 32MB」被误删。playlist 详情同理受保护
+     * （它本身也可能很大、且点开歌单后用户会长期依赖），只删 home / explore 这类
+     * 纯浏览缓存。
+     */
+    @Suppress("MemberVisibilityCanBePrivate")
+    internal fun pruneCache() {
         val files = directory.listFiles()?.filter { it.isFile && !it.name.endsWith(".tmp") }.orEmpty()
+        val protectable = files.filter { it.name.startsWith("library_") || it.name.startsWith("playlist_") }
+        val transient = files.filterNot { it in protectable }
             .sortedByDescending(File::lastModified)
         var retainedBytes = 0L
-        files.forEachIndexed { index, cached ->
+        transient.forEachIndexed { index, cached ->
             retainedBytes += cached.length()
             if (index >= MAX_CACHE_FILES || retainedBytes > MAX_CACHE_BYTES) cached.delete()
         }
@@ -181,6 +212,7 @@ private fun encodePlaylist(value: NeteasePlaylistSummary) = JSONObject()
     .put("creatorUserId", value.creatorUserId)
     .put("playCount", value.playCount)
     .put("description", value.description)
+    .put("specialType", value.specialType ?: JSONObject.NULL)
 
 private fun decodePlaylist(value: JSONObject) = NeteasePlaylistSummary(
     id = value.getLong("id"),
@@ -191,6 +223,7 @@ private fun decodePlaylist(value: JSONObject) = NeteasePlaylistSummary(
     creatorUserId = value.optLong("creatorUserId", -1L).takeIf { it > 0L },
     playCount = value.optLong("playCount"),
     description = value.optNullableString("description"),
+    specialType = value.optInt("specialType", -1).takeIf { it >= 0 },
 )
 
 private fun encodeSongs(values: List<SearchSong>) = JSONArray().apply {

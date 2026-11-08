@@ -82,7 +82,7 @@ import com.lladlam.melox.ui.animation.meloXCategoryExit
 import com.lladlam.melox.ui.animation.MeloXPageBoundsTransform
 import com.lladlam.melox.ui.MeloXInterruptiblePage
 import com.lladlam.melox.ui.meloXPageRecede
-import com.lladlam.melox.ui.animation.meloXPageRedirectSpec
+import com.lladlam.melox.ui.animation.MeloXPageSpec
 import com.lladlam.melox.ui.meloXEdgeOverscrollHaptic
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -182,7 +182,7 @@ fun MeloXPodcastScreen(
     SharedTransitionLayout(Modifier.fillMaxSize()) {
         val sharedScope = this
         // ⚠ hero push 时旧页也左移让出 1/3（与首页/发现同款）：与推入页走同一条弹簧
-        //   （[meloXPageRedirectSpec]），两页严格互补，观感与「无 hero 的整页推入」一致，
+        //   （[MeloXPageSpec]），两页严格互补，观感与「无 hero 的整页推入」一致，
         //   区别只是多一个封面 morph。旧页位移走 [meloXPageRecede] 的**布局期** place：
         //   共享元素 morph 的 bounds 取自 lookahead 布局坐标，走 graphicsLayer 封面不跟随、半路脱开。
         val podcastRecede = remember { Animatable(0f) }
@@ -190,7 +190,7 @@ fun MeloXPodcastScreen(
         LaunchedEffect(podcastOpen) {
             val target = if (podcastOpen) 1f else 0f
             if (podcastRecede.value == target) return@LaunchedEffect
-            podcastRecede.animateTo(target, meloXPageRedirectSpec())
+            podcastRecede.animateTo(target, MeloXPageSpec)
         }
         Box(Modifier.fillMaxSize().meloXPageRecede { podcastRecede.value }) {
             PodcastHome(

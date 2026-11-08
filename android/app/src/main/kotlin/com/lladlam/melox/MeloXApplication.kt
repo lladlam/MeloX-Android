@@ -47,6 +47,9 @@ object MeloXAppVisibility : Application.ActivityLifecycleCallbacks {
     private const val PREFS_NAME = "melox_visibility"
     private const val KEY_LAST_BACKGROUND_MS = "last_background_ms"
 
+    /** 小于这个间隔的「离开再回来」只当抖动（通知中心、输入法），不开结算窗口。 */
+    private const val RETURN_GAP_MS = 3_000L
+
     @Volatile
     private var startedActivities = 0
     @Volatile
@@ -56,9 +59,28 @@ object MeloXAppVisibility : Application.ActivityLifecycleCallbacks {
     val isForeground: Boolean get() = foregroundState.value
     val foregroundSessionId: Long get() = foregroundSession
 
+    /**
+     * 前台状态的 [kotlinx.coroutines.flow.Flow] 视图，供协程「退后台就挂起、回前台再继续」用。
+     *
+     * ★ 2026-10-26 功耗：给音量轮询之类的常驻循环一个**零帧申请**的等待点
+     *   （`first { it }` 直接挂起，不像 `delay(500)` 那样每 500ms 醒一次）。
+     *   与 [isForeground] 读的是同一个 `mutableStateOf`，语义天然一致。
+     */
+    val foregroundStateFlow: kotlinx.coroutines.flow.Flow<Boolean> =
+        androidx.compose.runtime.snapshotFlow { foregroundState.value }
+
     override fun onActivityStarted(activity: Activity) {
         traceActivity(activity, "started")
-        if (startedActivities == 0) foregroundSession++
+        if (startedActivities == 0) {
+            foregroundSession++
+            // ★ 2026-10-22 第四轮：回前台「结算窗口」的唯一写者（见 MeloXUiMotionRuntime）。
+            //   用户口径：「退后台一段时间，打开迷你栏动画直接卡炸，第二次不卡」——
+            //   坏窗口在**回前台后那 1~1.4s**，不在动画本身。
+            //   ⚠ 用持久化的 `lastBackgroundedAtMs` 而不是 `foregroundSessionId`：
+            //     用户那个场景里进程**很可能已经被杀掉**，此时回到前台是一次**冷启动**
+            //     （session 恒为 1），只看会话号会漏掉恰恰最该盖住的那一次。
+            maybeEnterSettleWindow(activity)
+        }
         startedActivities++
         foregroundState.value = startedActivities > 0
     }
@@ -66,7 +88,9 @@ object MeloXAppVisibility : Application.ActivityLifecycleCallbacks {
         traceActivity(activity, "stopped")
         startedActivities = (startedActivities - 1).coerceAtLeast(0)
         foregroundState.value = startedActivities > 0
-        if (startedActivities == 0) recordBackgrounded(activity)
+        if (startedActivities == 0) {
+            recordBackgrounded(activity)
+        }
     }
 
     /** Wall-clock ms of the most recent moment the app dropped fully to background.
@@ -76,6 +100,19 @@ object MeloXAppVisibility : Application.ActivityLifecycleCallbacks {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .getLong(KEY_LAST_BACKGROUND_MS, 0L)
         } catch (_: Throwable) { 0L }
+    }
+
+    /**
+     * 这次 `onActivityStarted` 是不是「退后台归来」，是则开运行期结算窗口。
+     *
+     * 见 [com.lladlam.melox.ui.MeloXUiMotionRuntime] 末尾那段：窗口内流光网格与管线预热
+     * 主动退到最低档，把回前台后那 1~1.4s 的帧让给用户真正要看的那一下。
+     */
+    private fun maybeEnterSettleWindow(activity: Activity) {
+        val lastBackgrounded = lastBackgroundedAtMs(activity)
+        if (lastBackgrounded <= 0L) return
+        if (System.currentTimeMillis() - lastBackgrounded < RETURN_GAP_MS) return
+        com.lladlam.melox.ui.MeloXUiMotionRuntime.markForegroundReturn()
     }
 
     private fun recordBackgrounded(activity: Activity) {

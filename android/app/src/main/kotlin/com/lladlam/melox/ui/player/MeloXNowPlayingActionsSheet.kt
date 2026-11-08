@@ -33,6 +33,11 @@ fun MeloXNowPlayingActionsSheet(
     onDismiss: () -> Unit,
     onNavigateSearch: ((String, MeloXSearchKind) -> Unit)? = null,
     onLocalMetadataChanged: () -> Unit = {},
+    // ★ 2026-10-25：把「浮层实际可见」上报宿主 —— 宿主据此门控整屏背板捕获
+    //   （`actionsBackdrop` 的唯一消费者就是本浮层；关着时每帧整屏重录是纯浪费，
+    //   见 `MeloXIOSNowPlayingSharedHost` 里 `actionsBackdropNeeded` 的注释）。
+    //   一起听徽标打开路径（`openedFromTogetherBadge`）不经 `visible`，必须从这里上报。
+    onEffectiveVisibleChange: (Boolean) -> Unit = {},
     // ★ 「天际歌词」入口（2026-10-07）。**只有平板双栏传得进来**（手机横屏的天际入口仍是
     //   右列曲名栏上那枚字形按钮，竖屏根本进不去天际）⇒ 默认 null 时两份操作浮层里
     //   这一行整个不渲染，手机 / 竖屏的 ⋯ 菜单逐像素不变。
@@ -54,6 +59,9 @@ fun MeloXNowPlayingActionsSheet(
     val togetherState by MeloXListenTogetherCoordinator.state(context).collectAsState()
     var openedFromTogetherBadge by remember { mutableStateOf(false) }
     val effectiveVisible = visible || (neteaseId != null && openedFromTogetherBadge)
+    // 可见性变化上报宿主（背板捕获门控用）。LaunchedEffect 而非组合期回调：
+    // 不在 composition 里写外部状态，避免多余重组环。
+    LaunchedEffect(effectiveVisible) { onEffectiveVisibleChange(effectiveVisible) }
 
     Box(Modifier.fillMaxSize()) {
         val room = togetherState.room

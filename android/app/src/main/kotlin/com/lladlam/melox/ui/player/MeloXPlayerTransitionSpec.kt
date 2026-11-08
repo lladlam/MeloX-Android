@@ -1,6 +1,5 @@
 package com.lladlam.melox.ui.player
 
-import android.content.Context
 import androidx.compose.animation.BoundsTransform
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -17,10 +16,15 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
+import androidx.compose.foundation.shape.CornerBasedShape
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import java.io.File
 import java.util.concurrent.Executors
@@ -33,8 +37,19 @@ import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 // seekable transition that makes different children advance by different
 // apparent amounts. Use one child timeline and animate only the master
 // SeekableTransitionState fraction when the gesture is released.
-internal const val MeloXPlayerTransitionDurationMillis = 360
-
+//
+// ⚠⚠ 2026-10-29：这里原先还有一个 `MeloXPlayerTransitionDurationMillis = 360`（大写 M）
+//   常量，**已删除**——它是**死代码**（全仓零引用），而且它记录的 360 已经过时
+//   （用户拍板「以最新版的 **460ms** 为中间标准值」，五档重划为 270/360/460/600/780）。
+//   ⚠ 删它的另一个原因：它是 `const val`（无 getter）所以当年不撞名；一旦改成
+//     `val` 引用枚举（枚举成员是运行时值，不能是 const），它的 getter
+//     `getMeloXPlayerTransitionDurationMillis()` 就会与下面已有的
+//     `meloXPlayerTransitionDurationMillis` **JVM 签名冲突**（编译期报
+//     "Platform declaration clash"）。
+//   ⇒ **真正的取值链只有一条**（默认档的单一真源在
+//   `MeloXPlayerTransitionDurationTier.Default.millis`）：
+//   `MeloXSettingsRuntime.playerTransitionDurationMs`（设置值）
+//   → `meloXPlayerTransitionDurationMillis` → `meloXPlayerTweenDurationMillis()`。
 internal val meloXPlayerTransitionDurationMillis: Int
     get() = MeloXSettingsRuntime.playerTransitionDurationMs
 
@@ -103,6 +118,39 @@ internal val MeloXPlayerShellBoundsTransform = BoundsTransform { _, _ ->
 //   [meloXPlayerSinkFraction] 的窗口常量含义是「设置时长的后 38%」；
 //   一旦改挂到弹簧之类前段极快的曲线上，`f ≥ 0.62` 会在 **~8ms** 就成立
 //   ⇒ 下沉几乎与展开同时发生（与该常量的设计前提完全相反）。
+
+// ══ 🔴 2026-10-29 现状更正：**本铁律与当前代码不一致，取舍已定为「保手感」** ══════
+//
+// 现状（L1，读过码）：master **不是**线性 tween，而是
+//   `MeloXApp.playerSettleMasterSpec()` =
+//   `spring(dampingRatio = 1.0, stiffness = ω², visibilityThreshold = 0.001)`，
+//   `ω = PLAYER_SETTLE_99_K(6.2) / durationSec`（`MeloXApp.kt:2982-3019`），
+//   由 `playerOpenFractionSpec() / playerCloseFractionSpec()` **无条件共用**。
+// ⇒ 上文「三者同为单层、逐帧严格相等」**当前并不成立**。这是**知情取舍，不是遗漏**：
+//
+// ### 为什么不按本铁律「修正」（三条都有证据）
+// 1. **每帧成本与时长无关**（实测 270→780ms 五档、放音乐）：`issue50` 6.88~7.17ms、
+//    真实 GPU p90 5.0~6.2ms 全部持平 ⇒ spring master **不会多掉帧**。
+// 2. **它确实把时长拉长**（代码可推）：`visibilityThreshold = 0.001` 需 z = 9.23，
+//    而 ω 是按 99%（z = 6.2）反解的 ⇒ 落定 ≈ **1.5×** 设置值。
+//    多出来的主要是**低负载尾帧**（实测可见 morph 段只有 ≈1.13×）。
+// 3. ⚠⚠ **实测反证（用户，比任何推演都硬）**：把 master 改回线性 tween 后，关闭方向的
+//    **下沉 [meloXPlayerSinkFraction] 怎么调都不丝滑**。原因：下沉窗口是**墙钟**定义的
+//    （「设置时长的后 38%」、峰 22dp），**窗口只给比例，绝对毫秒由 master 决定** ——
+//    tween 把总时长压到恰好 = 设置值 ⇒ 窗口变短 ⇒ 22dp 摊到更少帧 ⇒ 每帧步长变大 ⇒ 顿。
+//    ⇒ 那条路**不是没调好，是被 master 的时长钉死了**。
+//    （这正是上文「按墙钟定义的东西必须用 `linearProgressOf()`」的另一面：那条只保证窗口
+//      **起点**按墙钟算；**窗口有多长**仍取决于 master。）
+//
+// ### 现在靠什么兜住「同源」
+// · 圆角坐平：不等 `p` 到 1，而是等 `!transition.isRunning`（见 `ANALYSIS-…§15.10`）。
+// · 底栏遮挡门控：**不猜进度**，只吃 `MeloXShellGeom.bounds` 真值矩形
+//   （`MeloXChromeOcclusion.kt:34-37`）。
+// ⇒ **新增任何「需要几何进度」的代码，不要用 `expansionProgress`**：要么用真值 bounds
+//    （同门控），要么自己重新对齐；否则必然错拍。
+//
+// ⛔ 若要动 master（包括「恢复线性 tween」），**先接受手感会变**：下沉的连续性与尾段质量
+//    都依赖当前这条 spring 的时长。改动前必须先与用户对齐目标，并四条通道一起核对。
 
 // 上游 lladlam 原版：迷你播放栏自身显隐（expansionProgress）用的浮点 spec。
 // ⚠ 2026-10-02：迷你栏已整体回归上游（文件逐字替换为 `upstream/main`），此函数是
@@ -185,15 +233,50 @@ internal fun meloXPlayerLinearFloatSpec() = tween<Float>(
 //     · 与旧曲线的差别：旧曲线前段是「甩出去」（速度先冲到峰值再骤降），新曲线是
 //       「一路连续减速」——这正是「丝滑优雅」的来源。
 private const val MeloXPlayerSpringK = 6f
+
+/**
+ * 起步**初速度比** α：解决「ζ=1 临界阻尼起步斜率 = 0」的天生缺点。
+ *
+ * ### 数学
+ * 临界阻尼、起点 0 / 终点 1、带初速度 `v₀` 的解（令 `α = v₀/ω`）：
+ * ```
+ * x(f) = [1 − (1 + (1−α)·z)·e^−z] / End ,  z = k·f ,  End = x(1)
+ * 起步斜率 dx/df|₀ = k·α / End        （均速 = 1 ⇒ 该值即「× 均速」）
+ * ```
+ * ⚠ **α = 0 时严格退化为 0.7.0 原式** `1 − (1+z)e^−z` ⇒ 本参数是**一键可回退的纯增量**。
+ *
+ * ### 为什么加它（依据 `research-ios-motion-2026-10-29/README.md`）
+ * 该调研把 Flutter `Curves.fastEaseInToSlowEaseOut`（**按 iPhone 14 Pro Max /
+ * iOS 16.3 逐帧数据严格拟合**）反解成等效弹簧，得 ζ=1.00 / ω=18.35，其
+ * **起步斜率 = 0.96× 均速**；而纯临界阻尼（α=0）的起步斜率是 **0×**
+ *   —— 也就是「先憋一拍才起来」，这正是「不丝滑 / 有点迟」的来源。
+ * 同一份调研也确认：MeloX 在 **u≥0.3 之后与 iOS 曲线差 ≤2.3pp**（0.7.0 因 k=6
+ *   略慢，中段差 ~21pp）⇒ **尾段形状不必动，动起步即可**。
+ *
+ * ### 取值（实测扫描，k=6）
+ * | α | 起步斜率 | u=0.1 | u=0.3 | u≥0.7 |
+ * |---|---|---|---|---|
+ * | 0.00（0.7.0） | 0.00× | 0.124 | 0.547 | ≈不变 |
+ * | 0.10 | 0.61× | 0.157 | 0.576 | ≈不变 |
+ * | **0.15 ← 采用** | **0.91×** | 0.174 | 0.591 | ≈不变 |
+ * | 0.20 | 1.22× | 0.190 | 0.605 | ≈不变 |
+ * α=0.15 落在调研建议区间（0.10~0.15）上限且起步斜率最接近 iOS 的 0.96×；
+ * ⛔ α≥0.20 起步斜率 >1.2× 会回到「甩出去」的急感。
+ *
+ * ⚠ 单调性仍成立（`dx/dz = e^−z[α + (1−α)z] > 0`，α<1 时恒正）⇒ **无过冲**，
+ *   圆角不会提前坐平（`shellSettledOpen` 状态机判据依旧成立）。
+ */
+private const val MeloXPlayerSpringInitialVelocity = 0.15f
 private val MeloXPlayerSpringEnd =
-    1f - (1f + MeloXPlayerSpringK) * kotlin.math.exp(-MeloXPlayerSpringK)
+    1f - (1f + (1f - MeloXPlayerSpringInitialVelocity) * MeloXPlayerSpringK) *
+        kotlin.math.exp(-MeloXPlayerSpringK)
 
 internal val MeloXPlayerAppleEasing: Easing = Easing { fraction ->
     val f = fraction.coerceIn(0f, 1f)
     val z = MeloXPlayerSpringK * f
-    (1f - (1f + z) * kotlin.math.exp(-z)) / MeloXPlayerSpringEnd
+    (1f - (1f + (1f - MeloXPlayerSpringInitialVelocity) * z) * kotlin.math.exp(-z)) /
+        MeloXPlayerSpringEnd
 }
-
 
 // ── iOS 非线性曲线（2026-09-29）────────────────────────────────────────────
 // ⚠⚠ 2026-10-03：**已无代码使用者**，保留声明仅为避免破坏潜在引用。
@@ -265,12 +348,23 @@ internal val MeloXIOSCollapseEasing = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)
 internal fun meloXPlayerSharedBoundsTransform(
     sinkPeakPx: Float,
     sinkEnabled: () -> Boolean,
+    /**
+     * 本份 morph 是否是**外壳**那一个。
+     *
+     * ⚠ **只有外壳能发布每帧真实 bounds**（`MeloXShellGeom.record`）—— 底栏遮挡门控
+     *   （`MeloXChromeOcclusionGate`）的坐标系自检要求「本次 morph 的 span ≈ 整个窗口」；
+     *   封面的 `initial ∪ target` 是「迷你封面 ∪ 大封面」，不是窗口矩形 ⇒ 一旦发布，
+     *   自检每帧失败并 `reset()` ⇒ 闸门 true→false 抖动、完全失效（2026-10-26 踩点）。
+     *   默认 **false**（显式 opt-in）⇒ 以后新增使用者不会再被误当外壳。
+     */
+    publishShellGeom: Boolean = false,
 ): BoundsTransform =
     BoundsTransform { _, _ ->
         MeloXPlayerSinkBoundsSpec(
             durationMillis = meloXPlayerTweenDurationMillis(),
             sinkPeakPx = sinkPeakPx,
             sinkEnabled = sinkEnabled,
+            publishShellGeom = publishShellGeom,
         )
     }
 
@@ -297,11 +391,18 @@ private class MeloXPlayerSinkBoundsSpec(
     private val durationMillis: Int,
     private val sinkPeakPx: Float,
     private val sinkEnabled: () -> Boolean,
+    private val publishShellGeom: Boolean,
 ) : FiniteAnimationSpec<Rect> {
     override fun <V : AnimationVector> vectorize(
         converter: TwoWayConverter<Rect, V>,
     ): VectorizedFiniteAnimationSpec<V> =
-        MeloXPlayerSinkVectorizedSpec(converter, durationMillis, sinkPeakPx, sinkEnabled)
+        MeloXPlayerSinkVectorizedSpec(
+            converter,
+            durationMillis,
+            sinkPeakPx,
+            sinkEnabled,
+            publishShellGeom,
+        )
 }
 
 private class MeloXPlayerSinkVectorizedSpec<V : AnimationVector>(
@@ -309,6 +410,7 @@ private class MeloXPlayerSinkVectorizedSpec<V : AnimationVector>(
     durationMillis: Int,
     private val sinkPeakPx: Float,
     private val sinkEnabled: () -> Boolean,
+    private val publishShellGeom: Boolean,
 ) : VectorizedFiniteAnimationSpec<V> {
     private val durationNanos: Long = durationMillis.coerceAtLeast(1).toLong() * 1_000_000L
 
@@ -321,16 +423,6 @@ private class MeloXPlayerSinkVectorizedSpec<V : AnimationVector>(
         initialVelocity: V,
     ): V {
         val f = progressOf(playTimeNanos)
-        val initial = converter.convertFromVector(initialValue)
-        val target = converter.convertFromVector(targetValue)
-        val enabled = sinkEnabled() && sinkPeakPx > 0f && target.height < initial.height * 0.6f
-        MeloXPlayerSinkDiag.frame(
-            f = f,
-            dy = if (enabled) meloXPlayerSinkFraction(linearProgressOf(playTimeNanos)) * sinkPeakPx else 0f,
-            enabled = enabled,
-            initialHeight = initial.height,
-            targetHeight = target.height,
-        )
         return valueAt(f, linearProgressOf(playTimeNanos), initialValue, targetValue)
     }
 
@@ -369,123 +461,57 @@ private class MeloXPlayerSinkVectorizedSpec<V : AnimationVector>(
         val target = converter.convertFromVector(targetValue)
         val p = MeloXPlayerAppleEasing.transform(f)
         // ⚠ 方向 / 护栏**每帧**重判：这是「打断」也能沉下去的关键。
-        val enabled = sinkEnabled() && sinkPeakPx > 0f && target.height < initial.height * 0.6f
+        //
+        // ★★★ 2026-11-02：跨度判据改成**方向无关**（旧写法 `target.height < initial.height * 0.6f`
+        //   只在「变矮」方向成立，是「下沉回收阶段四角露动态背景弧线」的真因）。
+        //
+        //   同一次 morph 的两侧节点收到的 (initial, target) 是**互为反向**的：
+        //     · 播放页外壳侧：initial = 全屏(2306) → target = 迷你栏(132)
+        //         ⇒ 132 < 2306×0.6 ✓ ⇒ `dy` 生效
+        //     · 迷你栏侧（玻璃盒所在的那个 `sharedBounds` 节点）：
+        //         initial = 迷你栏(132) → target = 全屏(2306)
+        //         ⇒ 2306 < 132×0.6 ✗ ⇒ `dy = 0`
+        //   于是关闭尾段**外壳整体下沉、玻璃一动不动**，两层沿上下四边错开约 88px（22dp 峰值）
+        //   ⇒ 四个圆角各露一条主页动态背景的弧。用户口径：「是下沉回收阶段的时候出现」。
+        //
+        //   ⇒ 用「高矮跨度」而不是「变矮」当判据：两侧算出的 `hi/lo` 完全相同 ⇒ 同时启用、
+        //     `dy` 逐帧同值 ⇒ 下沉是**整块刚性平移**，两层永远不会错位。
+        //   ⚠ 打开方向不受影响：`sinkEnabled()` 那时为 false。
+        val hi = maxOf(initial.height, target.height)
+        val lo = minOf(initial.height, target.height)
+        val enabled = sinkEnabled() && sinkPeakPx > 0f && lo < hi * 0.6f
         val dy = if (enabled) meloXPlayerSinkFraction(t) * sinkPeakPx else 0f
-        return converter.convertToVector(
+        val rect =
             Rect(
                 left = initial.left + (target.left - initial.left) * p,
                 top = initial.top + (target.top - initial.top) * p + dy,
                 right = initial.right + (target.right - initial.right) * p,
                 bottom = initial.bottom + (target.bottom - initial.bottom) * p + dy,
             )
-        )
-    }
-}
-
-/**
- * 下沉诊断：**写文件**取证（`getExternalFilesDir()/mxdiag.txt`）。
- * vivo 屏蔽应用级日志、`adb logcat` 读不到 ⇒ 只能落文件再 `adb pull`。
- * 未 `bind` 时所有调用都是空操作（release 路径零开销）。
- */
-internal object MeloXPlayerSinkDiag {
-    private var file: File? = null
-    private val buf = StringBuilder()
-
-    /**
-     * 落盘线程。⚠ 2026-10-14：**所有磁盘写入必须离开主线程**——
-     * 展开/收起期间 `frame`（bounds 动画回调）与 `progress` 每帧都在追加缓冲，
-     * 而 `File.appendText` 是一次 open+write+close；挂在主线程上会让**每次展开
-     * 都掉帧**（0.6.2 尚无本诊断器，后来加回来时把 I/O 留在了主线程）。
-     * 单线程保证顺序：`bind()` 的截断一定先于任何 append 执行。
-     */
-    private val io = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "mxdiag-io").apply { isDaemon = true }
-    }
-
-    fun bind(context: Context) {
-        runCatching {
-            val dir = context.getExternalFilesDir(null) ?: return
-            if (!dir.exists()) dir.mkdirs()
-            val f = File(dir, "mxdiag.txt")
-            io.execute { runCatching { f.writeText("") } }
-            file = f
-            // ⚠⚠ 2026-10-06 修漏记（`mini.shown` 凭空消失就是它）：
-            //   去重表必须与文件同一生命周期被重置 —— 否则 `bind()` 之前采过的值，
-            //   在 `bind()` 之后只要"没有变化"就**永远不会落盘**，日志里直接看不到它。
-            lastSample.clear()
+        // ★★★ 2026-10-29：**补回「外壳真实 bounds」的唯一发布点**。
+        //
+        //   ⚠ 这里曾经是死的：`MeloXShellGeom.record(...)` 全仓**无人调用**（只有定义与
+        //     读者），而 `record()` 是 `MeloXShellGeom.onFrame` 的**唯一触发者**
+        //     ⇒ `MeloXChromeOcclusionGate.evaluate()` 从不执行 ⇒ `occluded` 恒 false
+        //     ⇒ 底栏遮挡门控整条失效，转场全程仍在每帧：底栏那批液态玻璃整屏采样背板 +
+        //       `bottomChromeBackdrop` 节点被 `drawBehind` 强制失效 ⇒ 每帧整屏
+        //       `recordLayer` + 18.25MB 纹理上传（morph 期最大一块）。
+        //     实测形态：转场期 `commandIssue` 6.9~7.2ms / 8.30ms 预算（83~86%）。
+        //
+        //   ⚠ 只允许**外壳**发布（`publishShellGeom`）。封面 morph 的 `initial ∪ target`
+        //     是「迷你封面 ∪ 大封面」而非窗口矩形 ⇒ 发布会让门控的坐标系自检每帧失败
+        //     ⇒ 闸门 true→false 抖动（2026-10-26 历史踩点）。
+        //   ⚠ 写入的是**普通字段**（非 State）⇒ 不产生快照依赖、不触发任何重组。
+        if (publishShellGeom) {
+            MeloXShellGeom.record(
+                bounds = rect,
+                initial = initial,
+                target = target,
+                progress = p,
+                sinkFraction = if (sinkPeakPx > 0f) (dy / sinkPeakPx).coerceIn(0f, 1f) else 0f,
+            )
         }
-    }
-
-    fun event(msg: String) {
-        append("E ${stamp()} $msg")
-        flush()
-    }
-
-    /**
-     * **只在值变化时**落一行采样（`S <tag>=<value>`）。
-     *
-     * ⚠ 给「每帧都被调用、但只在状态切换时才有意义」的地方用 —— 典型是
-     *   `Transition.AnimatedVisibility(visible = { value -> ... })` 的 lambda：
-     *   它一帧内可能被调用多次，直接 `event()` 会把文件刷爆；而我们需要知道的
-     *   恰恰是**那个 `value` 在转场里翻成了什么**（2026-10-06 「轻微下拉下沉」取证）。
-     *
-     * 内部按 `tag` 记住上一次的值，相同则直接 return（纯内存比较，无 IO）。
-     */
-    fun sample(tag: String, value: Any?) {
-        if (lastSample[tag] == value) return
-        // ⚠ 只有**真的落盘**了才更新去重表：否则 `file == null`（未 bind）期间会把
-        //   值记进表却丢进黑洞，之后 bind 了也再不会补记（2026-10-06 修的漏记之一）。
-        if (file == null) return
-        lastSample[tag] = value
-        append("S ${stamp()} $tag=$value")
-        flush()
-    }
-
-    private val lastSample = HashMap<String, Any?>()
-
-    fun frame(f: Float, dy: Float, enabled: Boolean, initialHeight: Float, targetHeight: Float) {
-        append(
-            "F t=${stamp()} f=${(f * 1000).toInt()} dy=${dy.toInt()} en=$enabled " +
-                "ih=${initialHeight.toInt()} th=${targetHeight.toInt()}",
-        )
-    }
-
-    /**
-     * 记录**内容层**进度 `expansionProgress`（由 `transition.animateFloat` 产出）。
-     *
-     * 与 [frame] 共用同一个墙钟基准 ⇒ 两条序列可直接对齐：
-     * · 若 `p ≈ AppleEasing(f)` 逐帧成立 ⇒ **单层**（内容与几何同源）；
-     * · 若 `f` 随墙钟线性、而 `p` 呈更陡的形状 ⇒ **双层串联**（弹簧又叠了一层缓动）。
-     */
-    fun progress(p: Float) {
-        append("P t=${stamp()} p=${(p * 1000).toInt()}")
-    }
-
-    /** 墙钟基准：首次采样为零点，单位是 ms。 */
-    private fun stamp(): Long {
-        val now = System.nanoTime()
-        if (t0 == 0L) t0 = now
-        return (now - t0) / 1_000_000L
-    }
-
-    private var t0 = 0L
-
-    private fun append(line: String) {
-        if (file == null) return
-        val full = synchronized(buf) {
-            buf.append(line).append('\n')
-            buf.length > 400
-        }
-        if (full) flush()
-    }
-
-    private fun flush() {
-        val f = file ?: return
-        val payload = synchronized(buf) {
-            if (buf.isEmpty()) return
-            buf.toString().also { buf.setLength(0) }
-        }
-        io.execute { runCatching { f.appendText(payload) } }
+        return converter.convertToVector(rect)
     }
 }
 
@@ -624,6 +650,45 @@ internal const val MeloXPlayerRestCornerDp = 24f
 internal const val MeloXPlayerPeakCornerDp = MeloXPlayerRecedeCompatFallbackDp
 internal const val MeloXPlayerCornerRiseStart = 0.50f
 internal const val MeloXPlayerCornerRiseEnd = 0.72f
+// ⚠⚠⚠ 2026-11-01 **定案（第四版）**：**开合两个方向共用同一条几何律**
+//   `min(屏角, 矩形高/2)` —— 「可以圆到胶囊，但不比屏角更圆」。
+//   ⇒ **`closing` 判据已删除**，原因见 ④。
+//
+//   演进（前三版都被真机否掉，别再回头）：
+//   ① 关闭窗口 `[0.95,1.0]`（一离开全屏就收 24dp）⇒ 中段弧 + 下沉闪烁；
+//   ② 关闭窗口 `[0.0,0.10]`（几乎全程 46dp）⇒ **下沉好了**，但后半段两上角斜上方仍有两条弧。
+//      真因不在外壳 vs recede 页 —— recede 页圆角恒 = 系统屏角、**比外壳更早切角**，
+//      永远躲在外壳轮廓之内，外壳多小都不会露它。真因是**迷你玻璃 `Capsule()` 的半径
+//      = morph 矩形高 / 2（每帧在变）≠ 外壳的常数圆角**；
+//   ③ 两层都钉 24dp ⇒ **后半段干净了**，但**下沉段出现闪烁弹跳**：下沉时矩形只剩 ~75dp 高，
+//      24dp 角会留下一段**竖直直边**，22dp 的上下位移让直边整体滑动 = 弹跳/闪烁感；
+//      而 ② 里下沉段的圆角恰好 ≈ 矩形高/2（= 胶囊）所以顺。
+//   ④ ③ 的几何律 + 仍按 `closing` 分方向 ⇒ 只差「一瞬闪」。真因：**手势拖拽关闭时
+//      `MeloXApp` 刻意把 `playerClosingIntent` 写 `false`**（内容层要跟手，见该处注释），
+//      直到**松手 settle 那一刻**才翻 `true` ⇒ 外壳圆角在那一帧从「打开窗口」的中间值
+//      （如 p=0.6 时 ≈31.7dp）**瞬间跳到几何律的 46dp** —— 就是那 1~2 帧的闪。
+//   ⇒ 结论：**圆角绝不能依赖方向判据**（拖拽期的方向语义与动画方向天然不同步）。
+//      `min(peakDp, 矩形高 / 2)` 一条律同时满足开、合、拖拽、松手、打断：
+//        · 矩形高 < 2·peak（接近迷你栏 / 下沉段）⇒ 正好是胶囊，与静止态迷你栏无缝衔接；
+//        · 矩形高 ≥ 2·peak（中段 / 全屏）⇒ 恒 = 屏角，全屏四角贴合、中段也不方；
+//        · 单调、无跳变点，**判据消失 ⇒ 不可能再因判据翻转而跳帧**。
+//   ⇒ **玻璃侧必须用同一条律**，否则任一侧用常数都会在
+//      某个相位露出另一侧（①②③ 全部栽在这一条上）。
+//   ⑤⚠⚠ 2026-11-02 用户第五次报障「下沉收尾阶段，迷你栏的两个角闪烁了**动态背景色的弧线**」
+//      —— 律一致还不够，**形状族也必须一致**：外壳是 `MeloSmoothCornerShape`（squircle，
+//      且半径吃满半高时会委托 kyant `Capsule()` = Apple 连续曲率），而玻璃当时是
+//      `RoundedCornerShape`（正圆弧）。同半径下正圆弧在端部比连续曲率缩进 ~5.87px
+//      ⇒ 两端各一条月牙缝，露出外壳里仍在的播放页动态背景。⇒ 玻璃改用 kyant
+//      `RoundedRectangle` + `Continuous`（半径自动夹到半高），**lens 保留**。
+//   ⑥⚠⚠ 2026-11-02 用户第六次报障「**还是不贴合，有那种弧线毛刺感**」——
+//      `RoundedRectangle(Continuous)` 仍然不是同一族：它与外壳的 Lamé 超椭圆**互相交叉**
+//      （沿边方向更靠内、对角方向更靠外）⇒ 既不是超集也不是子集，裁剪只能消掉一半偏差，
+//      另一半照样露缝，沿弧线读作一圈毛刺。
+//   ⇒ 终局判据：**轮廓必须由同一次 `createOutline` 调用生成**，不能是「同半径的两族形状」。
+//      实现见 [MeloXPlayerGlassShape]（`CornerBasedShape` 子类，轮廓委托
+//      `MeloSmoothCornerShape`，四角半径交给 lens）。
+//      ⛔ 别再换成任何「同半径的另一种曲线」：正圆弧 / kyant `RoundedRectangle` / `Capsule()`
+//        全都试过了，全部露出缝或毛刺。
 
 /**
  * 主时间线**跑完之后**，圆角「坐平成直角」所用的平滑时长（ms）。
@@ -666,12 +731,135 @@ internal const val MeloXPlayerCornerFlattenMillis = 140
 internal fun meloXPlayerShellCornerDp(
     progress: Float,
     peakDp: Float = MeloXPlayerPeakCornerDp,
+    rectHalfHeightDp: Float = Float.NaN,
 ): Float {
     val p = progress.coerceIn(0f, 1f)
+    // ★★ 2026-11-02 第七次修正（用户：「退出动画后半段 / 开始动画前半段，迷你栏的圆角太大了，
+    //   违背了圆角规则，圆角变化规则应该跟好几版前一样」）：
+    //   **主路径恢复成上游的 rise 窗口**（p < 0.50 恒 24dp，0.50 → 0.72 才涨到屏角），
+    //   几何律（`min(peak, 高/2)`）降级成"只做半高夹"。
+    //
+    //   为什么几何律不能当主路径：它把半径一路顶到屏角。p≈0.5 时矩形高已 ~440dp，
+    //   `min(46, 220) = 46dp` ⇒ 收起后半段一直是"大圆角"，而稳态迷你栏是 24dp
+    //   ⇒ 观感上圆角在收尾前突然放大一倍。而玻璃那边只在 p < 0.48 可见、那一段
+    //   外壳按 rise 恒 24dp，所以玻璃也必须恒 24dp（见 `MeloXPlayerGlassShape`）。
+    //
+    //   `rectHalfHeightDp` 仍保留：它是**防直边的兜底**（h < 48dp 时把 24dp 夹成 h/2
+    //   ⇒ 退化成胶囊），不再是半径来源。传 NaN 时跳过夹取（全屏段本来就用不到）。
     val rise = smoothStep01(p, MeloXPlayerCornerRiseStart, MeloXPlayerCornerRiseEnd)
-    return (MeloXPlayerRestCornerDp + (peakDp - MeloXPlayerRestCornerDp) * rise)
+    val byProgress = (MeloXPlayerRestCornerDp + (peakDp - MeloXPlayerRestCornerDp) * rise)
         .coerceAtLeast(0f)
+    return if (rectHalfHeightDp.isNaN()) {
+        byProgress
+    } else {
+        minOf(byProgress, rectHalfHeightDp).coerceAtLeast(0f)
+    }
 }
+
+/**
+ * 迷你播放器**液态玻璃**的形状 —— 轮廓由外壳**同一个** [MeloSmoothCornerShape] 生成。
+ *
+ * ### 一、为什么光「半径律一致」不够
+ * 半径律一致（`min(屏角, 矩形高/2)`）只保证**对角切深**一致，**不保证轮廓重合**。
+ * 只要两侧不是同一族曲线，就一定会露出缝：
+ *
+ * | 玻璃用的形状 | 与外壳（`MeloSmoothCornerShape`）的关系 | 真机现象 |
+ * |---|---|---|
+ * | `RoundedCornerShape`（Compose 正圆弧） | 端部**缩进** ≈5.87px（@density 4） | 下沉收尾两角各一条月牙缝（2026-11-01） |
+ * | `RoundedRectangle(46dp, Continuous)` | **与外壳交叉**：沿边方向更靠内、对角方向更靠外 | 「还是不贴合，有那种弧线毛刺感」（2026-11-02） |
+ *
+ * ⚠ 第二种最坑：它既不是超集也不是子集 —— 任何「多出来的被外壳裁掉」的推理都不成立，
+ *   裁剪只能消掉一半偏差，另一半（靠内那半）照样露缝 ⇒ 看起来像沿弧线的一圈毛刺。
+ *   ⇒ **结论：两侧必须由同一次 `createOutline` 调用生成**，而不是「同半径的两族形状」。
+ *
+ * ### 二、怎么同时满足 lens（这是唯一的技术难点）
+ * kyant 的 lens 只做一次类型分派（`LensKt.getCornerRadii`，已用 javap 核对字节码）：
+ * ```
+ * shape is RoundedRectangularShape → shape.corners(size, ld, density)     // 取四角半径
+ * shape is AbsoluteRoundedCornerShape → topStart/topEnd/… .toPx(size, density)
+ * shape is CornerBasedShape → topStart/topEnd/… .toPx(size, density)
+ * 其它 → throwUnsupportedSDFException()  // draw 阶段崩
+ * ```
+ * 三条分支**都只是取四角半径**，然后各自 `coerceAtMost(minDimension / 2)` 喂给 shader 的
+ * `cornerRadii`——**完全不看轮廓是怎么画的**。
+ *
+ * - `RoundedRectangularShape` 是 kyant 的 **sealed** interface，跨模块不能实现（编译实证：
+ *   `Extending sealed … from a different module is prohibited`）；
+ * - `CornerBasedShape` 是 Compose 的**公开 abstract class**，可以继承 ⇒ **走这一条**。
+ *
+ * 于是本类：`createOutline` 直接委托 [MeloSmoothCornerShape]（与外壳逐点相同），
+ * 四角半径照常经 `CornerSize` 交给 lens（lens 自己会夹到半高，正好等于外壳的半径律）。
+ *
+ * ### 三、半径
+ * 基类收到的 `CornerSize(peakDp.dp)` 会被框架换算成 px；lens 侧再夹 `min(px, minDim/2)`；
+ * 本类 `createOutline` 里也做同一个 `min(peakPx, min(w,h)/2)`。
+ * ⇒ 与外壳 `meloXPlayerShellCornerDp(rectHalfHeightDp = …)` 的
+ *   `min(peak, 半高).coerceIn(24dp, peak)` 同值（下半界 24dp 只在「矩形半高 < 24dp」时生效，
+ *   而那一刻两个实现都已经走 [MeloSmoothCornerShape] 的 ⓪ 分支委托 `Capsule()`，
+ *   结果仍是同一条路径 ⇒ 不需要 density 也能保证一致）。
+ *
+ * ### 四、与静止态的关系
+ * 静止态玻璃用 `Capsule()`；本类在矩形半高 == 屏角附近（`radiusPx >= 半高 - 0.5px`）会走
+ * [MeloSmoothCornerShape] 的 ⓪ 分支，**同样委托 `Capsule()`** ⇒ 末帧与稳态之间不再有一次
+ * 形状族切换（旧版 `RoundedRectangle` 也是靠这一点，那条逻辑继续保留）。
+ *
+ * ⚠ 实例可 `remember(peakDp)` 住：半径只由 `createOutline` 的 `size` 决定，不读任何逐帧
+ *   State ⇒ 不会把上千行的迷你播放器拖着每帧重组。
+ * ⛔ 别换成任何「同半径的另一种曲线」（正圆弧 / kyant `RoundedRectangle` / `Capsule()` 以外的
+ *   东西）：只要不是本类这次调用，就一定会露出缝或毛刺。
+ */
+internal class MeloXPlayerGlassShape(
+    private val restRadiusPx: Float,
+) : CornerBasedShape(
+    topStart = CornerSize(restRadiusPx),
+    topEnd = CornerSize(restRadiusPx),
+    bottomEnd = CornerSize(restRadiusPx),
+    bottomStart = CornerSize(restRadiusPx),
+) {
+
+    override fun createOutline(
+        size: Size,
+        topStart: Float,
+        topEnd: Float,
+        bottomEnd: Float,
+        bottomStart: Float,
+        layoutDirection: LayoutDirection,
+    ): Outline {
+        // ★★ 2026-11-02 第七次修正（用户：「退出动画后半段 / 开始动画前半段，迷你栏的圆角太大了，
+        //   违背了圆角规则，圆角变化规则应该跟好几版前一样」）：
+        //   本类此前用 `min(屏角, min(w,h)/2)` —— 那是"几何律"，它会把圆角一路顶到屏角（46dp）。
+        //   但外壳的**正解一直是 rise 窗口**（`meloXPlayerShellCornerDp`：p < 0.50 恒 24dp，
+        //   0.50→0.72 才涨到屏角）。玻璃只在 p < 0.48 可见 ⇒ 它在这一整段**必须就是 24dp**，
+        //   不能再跟矩形高走（否则 p≈0.3 时玻璃 46dp、外壳 24dp，肉眼就是"圆角突然变大"）。
+        //   ⇒ 半径改为常量 24dp（由调用方按 density 换算成 px 传入），仅按半高夹住
+        //     （h < 48dp 时退化成胶囊，避免出现竖直直边）。
+        //   ⚠ 与 `meloXPlayerShellCornerDp` 的 `min(24dp, 高/2)` **逐值相同** ⇒ 两层同源。
+        val fitPx = minOf(size.width, size.height) / 2f
+        val radiusPx = minOf(restRadiusPx, fitPx)
+        // ★ 与外壳 `MeloXSlideShapeCache.of(radiusDp.dp.toPx(), 1f)` **同一次调用**：
+        //   同一个类、同一组 (radius, scaleX, scaleY)，轮廓逐点相同 ⇒ 缝隙在几何上不存在。
+        return MeloSmoothCornerShape(radiusPx, 1f, 1f).outline(size, layoutDirection)
+    }
+
+    override fun copy(
+        topStart: CornerSize,
+        topEnd: CornerSize,
+        bottomEnd: CornerSize,
+        bottomStart: CornerSize,
+    ): CornerBasedShape = MeloXPlayerGlassShape(restRadiusPx)
+
+    override fun equals(other: Any?): Boolean =
+        other is MeloXPlayerGlassShape && other.restRadiusPx == restRadiusPx
+
+    override fun hashCode(): Int = restRadiusPx.hashCode()
+}
+
+/**
+ * [restRadiusPx] 必须是 **24dp 换算出的像素值**（`with(LocalDensity.current) { 24.dp.toPx() }`），
+ * 不要在调用点传屏角 —— 玻璃只在 p < 0.48 可见，那一段外壳恒 24dp。
+ */
+internal fun meloXPlayerGlassShape(restRadiusPx: Float): MeloXPlayerGlassShape =
+    MeloXPlayerGlassShape(restRadiusPx)
 
 private fun smoothStep01(value: Float, start: Float, end: Float): Float {
     if (end <= start) return if (value >= end) 1f else 0f

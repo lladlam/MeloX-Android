@@ -9,6 +9,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.togetherWith
@@ -27,6 +28,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.layout
+import com.lladlam.melox.ui.animation.MeloXPageSlideSpec
 import com.lladlam.melox.ui.animation.meloXPagePushSpec
 import com.lladlam.melox.ui.glass.finiteOrZero
 import com.lladlam.melox.ui.player.MeloSmoothCornerShape
@@ -224,8 +226,7 @@ internal fun Modifier.meloXPageRecede(progress: () -> Float): Modifier =
     //   但 morph 读到的起点没变 ⇒ 封面留在原地、与卡片脱开（就是「半路错位」）。
     //   改成布局期 place 偏移后，卡片 bounds 每帧跟着旧页更新 ⇒ 封面**跟着卡片一起左移**，
     //   于是「旧页让出 1/3 + 封面一镜到底」可以同时成立。
-    //   ⚠ 代价：状态读取落在 place 阶段（每帧重新 place 本图层，**不重新测量子树**、也不重组），
-    //     与 `graphicsLayer` 的「只失效图层」相比略贵，但对整页一层来说可忽略。
+    //   ⚠ 代价：状态读取落在 place 阶段（每帧重新 place 本图层，**不重新测量子树**、也不重组）。
     this.layout { measurable, constraints ->
         val placeable = measurable.measure(constraints)
         layout(placeable.width, placeable.height) {
@@ -236,6 +237,33 @@ internal fun Modifier.meloXPageRecede(progress: () -> Float): Modifier =
             placeable.place((-placeable.width * MeloXPageRecedeParallax * p).roundToInt(), 0)
         }
     }
+        // ⚠⚠⚠ **图层隔离，不能删**（2026-10-19 修「左侧推入一顿一顿」）。
+        //   上面的布局期 `place` 每帧都会改本节点在父显示列表里的 translate。Compose 的
+        //   `AndroidComposeView.dispatchDraw` 在布局变化后要**重录显示列表**，而重录的粒度
+        //   取决于是不是有独立 RenderNode：
+        //   · **没有** `graphicsLayer` ⇒ 本节点整棵子树的绘制指令（每段文本、每张
+        //     `drawBitmap`、每个圆角矩形…）都内联在父显示列表里 ⇒ 位移一变就要把**整页**
+        //     重新录一遍。首页/发现页一屏几百条指令，120Hz 下 8.3ms 预算直接爆掉，
+        //     肉眼就是「旧页往左走时一顿一顿」。
+        //   · **有** `graphicsLayer` ⇒ 本节点被提升为独立 RenderNode，父显示列表里只剩
+        //     「translate + drawRenderNode」两条指令，位移变化只改这两条，子树**零重录**。
+        //   ⚠ 位置：必须挂在 `layout` 的**内侧**（链上更靠后）。`graphicsLayer` 在外侧时，
+        //     layer 的内容就是「子树按旧坐标画出来的结果」，平移仍会让 layer 内容失效重录。
+        //   ⚠⚠ **绝不能写 `CompositingStrategy.Offscreen`**（2026-10-19 三次修，
+        //     用户报「底栏液态玻璃变成半透明了」）：
+        //     本轮一度改成 `Offscreen`，理由是「trace 里没有 1440x3168 的 `drawLayer`
+        //     ⇒ 层没建」。**那条推论是错的** —— `drawLayer` 是 HWUI 真的去开一块离屏
+        //     surface 才会出现的 slice，而"父显示列表里只有一条 `drawRenderNode`"这件事
+        //     与它无关：只要 coordinator 挂了 `graphicsLayer`，Compose 就给了它独立的
+        //     `RenderNode` / 独立 display list，`alpha = 1f` 这种"无属性"的层照样是独立的，
+        //     只是 HWUI 走 fast path 直接把它画进当前画布、不开 surface。
+        //     ⇒ `alpha = 1f` 已经满足「位移只改 op 的 translate、子树零重录」，这就够了。
+        //     而 `Offscreen` 会把这个整页节点变成**离屏合成层**，它正好坐在
+        //     `bottomChromeBackdrop` 的**录制内容里**（`MeloXApp` 里 recede Box 的
+        //     `Modifier.layerBackdrop`）：底栏玻璃把这个 layer 当 shader 的 `content`
+        //     采样，嵌套的离屏层在这里被清成**全透明** ⇒ 玻璃只剩 `surfaceColor`
+        //     那 52% 涂层 + 高光 ⇒ 用户看到的「半透明」。
+        .graphicsLayer { alpha = 1f }
     }
 
 /**
@@ -335,17 +363,36 @@ private fun MeloXInlinePage(
             if (targetState) {
                 // 打开：详情自右侧满宽推入。下层页在容器之外、全程不动（hero morph 的硬要求），
                 // 所以另一个内容（空占位）用 ExitTransition.None 立即离场。
-                slideIntoContainer(
+                //
+                // ⚠⚠ 这里必须用 **tween**（[MeloXPageSlideSpec]），不能退回 `meloXPagePushSpec()`
+                //   那条弹簧（2026-10-19 二次定案，用户报「一直在左右顿挫横移」）。
+                //   弹簧是**渐近收敛**：k=800 时残差降到 1px 要 **≈390ms**（不是旧注释写的
+                //   0.27s —— 0.27s 只到 5.5px）。也就是 350ms 载体窗结束后，页面还要再爬
+                //   ~40ms，且每帧位移只有 0.1~0.5px ⇒ `IntOffset` 取整后变成
+                //   「0,0,1,0,0,1…」的阶梯，肉眼正是「顿挫横移」。
+                //   旧页 meanwhile 也在同族弹簧上爬（见 `meloXPageRecede`），两页末段互不同步
+                //   ⇒ 相对缝宽在这 40ms 里还在变，读成「左右错动」。
+                //   tween 在 `durationMillis` 处**精确等于目标**，尾巴恒为 0；而
+                //   [MeloXPageEasing] 本身就是 ζ=1 阻尼解按同一时标采样的形状 ⇒ 起步/中段
+                //   观感与弹簧一致，只是末端精确到位。
+                (slideIntoContainer(
                     towards = AnimatedContentTransitionScope.SlideDirection.Start,
-                    animationSpec = meloXPagePushSpec(),
-                ) togetherWith ExitTransition.None
+                    animationSpec = MeloXPageSlideSpec,
+                ) togetherWith ExitTransition.None)
+                // ⚠ 显式**关掉尺寸动画**（2026-10-19）：`AnimatedContent` 默认带
+                //   `SizeTransform()`，会在两页尺寸不同时对**容器尺寸**做一条独立动画。
+                //   而 `slideIntoContainer` 的位移是按 `contentSize` 算的 ⇒ 容器宽度一旦
+                //   在动画中插值，位移目标每帧都在变，页面看起来就是「一边横移一边被
+                //   来回推」。两个分支本来就都是 `fillMaxSize()`、尺寸恒等，这条动画
+                //   从来没用，只会引入风险。
+                .using(null)
             } else {
                 // 关闭：详情滑回右侧；空占位（target 内容）用 EnterTransition.None 立即就位（本就不可见）。
                 // ⚠ `togetherWith` 左操作数必须是 **EnterTransition**：这里进入的是空占位、退出的是详情。
-                EnterTransition.None togetherWith slideOutOfContainer(
+                (EnterTransition.None togetherWith slideOutOfContainer(
                     towards = AnimatedContentTransitionScope.SlideDirection.End,
-                    animationSpec = meloXPagePushSpec(),
-                )
+                    animationSpec = MeloXPageSlideSpec,
+                )).using(null)
             }
         },
         modifier = modifier,
@@ -360,10 +407,27 @@ private fun MeloXInlinePage(
             //   两边相等 = 已经落位、没有任何动画进程 ⇒ 不裁，四角就是直角。
             //   （`AnimatedContentScope : AnimatedVisibilityScope`，`transition` 就是本内容的。）
             val settled = transition.currentState == transition.targetState
+            // ⚠⚠ **进入过渡期间无视 `retreatProgress`**（2026-10-19，用户报「左右顿挫横移」）。
+            //   位移是两条通道**相加**的：`AnimatedContent` 的 slideIntoContainer 一条，
+            //   本修饰符的 `translationX` 另一条。而 `retreatProgress` 通常是一个
+            //   调用方持有的 `Animatable`，**上一次手势返回结束后停在 1f 而不是 0f**
+            //   （典型：`HomeOverlayPage` 的 `progress.animateTo(1f, tween(160))`，页面
+            //   已经滑出屏外，值留在 1）。调用方靠 `LaunchedEffect(shown) { snapTo(0f) }`
+            //   复位 —— 结果要等一次协程分发，可能晚于过渡的第一帧 ⇒ 那几帧里页面
+            //   多吃了整整一个屏宽（起点跑到 2W 外），随后突然跳回来 = 一次可见的
+            //   「往右一窜」。
+            //   进入期间本来就不可能发生预测式返回手势（页面还在推入），所以这里直接
+            //   屏蔽是**零代价**的：既吃掉残值，也不影响任何真实的跟手退回。
+            //   ⚠ 只在「进入」屏蔽（`EnterExitState.PreEnter`）：退出方向（`PostExit`）必须
+            //     保留它，否则手势走到一半松手、`onBack()` 之后位移会被瞬移回 0。
+            val entering = transition.currentState == EnterExitState.PreEnter
             Box(
                 Modifier
                     .fillMaxSize()
-                    .meloXPageSlideGeometry(retreatProgress, settled = settled),
+                    .meloXPageSlideGeometry(
+                        progress = { if (entering) 0f else retreatProgress() },
+                        settled = settled,
+                    ),
             ) {
                 content()
             }

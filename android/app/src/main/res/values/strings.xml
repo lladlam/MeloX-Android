@@ -1263,6 +1263,14 @@
     <string name="settings_show_quality_tip_note">Controls the quality hint under the progress bar.</string>
     <string name="settings_player_transition_duration">Player expand and collapse duration</string>
     <string name="settings_duration_ms">%1$d ms</string>
+    <!-- 播放器展开/收回时长的五档文字标签（2026-10-29）。
+         档位值与标签的对应关系见 MeloXPlayerTransitionDurationTier（单一真源）：
+         270=Very fast / 360=Fast / 460=Standard / 600=Slow / 780=Very slow。 -->
+    <string name="settings_transition_duration_very_fast">Very fast</string>
+    <string name="settings_transition_duration_fast">Fast</string>
+    <string name="settings_transition_duration_standard">Standard</string>
+    <string name="settings_transition_duration_slow">Slow</string>
+    <string name="settings_transition_duration_very_slow">Very slow</string>
     <string name="settings_equalizer">Equalizer</string>
     <string name="settings_equalizer_note">Uses the Android multiband DSP on the current player audio session.</string>
     <string name="settings_eq_presets">Presets</string>

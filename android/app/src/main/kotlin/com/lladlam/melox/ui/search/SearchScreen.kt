@@ -116,7 +116,7 @@ import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.playback.ProviderPlaybackCommands
 import com.lladlam.melox.ui.MeloXBottomContentClearance
 import com.lladlam.melox.ui.animation.MeloXMotion
-import com.lladlam.melox.ui.animation.meloXPageRedirectSpec
+import com.lladlam.melox.ui.animation.MeloXPageSpec
 import com.lladlam.melox.ui.animation.MeloXPageBoundsTransform
 import com.lladlam.melox.ui.MeloXInterruptiblePage
 import com.lladlam.melox.ui.animation.meloXSettledMillis
@@ -367,7 +367,11 @@ fun SearchScreen(
     val density = LocalDensity.current
     val collapseDistancePx = with(density) { 120.dp.toPx() }
     val listState = rememberLazyListState()
-    val collapseProgress by remember(listState, collapseDistancePx) {
+    // ⚠⚠ 这里**故意不** `by` 展开成 Float：折叠进度随滚动每帧变化，一旦在 SearchScreen
+    //   主体的组合期读取，整个页面（含下方结果列表 `Box(weight(1f))`）就会每帧重组 ——
+    //   滚动时的稳定掉帧源。改为把 State 对象往下传给独立的 [SearchCollapsingTitle]，
+    //   由那个小组件自己订阅；主体只在传 lambda，不订阅。
+    val collapseState = remember(listState, collapseDistancePx) {
         derivedStateOf {
             if (listState.firstVisibleItemIndex > 0) 1f
             else (listState.firstVisibleItemScrollOffset / collapseDistancePx).coerceIn(0f, 1f)
@@ -694,13 +698,13 @@ fun SearchScreen(
         // ⚠ 时长/缓动**必须与推入页完全一致**：子页层已改为 `AnimatedContent` +
         //   `meloXPagePushSpec()`（ζ=1、k=800 临界阻尼弹簧），主页退让用**同一条**弹簧才严格互补
         //   （「子页滑出 (1→0)」与「主页回位 (…→0)」同曲线）；任何一侧换了参数，两页之间那条缝会忽宽忽窄。
-        // ⚠ 统一走 `meloXPageRedirectSpec()`（同一条弹簧的 Float 通道）：被打断时弹簧继承当前速度
+        // ⚠ 统一走 `MeloXPageSpec`（同一条弹簧的 Float 通道）：被打断时弹簧继承当前速度
         //   ⇒ 主页平滑反转，无瞬移。旧版「snap 到起点再重放」会把主页从半路瞬移，正是顿挫来源，已废。
         val homeRecede = remember { Animatable(if (subPageOpen) 1f else 0f) }
         LaunchedEffect(subPageOpen) {
             val target = if (subPageOpen) 1f else 0f
             if (homeRecede.value == target) return@LaunchedEffect // 首帧 / 已到位：不重播
-            homeRecede.animateTo(target, meloXPageRedirectSpec())
+            homeRecede.animateTo(target, MeloXPageSpec)
         }
         // ⚠ 主页被整页子页盖住（已下沉）时，它的卡片**不能再占用共享元素 key** —— 否则会与
         //   子页/详情里的同名卡片构成**重复 shared key**，morph 的起点会错位（`SearchCardVisibility`
@@ -723,47 +727,9 @@ fun SearchScreen(
             .padding(top = 26.dp)
             .padding(horizontal = if (window.supportsTwoPane) window.gutter else 0.dp),
                 ) {
-        // 顶部折叠头 —— 复刻 [ExploreCollapsingHeader] 的完整逻辑：**布局高度**随折叠进度
-        // 收缩（而不是只做绘制期缩放），所以下方的搜索框、分类行、结果区会整体上移，
-        // 正是「搜索框跟着一起上移」的来源。头部共收缩 74dp（36→4 + 62→30 + 16→6）。
-        // ⚠ 标题块折叠到 30dp 后会小于 Text 自身的布局盒，必须给 Text 加
-        //   wrapContentSize(unbounded=true)，否则盒子被父级 clamp、绘制被裁到盒底，
-        //   标题下半截会「被水平切平」。
-        Spacer(Modifier.height(lerp(SearchHeaderTopSpaceExpanded, SearchHeaderTopSpaceCollapsed, collapseProgress)))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(lerp(SearchTitleBlockExpanded, SearchTitleBlockCollapsed, collapseProgress))
-                .padding(horizontal = 20.dp),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            Text(
-                text = stringResource(R.string.tab_search),
-                fontSize = 34.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    // 关键①：不写 lineHeight。34sp 的自然行高已经大于 44sp 指定的额外 leading，
-                    //   那部分 leading 不计进 Text 的布局盒，墨迹会被整体往下推约一行高 ——
-                    //   标题就画到了块外、被块底切掉下半截（发现页能容忍是因为它的折叠块
-                    //   有 38dp，比 30dp 的墨迹高；这里不能这么写）。
-                    // 关键②：unbounded 让折叠后的 30dp 标题块**不能反向压缩** Text 自己的
-                    //   布局盒。Box 本身不裁剪，所以盒子溢出到块外是安全的；绘制又被
-                    //   graphicsLayer 等比缩到 24sp 等效，始终落在块内。
-                    .wrapContentSize(unbounded = true)
-                    .graphicsLayer {
-                        // 34sp → 24sp 等效缩放，左侧锚定（transformOrigin x=0）不横向漂移。
-                        val scale = 1f + (24f / 34f - 1f) * collapseProgress
-                        scaleX = scale
-                        scaleY = scale
-                        transformOrigin = TransformOrigin(0f, 0.5f)
-                        alpha = 1f - 0.15f * collapseProgress
-                    },
-            )
-        }
-        Spacer(Modifier.height(lerp(SearchTitleGapExpanded, SearchTitleGapCollapsed, collapseProgress)))
+        // 顶部折叠头拆成独立组件（见 `SearchCollapsingTitle`）：折叠进度在**它内部**读，
+        // 本页主体（搜索框、分类行、下方结果列表）完全不订阅那个每帧变化的 State。
+        SearchCollapsingTitle(collapseProgress = { collapseState.value })
         SearchField(
             value = query,
             onValueChange = { query = it; skipSearchDebounce = false },
@@ -1913,3 +1879,63 @@ private fun NeteasePlaylistSummary.asSearchItem() = MeloXSearchMediaItem(
     artworkUrl = coverUrl,
     trackCount = trackCount,
 )
+
+/**
+ * 搜索页顶部折叠头（大标题 + 两个会收缩的间距）。
+ *
+ * ⚠ 独立成组件的唯一原因：**折叠进度只能在它内部读**。它随滚动每帧变化，
+ *   若在 `SearchScreen` 主体里读取（哪怕只是为了算 Spacer 高度），整页 ——
+ *   包括下方那份结果列表 —— 都会每帧重组，滚动时就是稳定掉帧。
+ *   这里订阅、这里重组，代价只有三个叶子节点 + 一次必要的重排。
+ *
+ * 复刻 [ExploreCollapsingHeader] 的完整逻辑：**布局高度**随折叠进度收缩
+ * （而不是只做绘制期缩放），所以下方的搜索框、分类行、结果区会整体上移，
+ * 正是「搜索框跟着一起上移」的来源。头部共收缩 74dp（36→4 + 62→30 + 16→6）。
+ */
+@Composable
+private fun SearchCollapsingTitle(collapseProgress: () -> Float) {
+    val progress = collapseProgress()
+    Spacer(
+        Modifier.height(
+            lerp(SearchHeaderTopSpaceExpanded, SearchHeaderTopSpaceCollapsed, progress),
+        ),
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(lerp(SearchTitleBlockExpanded, SearchTitleBlockCollapsed, progress))
+            .padding(horizontal = 20.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            text = stringResource(R.string.tab_search),
+            fontSize = 34.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                // 关键①：不写 lineHeight。34sp 的自然行高已经大于 44sp 指定的额外 leading，
+                //   那部分 leading 不计进 Text 的布局盒，墨迹会被整体往下推约一行高 ——
+                //   标题就画到了块外、被块底切掉下半截（发现页能容忍是因为它的折叠块
+                //   有 38dp，比 30dp 的墨迹高；这里不能这么写）。
+                // 关键②：unbounded 让折叠后的 30dp 标题块**不能反向压缩** Text 自己的
+                //   布局盒。Box 本身不裁剪，所以盒子溢出到块外是安全的；绘制又被
+                //   graphicsLayer 等比缩到 24sp 等效，始终落在块内。
+                .wrapContentSize(unbounded = true)
+                .graphicsLayer {
+                    // 34sp → 24sp 等效缩放，左侧锚定（transformOrigin x=0）不横向漂移。
+                    val scale = 1f + (24f / 34f - 1f) * progress
+                    scaleX = scale
+                    scaleY = scale
+                    transformOrigin = TransformOrigin(0f, 0.5f)
+                    alpha = 1f - 0.15f * progress
+                },
+        )
+    }
+    Spacer(
+        Modifier.height(
+            lerp(SearchTitleGapExpanded, SearchTitleGapCollapsed, progress),
+        ),
+    )
+}

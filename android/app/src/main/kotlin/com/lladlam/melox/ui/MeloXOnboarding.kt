@@ -1,6 +1,5 @@
 package com.lladlam.melox.ui
 
-import androidx.compose.foundation.Image
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -29,7 +28,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -38,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.lladlam.melox.R
 import com.lladlam.melox.ui.glass.MeloXGlassButton
+import com.lladlam.melox.ui.theme.MeloXBrandLogo
 import com.lladlam.melox.ui.glass.MeloXGlassButtonStyle
 import com.lladlam.melox.ui.legal.*
 
@@ -55,11 +54,7 @@ internal fun MeloXOnboardingWelcomePage(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Image(
-                painterResource(R.drawable.ic_launcher_foreground),
-                contentDescription = null,
-                modifier = Modifier.size(112.dp).clip(MaterialTheme.shapes.large),
-            )
+            MeloXBrandLogo(112.dp)
             Spacer(Modifier.height(26.dp))
             Text(
                 "MeloX",
@@ -129,8 +124,7 @@ private fun MeloXOnboardingChoicePage(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Image(painterResource(R.drawable.ic_launcher_foreground), null,
-                Modifier.padding(top = 24.dp).size(88.dp).clip(MaterialTheme.shapes.large))
+            MeloXBrandLogo(88.dp, Modifier.padding(top = 24.dp))
             Text(title, modifier = Modifier.padding(top = 22.dp, bottom = 16.dp),
                 color = MaterialTheme.colorScheme.onBackground, fontSize = 28.sp,
                 fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
@@ -225,11 +219,7 @@ internal fun MeloXOnboardingAccountPage(
                     fontWeight = FontWeight.SemiBold,
                 )
             } else {
-                Image(
-                    painterResource(R.drawable.ic_launcher_foreground),
-                    contentDescription = null,
-                    modifier = Modifier.size(88.dp).clip(MaterialTheme.shapes.large),
-                )
+                MeloXBrandLogo(88.dp)
                 Spacer(Modifier.height(18.dp))
                 Text(
                     stringResource(R.string.onboarding_account_title),

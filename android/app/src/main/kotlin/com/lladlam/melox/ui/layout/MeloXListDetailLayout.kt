@@ -3,11 +3,11 @@ package com.lladlam.melox.ui.layout
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
+import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -36,15 +36,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import com.lladlam.melox.R
 import com.lladlam.melox.core.music.model.MusicSource
 import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.music.provider.PlaybackAccountSlot
@@ -59,11 +57,14 @@ import com.lladlam.melox.ui.provider.MeloXProviderServicesActivity
 import com.lladlam.melox.ui.provider.ProviderServicesPage
 import com.lladlam.melox.ui.settings.MeloXSettingsDetailActivity
 import com.lladlam.melox.ui.settings.MeloXSettingsDetailPage
+import com.lladlam.melox.ui.theme.MeloXBrandLogo
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.song.MeloXSongWikiActivity
 import com.lladlam.melox.ui.song.MeloXSongWikiPage
 import com.lladlam.melox.ui.cloud.MeloXCloudMusicScreen
 import com.lladlam.melox.ui.library.LibraryScreen
+import com.lladlam.melox.ui.messages.MessagesScreen
+import com.lladlam.melox.ui.messages.MeloXMessagesActivity
 import com.lladlam.melox.ui.podcast.MeloXPodcastScreen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -71,6 +72,51 @@ import kotlinx.coroutines.launch
 /** Window aspect ratio, deliberately independent of device type and width classes. */
 internal fun meloXUsesListDetail(size: IntSize, enabled: Boolean = true): Boolean =
     enabled && size.height > 0 && size.width > size.height
+
+/**
+ * 配置口径的同一个判据（2026-10-27 新增）。
+ *
+ * ## 为什么不能再用 `LocalWindowInfo.current.containerSize`
+ * 旋转时本 App 声明了 `configChanges="orientation|screenSize"` ⇒ Activity 不重建，
+ * 转屏是**同一棵树内的尺寸变化**。此时两条时间线并不同源：
+ *  - 新尺寸（布局约束）= 本次 traversal 的 measure 输入，**当帧生效**；
+ *  - `containerSize` 来自 WindowManager metrics 的异步回填，可能**晚 1 帧甚至 2 帧**。
+ *
+ * 于是竖→横的第一帧会出现「页面已按横屏分栏（`MeloXListDetailLayout` 的
+ * `BoxWithConstraints` 拿到的是真约束）」但「`MeloXApp.listDetailMode` 仍是 false
+ * ⇒ 底栏按整屏宽铺开」⇒ 下一帧才收成半宽 —— 就是用户报的**「底栏长变短」**。
+ *
+ * `LocalConfiguration` 由 `AndroidComposeView.dispatchConfigurationChanged` 更新，
+ * 与窗口 resize 在**同一次 `performTraversals`** 内、且早于 measure ⇒ 与布局约束
+ * 同帧同源。底栏与页面共用这一个判据后，两者不可能再跨帧。
+ *
+ * @see meloXUsesListDetail 的 IntSize 版本（布局真值口径，二者同义）
+ */
+internal fun meloXUsesListDetail(configuration: Configuration, enabled: Boolean = true): Boolean =
+    enabled && configuration.screenWidthDp > configuration.screenHeightDp
+
+/**
+ * **布局真值**口径（2026-10-27 定案，优先级高于上面两个口径）。
+ *
+ * ## 为什么最终必须用 `Constraints`
+ * 上面两条（[IntSize] / [Configuration]）都还是「描述性输入」：前者是 WindowManager
+ * 异步回填的 metrics，后者是 `Resources` 的配置派发 —— 两者都**可能比本次 measure 的
+ * 约束晚 1~N 帧**（转屏时 WM 先 resize 窗口、配置派发走另一条主线程消息，谁先到不保证）。
+ * 只要判据比约束晚，就会有一帧「窗口已经横了、判据还说是竖屏」⇒ 底栏按整屏宽铺开
+ * ⇒ 下一帧才收成半宽 —— 用户报的**「竖转横底栏长变短」**（改 `Configuration` 口径后
+ * 仍偶发，说明配置派发同样会滞后）。
+ *
+ * 而 `Constraints` 是**本次 measure 的输入本身**：`BoxWithConstraints` 在 measure 阶段
+ * 做 subcompose ⇒ 内容在同一帧就拿到新约束 ⇒ 与它旁边的兄弟（`MeloXPositionedChrome`
+ * 的 measure lambda 里的 `constraints`）**天然同源同帧**，不存在跨帧的可能。
+ *
+ * ⚠ 判据只能有一个出处，且**必须是离布局最近的那一个**：`MeloXListDetailLayout` 用
+ *   `BoxWithConstraints` 的 `constraints`，底栏用 `MeloXPositionedChrome` 的 `constraints`。
+ *   两者都是满屏节点 ⇒ 同一个值。
+ */
+internal fun meloXUsesListDetail(constraints: Constraints, enabled: Boolean = true): Boolean =
+    enabled && constraints.hasBoundedWidth && constraints.hasBoundedHeight &&
+        constraints.maxWidth > constraints.maxHeight
 
 internal val LocalMeloXPaneSize = staticCompositionLocalOf<IntSize?> { null }
 internal val LocalMeloXListDetail = staticCompositionLocalOf { false }
@@ -143,24 +189,38 @@ class MeloXDetailPaneState {
             MeloXNeteaseLoginActivity::class.java.name,
             MeloXProviderServicesActivity::class.java.name,
             MeloXSongWikiActivity::class.java.name,
+            // 2026-10-18：私信页迁 Activity；横屏分屏仍走内嵌右栏（与设置详情同规则），
+            // 竖屏由 openMeloXDetailPage 的 singlePane 排除走平台转场。
+            MeloXMessagesActivity::class.java.name,
         )
     }
 }
 
 internal fun Context.openMeloXDetailPage(intent: Intent): Boolean {
-    // Settings and its account/service pages share platform Activity transitions
+// Settings and its account/service pages share platform Activity transitions
     // in a single pane. Inline pages would also hide the shell's dock/miniplayer
     // until their exit animation finishes. Only split landscape uses the pane.
+    //
+    // ⚠⚠ 2026-10-18：账号页（MeloXAccountActivity）、私信页（MeloXMessagesActivity）与
+    // 音乐服务页（MeloXProviderServicesActivity）同样只在「分屏 + 横屏」走内嵌面板；
+    // 单面板（竖屏手机）一律 return false 走平台 Activity 转场。此前这些页面没有这条排除
+    // ⇒ 竖屏下打开它们走的是 App 内 `AdaptiveActivityPage`（`visible = true` 是常量 ⇒
+    // AnimatedContent 初始即目标态，**入场动画根本不播**，打开即现身）—— 与其他设置
+    // 详情页（平台窗口转场）不同款，用户报「动画不完整 / 没有动画」。
+    //
+    // ★ 2026-10-25 同步上游 0.7.0：上游把这段改成 `when` 判据并新增网易云登录页
+    //   （MeloXNeteaseLoginActivity）；本地把「私信页」那一项保留在同一个 `when` 里。
     val config = resources.configuration
+    val singlePane = !MeloXSettingsRuntime.splitScreenEnabled || config.screenWidthDp <= config.screenHeightDp
     val settingsPage = when (intent.component?.className) {
         MeloXSettingsDetailActivity::class.java.name,
         MeloXAccountActivity::class.java.name,
         MeloXNeteaseLoginActivity::class.java.name,
+        MeloXMessagesActivity::class.java.name,
         MeloXProviderServicesActivity::class.java.name -> true
         else -> false
     }
-    if (settingsPage &&
-        (!MeloXSettingsRuntime.splitScreenEnabled || config.screenWidthDp <= config.screenHeightDp)) return false
+    if (singlePane && settingsPage) return false
     var current = this
     while (true) {
         if (current is MeloXDetailPageOwner) {
@@ -231,11 +291,16 @@ internal fun MeloXListDetailLayout(
     primaryModifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    val windowSize = LocalWindowInfo.current.containerSize
-    val split = meloXUsesListDetail(windowSize, MeloXSettingsRuntime.splitScreenEnabled)
     val context = LocalContext.current
     val divider = MaterialTheme.colorScheme.outlineVariant
+    // ★ 2026-10-27（第二次）：判据改用 **BoxWithConstraints 的布局真值**
+    //   （`meloXUsesListDetail(Constraints)`，见其 kdoc）。
+    //   上一轮换成 `LocalConfiguration` 后仍偶发「底栏长变短」⇒ 证明配置派发同样会
+    //   晚于窗口 resize；只有 measure 的 `Constraints` 与布局**天然同帧**。
+    //   ⚠ 必须写在 `BoxWithConstraints` **内部**：`constraints` 只在那个 scope 里存在，
+    //     而且 subcompose 是在 measure 阶段跑的 ⇒ 同一帧拿到新约束。
     BoxWithConstraints(Modifier.fillMaxSize()) {
+        val split = meloXUsesListDetail(constraints, MeloXSettingsRuntime.splitScreenEnabled)
         val density = LocalDensity.current
         val size = with(density) { IntSize(maxWidth.roundToPx(), maxHeight.roundToPx()) }
         val leftWidth = if (split) size.width / 2 else size.width
@@ -276,11 +341,7 @@ internal fun MeloXListDetailLayout(
                             Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Image(
-                                painterResource(R.drawable.ic_launcher_foreground),
-                                contentDescription = null,
-                                modifier = Modifier.size(104.dp),
-                            )
+                            MeloXBrandLogo(104.dp)
                         }
                     }
                     CompositionLocalProvider(
@@ -391,6 +452,7 @@ private fun DetailPage(
         MeloXAccountActivity::class.java.name -> AccountHomeScreen(intent.getLongExtra("user_id", -1L), onBack)
         MeloXProviderServicesActivity::class.java.name -> ProviderServicesPage(onBack, onSourceSelected, session)
         MeloXSongWikiActivity::class.java.name -> MeloXSongWikiPage(intent, onBack)
+        MeloXMessagesActivity::class.java.name -> MessagesScreen(onBack = onBack)
         MeloXNeteaseLoginActivity::class.java.name -> NeteaseLoginScreen(
             session = session,
             onDismiss = onBack,

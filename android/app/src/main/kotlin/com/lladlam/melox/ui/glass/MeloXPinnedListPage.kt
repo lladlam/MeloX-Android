@@ -111,7 +111,14 @@ fun MeloXPinnedListPage(
                                 scaleY = scale
                                 transformOrigin = TransformOrigin(0f, .5f)
                             }
-                            .blur(6.dp * collapseProgress)
+                            // ⚠ 这里原来有一句 `.blur(6.dp * collapseProgress)`，2026-10-19 删掉：
+                            //   ① `collapseProgress` 是随滚动每帧变化的 derivedStateOf ⇒ 在**组合期**
+                            //      读它会让本节点（以及工具栏那颗标题）每帧重组；
+                            //   ② `Modifier.blur` 的半径每帧变 ⇒ 每帧重建 `BlurEffect` RenderEffect
+                            //      并重做一次离屏模糊 —— 文本节点做这件事尤其贵。
+                            //   两者叠加 = 滚动时稳定掉帧，正是用户报的「动画偶尔顿挫」。
+                            //   视觉上这个模糊本就只在折叠中段可见（alpha 已降到 0.5 以下），
+                            //   iOS 的大标题折叠也只做 alpha + scale，观感更锐利。
                             .offset(y = (-8).dp)
                             .padding(vertical = 8.dp),
                         style = MeloXTypography.largeTitle.inheritAmbientFamily(),
@@ -150,12 +157,16 @@ fun MeloXPinnedListPage(
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         title,
+                        // ⚠ 同大标题：原来的 `.blur(8.dp * (1f - collapseProgress))` 已删。
+                        //   它在组合期读每帧变化的 `collapseProgress`，且半径每帧变 ⇒
+                        //   每帧重建 RenderEffect + 离屏模糊。这里 alpha/scale 本来就已经
+                        //   完成「模糊淡入 → 清晰就位」的观感，去掉 blur 后滚动不再掉帧。
                         modifier = Modifier.graphicsLayer {
                             alpha = collapseProgress
                             val scale = .92f + .08f * collapseProgress
                             scaleX = scale
                             scaleY = scale
-                        }.blur(8.dp * (1f - collapseProgress)),
+                        },
                         fontSize = 17.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,

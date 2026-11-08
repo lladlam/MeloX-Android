@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import com.lladlam.melox.BuildConfig
 import com.lladlam.melox.ui.layout.rememberMeloXWindowInfo
 import kotlinx.coroutines.delay
 
@@ -162,14 +163,6 @@ fun Modifier.meloXPlayerStatusBarsPadding(): Modifier = composed {
     }
 
     val top = if (isLandscape) 0.dp else with(density) { maxOf(stableTopPx, cutoutTopPx).toDp() }
-    // ── 临时取证（转屏安全区滞后）：用完即删 ──────────────────────────────────
-    //   live = 当帧真实 inset（横屏读数是旧方向的值），cache = 跨注销缓存。
-    MeloXPlayerSinkDiag.sample("inset.land", isLandscape)
-    MeloXPlayerSinkDiag.sample(
-        "inset.top",
-        "stable=$stableTopPx cutout=$cutoutTopPx live=${meloXLiveStatusBarTopPx(view)} " +
-            "cache=${MeloXPlayerInsetCache.statusBarTopPx} applied=${if (isLandscape) 0 else maxOf(stableTopPx, cutoutTopPx)}",
-    )
     padding(top = top)
 }
 
@@ -273,11 +266,6 @@ fun Modifier.meloXPlayerNavigationBarsPadding(): Modifier = composed {
     }
     val bottom = if (isLandscape) 0.dp else with(density) { navBottomPx.toDp() }
     // ── 临时取证（转屏安全区滞后）：用完即删 ──────────────────────────────────
-    MeloXPlayerSinkDiag.sample(
-        "inset.nav",
-        "px=$navBottomPx live=${meloXLiveNavigationBarBottomPx(view)} " +
-            "cache=${MeloXPlayerInsetCache.navigationBarBottomPx} " +
-            "portraitWin=${meloXIsPortraitWindow(view)} applied=${if (isLandscape) 0 else navBottomPx}",
-    )
+    // ★ 2026-10-26 功耗：同上方 `meloXPlayerStatusBarsPadding` —— 实参在门控内求值。
     padding(bottom = bottom)
 }
