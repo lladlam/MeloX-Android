@@ -86,13 +86,15 @@ internal fun DailyHistoryRoute(title: String, onBack: () -> Unit) {
     if (entry != null) {
         // Synthetic negative id: supplied song lists must never hit the disk/network
         // playlist cache (same convention as HomeSongListDetail).
-        val playlist = remember(entry.date, entry.songs.size) {
+        val playlistName = stringResource(R.string.daily_history_playlist_name, entry.date)
+        val playlistCreator = stringResource(R.string.daily_history_playlist_creator)
+        val playlist = remember(entry.date, entry.songs.size, playlistName, playlistCreator) {
             NeteasePlaylistSummary(
                 id = -(("历史日推 ${entry.date}").hashCode().toLong() and 0x7fff_ffffL) - 1L,
-                name = "每日推荐 · ${entry.date}",
+                name = playlistName,
                 coverUrl = entry.songs.firstOrNull()?.artworkUrl,
                 trackCount = entry.songs.size,
-                creatorName = "网易云音乐 · 历史归档",
+                creatorName = playlistCreator,
             )
         }
         MeloXUnifiedSongListDetailScreen(
@@ -123,10 +125,11 @@ private fun DailyHistoryPage(
     val initialToday = remember { MeloXDailyClock.today() }
     var year by rememberSaveable { mutableIntStateOf(initialToday.year) }
     var monthValue by rememberSaveable { mutableIntStateOf(initialToday.monthValue) }
-    var selectedKey by rememberSaveable { mutableStateOf(MeloXDailyClock.archiveKeyFor(initialToday)) }
+    var selectedKey by rememberSaveable { mutableStateOf<String?>(MeloXDailyClock.archiveKeyFor(initialToday)) }
     var dateKeys by remember { mutableStateOf(emptyList<String>()) }
     var accountKey by remember { mutableStateOf<String?>(null) }
     var entry by remember { mutableStateOf<DailyHistoryEntry?>(null) }
+    var entryLoading by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(true) }
 
     val month = YearMonth.of(year, monthValue)
@@ -158,11 +161,25 @@ private fun DailyHistoryPage(
 
     LaunchedEffect(accountKey, selectedKey, dateKeys) {
         val key = accountKey ?: return@LaunchedEffect
-        entry = if (selectedKey !in dateKeys) {
+        val requestedKey = selectedKey
+        entry = null
+        entryLoading = requestedKey != null && requestedKey in dateKeys
+        entry = if (requestedKey == null || requestedKey !in dateKeys) {
             null
         } else {
-            withContext(Dispatchers.IO) { DailyHistoryStore.read(app, key, selectedKey) }
+            withContext(Dispatchers.IO) { DailyHistoryStore.read(app, key, requestedKey) }
         }
+        entryLoading = false
+    }
+
+    fun showMonth(target: YearMonth) {
+        year = target.year
+        monthValue = target.monthValue
+        selectedKey = MeloXDailyClock.selectionForMonth(
+            target = target,
+            selectedKey = selectedKey,
+            dateKeys = dateKeys,
+        )
     }
 
     MeloXPinnedListPage(
@@ -173,21 +190,10 @@ private fun DailyHistoryPage(
         item(key = "history-month-header") {
             MonthHeader(
                 month = month,
-                onPrevious = {
-                    val previous = month.minusMonths(1)
-                    year = previous.year
-                    monthValue = previous.monthValue
-                },
-                onNext = {
-                    val next = month.plusMonths(1)
-                    year = next.year
-                    monthValue = next.monthValue
-                },
+                onPrevious = { showMonth(month.minusMonths(1)) },
+                onNext = { showMonth(month.plusMonths(1)) },
                 onToday = {
-                    val current = MeloXDailyClock.today()
-                    year = current.year
-                    monthValue = current.monthValue
-                    selectedKey = MeloXDailyClock.archiveKeyFor(current)
+                    showMonth(YearMonth.from(MeloXDailyClock.today()))
                 },
             )
         }
@@ -197,7 +203,7 @@ private fun DailyHistoryPage(
                 cells = cells,
                 marked = marked,
                 today = today,
-                selected = MeloXDailyClock.parseKey(selectedKey),
+                selected = selectedKey?.let(MeloXDailyClock::parseKey),
                 onSelect = { date -> selectedKey = MeloXDailyClock.archiveKeyFor(date) },
             )
         }
@@ -209,8 +215,16 @@ private fun DailyHistoryPage(
                         CircularProgressIndicator(color = MeloXSystemColors.Red)
                     }
                 }
+                entryLoading -> {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 18.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = MeloXSystemColors.Red)
+                    }
+                }
                 contentState == EmptyState.NO_HISTORY -> {
                     EmptyHint(stringResource(R.string.daily_history_empty_all))
+                }
+                contentState == EmptyState.NO_SELECTION -> {
+                    EmptyHint(stringResource(R.string.daily_history_select_day))
                 }
                 contentState == EmptyState.NO_RECORD_THAT_DAY -> {
                     EmptyHint(stringResource(R.string.daily_history_empty_day))
@@ -222,7 +236,7 @@ private fun DailyHistoryPage(
                     val current = entry!!
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(
-                            selectedKey,
+                            current.date,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f),
@@ -403,7 +417,7 @@ private fun DayCell(
                 if (isToday) Modifier.border(1.dp, MeloXSystemColors.Red, shape)
                 else Modifier,
             )
-            .clickable(onClick = onClick),
+            .then(if (date != null) Modifier.clickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         if (date != null) {

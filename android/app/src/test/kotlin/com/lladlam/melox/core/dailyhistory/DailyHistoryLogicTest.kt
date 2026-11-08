@@ -116,11 +116,41 @@ class DailyHistoryLogicTest {
     }
 
     @Test
+    fun monthPagingKeepsSelectionInsideTheVisibleMonth() {
+        val today = LocalDate.of(2026, 11, 9)
+        val november = YearMonth.of(2026, 11)
+        val october = YearMonth.of(2026, 10)
+
+        // A selection in the target month stays put.
+        assertEquals(
+            "2026-10-03",
+            MeloXDailyClock.selectionForMonth(october, "2026-10-03", today, listOf("2026-10-03")),
+        )
+        // Moving away from the current month selects the newest archive in that month.
+        assertEquals(
+            "2026-10-20",
+            MeloXDailyClock.selectionForMonth(
+                target = october,
+                selectedKey = "2026-11-09",
+                today = today,
+                dateKeys = listOf("2026-10-20", "2026-10-03", "2026-09-30"),
+            ),
+        )
+        // Returning to the current month selects today even without an archive.
+        assertEquals(
+            "2026-11-09",
+            MeloXDailyClock.selectionForMonth(november, "2026-10-20", today, emptyList()),
+        )
+        // No archive and not the current month: clear selection instead of showing stale content.
+        assertNull(MeloXDailyClock.selectionForMonth(YearMonth.of(2026, 8), "2026-10-20", today, emptyList()))
+    }
+
+    @Test
     fun emptyStatesCoverNoHistoryAndNoRecordThatDay() {
         val keys = listOf("2026-11-06")
         assertEquals(EmptyState.NO_HISTORY, MeloXDailyClock.isEmptyState(emptyList(), "2026-11-06"))
         assertEquals(EmptyState.NO_RECORD_THAT_DAY, MeloXDailyClock.isEmptyState(keys, "2026-11-05"))
-        assertEquals(EmptyState.NO_RECORD_THAT_DAY, MeloXDailyClock.isEmptyState(keys, null))
+        assertEquals(EmptyState.NO_SELECTION, MeloXDailyClock.isEmptyState(keys, null))
         assertEquals(EmptyState.HAS_RECORD, MeloXDailyClock.isEmptyState(keys, "2026-11-06"))
     }
 }

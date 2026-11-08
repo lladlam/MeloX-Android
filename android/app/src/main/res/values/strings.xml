@@ -932,6 +932,9 @@
     <string name="daily_history_empty_day">No archive for this day.</string>
     <string name="daily_history_open_playlist">Open as playlist</string>
     <string name="daily_history_song_count">%1$d songs</string>
+    <string name="daily_history_playlist_name">Daily Recommendations · %1$s</string>
+    <string name="daily_history_playlist_creator">NetEase Cloud Music · archive</string>
+    <string name="daily_history_select_day">Select a date to view its archive.</string>
     <string name="settings_sub_general">Theme, launch behavior, and link handling</string>
     <string name="settings_kw_general">theme light dark follow system default page clipboard</string>
     <string name="settings_sub_appearance">Background, artwork motion, and keep awake</string>

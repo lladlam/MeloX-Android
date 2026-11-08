@@ -49,9 +49,32 @@ object MeloXDailyClock {
         }
     }
 
+    /**
+     * Selection after paging the calendar to [target]. Keep the current day when it
+     * belongs to the visible month; otherwise prefer today's month, then the newest
+     * archived day in that month. Returning null avoids showing another month's
+     * record under the visible calendar.
+     */
+    fun selectionForMonth(
+        target: YearMonth,
+        selectedKey: String?,
+        today: LocalDate = today(),
+        dateKeys: List<String> = emptyList(),
+    ): String? {
+        val selectedDate = selectedKey?.let(::parseKey)
+        return when {
+            selectedDate != null && YearMonth.from(selectedDate) == target -> selectedKey
+            YearMonth.from(today) == target -> archiveKeyFor(today)
+            else -> dateKeys.mapNotNull(::parseKey)
+                .firstOrNull { YearMonth.from(it) == target }
+                ?.let(::archiveKeyFor)
+        }
+    }
+
     fun isEmptyState(dateKeys: List<String>, selectedKey: String?): EmptyState = when {
         dateKeys.isEmpty() -> EmptyState.NO_HISTORY
-        selectedKey == null || selectedKey !in dateKeys -> EmptyState.NO_RECORD_THAT_DAY
+        selectedKey == null -> EmptyState.NO_SELECTION
+        selectedKey !in dateKeys -> EmptyState.NO_RECORD_THAT_DAY
         else -> EmptyState.HAS_RECORD
     }
 }
@@ -62,6 +85,9 @@ enum class EmptyState {
 
     /** There is history, but not for the selected day. */
     NO_RECORD_THAT_DAY,
+
+    /** History exists, but no day in the visible month is selected. */
+    NO_SELECTION,
 
     HAS_RECORD,
 }

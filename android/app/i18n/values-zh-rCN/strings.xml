@@ -932,6 +932,9 @@
     <string name="daily_history_empty_day">这一天没有归档记录</string>
     <string name="daily_history_open_playlist">作为歌单打开</string>
     <string name="daily_history_song_count">%1$d 首歌曲</string>
+    <string name="daily_history_playlist_name">每日推荐 · %1$s</string>
+    <string name="daily_history_playlist_creator">网易云音乐 · 历史归档</string>
+    <string name="daily_history_select_day">选择日期查看当天归档</string>
     <string name="settings_sub_general">主题、启动行为与链接处理</string>
     <string name="settings_kw_general">主题 浅色 深色 跟随系统 默认页面 剪贴板</string>
     <string name="settings_sub_appearance">背景、封面动画与屏幕常亮</string>

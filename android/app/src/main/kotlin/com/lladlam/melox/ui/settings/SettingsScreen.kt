@@ -253,15 +253,15 @@ private val SettingsSections = listOf(
         SettingsItem(SettingsRoute.FloatingLyrics, "Android 悬浮歌词能力与权限", "▤", "画中画 悬浮窗 其他应用"),
         SettingsItem(SettingsRoute.RearDisplay, "下载实验性小米背屏控制应用", "▣", "小米 背屏 副屏 HyperOS Rear 下载"),
     )),
+    SettingsSection("历史", listOf(
+        SettingsItem(SettingsRoute.DailyHistory, "自动归档每天查看的每日推荐，可按日期回看", "◷", "历史 日推 每日推荐 归档 日历 回看 记录 history daily archive calendar"),
+    )),
     SettingsSection("关于", listOf(
         SettingsItem(SettingsRoute.RemoteConfig, "签名配置状态、平台熔断声明与本地缓存", "⌁", "远程 配置 云控 签名 熔断 兼容 GitHub"),
         SettingsItem(SettingsRoute.About, "版本、项目主页与开源信息", "ⓘ", "GitHub 更新 开源 许可"),
         SettingsItem(SettingsRoute.Legal, "查看隐私政策、免责声明与同意版本", "▤", "隐私 政策 免责声明 法律 条款 数据"),
         SettingsItem(SettingsRoute.Developer, "播放器诊断与迁移状态", "⌘", "BeatNet 节拍 调试 日志"),
         SettingsItem(SettingsRoute.Experimental, "预览尚未稳定的新功能", "✦", "实验 测试 歌词 强绑定"),
-    )),
-    SettingsSection("历史", listOf(
-        SettingsItem(SettingsRoute.DailyHistory, "自动归档每天查看的每日推荐，可按日期回看", "◷", "历史 日推 每日推荐 归档 日历 回看 记录 history daily archive calendar"),
     )),
 )
 
