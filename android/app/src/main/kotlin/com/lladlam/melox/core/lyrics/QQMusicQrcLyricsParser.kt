@@ -27,17 +27,33 @@ object QQMusicQrcLyricsParser {
     private const val AnnotationToleranceMs = 1_500L
     private const val OffsetConsistencyMs = 1_500L
 
+    /**
+     * 解密备忘录（songMid 级别的重复请求会带同一份 hex）。
+     *
+     * 实测《红尘客栈》四个 profile + 下载端点返回的 QRC hex **完全一致**（6560 字符），
+     * 而 [decryptHex] 的第一路自定义 DES（[QQMusicMeiQrcDecoder.decodeLyric]）对真实
+     * payload 必然失败、却要跑遍全部字节才轮到能解开的 3DES —— 同一份 hex 白解 5 遍。
+     */
+    private const val DecryptCacheSize = 8
+    private val decryptCache = object : LinkedHashMap<String, String>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean =
+            size > DecryptCacheSize
+    }
+
     fun decryptHex(value: String): String {
         val normalized = value.trim()
         if (normalized.isBlank() || normalized.length % 2 != 0 || !normalized.all { it.isHexDigit() }) return ""
+        synchronized(decryptCache) { decryptCache[normalized] }?.let { return it }
         val encrypted = runCatching {
             ByteArray(normalized.length / 2) { index ->
                 normalized.substring(index * 2, index * 2 + 2).toInt(16).toByte()
             }
         }.getOrElse { return "" }
-        return QQMusicMeiQrcDecoder.decodeLyric(normalized)
+        val decoded = QQMusicMeiQrcDecoder.decodeLyric(normalized)
             .ifBlank { decodeCompressed(qrcDecrypt(encrypted)) }
             .ifBlank { decodeCompressed(legacyTripleDesDecrypt(encrypted)) }
+        synchronized(decryptCache) { decryptCache[normalized] = decoded }
+        return decoded
     }
 
     private fun qrcDecrypt(encrypted: ByteArray): ByteArray = runCatching {

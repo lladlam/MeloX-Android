@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.annotation.StringRes
 import androidx.compose.ui.text.font.FontWeight
+import com.lladlam.melox.R
 import com.lladlam.melox.playback.MeloXPlaybackModePreferences
 
 enum class MeloXThemeMode { System, Light, Dark }
@@ -18,6 +20,68 @@ enum class MeloXPlayerBackgroundMode { FlowingLight, AppleLyrics, BlurredArtwork
 internal val MeloXPlayerBackgroundMode.usesFlowingBackdrop: Boolean
     get() = this != MeloXPlayerBackgroundMode.BlurredArtwork && this != MeloXPlayerBackgroundMode.CustomImage
 enum class MeloXPlayerShell { AppleMusic, Classic }
+
+/**
+ * 播放器「展开 / 收回」时长的**五档**（2026-10-29 重划）。
+ *
+ * ### ⚠⚠ 为什么把「毫秒值」和「显示文案」绑在**同一个枚举**里
+ *
+ * 设置页显示的是**文字档位**（不再显示 ms 数值），而运行时消费的是**毫秒数**。
+ * 这两者一旦分家，就会复现本文件历史上最典型的那个 bug：
+ * **「不要实际变，设置显示没变」**（显示 360 / 实际 240）。
+ * ⇒ 档位值与档位文案**必须同源**：本枚举是唯一真源，
+ *   设置页下拉（`SettingsScreen`）与运行时迁移（`playerTransitionDurationMs`）
+ *   都从这里取，任何一档改动都不会出现「文案与数值错位」。
+ *
+ * ### 分档依据
+ *
+ * · **460ms 居中为「标准」档**（用户 2026-10-29 拍板：以最新版的 460ms 为中间标准值）。
+ * · 五档按**≈1.3× 等比**向下 / 向上展开：`270 / 360 / 460 / 600 / 780`。
+ *   等比而非等差，是因为人对**时长**的感知是对数的 —— 等差档位在快端挤成一团、
+ *   慢端又拉得太开；等比档位的手感间隔才均匀。
+ * · `360` 保留为「快」档：`k=3.56 / α=0.39` 这条 AM 真机拟合曲线下
+ *   360ms 的**视觉完成度**已明显高于旧 `k=6 / α=0.15`（用户反馈旧版
+ *   「360 特别快」正对应旧曲线：`k=6/α=0.15` 下 90% 视觉完成只在标称 59.5% 处）。
+ *   ⇒ 360 现在只比 460 快一档，不再是「快到变形」。
+ *
+ * ⚠ 顺序即档位顺序（**从快到慢**）—— 设置页下拉直接按本枚举顺序渲染。
+ */
+enum class MeloXPlayerTransitionDurationTier(
+    /** 该档的墙钟时长（毫秒）。已抵消系统动画缩放，由 [meloXPlayerTweenDurationMillis] 落地。 */
+    val millis: Int,
+    /** 该档在设置页显示的文字（**不再显示 ms 数值**）。 */
+    @StringRes val labelRes: Int,
+) {
+    VeryFast(270, R.string.settings_transition_duration_very_fast),
+    Fast(360, R.string.settings_transition_duration_fast),
+    Standard(460, R.string.settings_transition_duration_standard),
+    Slow(600, R.string.settings_transition_duration_slow),
+    VerySlow(780, R.string.settings_transition_duration_very_slow),
+    ;
+
+    companion object {
+        /** 默认档 = 中间的「标准」档（460ms）。 */
+        val Default: MeloXPlayerTransitionDurationTier = Standard
+
+        /** 全部档位值（升序），供设置页下拉与迁移归一使用。 */
+        val allMillis: List<Int> = entries.map { it.millis }
+
+        /**
+         * 把任意毫秒值**吸附**到最近的合法档位。
+         *
+         * ⚠ 用于「读到非法值」的兜底（**旧档位表**里已不存在的 `240` / `300`，
+         *   或用户手改 prefs）：下拉框按**值**匹配选中项（见 `MeloXSettingsDropdown`
+         *   的 `items.firstOrNull { it.first == selected }`），值不在集合里
+         *   ⇒ 选中项**匹配不到 ⇒ 显示空白**。所以必须先吸附成合法档位。
+         *
+         * ⚠ 吸附是**就近**（不是向下取整）：旧表残留的 `240 → 270`（差 30）、
+         *   `300 → 270`（差 30，比到 `360` 的 60 更近）⇒ 保证老设备残留在
+         *   **数值上**最接近的新档位，不会凭空掉一档。
+         */
+        fun snapToNearest(millis: Int): Int =
+            entries.minBy { kotlin.math.abs(it.millis - millis) }.millis
+    }
+}
 enum class MeloXTextPVStyle {
     BlueBold, KineticSplit, BluePlane, CyberGrunge, Geometric, RainCity,
     CyberpunkHUD, EmotionCinema, HystericNight, SpiderWeb, StaggeredText,
@@ -104,14 +168,15 @@ object MeloXSettingsRuntime {
         internal set
     var reduceMotion by mutableStateOf(false)
         internal set
-    // ⚠⚠⚠ 2026-10-06：默认值 **240 → 360**（用户拍板「默认动画速度和设置显示改回 360，
-    //   之前是测试才默认 240ms」）。
-    //   历史：2026-10-03 曾把默认从 360 改成 240（当时口径是「对齐 Apple Music 参考视频
-    //   实测 ~200ms」）—— 现确认那是**测试期**的临时口径，正式默认回到 **360**。
+    // ⚠⚠⚠ 2026-10-29：默认值 **360 → 460**（用户拍板「以最新版的 460ms 为中间标准值」，
+    //   并把五档重划为 `270/360/460/600/780`，460 居中为「标准」档）。
+    //   历史：360 正式默认（2026-10-06 起，v2 迁移把老设备的 240 纠正回 360）。
     //   ⚠ 光改这一行**不够**：`SharedPreferences` 是持久化的，设备里存的旧值会盖住默认值
-    //   ⇒ 必须配合 `playerTransitionDurationMs(context)` 里的**一次性 v2 迁移**
-    //     （**无条件归一为 360**，只做一次），才能让「设置页显示」与「实际」**同时**立刻变成 360。
-    var playerTransitionDurationMs by mutableStateOf(360)
+    //   ⇒ 必须配合 `playerTransitionDurationMs(context)` 里的**一次性 v3 迁移**
+    //     （**无条件归一为 460**，只做一次），才能让「设置页显示」与「实际」**同时**立刻变成 460。
+    var playerTransitionDurationMs by mutableStateOf(
+        MeloXPlayerTransitionDurationTier.Default.millis,
+    )
         internal set
     var playerBackgroundIsolationEnabled by mutableStateOf(true)
         internal set
@@ -479,9 +544,10 @@ object MeloXSettingsRuntime {
         }.getOrDefault(MeloXPlayerShell.AppleMusic)
         artworkMotionEnabled = MeloXSettingsPreferences.boolean(app, "player_artwork_motion", true)
         reduceMotion = MeloXSettingsPreferences.boolean(app, "reduce_motion", false)
-        // ⚠⚠ 2026-10-06：**正式默认 = 360**（240 只是 2026-10-03~10-06 的测试期口径）。
-        //   `575 → 360` 那行是**旧档位**归一，与默认档无关，保留原样。
-        // ⚠⚠⚠ 默认值迁移（v1 的 360→240、v2 的 240→360）**都不在这里做** ——
+        // ⚠⚠ 2026-10-29：**正式默认 = 460**（档位表重划为 270/360/460/600/780，
+        //   460 居中为「标准」档；360 是 2026-10-06~10-29 的正式默认，
+        //   240 则是 2026-10-03~10-06 的测试期口径）。
+        // ⚠⚠⚠ 默认值迁移（v1 的 360→240、v2 的 240→360、v3 的 360→460）**都不在这里做** ——
         //   本函数只被 `MeloXSettingsRuntime` 读，而设置页走
         //   `MeloXSettingsPreferences.playerTransitionDurationMs(...)`，
         //   两条路径不同源 ⇒ 迁移放这里会导致「显示 / 实际」不一致。
@@ -712,12 +778,15 @@ object MeloXSettingsPreferences {
     /**
      * 读取 `player_transition_duration_ms`，并做**一次性**的旧默认迁移。
      *
-     * ### ⚠⚠ 迁移史（两次**方向相反**，别搞混）
+     * ### ⚠⚠ 迁移史（三次**方向相反**，别搞混）
      * · **v1**（2026-10-03，**已废弃**）：默认 `360 → 240`，一次性标记键
      *   `..._migrated_v1`。当时口径是「对齐 Apple Music 参考 ~200ms」。
-     * · **v2**（2026-10-06，**当前**）：确认 **240 只是测试期口径**，正式默认回到 **360**
-     *   → 需要把老设备里残留的 **240 纠正回 360**，一次性标记键 `..._migrated_v2`。
-     *   ⚠⚠ **必须用新键**：老设备的 v1 标记已是 `true`，复用 v1 键会让纠正**永不执行**
+     * · **v2**（2026-10-06，**已废弃**）：确认 **240 只是测试期口径**，正式默认回到 **360**
+     *   → 把老设备里残留的 240 纠正回 360，标记键 `..._migrated_v2`。
+     * · **v3**（2026-10-29，**当前**）：用户拍板「以**最新版**的 **460ms** 为**中间标准值**，
+     *   重新划分五个档位」⇒ 档位表重划为 `270/360/460/600/780`（460 居中），
+     *   正式默认 `360 → 460`，标记键 `..._migrated_v3`。
+     *   ⚠⚠ **必须用新键**：老设备的 v1 / v2 标记都已是 `true`，复用旧键会让纠正**永不执行**
      *     （正是「改了默认值但设备上没变」的经典坑）。
      *
      * ⚠⚠⚠ 为什么迁移必须落在**这个被两边共用的读取函数**上：
@@ -727,45 +796,57 @@ object MeloXSettingsPreferences {
      *   「**显示 == 实际**」才成立。只在 `load()` 里迁 ⇒ 设置页仍显示旧值
      *   （历史报障原文：「**不要实际变，设置显示没变**」）。
      *
-     * ⚠ v2 迁移是**无条件归一为 360**（不是「只把 240 改成 360」）：用户要的是
-     *   「默认值**和设置显示**都回到 360」，而持久化值会盖住默认值，设备上还可能残留
-     *   测试期跟着调的其它档 ⇒ 只有无条件归一才能让设置页**立刻**显示 360。
-     *   **只做一次**，之后 `240/300/360/460/600` 五档全部自由可调、正常持久化。
+     * ⚠ v3 迁移是**无条件归一为 460**（不是「只把某个旧值改成 460」）：用户要的是
+     *   「默认值**和设置显示**都回到 460」，而持久化值会盖住默认值，设备上还可能残留
+     *   旧档位表里的 `240/300/360/600` ⇒ 只有无条件归一才能让设置页**立刻**显示 460。
+     *   **只做一次**，之后 `270/360/460/600/780` 五档全部自由可调、正常持久化。
+     *
+     * ⚠⚠ **返回值一律吸附到合法档位**（`snapToNearest`）：下拉框按**值**匹配选中项，
+     *   值不在档位集合里 ⇒ 选中项匹配不到 ⇒ **显示空白**。所以老设备残留的
+     *   `240/300/600` 必须先吸附成 `270/360/600` 之一再返回。
      */
     fun playerTransitionDurationMs(context: Context): Int {
         val store = prefs(context)
-        val migrated = store.getBoolean(KEY_PLAYER_TRANSITION_DURATION_MIGRATED_V2, false)
+        val migrated = store.getBoolean(KEY_PLAYER_TRANSITION_DURATION_MIGRATED_V3, false)
         if (!migrated) {
-            // ⚠⚠ 2026-10-06（用户口径：「默认动画速度和**设置显示**改回 360，
-            //   之前是**测试才**默认 240ms」）：
-            //   这是**测试期口径的纠正**，所以这里**无条件**归一到 360，
-            //   而不是「只把 240 改成 360」——
-            //   · 用户要的是「**设置显示**也立刻是 360」，只改默认值 / 只挑 240 改
-            //     都盖不住持久化值（设备上可能残留测试期跟着调的 300/460/600）；
-            //   · **只做一次**（v2 标记），此后 240/300/360/460/600 五档全部自由可调、
+            // ⚠⚠ 2026-10-29（用户口径：「以**最新版**的 **460ms** 为**中间标准值**，
+            //   重新划分五个档位」）：
+            //   这是**档位表重划**（不只是默认值纠正），所以这里**无条件**归一到
+            //   新默认档 460（= `MeloXPlayerTransitionDurationTier.Default.millis`），
+            //   而不是「只把某个旧值改成 460」——
+            //   · 用户要的是「**设置显示**也立刻是 460」，只改默认值 / 只挑某个旧值改
+            //     都盖不住持久化值（设备上可能残留旧档位表的 240/300/360/600）；
+            //   · **只做一次**（v3 标记），此后 270/360/460/600/780 五档全部自由可调、
             //     正常持久化，用户选什么就是什么。
-            //   ⚠ 无存储值的新装设备走同一个分支 ⇒ 同样得到 360（正式默认）。
+            //   ⚠ 无存储值的新装设备走同一个分支 ⇒ 同样得到 460（正式默认）。
+            val defaultMillis = MeloXPlayerTransitionDurationTier.Default.millis
             store.edit()
-                .putInt(KEY_PLAYER_TRANSITION_DURATION_MS, 360)
-                .putBoolean(KEY_PLAYER_TRANSITION_DURATION_MIGRATED_V2, true)
+                .putInt(KEY_PLAYER_TRANSITION_DURATION_MS, defaultMillis)
+                .putBoolean(KEY_PLAYER_TRANSITION_DURATION_MIGRATED_V3, true)
                 .apply()
-            return 360
+            return defaultMillis
         }
-        return store.getInt(KEY_PLAYER_TRANSITION_DURATION_MS, 360).coerceIn(200, 1_200)
+        val stored = store.getInt(
+            KEY_PLAYER_TRANSITION_DURATION_MS,
+            MeloXPlayerTransitionDurationTier.Default.millis,
+        )
+        // ⚠ 兜底：旧档位表的 240/300 在新表里**不存在** ⇒ 必须吸附，否则设置页显示空白。
+        return MeloXPlayerTransitionDurationTier.snapToNearest(stored)
     }
 
     const val KEY_PLAYER_TRANSITION_DURATION_MS = "player_transition_duration_ms"
 
     /**
-     * v2 一次性标记：「测试期默认 240 → 正式默认 360」的纠正。
+     * v3 一次性标记：「档位表重划（240/300/360/460/600 → 270/360/460/600/780）」+
+     * 正式默认 `360 → 460`。
      *
-     * ⚠ 用**独立键**（不复用 v1 的 `..._migrated_v1`）—— 老设备 v1 标记已为 true，
-     *   复用会导致纠正永不执行。
-     * ⚠ 也不能用「值等于 240 就算没选过」的判据单独做：那会让**用户手动选的 240**
-     *   每次读取都被拉回 360（该档位不可持久化）。所以照样只在首读时做一次。
+     * ⚠ 用**独立键**（不复用 v1 / v2 的 `..._migrated_v1` / `_v2`）—— 老设备那些标记
+     *   已为 true，复用会导致纠正永不执行。
+     * ⚠ 也不能用「值等于某个旧档就算没选过」的判据单独做：那会让**用户手动选的那个档**
+     *   每次读取都被拉回 460（该档位不可持久化）。所以照样只在首读时做一次。
      */
-    private const val KEY_PLAYER_TRANSITION_DURATION_MIGRATED_V2 =
-        "player_transition_duration_ms__migrated_v2"
+    private const val KEY_PLAYER_TRANSITION_DURATION_MIGRATED_V3 =
+        "player_transition_duration_ms__migrated_v3"
 
     fun float(context: Context, key: String, default: Float = 0f): Float =
         prefs(context).getFloat(key, default)
@@ -872,11 +953,20 @@ object MeloXSettingsPreferences {
             "player_show_quality_tip" -> MeloXSettingsRuntime.showPlayerQualityTip = value
             "library_playlist_search_hidden" -> MeloXSettingsRuntime.playlistSearchBarHidden = value
             "library_playlist_show_artwork" -> MeloXSettingsRuntime.playlistShowArtwork = value
+
         }
     }
 
     fun setInt(context: Context, key: String, value: Int) {
-        prefs(context).edit().putInt(key, value).apply()
+        // ⚠ 时长档位：写盘前就**吸附到合法档位**（而非写原值、只在运行时吸附）——
+        //   否则「持久化值」与「运行时值」会不一致，下一次冷启动读取时又会被吸附
+        //   （值虽然一样，但写盘值非法 ⇒ 设置页下拉匹配不到 ⇒ 显示空白）。
+        val effective = if (key == KEY_PLAYER_TRANSITION_DURATION_MS) {
+            MeloXPlayerTransitionDurationTier.snapToNearest(value)
+        } else {
+            value
+        }
+        prefs(context).edit().putInt(key, effective).apply()
         when (key) {
             "lyrics_advance_ms" -> MeloXSettingsRuntime.lyricAdvanceMs = value.coerceIn(-5_000, 5_000)
             "lyrics_follow_delay_ms" -> MeloXSettingsRuntime.lyricFollowDelayMs = value.coerceIn(1_000, 8_000)
@@ -884,8 +974,10 @@ object MeloXSettingsPreferences {
                 value.takeIf { it in setOf(30, 60, 90, 120) } ?: 60
             "lyrics_background_frame_rate" -> MeloXSettingsRuntime.lyricBackgroundFrameRate =
                 value.takeIf { it in setOf(15, 24, 30, 45, 60) } ?: 24
+            // ⚠ 写盘值已在 `setInt` 入口**吸附到合法档位**（而非 `coerceIn`）：
+            //   非法值 ⇒ 设置页下拉匹配不到选中项 ⇒ 显示**空白**。
             "player_transition_duration_ms" -> MeloXSettingsRuntime.playerTransitionDurationMs =
-                value.coerceIn(200, 1_200)
+                effective
             "lyrics_long_tone_threshold_ms" -> MeloXSettingsRuntime.lyricLongToneThresholdMs = value.coerceIn(300, 1_500)
             "lyrics_interface_auto_hide_ms" -> MeloXSettingsRuntime.lyricInterfaceAutoHideDelayMs = value.coerceIn(3_000, 15_000)
             "lyrics_scroll_hide_threshold_dp" -> MeloXSettingsRuntime.lyricScrollHideThresholdDp = value.coerceIn(40, 240)
@@ -1045,9 +1137,10 @@ object MeloXSettingsPreferences {
             .remove("player_frosted_glass")
             .remove(KEY_PLAYER_TRANSITION_DURATION_MS)
             // ⚠ 2026-10-06：连**迁移标记**一起清掉，否则「恢复默认」后标记仍在
-            //   ⇒ 迁移逻辑不再跑。清掉后下次读取走首读分支 ⇒ 回到**正式默认 360**。
-            //   ⚠ 清的是 **v2** 标记（当前生效的那个）；v1 是已废弃键，不必再管。
-            .remove(KEY_PLAYER_TRANSITION_DURATION_MIGRATED_V2)
+            //   ⇒ 迁移逻辑不再跑。清掉后下次读取走首读分支 ⇒ 回到**正式默认**。
+            //   ⚠ 当前生效的是 **v3** 标记（档位表重划 270/360/460/600/780，
+            //     默认 460）；v2 标记已废弃，一并清掉以免残留。
+            .remove(KEY_PLAYER_TRANSITION_DURATION_MIGRATED_V3)
             .remove("lyrics_style")
             .remove("lyrics_rendering_quality")
             .remove("lyrics_text_pv_style")

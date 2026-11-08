@@ -166,6 +166,7 @@ import com.lladlam.melox.core.provider.youtubemusic.YouTubeSessionStore
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.key
 import com.lladlam.melox.ui.glass.meloXLiquidBottomBar
+import com.lladlam.melox.ui.glass.HeartPulseVectorIcon
 import com.lladlam.melox.ui.glass.MeloXActionIcon
 import com.lladlam.melox.ui.glass.MeloXSwipeAction
 import com.lladlam.melox.ui.glass.MeloXSwipeActionRow
@@ -244,6 +245,11 @@ private fun MeloXLibrarySearchField(
             onValueChange = onQueryChange,
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
+            // 占位符走 onSurface，输入文字也必须走，否则深色模式下是黑字
+            textStyle = androidx.compose.ui.text.TextStyle(
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 15.sp,
+            ),
         )
     }
 }
@@ -371,23 +377,20 @@ fun LibraryScreen(
             }
             runCatching { client.snapshot(userId) }
                 .onSuccess { fresh ->
-                    snapshot = fresh.withUnifiedFavorites(appContext)
-                    session.profile?.userId?.let { uid ->
-                        // 防御：网易云会话（MUSIC_U）过期后，/api/song/like/get 会返回
-                        // HTTP 200 但空 ids 数组，导致本次刷新把已收藏歌曲「静默清空」。
-                        // 若刷新连「我喜欢的音乐」歌单都加载不到（likedPlaylistId == null），
-                        // 基本可判定会话已失效、收藏列表不可信——此时保留上次成功缓存的
-                        // 收藏，避免用户所有爱心歌曲被自动删除消失。真正的「取消收藏」走
-                        // withSongLiked 写入，不会经过这条自动刷新路径。
-                        val persisted = cache.loadSnapshot(uid)?.let { cached ->
-                            if (fresh.likedSongs.isEmpty() && fresh.likedPlaylistId == null && cached.likedSongs.isNotEmpty()) {
-                                fresh.copy(likedSongs = cached.likedSongs)
-                            } else {
-                                fresh
-                            }
-                        } ?: fresh
-                        cache.saveSnapshot(uid, persisted)
-                    }
+                    // ⚠⚠ 自动刷新**不许凭空缩小收藏列表**（2026-10-19 用户报障
+                    //   「在 MeloX 喜欢的歌曲，过一段时间就被移除」）。
+                    //   上一版（2026-10-06）有两处洞，实测都没兜住：
+                    //   ① `snapshot = fresh` 写在守卫**之前** ⇒ 即使守卫生效保住了磁盘缓存，
+                    //      这一次的屏幕状态也已经被置成「少歌/空」版本 ⇒ 用户当场看到歌消失，
+                    //      下次冷启动重新读到缓存才"回来一部分"，表现为「时不时被移除」；
+                    //   ② 守卫条件要求 `likedPlaylistId == null` 才算不可信，但会话半失效时
+                    //      `/api/user/playlist` 仍会正常返回「我喜欢的音乐」（它是公开数据），
+                    //      于是守卫根本不触发，空/残缺的 ids 直接覆盖缓存。
+                    //   ⇒ 现在先对账、再同时落到 UI 与磁盘，并用服务端自报的
+                    //     `trackCount` 当裁决器（见 [reconcileLikedSongs]）。
+                    val trusted = reconcileLikedSongs(fresh, cache.loadSnapshot(userId))
+                    snapshot = trusted
+                    cache.saveSnapshot(userId, trusted)
                 }
                 .onFailure { errorMessage = it.message ?: "音乐库加载失败" }
         } else {
@@ -1628,7 +1631,11 @@ private fun MeloXLibrarySongsPage(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    MeloXActionIcon("♥", Modifier.size(22.dp), Color(0xFFFF3B30))
+                    HeartPulseVectorIcon(
+                        modifier = Modifier.size(22.dp),
+                        color = Color(0xFFFF3B30),
+                        contentDescription = "心动模式",
+                    )
                     Text("心动模式", fontSize = 17.sp, color = MaterialTheme.colorScheme.onBackground)
                 }
             }
@@ -2500,9 +2507,11 @@ private fun MeloXPlaylistDetailScreen(
                 loading = false
             }
             runCatching { client.playlistDetail(initialPlaylist.id) }
-                .onSuccess { full ->
-                    detail = full
-                    cache.savePlaylistDetail(initialPlaylist.id, full)
+                .onSuccess { fresh ->
+                    // 同一道护栏：补齐失败的 id 不许把歌从列表里抹掉（见 [reconcilePlaylistDetail]）。
+                    val trusted = reconcilePlaylistDetail(fresh, cache.loadPlaylistDetail(initialPlaylist.id))
+                    detail = trusted
+                    cache.savePlaylistDetail(initialPlaylist.id, trusted)
                 }
                 .onFailure { errorMessage = it.message ?: "歌单加载失败" }
         }
@@ -2540,7 +2549,15 @@ private fun MeloXPlaylistDetailScreen(
         // Their synthetic IDs have no disk cache and must never pass through the
         // process-wide network refresh gate: it suppresses the second open/restore.
         if (providedSongs != null) {
-            refreshPlaylist()
+            // ⚠ 2026-10-18：外部已提供歌曲（每日推荐/热歌榜/私人雷达等一次性列表）必须
+            //   直接采用，不走缓存/冷启动刷新。两个原因：
+            //   ① 这里的 playlist 是「假歌单」（id 为负，由标题哈希生成），远端没有
+            //      详情可拉；
+            //   ② `refreshedPlaylists` 是进程内静态 Set——同 id 第二次进入时
+            //      beginPlaylistColdStartRefresh 直接返回 false ⇒ refreshPlaylist
+            //      不被调用 ⇒ loading 永远停在 true ⇒ 一直转圈（用户报「歌曲加载不出来」）。
+            detail = NeteasePlaylistDetail(summary = initialPlaylist, songs = providedSongs)
+            loading = false
         } else if (isAlbum || providerPlaylist != null) {
             if (detail == null || !detailLoaded) refreshPlaylist()
         } else {
@@ -3265,6 +3282,67 @@ private fun NeteaseLibrarySnapshot.withSongLiked(song: SearchSong, liked: Boolea
             likedSongs.filterNot { it.id == song.id }
         },
     )
+
+/**
+ * 把「刚拉到的快照」与本机上次缓存对账，**禁止自动刷新无故缩小收藏列表**。
+ *
+ * 背景（2026-10-19 用户报障「在 MeloX 喜欢的歌曲，过一段时间就被移除」）：
+ * 收藏列表只有两个数据源 —— `/api/song/like/get`（id 列表）与
+ * `/api/v3/song/detail`（元数据）。两者都是网络读取，任何一次「少返回」都会被
+ * 当成「用户取消了收藏」而**永久写进缓存**，于是歌就真的没了（下次刷新拿的是被
+ * 污染的缓存基准，越滚越小）。
+ *
+ * 判据只看一件事：**服务端自己报的曲目数**。
+ * 「我喜欢的音乐」歌单的 `trackCount` 由 `/api/user/playlist` 一并返回，和 ids 两次
+ * 请求互不依赖。若它 ≥ 本次拿到的歌曲数，说明列表本应有这么多，是**本次快照残缺**，
+ * 就保留缓存里缺失的那些；只有当服务端也认为「确实变少了」（`trackCount` ≤ 本次条数），
+ * 才接受缩小 —— 这样「在别处取消收藏」照样能生效，不会留下幽灵。
+ *
+ * @param fresh 本次网络快照。
+ * @param cached 本机上次成功落盘的快照（拿不到时为 null）。
+ */
+private fun reconcileLikedSongs(
+    fresh: NeteaseLibrarySnapshot,
+    cached: NeteaseLibrarySnapshot?,
+): NeteaseLibrarySnapshot {
+    val cachedSongs = cached?.likedSongs.orEmpty()
+    // 没有基准，或本次没变少 ⇒ 直接信本次结果（正常路径零改动）。
+    if (cachedSongs.isEmpty() || fresh.likedSongs.size >= cachedSongs.size) return fresh
+    // 「我喜欢的音乐」是 specialType == 5 的系统歌单，比靠 playlists 列表顺序取
+    // firstOrNull() 稳：顺序一旦变化就取错歌单，trackCount 判据随之全错，可能把
+    // 缓存里的歌误判为「已移除」。先按 specialType 定位，找不到再退回 likedPlaylistId。
+    val likedPlaylist = fresh.playlists.firstOrNull { it.specialType == 5 }
+        ?: fresh.playlists.firstOrNull { it.id == fresh.likedPlaylistId }
+    val serverCount = likedPlaylist?.trackCount
+    // serverCount == null：连「我喜欢的音乐」都没解析到 ⇒ 本次快照不可信，宁可保留
+    // 缓存里的歌（与之前一致：null 时不截断）。serverCount <= 本次条数：服务端自认
+    // 完整 ⇒ 信本次，不回灌。
+    if (serverCount != null && serverCount <= fresh.likedSongs.size) return fresh
+    val present = fresh.likedSongs.mapTo(HashSet(fresh.likedSongs.size)) { it.id }
+    val missing = cachedSongs.filterNot { it.id in present }
+    if (missing.isEmpty()) return fresh
+    return fresh.copy(likedSongs = fresh.likedSongs + missing)
+}
+
+/**
+ * 歌单详情版的同一道护栏：`/api/v6/playlist/detail` 拿到 `trackIds` 后还要按批补
+ * `song/detail`，任何一个 id 解析失败都会被 `mapNotNull` 静默丢掉。用在「我喜欢的音乐」
+ * 这类用户天天看的大列表上，丢了就等于「歌被移除」⇒ 用缓存的详情把缺口补回来。
+ *
+ * 判据同样只有 `trackCount`：服务端认为还有更多（`trackCount > 本次条数`）才补。
+ */
+private fun reconcilePlaylistDetail(
+    fresh: NeteasePlaylistDetail,
+    cached: NeteasePlaylistDetail?,
+): NeteasePlaylistDetail {
+    val cachedSongs = cached?.songs.orEmpty()
+    if (cachedSongs.isEmpty() || fresh.songs.size >= cachedSongs.size) return fresh
+    if (fresh.summary.trackCount <= fresh.songs.size) return fresh
+    val present = fresh.songs.mapTo(HashSet(fresh.songs.size)) { it.id }
+    val missing = cachedSongs.filterNot { it.id in present }
+    if (missing.isEmpty()) return fresh
+    return fresh.copy(songs = fresh.songs + missing)
+}
 
 @Composable
 private fun MeloXPlaylistToolbar(

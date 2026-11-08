@@ -441,9 +441,6 @@
     <string name="provider_third_party_consent_hint">需要先同意第三方音乐源使用协议；不受云控管理</string>
     <string name="provider_membership_fallback">遇到会员歌曲时再调用</string>
     <string name="provider_membership_fallback_subtitle">优先使用官方音源，仅在会员/版权受限时尝试第三方解析</string>
-    <string name="provider_chksz">CHKSZ解析源</string>
-    <string name="provider_chksz_missing">未配置 API Key · 点击配置</string>
-    <string name="provider_chksz_configured">CHKSZ API Key 已配置</string>
     <string name="provider_view_third_party_terms">查看第三方音乐源使用协议</string>
     <string name="provider_third_party_terms_subtitle">查看责任范围、内容合规和服务可用性说明</string>
     <string name="provider_added_sources">已添加音乐源</string>
@@ -473,8 +470,6 @@
     <string name="provider_jellyfin_failed">Jellyfin 登录失败</string>
     <string name="provider_connecting">连接中…</string>
     <string name="provider_connect">连接</string>
-    <string name="provider_chksz_title">网易云 SVIP 音乐解析</string>
-    <string name="provider_chksz_body">使用 api.chksz.com 的网易云、QQ音乐和酷狗音乐解析接口。请先前往 api.chksz.com 注册账号并在登录后获取个人 API Key；目前该服务仅支持 LinuxDo 用户注册。API Key 仅保存在本机，不属于 MeloX 云控。</string>
     <string name="provider_api_key_placeholder">请输入个人 API Key</string>
     <string name="provider_clear">清除</string>
     <string name="provider_save">保存</string>
@@ -1270,6 +1265,11 @@
     <string name="settings_show_quality_tip_note">控制进度条下方的音质提示。</string>
     <string name="settings_player_transition_duration">播放器展开/收回时长</string>
     <string name="settings_duration_ms">%1$d ms</string>
+    <string name="settings_transition_duration_very_fast">很快</string>
+    <string name="settings_transition_duration_fast">快</string>
+    <string name="settings_transition_duration_standard">标准</string>
+    <string name="settings_transition_duration_slow">慢</string>
+    <string name="settings_transition_duration_very_slow">很慢</string>
     <string name="settings_equalizer">均衡器</string>
     <string name="settings_equalizer_note">使用 Android 原生多频段 DSP，直接作用于当前播放器音频会话。</string>
     <string name="settings_eq_presets">预设</string>
@@ -1555,6 +1555,11 @@
     <string name="autosync_dict_confirm">现在下载词典？需要约 24 MB 流量与 102 MB 存储空间。</string>
     <string name="autosync_dict_ready">日文模型与词典齐备</string>
     <string name="autosync_dict_license">词典内含 %1$s 修改版 BSD 许可证。</string>
+    <string name="provider_chksz">CHKSZ 解析接口</string>
+    <string name="provider_chksz_missing">未填 API Key · 点击设置</string>
+    <string name="provider_chksz_configured">CHKSZ API Key 已设置</string>
+    <string name="provider_chksz_title">网易云 SVIP 音源解析</string>
+    <string name="provider_chksz_body">通过 api.chksz.com 的网易云 / QQ音乐 / 酷狗解析能力取源。在 api.chksz.com 注册并登录后复制个人 API Key（目前仅对 LinuxDo 用户开放注册）。Key 只存在本机，不参与 MeloX 云控。</string>
     <string name="settings_artwork_tap_lyrics">点击封面切换到歌词页</string>
     <string name="settings_artwork_swipe_tracks">左右滑动封面切换歌曲</string>
     <string name="settings_about_sponsor_amount_12_24">12.24 元</string>

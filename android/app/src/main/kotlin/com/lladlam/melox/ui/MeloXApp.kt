@@ -1,4 +1,4 @@
-﻿package com.lladlam.melox.ui
+package com.lladlam.melox.ui
 
 import android.app.Activity
 import android.content.Intent
@@ -81,6 +81,7 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -95,7 +96,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -106,14 +106,21 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
 // ── 底部 chrome 明暗切换（2026-09-25）─────────────────────────────────
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.graphics.lerp
+// ★ 底栏亮度采样源（2026-10-19）：录制层 + 换取采样源用的 provider。
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.runtime.SideEffect
 import com.lladlam.melox.ui.glass.BottomBarToneTheme
+import com.lladlam.melox.ui.glass.LocalBottomBarLuminanceLayer
 import com.lladlam.melox.ui.glass.LocalBottomBarTone
 import com.lladlam.melox.ui.glass.bottomBarTone
 import com.lladlam.melox.ui.glass.darkness
@@ -140,15 +147,15 @@ import com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigRuntime
 import com.lladlam.melox.core.remoteconfig.MeloXRemoteNotice
 import com.lladlam.melox.core.remoteconfig.MeloXRemoteNoticeStore
 import com.lladlam.melox.ui.legal.MeloXRemoteNoticeDialog
-import com.lladlam.melox.ui.messages.MessagesScreen
+import com.lladlam.melox.ui.messages.MeloXMessagesActivity
 import com.lladlam.melox.ui.podcast.MeloXPodcastScreen
 import com.lladlam.melox.ui.cloud.MeloXCloudMusicScreen
 import com.lladlam.melox.ui.discovery.MeloXExploreScreen
 import com.lladlam.melox.ui.discovery.MeloXHomeScreen
 import com.lladlam.melox.ui.glass.LocalMeloXBackdrop
+import com.lladlam.melox.ui.glass.MeloXGlassPipelinePrewarm
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSymbolIcon
-import com.lladlam.melox.ui.glass.meloXIconDrawingScale
 import com.lladlam.melox.ui.glass.MeloXSymbolVariant
 import com.lladlam.melox.ui.glass.MeloXSystemColors
 import com.lladlam.melox.ui.glass.MeloXGlassDialog
@@ -164,6 +171,7 @@ import com.lladlam.melox.ui.animation.meloXContentExit
 import com.lladlam.melox.ui.animation.MeloXPlayerRecede
 import com.lladlam.melox.ui.animation.meloXPageEnter
 import com.lladlam.melox.ui.animation.meloXPageExit
+import com.lladlam.melox.ui.animation.MeloXSystemScale
 import com.lladlam.melox.ui.animation.sprungFrac
 import com.lladlam.melox.ui.glass.BOTTOM_GLASS_SURFACE_ALPHA
 import com.lladlam.melox.ui.glass.bottomGlassFallbackColor
@@ -193,7 +201,6 @@ import androidx.core.view.WindowInsetsCompat
 import com.lladlam.melox.ui.player.MeloXIOSMiniPlayer
 import com.lladlam.melox.ui.player.MeloXProviderLyricsLoader
 import com.lladlam.melox.ui.player.MeloXIOSNowPlayingSharedHost
-import com.lladlam.melox.ui.player.MeloXPlayerSinkDiag
 import com.lladlam.melox.ui.player.meloXPlayerRecedeSpec
 import com.lladlam.melox.ui.player.meloXPlayerTweenDurationMillis
 import com.lladlam.melox.ui.player.rememberMeloXDisplayCornerPx
@@ -203,6 +210,12 @@ import com.lladlam.melox.ui.player.MeloXPlayerRecedeCompatFallbackDp
 import com.lladlam.melox.ui.player.meloXPlayerTransitionDurationMillis
 import com.lladlam.melox.ui.player.rememberMeloXPlaybackUiState
 import com.lladlam.melox.ui.player.MeloXAudioOutputDialog
+import com.lladlam.melox.ui.player.MeloXChromeOcclusionGate
+import com.lladlam.melox.ui.player.meloXChromeRecedeLayer
+import com.lladlam.melox.ui.player.meloXRecedeScaleX
+import com.lladlam.melox.ui.player.meloXRecedeScaleY
+import com.lladlam.melox.ui.player.meloXRecedeSinkPx
+import com.lladlam.melox.ui.player.MeloXShellGeom
 import com.lladlam.melox.ui.provider.ProviderExploreScreen
 import com.lladlam.melox.ui.provider.ProviderHomeScreen
 import com.lladlam.melox.ui.provider.ProviderLibraryScreen
@@ -229,6 +242,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
+import kotlin.math.exp
 import kotlin.math.roundToInt
 
 enum class AppTab(@StringRes val titleRes: Int) {
@@ -266,7 +280,13 @@ fun MeloXApp(
     val context = hostContext.applicationContext
     val detailPaneState = (hostContext as? MeloXDetailPageOwner)?.detailPaneState
         ?: remember { MeloXDetailPaneState() }
-    val listDetailMode = meloXUsesListDetail(LocalWindowInfo.current.containerSize, MeloXSettingsRuntime.splitScreenEnabled)
+    // ★ 2026-10-27：判据从 `LocalWindowInfo.current.containerSize` 改为 `LocalConfiguration`
+    //   （**必须**与 `MeloXListDetailLayout` 内同名函数同源）。转屏时 containerSize 由
+    //   WindowManager metrics 异步回填、可能晚 1~2 帧，而布局约束当帧生效 ⇒ 会出现
+    //   「页面已分栏、底栏仍按整屏宽铺开」的一帧 —— 用户报的「竖转横底栏长变短」。
+    //   推导见 `meloXUsesListDetail(Configuration)` 的 kdoc。
+    val windowConfiguration = LocalConfiguration.current
+    val listDetailMode = meloXUsesListDetail(windowConfiguration, MeloXSettingsRuntime.splitScreenEnabled)
     var selectedSource by remember {
         mutableStateOf(MusicProviderSelectionStore.selectedSource(context))
     }
@@ -286,8 +306,6 @@ fun MeloXApp(
         }.getOrDefault(AppTab.Home)
     }
     var selectedTab by rememberSaveable { mutableStateOf(initialTab) }
-    var messagesVisible by rememberSaveable { mutableStateOf(false) }
-    BackHandler(enabled = messagesVisible) { messagesVisible = false }
     var recognitionVisible by rememberSaveable { mutableStateOf(false) }
     fun launchNeteaseLogin(returnTab: AppTab) {
         detailPaneState.openLogin(hostContext) { selectedTab = returnTab }
@@ -366,6 +384,16 @@ fun MeloXApp(
         label = "melox-player-root-recede",
     ) { open -> if (open) 1f else 0f }
 
+    // ★★ 2026-11-06（无真机轮 · 第 3 轮）：播放页是否**已经铺满整屏**（底页 100% 被盖住）。
+    //   用途见 `AnimatedContent` 的 modifier：为 true 时底页整棵停止绘制。
+    //   ⚠ 必须包 `derivedStateOf` —— `playerRootFraction` 在整段 morph 里逐帧变化，
+    //     直接 `>= 1f` 会把整个 `MeloXApp` 拖成每帧重组（本项目屡次踩过的坑）。
+    //   ⚠ 判据不能用 `targetState`：收起刚启动时 target 已翻 false 但外壳还铺满，
+    //     用 target 会提前把底页画出来（虽然被盖住看不见，但白付一整页 replay）。
+    val playerFullyCoversPage by remember {
+        derivedStateOf { playerRootFraction >= 1f }
+    }
+
     // ★ 播放器下沉弹簧 —— **双拍节奏**（2026-10-06，与底栏 tab 同款表现形式）：
     //   拍 1（按下/松手瞬间，`Confirm` 中等）："啪"——确认已激活下沉；
     //   拍 2（弹簧落定，`LongPress` 最重）："咚"——重重落定。
@@ -418,6 +446,35 @@ fun MeloXApp(
     val density = LocalDensity.current
     val displayCorner = rememberMeloXDisplayCornerInfo()
     val displayCornerPx = displayCorner.usedPx
+    // ★★ 2026-10-26（打开动画性能，B 方案）：「外壳是否已完全盖住底部 chrome」的唯一判定器。
+    //   读者见 `MeloXChromeOcclusion.kt` 文件头：外壳把底栏整块压在下面时，底栏那批液态玻璃
+    //   仍在每帧整屏采样背板 + 跑 blur/lens，`bottomChromeBackdrop` 录制点也仍在每帧整屏重录
+    //   （18.25MB/帧上传）—— 全部为零可见收益的支出。
+    //   ⚠ 判据是**几何**的（外壳真实 bounds vs chrome 玻璃面），不是进度阈值：
+    //     外壳起点随底栏设置变（竖屏 / 横屏 / 双栏 / 侧栏 / 内联迷你栏），写死阈值必然在
+    //     某种配置下早判 ⇒ 玻璃先关掉、外壳还没盖上去 ⇒ 露馅。
+    val chromeOcclusion = remember { MeloXChromeOcclusionGate() }
+    // ★★ 2026-10-26 第二次实测修正：**判据的驱动点必须是 bounds 每帧求值处**。
+    //   原来挂在「画黑底那个 Box」的 `drawBehind` 上（靠它每帧读 `recedeFraction()` 失效），
+    //   真机实测**整段转场只跑了 2 次**（mxdiag 里 `chromeOcclProbe` 只有 2 行）⇒ 闸门
+    //   既翻不早、收起方向也一次都没翻回 false（靠 `reset()` 兜到最后）。
+    //   ⇒ 改为由 `MeloXShellGeom.record()`（`sharedBounds` 每帧求 bounds 的唯一位置）直接
+    //     回调。那里是**确定性每帧**的，与任何绘制/失效优化无关。
+    //   ⚠ 代价：`evaluate()` 在 layout 期写 `occluded`（翻 true 时触发一次重组）。
+    //     一次开合最多 2 次，可接受；稳态不动 ⇒ 零开销。
+    DisposableEffect(chromeOcclusion) {
+        MeloXShellGeom.onFrame = { chromeOcclusion.evaluate() }
+        onDispose { MeloXShellGeom.onFrame = null }
+    }
+    val windowSizePx = LocalWindowInfo.current.containerSize
+    SideEffect {
+        // 幂等写普通字段（不是 State）：窗口尺寸 / density / 系统圆角都只在配置变化时变。
+        // 放在 `SideEffect` 而不是组合体里，是为了不与「组合期禁副作用」那条纪律打架 ——
+        // 这三行本来就只影响绘制期判据，不参与任何布局/内容。
+        chromeOcclusion.windowSize = windowSizePx
+        chromeOcclusion.density = density.density
+        chromeOcclusion.peakCornerPx = displayCornerPx
+    }
     val playerScope = rememberCoroutineScope()
     var playerTransitionJob by remember { mutableStateOf<Job?>(null) }
     // ★ 2026-10-15 配套「转场可打断」：**关闭落定那记「咚」的待发任务**。
@@ -458,7 +515,6 @@ fun MeloXApp(
     }
     val openPlayer: () -> Unit = {
         if (playbackState.hasMedia) {
-            MeloXPlayerSinkDiag.event("open")
             // ★ 打开触感 = **连续双拍**（复刻原版「歌词面板首次挂载时同帧连发两记 LongPress」）：
             //   两记都钉在**点击瞬间**、只隔约 60ms —— ⚠ 不是「拍 1 在点击、拍 2 在落定」。
             //   说明见上方 `playerOpenThump` 声明处。
@@ -488,7 +544,6 @@ fun MeloXApp(
         }
     }
     val closePlayer: () -> Unit = {
-        MeloXPlayerSinkDiag.event("close")
         playerClosingIntent = true
         playerTransitionTargetOpen = false
         playerTransitionJob?.cancel()
@@ -498,6 +553,8 @@ fun MeloXApp(
         playerSpringThumpEngage()                  // 拍 1：返回/关闭瞬间「啪」——激活下沉
         playerSettleThumpJob?.cancel()
         playerSettleThumpJob = playerScope.launch {
+            // 🔴🔴 2026-10-29 00:3x：曲线整文件换回 fork/0.7.0 版后，这两个符号已不存在
+            //   ⇒ `settleMs` 回到 0.7.0 原样 `meloXPlayerTweenDurationMillis()`（唯一时长出口）。
             val settleMs = meloXPlayerTweenDurationMillis().toLong()
             kotlinx.coroutines.delay(settleMs)
             playerSpringThumpLand()                // 拍 2：弹簧落定「咚」——落定
@@ -529,6 +586,13 @@ fun MeloXApp(
     //   ⚠ 只读布尔 `currentState/targetState`，**绝不读 `.fraction`**（根 composable
     //   读 fraction 会触发全树重组抖动 —— 见文件头铁律）。
     val neteaseSession = rememberNeteaseSessionStore()
+    // ⚠ 2026-10-16：登录是在**独立 Activity**（`MeloXNeteaseLoginActivity`）里完成的，
+    //   它只把 cookie 写进加密存储；而这里的 store 实例只在构造时读过一次 cookie ⇒ 登录
+    //   返回后设置页的账号卡仍显示「登录」，要等进程重启才刷新。回到前台时把持久化的
+    //   cookie 拉回（幂等），账号状态随即由 `LaunchedEffect(neteaseSession.cookie)` 补拉资料。
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        neteaseSession.reloadFromStorage()
+    }
     val rootPageState = rememberSaveableStateHolder()
     // Page glass samples a stable background layer. The page itself is
     // recorded separately for the bottom chrome, so neither layer samples
@@ -705,7 +769,19 @@ fun MeloXApp(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            // ★ 2026-10-26（打开动画性能 B 方案）：覆盖判据把「外壳 bounds 空间」直接当成
+            //   窗口空间来用（`sharedBounds` 的 bounds 是相对本布局根的）。这只有在根
+            //   **贴窗口原点**时才成立 —— edge-to-edge 全屏下就是，但分屏 / 画中画 /
+            //   刘海补偿一旦让根产生偏移，两套坐标就错位 ⇒ 判据可能多算一截覆盖。
+            //   ⇒ 每个布局周期实测一次；不是 (0,0) 就把整条闸门关掉（宁可不省，不许露馅）。
+            .onGloballyPositioned { coords ->
+                val origin = coords.positionInWindow()
+                chromeOcclusion.originVerified = origin.x == 0f && origin.y == 0f
+            },
+    ) {
       // This is intentionally a small, stable source layer. It gives every
       // page control the same optical backdrop without recording the control
       // into the layer it samples.
@@ -727,6 +803,26 @@ fun MeloXApp(
             val sharedScope = this
             val fullPlayerVisible = playbackState.hasMedia &&
                 (playerTransitionState.currentState || playerTransitionState.targetState)
+            // ★ 2026-10-26 功耗：把「播放页/输出面板是否可见」写回 state，只用于给系统音量
+            //   轮询选周期（60ms / 500ms）。这里是**唯一**写者。
+            //   · 用 `LaunchedEffect` 而不是 `SideEffect`：两个 key 都是**离散布尔**，
+            //     key 变化才写一次；`SideEffect` 每趟重组都会跑（本页重组很频繁）。
+            //   · ⛔ 不读 `fraction`（根作用域读逐帧量会全树重组）。
+            LaunchedEffect(fullPlayerVisible, playbackState.showOutputPicker) {
+                playbackState.playerVisible =
+                    fullPlayerVisible || playbackState.showOutputPicker
+            }
+            // ★ 2026-10-26（打开动画性能 B 方案）：**兜底复位**。
+            //   判据的主要驱动是上面兄弟 Box 的 `drawBehind`（转场期每帧调 `evaluate()`）。
+            //   若某次转场里最后几帧没跑到（比如这一帧整体没有被绘制：熄屏 / 后台 / 被上层
+            //   对话框完全遮挡），`occluded` 可能残留 true ⇒ 底栏玻璃永久停在"不透明实心"档，
+            //   那就是事故。
+            //   ⇒ 播放页**真的不可见**时无条件复位。时机安全：`fullPlayerVisible` 要等
+            //     `currentState` 与 `targetState` 都离开 Visible 才为 false —— 也就是外壳
+            //     已经整块消失之后，此刻底栏本来就该恢复玻璃。
+            LaunchedEffect(fullPlayerVisible) {
+                if (!fullPlayerVisible) chromeOcclusion.reset()
+            }
 
             // ── 下沉进度（2026-09-29 改用 iOS 曲线，外壳与背景同拍）──────────────
             //   打开 / 拖拽跟手 / 关闭：**全部吃同一条 master 时间线**
@@ -786,7 +882,19 @@ fun MeloXApp(
                         //   现在只在**完全没有下沉**时铺主题背景色（此刻页面满屏、舞台不可见，
                         //   免得切换 tab 时 AnimatedContent 的淡入淡出透出黑底），
                         //   一旦 t>0 立刻切纯黑。
-                        drawRect(if (t <= 0.0005f) recedeBackdropColor else Color.Black)
+                        // ★ 2026-10-24 修「转屏时下半区漏出首页」：只要**全屏播放页可见**
+                        //   （打开 / 转屏 / 塌缩全程，`fullPlayerVisible`），退让层外圈强制纯黑，
+                        //   不再依赖 recede 进度是否恰好到位。转屏瞬间 recede 进度可能有 1 帧抖动，
+                        //   或退让页与播放页的 `BoxWithConstraints` 约束存在 1 帧错位，会让本该是
+                        //   黑的外圈短暂露出首页内容。把判据从「recede 进度」扩到「播放页可见」，
+                        //   从根上堵死透出首页的路径。无播放页时（`!fullPlayerVisible`）仍走原逻辑
+                        //   （铺主题背景色，避免切 tab 透出黑底）。
+                        drawRect(if (t <= 0.0005f && !fullPlayerVisible) recedeBackdropColor else Color.Black)
+                        // ⚠ 覆盖判据**不在这里求值**（2026-10-26 第二次实测）：本条绘制链的
+                        //   失效时机与 bounds 动画不同源 —— 真机实测整段转场它只跑了 2 次
+                        //   （于是闸门既不提前、收起方向也从不翻回 false）。
+                        //   现在由 `MeloXShellGeom.record()` 每帧回调驱动，见
+                        //   `chromeOcclusion` 上方 `DisposableEffect` 的说明。
                     },
             )
             Box(
@@ -854,23 +962,51 @@ fun MeloXApp(
                     //   ⚠ 透明边：f 较大时缩放后的页面盖不满屏（左右各 ~62px 空隙），
                     //     那一段录成透明 —— 但此时底栏已被不透明的全屏播放器完全盖住，
                     //     且 f 越小空隙越小，故无可见回归。
-                    .drawBehind { recedeFraction() }
+                    //   ★★ 2026-10-26（打开动画性能 B 方案）：在「外壳已经把底部 chrome
+                    //     整块不透明盖住」期间**停止逐帧强制重录**。
+                    //     · 判据 `occluded` 是**离散 State**（只在穿越时翻转）⇒ 覆盖期本块
+                    //       不再读到会变的量 ⇒ 不再失效 ⇒ 录制**冻结**。
+                    //       此时录制的内容（页面 + 压暗）被外壳整块压住，一个像素都看不见，
+                    //       但每帧仍要付一次整屏离屏重绘 + 18.25MB 纹理上传（真机实测口径）。
+                    //     · 未覆盖时照旧读 `recedeFraction()` ⇒ 保持原来的每帧重录，
+                    //       玻璃显示的就是当帧真画面，观感一字不变。
+                    //     · ⚠ 两条必须一起停（见 `LocalMeloXBackdrop provides` 的门控）：
+                    //       只冻结录制而底栏玻璃还在采样，会看到**陈旧内容**；
+                    //       只停玻璃而录制还在重录，则白付一次整屏 recordLayer。
+                    //     · ⚠ 解冻不靠轮询：`occluded` 翻转 ⇒ 本块失效一次 ⇒ 当帧就读到新值
+                    //       走另一条分支（draw 期读 State 会注册快照观察）。反向（退出播放页）
+                    //       由上面兄弟 Box 的 `drawBehind` 里每帧驱动的 `evaluate()` 保证
+                    //       —— 那里读 `recedeFraction()`，转场期每帧都跑。
+                    .drawBehind {
+                        if (!chromeOcclusion.occluded.value) recedeFraction()
+                    }
                     .layerBackdrop(bottomChromeBackdrop)
                     .graphicsLayer {
                         val f = recedeFraction()
-                        val sx = lerp(1f, MeloXPlayerRecede.PageScaleX, f)
-                        // 纵向比例由横向内缩反推：只有**可见内缩在 x/y 上相等**，
+                        // ★ 2026-10-26：缩放的**唯一实现**搬到了 `MeloXChromeRecede.kt`
+                        //   （`meloXRecedeScaleX/Y`），因为底部 chrome 现在也要跟着缩
+                        //   （用户口径「底栏跟着背景页一起下沉缩小、相对位置不变」）。
+                        //   两处必须逐字同参，否则底栏会相对背景页漂移 ⇒ 公式只能有一个出处。
+                        val sx = meloXRecedeScaleX(f)
+                        // 纵向比例默认由横向内缩反推：只有**可见内缩在 x/y 上相等**，
                         // 与屏幕同心/相切的圆弧才能同时贴住上下左右四条边、黑边才等宽。
                         // ⚠ 这里的「等宽」只管**缩放**：上下等宽随后被 PageSinkDp 的**平移**
                         //    刻意打破（AM 下沉口径，见 MeloXMotion 文档）——平移不改圆弧贴合，
                         //    两者不矛盾，别看到上下不等宽就回来"修"这里。
-                        val syFull = 1f - (1f - MeloXPlayerRecede.PageScaleX) * size.width / size.height
-                        val sy = lerp(1f, syFull, f)
+                        // ⚠ `PageScaleYOverride > 0` 时改用它：加大纵向内缩 ⇒ 底边额外上移
+                        //    （用户报障「背景下沉的底部几乎不上移」），且 `PageSinkDp` 一行未动。
+                        val sy = meloXRecedeScaleY(f, size.width, size.height)
                         scaleX = sx
                         scaleY = sy
                         // 向下沉降（AM 口径）：与缩放读**同一个** f ⇒ 与卡片推进严格同拍。
-                        // 数值/推导见 `MeloXPlayerRecede.PageSinkDp`。
-                        translationY = MeloXPlayerRecede.PageSinkDp.dp.toPx() * f
+                        // ★ 2026-10-27：位移从固定 30dp 改为**按纵向可缩余量的比例**
+                        //   （`meloXRecedeSinkPx`）—— 横屏时屏幕高只有一半，固定 30dp 会把
+                        //   卡片底边推出屏幕 26px（用户报「下半页面在动画里被截断」）。
+                        //   竖屏结果仍是 120.1px，与旧值逐像素等同。推导见该函数 kdoc。
+                        translationY = meloXRecedeSinkPx(f, size.height, sy)
+                        // 🔬 2026-10-27 取证对照：与底部 chrome 那层同款落盘（tag 不同）。
+                        //   两条 `size` 相等 ⇒ 两层缩放中心都在屏幕中心 ⇒ 底栏与背景页
+                        //   的相对位置恒定。（当时用诊断包逐帧核对；诊断器已于 2026-10-30 移除。）
                         // 圆角 = **系统屏幕圆角**（全程恒定、不收），且用**平滑圆角**
                         // （Lamé 超椭圆、连续曲率）而不是正圆弧 —— 后者曲率在直边处跳变，
                         // 肉眼就是「圆弧生硬」。分轴补偿保证可见半径在 x/y 上都是 displayCornerPx。
@@ -913,6 +1049,13 @@ fun MeloXApp(
                 modifier = Modifier
                     .fillMaxSize(),
                 contentWindowInsets = WindowInsets(),
+                // ⚠ **不能改成 `Color.Transparent`**（2026-10-19 回退）：
+                //   这层 fills 也在 `bottomChromeBackdrop` 的**录制内容**里（recede Box 的
+                //   `Modifier.layerBackdrop` 包着整个 Scaffold）。底栏玻璃采样的是那个
+                //   录制层，少一层不透明底色 ⇒ 该区域在采样层里是**透明**的 ⇒
+                //   玻璃只剩 52% 涂层，看起来就是「半透明」。
+                //   （当初想省一次全屏填充降 overdraw，但 `debug.hwui.overdraw` 实测
+                //     改成透明后仍是 3 层 —— 收益为零，风险实打实，所以退回。）
                 containerColor = MaterialTheme.colorScheme.background,
                 ) { innerPadding ->
                     Box(Modifier.fillMaxSize().padding(innerPadding)) {
@@ -934,7 +1077,7 @@ fun MeloXApp(
                     // 可在任意 tab 上打开。原写法先判 `selectedTab != AppTab.Home`，于是浮在非主页
                     // 上的覆盖层第一次返回被「切回主页」吞掉、第二次才关 —— 用户感知即「退两次、
                     // 且直接跳了两级（tab + 覆盖层）」。改为先关覆盖层，再处理切 tab / 退出确认。
-                    val anyOverlayVisible = recognitionVisible || messagesVisible ||
+                    val anyOverlayVisible = recognitionVisible ||
                         cloudControlChoicePending || availableUpdate != null || clipboardTarget != null
                     val exitConfirmThresholdMs = 2_000L
                     var pendingExitAtMs by remember { mutableStateOf(0L) }
@@ -943,7 +1086,6 @@ fun MeloXApp(
                             // 覆盖层优先关闭，不被切 tab 抢走返回事件。
                             when {
                                 recognitionVisible -> recognitionVisible = false
-                                messagesVisible -> messagesVisible = false
                                 cloudControlChoicePending -> cloudControlChoicePending = false
                                 availableUpdate != null -> availableUpdate = null
                                 clipboardTarget != null -> onClipboardLinkConsumed()
@@ -975,7 +1117,36 @@ fun MeloXApp(
                     AnimatedContent(
                         targetState = selectedTab,
                         transitionSpec = { meloXContentEnter() togetherWith meloXContentExit() },
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            // ★★ 2026-11-06（无真机轮 · 第 3 轮）：**播放页完全覆盖时，整页停止绘制**。
+                            //
+                            //   动机（结构实测，不是猜）：播放页是同一个 composition 里 zIndex=20 的
+                            //   全屏覆盖层，而 HWUI **没有遮挡剔除** —— 底下那一页即使一个像素都看不见，
+                            //   仍然被逐帧 replay。模拟器 atrace 实证（`tmp/ab0`、`tmp/ab_setting`、
+                            //   `tmp/t_app2`，都是「播放页已展开、无任何操作」的稳定态）：
+                            //   每帧仍有 `alpha caused saveLayer 66x66` ×1，且每 ~500ms 再补一组
+                            //   `904x335 / 904x448 / 904x521 / 904x222`（合计 ≈6.3 Mpx/次）
+                            //   —— 这些尺寸**在本页任何播放页节点上都量不到**（真机实测：
+                            //   `controls 904x767` / `artwork 904x2077` / `progress 904x143` /
+                            //   `volume 904x116` / `pageSel 904x137`），换成「设置」tab 打开播放页
+                            //   尺寸族照样出现且高度不同 ⇒ 来源就是**底下那一页**。
+                            //   真机 1440×3168 上这相当于每帧多 replay 一整页（含若干满宽离屏）。
+                            //
+                            //   做法：`playerRootFraction ≥ 1`（外壳已铺满整屏、底页 100% 被盖住）时
+                            //   用一个空 `drawWithContent` 掐掉 `drawContent()` —— 子树**一笔都不画**，
+                            //   不建图层、不依赖 HWUI 的 alpha==0 短路。
+                            //   ⚠ 判据必须是 `≥ 1f`：底页在展开/收起 morph 期间**是给人看的**
+                            //     （recede 下沉就是这一层），提前隐藏会直接改变观感。
+                            //   ⚠ 用 `derivedStateOf` 包一层：`playerRootFraction` 在整段动画里每帧都变，
+                            //     直接 `>= 1f` 读会让本函数每帧重组；包一层只在**布尔翻转**时重组。
+                            .then(
+                                if (playerFullyCoversPage) {
+                                    Modifier.drawWithContent { /* 播放页已铺满：底页零绘制 */ }
+                                } else {
+                                    Modifier
+                                },
+                            ),
                         label = "melox-page-transition",
                     ) { tab ->
                     rootPageState.SaveableStateProvider(tab.name) { when (tab) {
@@ -998,7 +1169,7 @@ fun MeloXApp(
                                      else -> {
                                          when (route) {
                                              "Recognition" -> recognitionVisible = true
-                                             "Messages" -> messagesVisible = true
+                                             "Messages" -> MeloXMessagesActivity.launch(hostContext)
                                              else -> MeloXSettingsDetailActivity.launch(hostContext, route, selectedSource)
                                          }
                                      }
@@ -1046,7 +1217,7 @@ fun MeloXApp(
                                 }
                             },
                             onOpenServices = { MeloXProviderServicesActivity.launch(hostContext) },
-                             onOpenMessages = { messagesVisible = true },
+                             onOpenMessages = { MeloXMessagesActivity.launch(hostContext) },
                          )
                      } }
                      }
@@ -1067,6 +1238,7 @@ fun MeloXApp(
             }
 
             // ══ 底部 chrome 明暗切换状态（2026-09-25）════════════════════════════
+            // ══ 底部 chrome 明暗切换状态（2026-09-25）════════════════════════════
             //   `isMeloXDarkTheme()` **只能在这里读一次**，作为打底值；之后全部走 `bottomBarTone`。
             val systemDark = isMeloXDarkTheme()
             val toneState = rememberBottomBarToneState(
@@ -1079,7 +1251,39 @@ fun MeloXApp(
             }
             val bottomBarTone = toneState.darkness(systemDark)
 
-            if ((!messagesVisible && detailPaneState.pages.isEmpty()) || listDetailMode) CompositionLocalProvider(
+            // ══ 亮度采样源图层（2026-10-19，换掉 PixelCopy）══════════════════════════
+            //   导航胶囊在 `onDrawBackdrop` 里把**背板内容**顺手录进这一层（等比缩到 96px 宽），
+            //   采样循环再 `toImageBitmap()` 读回来算均值。
+            //   ⇒ ① 录到的内容天然不含我们自己的 vibrancy/涂层/高光（它们挂在 kyant0 那层的
+            //        `renderEffect` 与 `onDrawSurface` 上），所以「背景」口径是**结构上**成立的；
+            //     ② 不再有 `PixelCopy` 在 RenderThread 上同步等当前帧 GPU 完成的开销
+            //        （真机 trace 实测单次 3~16ms，任何动画都会被它顶掉一帧）。
+            //   ⚠ 只有导航胶囊传它，搜索键/水珠/迷你栏都不传 —— 多个面 record 会互相覆盖。
+            val bottomBarLuminanceLayer = rememberGraphicsLayer()
+            // `SideEffect` 而不是在循环里读 CompositionLocal：采样循环活在协程里，
+            // 拿不到 Composable 作用域；这里在每次成功组合后把最新层交过去。
+            SideEffect { toneState.luminanceLayer = bottomBarLuminanceLayer }
+
+            // ★★ 2026-10-27（第三次修「竖转横底栏长变短」）：底栏的 split 判据改走
+            //   **布局真值**（`meloXUsesListDetail(Constraints)`），不再用配置口径。
+            //   机理：转屏时「窗口 resize」与「配置派发」是两条独立的主线程消息，谁先到
+            //   不保证。只要判据比约束晚，就会出现若干帧「窗口已经横屏、split 还是 false」
+            //   ⇒ `MeloXPositionedChrome` 走非分栏分支（`minWidth = maxWidth = 整屏宽`）
+            //   ⇒ 胶囊铺满全屏（长），下一帧才收成半屏（短）—— 用户报的那一下；因为跨了
+            //   多帧，所以是「一个过程」而不是一闪。
+            //   `MeloXListDetailLayout` 同样改走 `BoxWithConstraints` 的约束 ⇒ 两侧都是
+            //   **本次 measure 的输入**，同帧同源，跨帧在结构上不可能。
+            //   ⚠ 用 `BoxWithConstraints` 而不是 `Box`：subcompose 在 measure 阶段执行，
+            //     内容在同一帧就拿到新约束（`onSizeChanged` / State 回填都晚一帧）。
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .meloXChromeRecedeLayer(recedeFraction),
+            ) {
+                val chromeSplit = meloXUsesListDetail(constraints, MeloXSettingsRuntime.splitScreenEnabled)
+                // ⚠ 闸门也必须用**同一个** `chromeSplit`（不是 `listDetailMode`）：否则转屏那
+                //   几帧里底栏会被整体卸载再重挂，等于凭空闪一下。
+                if (detailPaneState.pages.isEmpty() || chromeSplit) CompositionLocalProvider(
                 // ⚠ 底栏玻璃**恒**采样 bottomChromeBackdrop（底栏 / 迷你栏 / 搜索键 / 水珠统一）。
                 //   它的录制节点在**外层 recede Box** 上（`graphicsLayer` 之外，唯一一处平行层）：
                 //   **恒定挂载 + 每帧跟着转场进度重录**
@@ -1096,6 +1300,7 @@ fun MeloXApp(
                 //   ⚠ 必须**整个底部 chrome 共用同一个 d**（nav / 搜索键 / 播放栏 /
                 //   水珠 / 前景字形全部在内），否则会出现「底栏亮、搜索键暗」的碎裂感。
                 LocalBottomBarTone provides bottomBarTone,
+                LocalBottomBarLuminanceLayer provides bottomBarLuminanceLayer,
             ) {
                 // ══ 明暗两种模式的底栏互相切换（方案 A，2026-09-25 用户选定）══════════
                 //   整棵子树改用「LightColors ↔ DarkColors 插值出来的配色」重builder一个
@@ -1104,6 +1309,9 @@ fun MeloXApp(
                 //   ⚠ `isMeloXDarkTheme()` 也是读 `colorScheme.background.luminance()`，
                 //     所以 subtree 里的布尔判定同样会平滑地跟着翻。
                 BottomBarToneTheme(darkness = bottomBarTone) {
+                // ★★ 2026-10-26（用户口径）：**底栏跟着背景页一起下沉 + 缩小，相对位置不变**。
+                //   外层 `BoxWithConstraints` 满屏 ⇒ `graphicsLayer` 绕**屏幕中心**缩放，
+                //   与背景页那层同一个中心（详见 `MeloXChromeRecede.kt`）。
                 MeloXBottomChrome(
                     selectedTab = selectedTab,
                     source = selectedSource,
@@ -1115,7 +1323,6 @@ fun MeloXApp(
                         if (tab != selectedTab) tabHaptic(HapticFeedbackType.LongPress)
                         if (tab != selectedTab) {
                             detailPaneState.clearPages()
-                            messagesVisible = false
                             recognitionVisible = false
                         }
                         tabBarMinimized = false
@@ -1124,11 +1331,16 @@ fun MeloXApp(
                     hasMedia = playbackState.hasMedia,
                     minimized = tabBarMinimized,
                     visibleRootTabs = visibleRootTabs,
-                    split = listDetailMode,
-                    navigationModifier = Modifier.onGloballyPositioned { toneState.updateBounds(it) },
+                    split = chromeSplit,
+                    // ⚠ 2026-10-19：这里**不再**用 `onGloballyPositioned` 把底栏矩形喂给采样器 ——
+                    //   换源后采的是导航胶囊自己录下的背板图层，不需要知道窗口坐标
+                    //   （原来那套「底栏上沿往上 8dp 的带子」就是为绕开 PixelCopy 抓到的
+                    //   自身玻璃才存在的）。
                     modifier = Modifier
-                        .align(if (listDetailMode) Alignment.BottomStart else Alignment.BottomCenter)
-                        .then(if (listDetailMode) Modifier.fillMaxSize() else Modifier.fillMaxWidth()),
+                        .align(if (chromeSplit) Alignment.BottomStart else Alignment.BottomCenter)
+                        .then(if (chromeSplit) Modifier.fillMaxSize() else Modifier.fillMaxWidth()),
+                    // ★ 2026-10-26（打开动画性能 B 方案）：见 `MeloXChromeOcclusion.kt`。
+                    chromeOcclusion = chromeOcclusion,
                     miniPlayer = { compactProgress ->
                         playerTransition.AnimatedVisibility(
                             // ⚠⚠ 2026-10-06 取证埋点：记录本 lambda 每帧收到的 `value`
@@ -1147,7 +1359,6 @@ fun MeloXApp(
                             //   ⇒ 收起过程中内容就被卸载（播放页提前消失）。
                             //   `value` 仍照旧参与判定，并额外采样用于取证。
                             visible = { value ->
-                                MeloXPlayerSinkDiag.sample("miniAV", value)
                                 !value
                             },
                             enter = EnterTransition.None,
@@ -1157,7 +1368,7 @@ fun MeloXApp(
                                 state = playbackState,
                                 onExpand = openPlayer,
                                 compactProgress = compactProgress,
-                                vertical = listDetailMode && MeloXSettingsRuntime.splitMiniPlayerPosition.isSideRail,
+                                vertical = chromeSplit && MeloXSettingsRuntime.splitMiniPlayerPosition.isSideRail,
                                  dynamicGlassEnabled = true,
                                  sharedTransitionScope = sharedScope,
                                  animatedVisibilityScope = this,
@@ -1168,34 +1379,29 @@ fun MeloXApp(
                                  //   `MeloXIOSMiniPlayer` 里 `sharedSinkBoundsTransform` 处的说明。
                                  closingIntent = playerClosingIntent,
                                 miniPlayerHitRect = miniPlayerHitRect,
+                                // ★★ 2026-11-02：把**稳态那份背板**显式喂给迷你栏玻璃。
+                                //   转场期这一份会被渲进共享元素 overlay（独立 subcomposition，
+                                //   `LocalMeloXBackdrop` 退回外层的 pageBackdrop），而稳态节点
+                                //   采的是 `bottomChromeBackdrop` ⇒ 转场结束那一帧换源，
+                                //   底色从专辑橙一帧跳成主页深灰（用户：「闪一下」）。
+                                //   显式传同一个对象后，两个渲染位置逐帧采同一份内容 ⇒
+                                //   **换源事件在结构上不存在**，播放页一个像素都不用淡。
+                                //   ⚠ 仍保留遮挡门控：外壳把底栏整块盖住期间传 null ⇒
+                                //     材质走不透明回落，不白付整屏采样（收起方向该门控
+                                //     已被 MeloXChromeOcclusion 主动放行，恒为 false）。
+                                // ★★ 2026-11-02（第二次）：**恒定传同一个对象**，不再因遮挡变 null。
+                                //   原来 `occluded` 翻转会把采样源从 `bottomChromeBackdrop`
+                                //   换成 `meloXGlassBackdrop()`（或反之）⇒ 换源那一帧要重新采样、
+                                //   甚至重建材质节点，用户感受是「在动态背景和玻璃之间切换会顿一下」。
+                                //   现在玻璃可见性完全由 `miniSurfaceVisible`（p < 0.52）门控：
+                                //   p ≥ 0.52 时材质整块不挂，那时 `occluded` 早已为 true，本来也看不见
+                                //   ⇒ 这个额外的遮挡判定只会制造换源，不再有任何省电收益。
+                                glassBackdrop = bottomChromeBackdrop,
                             )
                         }
                     },
                 )
                 }
-            }
-
-            AnimatedVisibility(
-                visible = messagesVisible,
-                enter = meloXPageEnter(veilColor = MaterialTheme.colorScheme.background),
-                exit = meloXPageExit(),
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth(if (listDetailMode) 0.5f else 1f)
-                    .align(Alignment.TopEnd)
-                    .zIndex(15f),
-            ) {
-                // 包一层只为把页面几何（含**系统屏幕圆角**）挂进 slide 变换内侧
-                // —— 挂在 `AnimatedVisibility` 的 modifier 上会落在滑动之外、不跟着走。
-                // ⚠ `settled` 见 `meloXPageSlideGeometry`：静止（没有动画进程）时不裁圆角，
-                //   否则亮色页四角会露出一块看得见的屏幕圆角缺口。
-                Box(
-                    Modifier.fillMaxSize().meloXPageSlideGeometry(
-                        settled = transition.currentState == transition.targetState,
-                    ),
-                ) {
-                    BackHandler { messagesVisible = false }
-                    MessagesScreen(onBack = { messagesVisible = false })
                 }
             }
 
@@ -1226,7 +1432,6 @@ fun MeloXApp(
                 // ⚠⚠ 2026-10-06 取证埋点：与 mini 侧同一目的的对照采样（见那里说明）。
                 //   ⚠ 判定仍用 `value`（理由见 mini 侧：改读 targetState 会让内容在收起中提前卸载）。
                 visible = { value ->
-                    MeloXPlayerSinkDiag.sample("hostAV", value)
                     value
                 },
                 enter = EnterTransition.None,
@@ -1253,8 +1458,9 @@ fun MeloXApp(
                         //   ⇒ 动画从当前 fraction 连续回 1f，不跳变。
                         onReopen = openPlayer,
                         miniPlayerHitRect = miniPlayerHitRect,
-                         onNavigateSearch = { query, kind ->
-                             detailPaneState.clearPages()
+                        onNavigateSearch = { query, kind ->
+                            detailPaneState.clearPages()
+
                             if (selectedSource == MusicSource.Netease) {
                                 MeloXSearchLaunchBus.post(query, kind)
                             }
@@ -1300,31 +1506,13 @@ fun MeloXApp(
                             )
                             // ⚠⚠ 2026-10-06 取证埋点（去重，值不变不写）：拖拽 seek 之后
                             //   transition 的 currentState / targetState。
-                            MeloXPlayerSinkDiag.sample(
-                                "seekState",
-                                "cs=${playerTransitionState.currentState} " +
-                                    "ts=${playerTransitionState.targetState}",
-                            )
+                            //   ★ 2026-10-26 功耗：实参在门控内求值（拖拽每帧都会走到这里）。
                         },
                         onSettleCollapse = { collapse ->
-                            MeloXPlayerSinkDiag.event("settle collapse=$collapse")
-                            // ⚠⚠ 2026-10-06 取证埋点：settle 之后**头 6 帧**逐帧记录
-                            //   transition 的 currentState / targetState。
-                            //   用途：「轻微下拉下沉」是否来自「回弹期间迷你栏被判为可见
-                            //   ⇒ 它的外壳（共享元素 overlay，zIndex 100f，浮在播放页 20f
-                            //   之上）从 full 一路收缩到 mini，而 `exit = None` 不淡出」。
-                            //   若这 6 帧里 `ts` 已经是 `true`（打开）而 `cs` 仍是 `false`
-                            //   （收起），则 `visible = { !value }` 的取值取决于该 lambda
-                            //   拿的是哪一个 —— 配合 `S miniAV=…` 的采样即可定案。
-                            playerScope.launch {
-                                repeat(6) { i ->
-                                    withFrameNanos { }
-                                    MeloXPlayerSinkDiag.event(
-                                        "settle+f$i cs=${playerTransitionState.currentState} " +
-                                            "ts=${playerTransitionState.targetState}",
-                                    )
-                                }
-                            }
+                            // ★ 2026-10-26 功耗：整套取证埋点（`event` + settle 后 6 帧逐帧
+                            //   `event`）在门控内。未 bind 时 `event()` 直接 return，但那 6 次
+                            //   `withFrameNanos` 申请、字符串拼接、以及 6 帧的帧循环**照样发生**
+                            //   —— 诊断器已于 2026-10-30 整体移除（见 LOCAL-CUSTOMIZATION.md）⇒ 此处无残留开销。
                             // `collapse == true` ⇒ 目标是 false（收起）⇒ 该趟仍属关闭方向。
                             playerClosingIntent = collapse
                             // ⚠⚠ 关键：**在 `animateTo` 之前同步写**，让内容层目标立刻变成
@@ -1348,10 +1536,22 @@ fun MeloXApp(
                                     playerSpringThumpLand()     // 拍 2：弹簧落定「咚」——落定
                                 }
                             }
-                            playerTransitionState.animateTo(
-                                targetState = !collapse,
-                                animationSpec = playerSettleMasterSpec(),
-                            )
+                            if (collapse) {
+                                // 收起方向：拖拽期 `onSeekCollapse` 一直用
+                                // `seekTo(p, targetState = false)` 把 targetState 钉在 false
+                                // ⇒ 这里新目标与它**相同** ⇒ `animateTo` 走"不重置"那条分支，
+                                // fraction 从当前 p 连续跑到 1，与手指同向。
+                                // 收起方向一直是对的（用户口径「下拉关闭的，那个是对的」），别动。
+                                playerTransitionState.animateTo(
+                                    targetState = false,
+                                    animationSpec = playerSettleMasterSpec(),
+                                )
+                            } else {
+                                // 回弹方向：⛔ 绝不能写 `animateTo(targetState = true)` ——
+                                // 那会先"朝迷你栏沉一下再弹回"，就是用户报的抽搐。
+                                // 反编译实证的完整根因见 [reboundPlayerToOpen] 的 KDoc。
+                                reboundPlayerToOpen(playerTransitionState)
+                            }
                         },
                         sharedTransitionScope = sharedScope,
                         animatedVisibilityScope = fullPlayerAnimatedVisibilityScope,
@@ -1376,7 +1576,10 @@ fun MeloXApp(
 
          }
 
+        // 网易云登录已改为独立 Activity（MeloXNeteaseLoginActivity），走系统原生转场，
+        // 与「设置 → 详情」这类页面完全一致；此处不再内嵌覆盖层。
         // 全局弹窗独立于左右栏导航，保持覆盖整个窗口。
+
         clipboardTarget?.let { target ->
             MeloXAppDialog(
                 title = stringResource(R.string.app_clipboard_title),
@@ -1509,6 +1712,13 @@ fun MeloXApp(
                 onAcknowledge = { pendingRemoteNotice = null },
             )
         }
+        // ── 冷启动管线预热（2026-10-19）────────────────────────────────────────
+        //   清数据冷启动后**第一次**开播放页会掉 1~3 帧，真凶是 Adreno 驱动在
+        //   RenderThread 上同步编译新 pipeline（日志：142 次 `Pipeline create failed`，
+        //   UI 线程 lateness p50 0.25ms 完全无辜）。这里在首屏落定后用一小块不可见
+        //   玻璃把最贵的那几族 pipeline 提前编掉。详见 `MeloXGlassPipelinePrewarm`。
+        //   ⚠ 放在兄弟序列**最后** = z 序最上：HWUI 不做遮挡剔除，但不必赌。
+        MeloXGlassPipelinePrewarm()
         if (BuildConfig.DEBUG && MeloXSettingsRuntime.performanceOverlayEnabled) {
             MeloXPerformanceOverlay()
         }
@@ -1675,6 +1885,20 @@ private val ChromeExpandedSize = 57.dp
 private val ChromeCompactSize = 46.dp
 
 /**
+ * 横屏双栏「底部档」（左下/右下）时 nav 胶囊的固定高度 —— **等于迷你栏高度**。
+ *
+ * 2026-10-20 用户指令：横屏分栏、底栏位置选左下/右下（`vertical==1`）时，把导航胶囊
+ * 高度**减到跟迷你播放栏一样**（迷你栏非竖向高 = 48dp，见 `MeloXIOSMiniPlayer` 的
+ * `miniHeight = if (vertical) … else 48.dp`），随后两者**垂直中心重合**。
+ * `MeloXPositionedChrome` 的「中心线对齐」已按胶囊中心为共同中心摆迷你栏（两者都停在
+ * 底部那档）；这里把胶囊高度也压到同一 48dp ⇒ 胶囊中心与迷你栏中心**完全重合**。
+ *
+ * ⚠ 只作用于「横屏 + 分栏 + 底部档」这一种几何：单栏竖屏、顶部/侧栏档位的
+ *   [ChromeExpandedSize]/[ChromeCompactSize] 弹簧一律不动。
+ */
+private val SplitBottomDockChromeHeight = 48.dp
+
+/**
  * ⚠ **2026-09-25 一笔勾销**：本常量（及其自研「实心着色胶囊」Layer 2 方案）已随
  *   一比一复刻 BiliNext `LiquidGlassTabsBar.kt` 全部删除 —— Layer 2 现在是一块
  *   **真玻璃**（`meloXLiquidCaptureLayer`），不再是本项目自创的着色胶囊。
@@ -1692,6 +1916,19 @@ private fun MeloXBottomChrome(
     split: Boolean = false,
     navigationModifier: Modifier = Modifier,
     modifier: Modifier = Modifier,
+    /**
+     * 底部 chrome 玻璃面的覆盖门控（2026-10-26，打开动画性能 B 方案）。
+     *
+     * 本函数只做两件事：
+     *  ① 把 nav 胶囊 / 搜索键两个玻璃面的**窗口矩形**写进门控（普通字段，不触发重组）；
+     *  ② 门控判定「外壳已完全盖住」时，把 `LocalMeloXBackdrop` 换成 `null` —— 于是
+     *     `meloXGlassAvailable()` 为 false、`meloXGlassBackdrop()` 返回 null，每个材质
+     *     函数走各自写好的**不透明** `background(stableSurface, shape)` 回落分支，
+     *     `drawBackdrop`（整屏纹理采样 + blur/lens AGSL）一次都不跑。
+     * ⚠ 只包 nav / 搜索键 / L2 / L3，**不包迷你栏**：迷你栏有自己的 `miniSurfaceVisible`
+     *   闸门，且它是 sharedBounds 的源，不值得在这里多牵一条依赖。
+     */
+    chromeOcclusion: MeloXChromeOcclusionGate,
     miniPlayer: @Composable (compactProgress: Float) -> Unit,
 ) {
     val tabsBackdrop = rememberLayerBackdrop()
@@ -1737,11 +1974,34 @@ private fun MeloXBottomChrome(
     val labelStage = smoothStep(progress, 0.00f, 0.32f)   // alpha 用，保持夹住
     val dropStage = smoothStep(progress, 0.78f, 1.00f)    // 容器高度，不参与过冲
 
-    val navHeight = lerpDpBouncy(ChromeExpandedSize, ChromeCompactSize, bounceFrac)
+    // 横屏分栏「底部档」**且与迷你栏不同边**（如 nav 左下 / 迷你栏右下）：
+    //   nav 胶囊高度固定压到 [SplitBottomDockChromeHeight]=48dp，与迷你栏同高，
+    //   两者由 `MeloXPositionedChrome` 的「中心线对齐」摆成垂直中心重合。
+    // ⚠ 2026-10-20 用户裁定：**同边时（nav 与迷你栏同在左下/右下）逻辑必须跟竖屏完全一样** ——
+    //   那时走的是 inline 路径（`inlineMini=true`，迷你栏坐在胶囊上方、66dp lift），
+    //   胶囊照旧 57↔46dp 弹簧、不缩、不特殊处理。
+    //   ⇒ 这里必须额外要求「与迷你栏不同边」，只把独立摆放那一档压到 48dp。
+    // 其它档位/单栏仍走 57↔46 的弹簧（展开↔收缩）。
+    val splitBottomDock = split &&
+        !MeloXSettingsRuntime.splitNavigationPosition.isSideRail &&
+        MeloXSettingsRuntime.splitNavigationPosition.vertical == 1 &&
+        !coupled
+    val navHeight = lerpDpBouncy(
+        if (splitBottomDock) SplitBottomDockChromeHeight else ChromeExpandedSize,
+        if (splitBottomDock) SplitBottomDockChromeHeight else ChromeCompactSize,
+        bounceFrac,
+    )
     // ⚠ f 的**负方向**才是「展开外扩」（f=0 是展开稳态、f=1 是收缩稳态）。
     // 这里只夹下界：搜索键右对齐，若跟着外扩会吃掉与 nav 之间的固有间隙，
     // 而它自身的外扩量只有 0.9dp、肉眼不可见 —— 整段间隙留给 nav 的过冲更划算。
-    val searchSize = lerpDpBouncy(ChromeExpandedSize, ChromeCompactSize, bounceFrac.coerceAtLeast(0f))
+    // ★ 横屏分栏「底部档」时 nav 胶囊已被压到 [SplitBottomDockChromeHeight]=48dp
+    //   （见下面 navHeight 的分支），搜索键必须**跟着一起缩到同一 48dp**，
+    //   否则会出现「底栏矮了、搜索键还是 46~57dp」的比例失调（用户 2026-10-20 报障）。
+    val searchSize = if (splitBottomDock) {
+        SplitBottomDockChromeHeight
+    } else {
+        lerpDpBouncy(ChromeExpandedSize, ChromeCompactSize, bounceFrac.coerceAtLeast(0f))
+    }
     val mediaReveal by animateFloatAsState(
         targetValue = if (hasMedia && inlineMini) 1f else 0f,
         // 下方是 miniLift × mediaReveal 的纯乘子，不经过 lerpDp 的夹取，
@@ -1752,12 +2012,30 @@ private fun MeloXBottomChrome(
         ),
         label = "melox-mini-player-reveal",
     )
+    // 收缩态容器高度（动画目标）。
+    // ⚠ 横屏分栏「底部档且与迷你栏不同边」时 nav 胶囊被钉成
+    //   [SplitBottomDockChromeHeight]=48dp（见下面 navHeight 分支），而外层 Column 还有
+    //   top/bottom 各 4dp 的 padding（L1753-1756，上下对称）。
+    //   `meloXChromeOffsets` 的中心线对齐是按 **navigation Box 的中心**摆迷你栏的 ⇒
+    //   必须让「Box 中心 == 胶囊中心」，否则迷你栏会与胶囊错开。
+    //   padding 上下各 4dp 已对称，所以只要内容区高度 == 胶囊高度(48dp) 即重合
+    //   ⇒ `chromeHeight` 直接取 48dp，**不要**再 +8dp（那会让 Box 中心比胶囊中心高 4dp，
+    //   表现为「迷你栏比胶囊高 4dp」—— 2026-10-20 用户报障「没有垂直中心对齐」）。
+    //   收缩动画终点（`dropStage`=1）同步取 48dp ⇒ 两态都不错位。
     val expandedChromeHeight by animateDpAsState(
-        targetValue = if (hasMedia && inlineMini) 124.dp else 64.dp,
+        targetValue = when {
+            splitBottomDock -> SplitBottomDockChromeHeight
+            hasMedia && inlineMini -> 124.dp
+            else -> 64.dp
+        },
         animationSpec = spring(dampingRatio = 0.9f, stiffness = 360f),
         label = "melox-chrome-height",
     )
-    val chromeHeight = lerpDp(expandedChromeHeight, 56.dp, dropStage)
+    val chromeHeight = if (splitBottomDock) {
+        SplitBottomDockChromeHeight
+    } else {
+        lerpDp(expandedChromeHeight, 56.dp, dropStage)
+    }
     val labelAlpha = 1f - labelStage
     val expandedLayerAlpha = 1f - smoothStep(progress, 0.43f, 0.72f)
     val compactLayerAlpha = smoothStep(progress, 0.52f, 0.82f)
@@ -1770,13 +2048,48 @@ private fun MeloXBottomChrome(
         miniPlayerPosition = MeloXSettingsRuntime.splitMiniPlayerPosition,
         modifier = modifier.then(if (split) Modifier.stableNavigationBarsPadding() else Modifier),
         miniPlayer = {
-            Box(Modifier.fillMaxWidth().padding(
-                horizontal = if (MeloXSettingsRuntime.splitMiniPlayerPosition.isSideRail) 4.dp else 12.dp,
-                vertical = 8.dp,
-            )) { miniPlayer(if (coupled) progress else 0f) }
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    // ★ 双栏且迷你栏不在侧栏时，**外缘留白必须与 nav 那一侧同口径**：
+                    //   `meloXChromeArea` 里 nav 的左/右缘取 `safeLeft/safeRight`
+                    //   （= `gap` 8dp，见 MeloXPositionedChrome 的 controlConstraints）。
+                    //   这里原来写死 12dp ⇒ 迷你栏距屏幕外缘 12dp、nav 距屏幕外缘 8dp，
+  //   差 4dp，读起来就是「迷你栏比底栏长一截 / 两边不等距」（用户 2026-10-20 报障）。
+                    //   ⇒ 统一取 8dp（= `gap`），两侧外间距完全相等。
+                    .padding(
+                        horizontal = if (MeloXSettingsRuntime.splitMiniPlayerPosition.isSideRail) 4.dp else 8.dp,
+                        // 与左侧底栏同口径：双栏时下沿只留 2dp（贴底），单栏仍是 8dp。
+                        vertical = if (split) 2.dp else 8.dp,
+                    ),
+            ) { miniPlayer(if (coupled) progress else 0f) }
         },
     ) {
+    // ★★ 2026-10-26（打开动画性能 B 方案）：底部 chrome 的**玻璃材质总闸**。
+    //   外壳把底栏整块不透明盖住期间，这里把 `LocalMeloXBackdrop` 换成 null ⇒
+    //   `meloXGlassAvailable()` 为 false ⇒ `meloXGlassBackdrop()` 返回 null ⇒
+    //   每个材质函数走各自写好的 `background(stableSurface, shape)` 回落分支
+    //   （`compositeOver` 出来的**完全不透明**色，不是半透明），`drawBackdrop`、
+    //   blur/lens 的 AGSL、整屏背板纹理采样**一次都不跑**。
+    //   · `occluded` 是离散 State（一次开合最多翻 2 次）⇒ 重组最多 2 次，不逐帧。
+    //   · 观感：这些面此刻 100% 被外壳压住，看不见 —— 判据严格到「外壳比底栏
+    //     多盖住 4dp」才允许停（见 `MeloXChromeOcclusionGate` 的四道保险）。
+    //   · ⚠ 只包这一层（nav / L2 / L3 / 搜索键）。迷你栏走它自己的 `miniSurfaceVisible`
+    //     闸门，不在这里多牵依赖。
+    val chromeGlassBackdrop =
+        if (chromeOcclusion.occluded.value) null else LocalMeloXBackdrop.current
+    CompositionLocalProvider(LocalMeloXBackdrop provides chromeGlassBackdrop) {
     if (split && MeloXSettingsRuntime.splitNavigationPosition.isSideRail) {
+        // ⚠ 2026-10-26：**侧栏档没有走下面那套 nav 胶囊 / 搜索键**，所以本帧不会有人
+        //   上报矩形 —— 若不在这里清空，`navRect` 会残留「上一次竖屏布局」的值，
+        //   判据就会拿一个早已不存在的矩形去比 ⇒ 可能误判「已覆盖」而把玻璃停掉。
+        //   用 `SideEffect`（apply 阶段）而不是组合体直写：本分支切进来时它先清空，
+        //   切出去时下面 `onGloballyPositioned`（layout 阶段，晚于 apply）再写新值 ——
+        //   同一帧内顺序天然正确。
+        SideEffect {
+            chromeOcclusion.navRect = null
+            chromeOcclusion.searchRect = null
+        }
         MeloXVerticalNavigation(selectedTab, source, visibleRootTabs, onSelect, navigationModifier, if (coupled) progress else 0f, hasMedia && coupled)
     } else {
     Column(
@@ -1788,7 +2101,15 @@ private fun MeloXBottomChrome(
             .then(if (split) Modifier else Modifier.stableNavigationBarsPadding())
             // Mei keeps the 64dp navigation capsule 8dp above the gesture
             // inset, giving the dock the same breathing room as iOS.
-            .padding(bottom = 8.dp),
+            // ★ 双栏下沿再压：单栏仍是 8dp；双栏时几何侧已把下沿留白缩到 4dp
+            //   （`SplitChromeBottomMargin`），这里同步收到 4dp ⇒ 合计 8dp，
+            //   比原来的 16dp 更贴底（用户 2026-10-18「还可以再靠近底部一点」）。
+            // ★ 双栏上下对称 4dp：`meloXChromeOffsets` 的**中心线对齐**是按两个 Box 的
+            //   中心算的，只有上下内边距对称时「Box 中心」才等于「胶囊/迷你栏的视觉中心」。
+            .padding(
+                top = if (split) 4.dp else 0.dp,
+                bottom = if (split) 4.dp else 8.dp,
+            ),
     ) {
         BoxWithConstraints(
             modifier = Modifier
@@ -1805,7 +2126,15 @@ private fun MeloXBottomChrome(
                 },
             )
             val horizontalMargin = 12.dp
-            val compactSize = 48.dp
+            // ⚠⚠ 2026-10-26 用户口径：**收缩态那两个圆必须等大** ——
+            //   右圆 = 搜索键，收缩态 `searchSize` = [ChromeCompactSize] = 46dp（46×46 正圆）；
+            //   左圆 = nav 胶囊，收缩态高度本来就是 [ChromeCompactSize] = 46dp，
+            //   所以只要把**收缩宽度**也取同一个常量，左圆就变成 46×46，与右圆逐像素等大
+            //   （两者 shape 都是 Capsule，正方形上即为正圆）。
+            //   ⚠ 旧值 48.dp 是「nav 比搜索键宽 2dp」的历史遗留 —— 它同时也是「迷你栏离
+            //   右圆更远」（左缝 8dp / 右缝 10dp）的成因之一，别再改回去。
+            //   ⚠ 只影响收缩态宽度：展开态走 `expandedNavWidth`，与这里无关。
+            val compactSize = ChromeCompactSize
             // nav 胶囊右缘 ↔ 搜索键左缘的固有间隙（展开态）。
             // 官方截图实测 = **10px = 7.12dp**（rim 峰法：nav 右缘 472 → 搜索键左缘 483，
             // 阈值 140~205 全区间稳定），取 7dp。旧值 12dp 是「先加大缝好让过冲有地方去」的临时口径。
@@ -1833,13 +2162,31 @@ private fun MeloXBottomChrome(
             val navShape = Capsule()
             val primaryTabs = visibleRootTabs.map { it to it.rootGlyph() }
 
+            // ⚠⚠ 2026-10-26 修「收缩态迷你栏离右圆比离左圆远」——
+            //   收缩态一行三件套 = 【左圆 | 迷你栏 | 右圆】，两个圆是**两个不同的东西**：
+            //     · 左圆 = nav 胶囊收缩态，宽度 = `compactSize`；
+            //     · 右圆 = 搜索键，宽度 = `compactSearchSize`（收缩态 = [ChromeCompactSize]）。
+            //   两者现在**已同为 46dp**（用户要求等大），但这里**仍分别引用**而不是写
+            //   `compactSize * 2`：旧写法假设「两边都是 48dp」，而搜索键只有 46dp ⇒ 迷你栏
+            //   右缘少算 2dp ⇒ 左缝 8dp / 右缝 10dp。真机像素实证（360dp 宽 / density 4，
+            //   y 取底栏中心行）：左圆右缘 240px → 迷你栏左缘 272px = **32px(8dp)**，
+            //   迷你栏右缘 1168px → 右圆左缘 1208px = **40px(10dp)**。
+            //   分别扣 ⇒ 两个缝都精确等于 `compactGap`(8dp)，且任一侧尺寸再变也不会回归。
+            //   ⚠ `splitBottomDock` 档搜索键被钉到 `SplitBottomDockChromeHeight`(48dp)，
+            //     但那一档 `inlineMini=false` ⇒ 本段（含 `miniWrapperWidth`）根本不执行，
+            //     故这里不必分支。
+            val compactSearchSize = ChromeCompactSize
             val desiredCompactMiniVisibleWidth =
-                (maxWidth - horizontalMargin * 2 - compactSize * 2 - compactGap * 2)
+                (maxWidth - horizontalMargin * 2 - compactSize - compactSearchSize - compactGap * 2)
                     .coerceAtLeast(80.dp)
             val compactMiniWrapperWidth = desiredCompactMiniVisibleWidth
             val compactMiniWrapperX = horizontalMargin + compactSize + compactGap
             val miniWrapperWidth = lerpDpBouncy(maxWidth - horizontalMargin * 2, compactMiniWrapperWidth, bounceFrac)
             val miniWrapperX = lerpDpBouncy(horizontalMargin, compactMiniWrapperX, bounceFrac)
+            // ⚠ 这里**不能**给 `splitBottomDock`（分栏 + 底部档 + 不同边）开特例：
+            //   那一档 `inlineMini=false`，本 Box 整段不执行（迷你栏由 `MeloXPositionedChrome`
+            //   独立摆放并按中心线对齐）。而同边时 `splitBottomDock` 已为 false
+            //   ⇒ 66↔0 的 lift 一律保持原语义，与竖屏完全一致（2026-10-20 用户裁定）。
             val miniLift = lerpDpBouncy(66.dp, 0.dp, bounceFrac) * mediaReveal
             // 收缩态下播放栏需与两侧底栏按钮/搜索键共中心线。
             // 实测播放栏整体比按钮高 1dp（top/bottom 各差 4px），
@@ -1921,7 +2268,14 @@ private fun MeloXBottomChrome(
                     .align(Alignment.BottomStart)
                     .offset(x = navOffsetX, y = 0.dp)
                     .width(navWidth)
-                    .height(navHeight),
+                    .height(navHeight)
+                    // ★ 2026-10-26（打开动画性能 B 方案）：把 **nav 胶囊玻璃面的窗口矩形**
+                    //   交给覆盖门控。写的是普通字段（不是 State）⇒ 转场/收缩期这个回调
+                    //   每帧都触发（navWidth 是弹簧），但零重组、零失效，只有一次赋值。
+                    //   ⚠ 上报的是**这个 Box**（= 玻璃面的真实矩形），不是整个底栏容器：
+                    //     容器是 fillMaxWidth，左下角永远落在系统屏幕圆角外面，拿它判会让
+                    //     闸门恒为 false、白做。
+                    .onGloballyPositioned { chromeOcclusion.navRect = it.boundsInWindow() },
                 contentAlignment = Alignment.CenterStart,
             ) {
                 val density = LocalDensity.current
@@ -1934,6 +2288,12 @@ private fun MeloXBottomChrome(
                 // ★ 核心恒等式：水珠与 Layer 2 **等高**，两者都比 Layer 1 矮 8dp
                 //   （BiliNext：L1=55dp / L2=DropletHeight=47dp / L3=47dp）
                 val dropletHeight = (navHeight - 8.dp).coerceAtLeast(1.dp)
+                // 🔴 2026-10-27 横屏修（用户报「横屏长按指示器折射范围错了、折进 tab」）：
+                //   折射深度必须按**实际水珠/胶囊高度**换算，而不是写死竖屏的绝对值。
+                //   竖屏展开 49dp ⇒ 1f（逐像素不变）；横屏 splitBottomDock 40dp ⇒ 40/49≈0.816。
+                //   ⛔ 不转换 ⇒ 24dp/10dp 的绝对深度套到更矮的胶囊上 ⇒ 相对过深 ⇒ 长按时
+                //   整条折射带折进 tab 内、只剩被放大的图标内容。
+                val pressLensHeightRatio = (dropletHeight.value / 49f).coerceIn(0.5f, 1.2f)
                 // ⚠ `dropletWidth` 必须夹取，`dropletHeight` 同理（上面已夹）。
                 //   `navWidth` 是**不夹取的弹簧**（见 `lerpDpBouncy` 的注释），收缩/回弹过冲的
                 //   某一帧会跌破 `compactSize`(48dp)；而 `tabWidth = (navWidth − 20dp)/tabCount`
@@ -2102,6 +2462,9 @@ private fun MeloXBottomChrome(
                             // 官方 LiquidBottomTabs L174-179：面板随水珠按压整体膨胀
                             // （scale = 1 + 16dp/width · p）。原先写死 0f，长按无反馈。
                             pressProgress = dampedDock.pressProgress,
+                            // ★ 唯一的亮度采样录制点（2026-10-19）。搜索键/水珠/
+                            //   迷你栏都**不能**传，否则互相覆盖。
+                            luminanceLayer = LocalBottomBarLuminanceLayer.current,
                         )
                         .then(dockHighlight.modifier)
                         .height(navHeight)
@@ -2133,6 +2496,7 @@ private fun MeloXBottomChrome(
                                 contentColor = if (tab == selectedTab) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f) else null,
                                 labelAlpha = labelAlpha,
                                 interactive = dockExpanded,
+                                compactMetrics = splitBottomDock,
                                 onClick = { onSelect(tab) },
                             )
                         }
@@ -2199,6 +2563,8 @@ private fun MeloXBottomChrome(
                                 shape = Capsule(),
                                 surfaceColor = bottomGlassSurfaceColor(),
                                 pressProgress = dampedDock.pressProgress,
+                                // 🔴 横屏修：按实际胶囊高度换算折射深度（竖屏=1f 不变）。
+                                lensScale = pressLensHeightRatio,
                             )
                             .then(dockHighlight.modifier)
                             .height(dropletHeight)
@@ -2216,6 +2582,9 @@ private fun MeloXBottomChrome(
                                 selected = false,
                                 labelAlpha = labelAlpha,
                                 interactive = false,
+                                // 必须与 L1 可见面板同源，否则水珠采样出来的那一格
+                                // 图标/字号与旁边面板不一致（像素级错位）。
+                                compactMetrics = splitBottomDock,
                                 // kyant0 / BiliNext 的「划过才变色」核心：
                                 //   整层 tab 全染强调色（层 alpha=0 看不见），
                                 //   水珠一采样 ⇒ 只把它盖住那一格"照"出来。
@@ -2262,6 +2631,16 @@ private fun MeloXBottomChrome(
                                 tint = selectionTint,
                                 panelBackdrop = tabsBackdrop,
                                 pressProgress = dampedDock.pressProgress,
+                                // 🔴 横屏修：把**实际水珠高度**传进去，lens 换算系数按它现算
+                                //   （竖屏 49dp→49/56=0.875 不变；横屏 40dp→40/56≈0.714）。
+                                dropletHeight = dropletHeight,
+                                // 🔴 2026-11-07 横屏修（用户报「横屏小底栏按住 tab 的水珠折射
+                                //   范围过大、垂直同时折到图标和文字」）：横屏 splitBottomDock
+                                //   水珠仅 40dp 高，且 compactMetrics 图标+文字挤得更满，
+                                //   即便折射已按 40/56 等比换算，同样的相对深度在矮而满的
+                                //   水珠里也容易刮到文字行。⇒ 横屏档额外收紧折射到 0.7×，
+                                //   让折射带只碰图标、不再折进文字；竖屏保持 1f 不变。
+                                lensDepthScale = if (splitBottomDock) 0.7f else 1f,
                                 // ★ BiliNext L534-541：缩放**照抄**，因为水珠挂了
                                 //   dampedDock.modifier ⇒ press() 对整个子树生效，
                                 //   scaleX/scaleY 会真的走到 pressedScale = 78/56。
@@ -2294,6 +2673,8 @@ private fun MeloXBottomChrome(
                     .align(Alignment.BottomEnd)
                     .offset(x = -horizontalMargin, y = 0.dp)
                     .size(searchSize)
+                    // ★ 2026-10-26（打开动画性能 B 方案）：搜索键玻璃面的窗口矩形。
+                    .onGloballyPositioned { chromeOcclusion.searchRect = it.boundsInWindow() }
                     // 搜索键材质与底栏 nav 胶囊完全同源：同样走
                     // meloXLiquidBottomBar（vibrancy + blur + lens，且只叠
                     // surfaceColor、不额外加 Screen 白纱与 Hue tint），
@@ -2312,7 +2693,12 @@ private fun MeloXBottomChrome(
             ) {
                 RootGlyphIcon(
                     glyph = RootGlyph.Search,
-                    modifier = Modifier.size(lerpDp(28.dp, 27.dp, bounceFrac)),
+                    // ⚠ 图标跟着按键一起缩：splitBottomDock 下按键被钉到 48dp，
+                    //   仍用 28dp 会显得按键里塞满（那是 57dp 按键的比例）。
+                    //   28/57 ≈ 26/48 ⇒ 取 26dp 留出呼吸感。
+                    modifier = Modifier.size(
+                        if (splitBottomDock) 26.dp else lerpDp(28.dp, 27.dp, bounceFrac)
+                    ),
                     // ⚠ 搜索键的字形同样不能写死 —— 它读的是同一个被插值的 scheme。
                     color = if (selectedTab == AppTab.Search) {
                         MeloXSystemColors.Red
@@ -2323,6 +2709,7 @@ private fun MeloXBottomChrome(
                 )
             }
         }
+    }
     }
     }
 }
@@ -2342,7 +2729,15 @@ private fun MeloXVerticalNavigation(
     Box(modifier.fillMaxWidth().animateContentSize().padding(horizontal = 4.dp, vertical = 8.dp)) {
         Column(
             Modifier.fillMaxWidth()
-                .meloXLiquidBottomBar(shape = Capsule(), tint = bottomLiquidGlassTint(), surfaceColor = bottomGlassSurfaceColor())
+                .meloXLiquidBottomBar(
+                    shape = Capsule(),
+                    tint = bottomLiquidGlassTint(),
+                    surfaceColor = bottomGlassSurfaceColor(),
+                    // ★ 双栏（侧栏导航）时导航胶囊不在 1975 那个分支里，录制点搬到这里
+                    //   —— 两个分支互斥（见 `MeloXBottomChrome` 的 split/sideRail 判定），
+                    //   所以任意时刻只有一个面在 record。
+                    luminanceLayer = LocalBottomBarLuminanceLayer.current,
+                )
                 .verticalScroll(rememberScrollState())
                 .padding(vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -2399,6 +2794,11 @@ private fun RowScope.RootTabButton(
     //   优先级低于 `colorFilterTint`（L2 捕获层）和 `selectedTint`（毛玻璃模式），
     //   所以只在 L1 选中 tab 且算法激活时生效。
     contentColor: Color? = null,
+    // 横屏分栏「底部档」时 nav 胶囊只有 48dp 高（SplitBottomDockChromeHeight），
+    // 图标/字号若仍用 57dp 胶囊的比例（24dp 图标 + 11sp 文字）会在竖向挤爆。
+    // true ⇒ 图标 20（占位盒 + iconSize 同值）、字号 10sp、上下 padding 2dp，
+    // 与 48dp 高度成比例。
+    compactMetrics: Boolean = false,
     onClick: () -> Unit,
 ) {
     val desiredForeground = when {
@@ -2413,7 +2813,11 @@ private fun RowScope.RootTabButton(
     }
     val foreground by animateColorAsState(
         targetValue = desiredForeground,
-        animationSpec = spring(dampingRatio = 0.84f, stiffness = 480f),
+        // ⚠ 2026-11-07 修「底栏变色慢」：原 `spring(0.84, 480)` 刚度太低，
+        //   切 tab 时颜色从灰缓"爬"到红、还带轻微过冲，肉眼觉得迟钝。
+        //   ⇒ 抬到临界阻尼 + 高刚度（与 MeloXNowPlayingCoreControls 快速变色
+        //   口径  spring(1.0, 1500) 同档），颜色瞬时跟手，无颜色过冲晃动。
+        animationSpec = spring(dampingRatio = 1f, stiffness = 1200f),
         label = "melox-tab-foreground",
     )
     // BiliNext `GlassTabItem(scaleOverride = tabScale)` 的等价物：
@@ -2428,7 +2832,13 @@ private fun RowScope.RootTabButton(
                 scaleX = tabScale
                 scaleY = tabScale
             }
-            .padding(horizontal = 4.dp, vertical = 4.dp)
+            // ⚠ 2026-10-27 修「横屏分栏底部档时 tab 文字被截断」：
+            //   48dp 胶囊（`SplitBottomDockChromeHeight`）里上下各 4dp padding 只剩 40dp，
+            //   而「21dp 图标 + 12sp 行高」= 33dp 已经顶到边——真机放大图能看到
+            //   齿轮图标上缘、选中 tab 文字下沿各被裁 1~2px（用户报「设置文字被截断」）。
+            //   ⇒ compact 档把上下 padding 收到 2dp（省 4dp），给内容留出真实余量。
+            //   竖屏（非 compact）仍是 4dp，观感零变化。
+            .padding(horizontal = 4.dp, vertical = if (compactMetrics) 2.dp else 4.dp)
             .then(
                 if (interactive) Modifier
                     .clickable(
@@ -2447,17 +2857,45 @@ private fun RowScope.RootTabButton(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
+        // ★ 2026-10-27：占位盒与 `iconSize` 必须**同一个数**（见上方 kdoc）。
+        // 2026-11-06：竖屏档 24 → 22sp，底栏四图标整体缩小一点点（用户要求），
+        //   占位盒 + iconSize 仍同值，口径统一不变。
+        val glyphSize = if (compactMetrics) 20.sp else 22.sp
         RootGlyphIcon(
             glyph = glyph,
-            modifier = Modifier.size(24.dp),
+            // 底栏所有 tab 现在都走 `MeloXSymbolIcon`（Home 已于 2026-10-25 迁入它的
+            // 矢量分支，见 `MeloXSymbol.Home`），**不再有绕过统一口径的特例**。
+            //   · Settings / Home：品牌矢量，内部用 `meloXVectorRenderSize(iconSize)`
+            //     ⇒ 绘制盒由 `iconSize` 推导（占位盒再与之相交，两者同值 ⇒ 等价）。
+            //   · 其余 tab：SF 字形，按 `iconSize`(sp) 渲染，**不受占位盒约束**
+            //     （Canvas 不裁剪，墨迹直接溢出）。
+            // ⇒ 统一给 20/24（占位盒 + iconSize 同值）。旧版单独给 Home 23.6dp 的补偿，
+            //   前提是全局 0.83 还在（23.6 × 0.825 ≈ 19.5dp 去对齐当时的 Library）；
+            //   0.83 撤销后两者同比放大，该补偿已无意义并删除。
+            modifier = Modifier.size(glyphSize.value.dp),
+            // ⚠⚠ 2026-10-27 修「横屏底栏 tab 图标没优化、大到顶文字」：
+            //   上一版只把**占位盒**压到 20dp，却漏了 [MeloXSymbolIcon] 的
+            //   `iconSize`（默认 24.sp）⇒
+            //     · SF 字形那 4~5 个 tab：`SfGlyphIcon` 的 `textSize` 仍按 24sp 算，
+            //       墨迹 ≈ 23~24dp 画在 20dp 的 Canvas 里，**Canvas 不裁剪** ⇒ 上下各
+            //       溢出 1.5~2dp，正好顶到下面 10sp 的文字 —— 就是用户看到的「顶」；
+            //     · Home / Settings 走矢量分支，盒子由 `iconSize` 推导 ⇒ 真缩到 20dp。
+            //   ⇒ 同一行出现「矢量 20dp / 字形 24dp」两种尺寸，且字形偏大。
+            //   现在 `iconSize` 与占位盒同值 ⇒ 6 条绘制路径一起缩，口径统一。
+            iconSize = glyphSize,
             color = foreground,
             selected = selected,
         )
+        // compact 档再给图标/文字之间留 2dp 呼吸（48dp 胶囊里实测仍有余量：
+        // 2dp padding + 20dp 图标 + 2dp + 11sp 行高 ≈ 35dp < 48dp）。
+        if (compactMetrics) {
+            Spacer(Modifier.height(2.dp))
+        }
         Text(
             text = title,
             modifier = Modifier.graphicsLayer { alpha = labelAlpha },
-            fontSize = 11.sp,
-            lineHeight = 13.sp,
+            fontSize = if (compactMetrics) 10.sp else 11.sp,
+            lineHeight = if (compactMetrics) 11.sp else 13.sp,
             // BiliNext L704：`colorFilterTint != null` 也算「强调」→ SemiBold
             // ⚠ `selectedTint` 也算：液态模式下透过水珠看到的标签就是 SemiBold
             //   （L2 恒 `colorFilterTint != null`）⇒ 毛玻璃模式必须同字重，否则
@@ -2494,19 +2932,13 @@ private fun RootGlyphIcon(
     glyph: RootGlyph,
     modifier: Modifier,
     color: Color,
+    // ⚠ 2026-10-27：这是**墨迹字号**，不是占位盒尺寸。
+    //   · SF 字形：按它算 `textSize` ⇒ 墨迹 = 本值 × ink_h/em，**与占位盒无关**。
+    //   · 矢量（Home/Settings/…）：绘制盒由它推导（[meloXVectorRenderSize]）。
+    //   ⇒ 调用方想改图标大小，**两个都要给**（同值），只改 modifier 对 SF 字形无效。
+    iconSize: TextUnit = 24.sp,
     selected: Boolean = false,
 ) {
-    // The home tab uses the custom house vector (traced from the user's image)
-    // instead of the tinted symbol glyph, so tint applies to it like the others.
-    if (glyph == RootGlyph.Home) {
-        Icon(
-            painter = painterResource(R.drawable.melox_home_tab),
-            contentDescription = null,
-            modifier = modifier.meloXIconDrawingScale(),
-            tint = color,
-        )
-        return
-    }
     MeloXSymbolIcon(
         symbol = when (glyph) {
             RootGlyph.Home -> MeloXSymbol.Home
@@ -2520,6 +2952,7 @@ private fun RootGlyphIcon(
         },
         modifier = modifier,
         color = color,
+        iconSize = iconSize,
         variant = if (selected) MeloXSymbolVariant.Fill else MeloXSymbolVariant.Regular,
     )
 }
@@ -2569,9 +3002,57 @@ private fun playerAutomaticFractionSpec() = tween<Float>(
  *   ⇒ ω ≈ 17.2、`stiffness ≈ 297`（比 420 软、比 667 软得多）。
  *   ⚠ 用户此前认可的手势那条 `420` ≈ **302ms 档**的反解值 ⇒ 设置调到 300ms 即与之几乎一致。
  */
+// ⚠⚠ 2026-10-26：**6.2 保持不变**（曾试 4.5 想给打开动画降速，真机被否「还是慢了」）。
+//   现在**只服务手势路径**（`MeloXApp.kt:1385` 下拉松手收起 / `reboundPlayerToOpen`），
+//   用户明令「下拉关闭那个是对的，别动」⇒ 此值恢复原值，勿再拿它调打开动画。
+//   打开/关闭的 master 已改回线性 tween（硬收尾 = 设置值），与此常量无关。
 private const val PLAYER_SETTLE_99_K = 6.2f
 
+// ── 转场期底栏玻璃「录制降频」（2026-10-26 **已整体回退**）──────────────────────
+// 用户 10:35 口径：「**改底栏帧率之前，完全是正常和符合我心意的**」⇒ 连同当天所有
+// 播放器动画改动一起回退。**本轮不再保留任何降频代码**（tick / derivedStateOf /
+// 切 draw 失效源的常量全部删除），`drawBehind` 恢复成逐帧读 `recedeFraction()`。
+//
+// 情报留档（以后要重做请重新设计，别照抄，尤其**别和动画改动混在同一个包里验证**）：
+// · 录制点是 recede Box 上的 `layerBackdrop`（`graphicsLayer` 之外，唯一一处平行层）；
+//   转场期靠 `drawBehind { recedeFraction() }` 每帧强制失效 ⇒ 每帧整屏 `recordLayer`
+//   + **18.25MB** 纹理上传，是 morph 期 RenderThread `issue` 13~17ms 的最大一块。
+// · 当时做法：把失效源换成 16ms 低频 tick ⇒ 上传降到 ≈9.1MB/帧、玻璃滞后 ≤16ms；
+//   录制节点**永不 detach**（detach 后 kyant `drawBackdrop` 直接 return ⇒ 玻璃只剩
+//   底色 = 半透明，用户明令不许再出现）⇒ 结构上不可能半透明。
+// · ⚠ 副作用未定论：帧率提升本身可能让人**主观觉得动画变快**（更顺 = 更快）。
+//   这就是为什么它必须单独出一个包验证，不能和 master 曲线改动一起上。
+
 private fun playerSettleMasterSpec(): FiniteAnimationSpec<Float> {
+    // ★★★ 2026-10-27 六次定档：`durationSec` 用**墙钟**（保持 12:39 口径），
+    //   只把 `visibilityThreshold` 从 0.001 放宽到 **0.01**（用户：「240 整个动画很怪」）。
+    //
+    // 🔴 为什么 `durationSec` 要除以 `MeloXSystemScale.animatorScale`：
+    //   2026-10-28 19:00 真机 `mxdiag` 逐帧实测给出定论 —— `tween` 与 `spring`（含本处
+    //   ζ=1）**净效果完全相同**，都会被系统 `MotionDurationScale`(=ANIMATOR_DURATION_SCALE)
+    //   拉长成「设置值 × animatorScale」（本机设置 360 ⇒ 实跑 ~486~520ms）。
+    //   同一条关闭时间线里的 tween 分支（外壳 morph / 内容层）已用 `fixedDurationMillis`
+    //   把固有时长除以 animatorScale 抵消 ⇒ 墙钟 = 设置值（360ms）。
+    //   ⇒ 若 master 弹簧不折算，它就比外壳多跑 ~1.35× ⇒ 整段关闭偏慢、收尾错拍
+    //     （即用户报的「不丝滑 / 收尾底栏回弹卡卡」）。把 `durationSec` 也除以
+    //     animatorScale ⇒ 弹簧墙钟 = 设置值，与外壳 / 0.6.5 严格同源同速。
+    //   （⚠ 旧注释称「spring 不吃缩放」已被上述实测推翻；按墙钟不折算才会跑到 ~520ms。）
+    //
+    // 🔴 「240 很怪」的真凶仍是**阈值**：0.001 要求弹簧跑到 z = 9.23 才算收敛
+    //   （`[1−(1+z)e^−z] < 0.001`），而 0.01 只要 z = 6.64 —— 光阈值就多跑 39%。
+    //   240 档（折算前 ω = 6.2/0.24 = 25.8）：
+    //     · 阈值 0.001 ⇒ 收敛 **358ms**（折算前墙钟），子动画 240ms 就跑完 ⇒ **118ms 空窗**；
+    //     · 阈值 0.01  ⇒ 收敛 **257ms**，只晚 17ms ⇒ 正常。
+    //   ⚠ 手势回弹 `reboundPlayerToOpen()` 走自己的时长，未受影响。
+    // 🔴🔴 2026-10-29 00:2x **回退到 0.7.0 原值**（真机 A/B 证明 0.7.0 才是手感基准）：
+    //   ① `durationSec` 走 `meloXPlayerTweenDurationMillis()`（= **唯一时长出口**，已抵消
+    //      系统缩放），⛔ 不是「裸设置值 ÷ animatorScale」——后者是 10-28 我自己加的，
+    //      0.7.0 HEAD 里没有，语义也不等价（设置值可被用户改，tween 出口才是 spec 口径）。
+    //   ② `visibilityThreshold` **0.01 → 0.001**（0.7.0 原值）。
+    //      ⚠ 这是「回弹不对 / 硬归位」的真凶：阈值 0.01 让弹簧 z=6.64 就收敛、
+    //      0.001 要跑到 z=9.23 ⇒ **0.01 比 0.001 早 39% 收尾**。而外壳 morph 是固定
+    //      360ms 墙钟 tween、不受阈值影响 ⇒ master（内容层/背景页）提前坐定、外壳还在动
+    //      = 收尾错拍。这正是前面记过的「master 早于子动画 ⇒ 在途动画被吸附到终点」。
     val durationSec = (meloXPlayerTweenDurationMillis().coerceAtLeast(80)) / 1000f
     val omega = PLAYER_SETTLE_99_K / durationSec
     return spring(
@@ -2579,6 +3060,82 @@ private fun playerSettleMasterSpec(): FiniteAnimationSpec<Float> {
         stiffness = omega * omega,
         visibilityThreshold = 0.001f,
     )
+}
+
+/**
+ * 下拉手势**松手回弹**：把 [SeekableTransitionState.fraction] 从当前收起进度弹回 0
+ * （= 完全展开），**全程不改 `targetState`**。
+ *
+ * ⚠⚠⚠ 2026-10-19 用户报障「播放页下拉松手会自动往下移的抽搐动画，正常应该是松手就
+ *   上移归位」的**真根因**（反编译 `animation-core-1.12.0` 的
+ *   `SeekableTransitionState$animateTo$2$1` 逐行实证，不是推测）：
+ *
+ *   `animateTo(targetState)` 在**新目标 ≠ 当前 `targetState`** 时走的是重置分支：
+ *   ```
+ *   moveAnimationToInitialState()
+ *   setFraction(0f)                    // fraction 归零
+ *   transition.updateTarget(newTarget)
+ *   setPlayTimeNanos(0)
+ *   setCurrentState(oldTargetState)    // ← currentState 被设成**旧目标**（= 收起）
+ *   setTargetState(newTarget)
+ *   ```
+ *   而拖拽期间 [onSeekCollapse 对应的那边] 一直用 `seekTo(p, targetState = false)`
+ *   把 `targetState` 钉在 `false` ⇒ 松手回弹调 `animateTo(true)` **必然**命中这条重置
+ *   分支：`currentState` 变成 `false`（收起态）、fraction 归零 ⇒ 视觉基准瞬间改成
+ *   **完全收起**，再由 fraction 0→1 拉回展开。叠上 `moveAnimationToInitialState()`
+ *   留在队列里的那批"初始动画"（它们仍在朝收起方向跑），屏幕上就是
+ *   **先朝迷你栏沉一下再弹回** —— 89fps 录屏实测：反向点在 t≈3.99s，
+ *   随后 7 帧（≈80ms）继续收缩，之后才回弹。那记"自动往下移"就是它。
+ *
+ *   反过来，「松手收起」调 `animateTo(false)` 时新目标与当前 `targetState` **相同**
+ *   ⇒ 走另一条分支（fraction 从 p 连续跑到 1，不重置）⇒ 收起方向一直是对的。
+ *   这就是为什么只有回弹抽搐、而「下拉关闭」用户一直说没问题。
+ *
+ * 正确做法：`targetState` 保持 `false` 不动，只让 `fraction` 从 p 回到 0 ——
+ *   语义上是"沿拖拽那条通道原路退回"，不发生任何状态翻转，也就不存在重置。
+ *   推进用与 [playerSettleMasterSpec] **同一条 ω 的临界阻尼解析解**
+ *   `y(t) = y₀·(1 + ωt)·e^(−ωt)`（与音量条橡皮筋同一套做法），
+ *   松手瞬间速度为 0 —— 用户口径就是"松手**就**上移"，不保留向下的惯性；
+ *   99% 落定后 `snapTo(true)` 把状态机归位成"展开 + 静止"。
+ *
+ * ⚠ **只接管「拖拽中途」这一种状态**（`currentState == true` 且 `targetState == false`）：
+ *   其余情况（真正从迷你栏打开时 `currentState == false`）必须仍走 `animateTo` ——
+ *   那时重置 fraction 才是正确的（起点本来就是收起态）。判错会把正常打开变成瞬移。
+ * ⚠ 逐帧 `seekTo` **不是新机制**：拖拽期的 `onSeekCollapse` 就是每帧 `seekTo`
+ *   同一条通道，这里只是把驱动源从手指换成解析解。
+ */
+private suspend fun reboundPlayerToOpen(state: SeekableTransitionState<Boolean>) {
+    // 非"拖拽中途"状态（正常打开 / 已经在展开态）⇒ 交回常规路径，行为逐字不变。
+    if (state.currentState != true || state.targetState != false) {
+        state.animateTo(targetState = true, animationSpec = playerSettleMasterSpec())
+        return
+    }
+    val start = state.fraction.coerceIn(0f, 1f)
+    if (start <= 1e-3f) {
+        // 还没真的拖动过（或已回到 0）：状态机直接归位，零视觉变化。
+        state.snapTo(true)
+        return
+    }
+    val durationSec = (meloXPlayerTweenDurationMillis().coerceAtLeast(80)) / 1000f
+    val omega = PLAYER_SETTLE_99_K / durationSec
+    var firstNanos = 0L
+    var frames = 0
+    while (true) {
+        val now = withFrameNanos { it }
+        if (firstNanos == 0L) firstNanos = now
+        val t = (now - firstNanos) / 1_000_000_000f
+        // ζ=1、初速 0 的解析解；t=0 时 y=y₀ 且 y'=0（不朝收起方向多走一步）。
+        val y = start * (1f + omega * t) * exp(-omega * t)
+        // targetState 保持 false：只在"收起进度"轴上回退，不做任何状态翻转。
+        state.seekTo(fraction = y.coerceIn(0f, 1f), targetState = false)
+        // 99% 落定（残量 ≤1%）即收。
+        // ⚠ 另外两道兜底都是**防死循环**用的（宁可跳一帧，也不能把主线程挂在动画里）：
+        //   `t` 上限防帧时钟异常不前进；`frames` 上限防时钟被暂停而帧仍然到来。
+        if (y <= start * 0.01f || y <= 1e-3f || t > durationSec * 3f) break
+        if (++frames > 600) break
+    }
+    // 归位到"展开 + 静止"的稳态（此时 fraction 已≈0，视觉零变化）。
+    state.snapTo(true)
 }
 
 /**
@@ -2614,15 +3171,80 @@ private fun playerSettleMasterSpec(): FiniteAnimationSpec<Float> {
  *   教训：本项目播放器动画的「弹」已由关闭方向 + 迷你栏尾段 bounce 提供，
  *   打开方向再加过冲是**双重回弹**，与 AM 手感相反。
  */
+// ★★★ 2026-10-26 全部回退（用户口径：「改底栏帧率之前完全正常、符合心意」）★★★
+//   本函数回到 **弹簧 master**，与 `MeloXPlayerTransitionSpec` 三处 `MeloXPlayerAppleEasing`
+//   + `MeloXPlayerSpringK = 6f` + `MeloXPlayerSinkWindowStart = 0.62f` **成对**，即
+//   2026-10-06 起、今天开工之前的**确切原样**。
+//
+//   ══ 当天四次试错为什么全错（记下来，别再走）══
+//   | 形态 | 前段(30%) | 感知到位 | 用户 |
+//   |---|---|---|---|
+//   | **弹簧 k=6.2 + 通道 AE（原样）** | 86% | **204ms** | ✅「完全正常、符合心意」 |
+//   | 弹簧 + 通道 LinearEasing | 86% | 518ms | 下沉被摊平「直接没了」 |
+//   | 线性 tween + AE(k=6) | 54.7% | 359ms | 「十分缓慢 + 下沉差版本」 |
+//   | 弹簧 k=4.5 + AE | 69% | 281ms | 「还是慢了」 |
+//   | 线性 tween + AE(k=8) | 69% | 359ms | 「过慢」 |
+//
+//   🔴 **真正的根因（用户 10:35 的追问逼出来的）**：
+//   `meloXPlayerTweenDurationMillis()` = `360 / 1.35` = **266**，是**给 tween 用的**
+//   （Compose 会再乘回 1.35 ⇒ 墙钟 359ms）。
+//   但 **`spring` 完全不吃 `MotionDurationScale`** ⇒ `stiffness = (k / 0.266)²`
+//   直接按 **266ms** 跑 ⇒ 弹簧形态的感知到位 ≈ 204ms，比设置值快 35%。
+//   ⇒ **用户认可的观感就是这 204ms**。任何"把时长补回 360ms"的改动（线性 tween）
+//     都会比它慢 76% ⇒ 必然被判「过慢」。
+//   ⇒ 若真要让「设置 360 = 实际 360」，只能让**用户自己把设置调到 ~486**
+//     （486/1.35=360 ⇒ 弹簧按 360 跑），**不能改代码**。
+//
+// ══ 🔴🔴 2026-10-27 实测推翻上面那段结论（用户「还是差点感觉，要更丝滑更 iOS」）══
+//
+// **「spring 不吃 `MotionDurationScale`」是错的。** 19:00 `mxdiag` 逐帧 F 行实测：
+//   设置 240 ⇒ 实跑 **324ms**；设置 360 ⇒ **496/504ms** —— 都是 **设置值 × 1.35**。
+//   spring 与 tween 一样吃缩放，只是链路不同（tween 靠 `durationMillis` 缩放，
+//   spring 靠时间轴被拉长），**净效果完全相同**。
+//   ⇒ 上面那张表里「弹簧 204ms / 线性 359ms」的对比前提不成立：弹簧是 **~520ms**，
+//     不是 204ms。当时被判「过慢」的线性 tween 其实**比弹簧还快 31%**。
+//
+// **真正的病是双层。** master 是弹簧、子动画又套 `MeloXPlayerAppleEasing` ⇒
+//   实际输出 `AppleEasing ∘ spring`。设置 360 的实测剖面：
+//     · 半程（260ms）走完 **94.6%**，**后 20% 时间只走 0.2%** ⇒ 画面静止 **104ms** 等动画结束；
+//     · 峰值速度 **3.95×** 均速 @15% 时间，而**起步速度 = 0**（要憋 78ms 才起来）。
+//   这就是「不丝滑」的定义：中段猛甩 + 尾巴死掉。本文件 10-04 的注释早就记过
+//   「双层 ⇒ 内容层超前 62~75ms，用户报效果更差」，10-26 又把它换回来了。
+//
+// ✅ 改回 `playerAutomaticFractionSpec()`（线性 tween）⇒ 全链恢复**单层**：
+//     · 总墙钟 **359ms = 设置值**（520ms 那个 1.35 倍是 bug，不是手感）；
+//     · 后 20% 时间仍走 3.6%（尾巴活着）；
+//     · 起步速度由 `MeloXPlayerAppleInitialVelocityRatio`（α=0.40）单独提供。
+//   ⚠ 只改**点击路径**（打开 / 关闭）；手势松手回弹仍用 `playerSettleMasterSpec()`
+//     —— 用户明令「下拉关闭那个是对的，别动」。两条路径的 master 曲线本就不同源，
+//     这不是不一致：拖拽那条是「沿手势通道原路退回」，语义不同。
+// 🔴🔴 2026-10-29 00:5x：**打开 master 回到 fork/0.7.0 原样 `playerSettleMasterSpec()`**。
+//   上面那段 10-2x 的论证（「双层是病 ⇒ 改线性 tween」）是**被真机否掉的本地方案**：
+//   0.7.0 本身就是 `AppleEasing ∘ spring`，用户真机 A/B 确认 0.7.0 的打开手感是对的，
+//   而换成线性 tween 后用户报「打开动画变得十分缓慢」。⇒ 以 fork 原版为准，
+//   `playerAutomaticFractionSpec()`（线性 tween）保留未删，仅供日后取证。
 private fun playerOpenFractionSpec(): FiniteAnimationSpec<Float> = playerSettleMasterSpec()
 
 /**
  * **关闭方向**（点击关闭 / 系统返回 / 任何 `closePlayer()`）的 master。
  *
- * ⚠⚠ 与 [playerOpenFractionSpec] **同一函数** ⇒ 打开/关闭严格互为时间镜像，
- *   且**同样跟随「播放器展开/收回时长」设置**（stiffness 由它反解）。
- *   历史两次回退记录见 [playerOpenFractionSpec] 的说明（主因是当时 D=240 ⇒ 667 太硬）。
+ * ★ 2026-10-28：**不再与打开互为镜像** —— 关闭时长 = 设置值 × [MeloXPlayerCloseDurationScale]
+ *   （默认 360 ⇒ 540ms）。曲线形状（[MeloXPlayerAppleEasing] 那一层）**完全不变**：
+ *   `k` 由固定 360ms 参照算定 ⇒ 形状与时长解耦，只是把同一条曲线铺开到更长的时间上。
+ *
+ * ### 为什么只拉长关闭
+ * 治「下沉归位生硬」，而归位的柔度只能靠时间（`1 − smoothstep` 已是峰值斜率下界）。
+ * 0.6.5 的下沉窗口其实是 328ms（它的 `0.62` 是弹簧 fraction ⇒ 只在墙钟 33.8%），
+ * 单帧 8.9px；线性 master + 360ms 下只剩 137ms ⇒ 13.8px。540ms 补回到 270ms / 8.9px。
+ * 详细换算见 [MeloXPlayerCloseDurationScale]。
+ *
+ * ### 为什么不是 spring
+ * ⛔ 换回弹簧会让整条链重新变成 `AppleEasing ∘ spring` 双层（半程走 94.6%、后 20%
+ *   只走 0.2%、尾巴静止 104ms），且墙钟被 `MotionDurationScale` 放大 1.35 倍。
+ *   历史两次回退记录见 [playerOpenFractionSpec] 的说明。
  */
+// 🔴🔴 2026-10-29 00:3x：回到 0.7.0 原样 = `playerSettleMasterSpec()`
+//   （此前被我改成线性 tween + 关闭专属时长，属「本地方案」，已弃用）。
 private fun playerCloseFractionSpec(): FiniteAnimationSpec<Float> = playerSettleMasterSpec()
 
 private fun smoothStep(value: Float, start: Float, end: Float): Float {

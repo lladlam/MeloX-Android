@@ -52,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -677,7 +678,13 @@ fun MeloXSongActionsOverlay(
                                         value = invitationText,
                                         onValueChange = { invitationText = it },
                                         singleLine = true,
-                                        textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 14.sp),
+                                        // ⚠ 底色是 onSurface 派生的（随主题反色），占位符也走 onSurface；
+                                        // 输入文字写死白色 ⇒ 浅色主题下白字压在浅灰胶囊上看不见。
+                                        textStyle = androidx.compose.ui.text.TextStyle(
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            fontSize = 14.sp,
+                                        ),
+                                        cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
                                         decorationBox = { inner ->
                                             Box(
                                                 Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp)

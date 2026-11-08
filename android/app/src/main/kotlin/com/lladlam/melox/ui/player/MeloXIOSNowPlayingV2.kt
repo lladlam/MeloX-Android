@@ -456,8 +456,10 @@ private fun MeloXProgressControlV3(state: MeloXPlaybackUiState) {
     }
     var scrubbing by remember { mutableStateOf(false) }
     var localProgress by remember { mutableFloatStateOf(sourceProgress) }
+    // ★ 统一「按压放大 + 相对拖动」：首次按下不跳值，拖动按相对位移增减。
+    val sliderGesture = rememberMeloXRelativeSliderGesture()
     val trackHeight by animateDpAsState(
-        targetValue = if (scrubbing) 6.dp else 4.dp,
+        targetValue = if (scrubbing) MeloXMediaBarThicknessActive else MeloXMediaBarThickness,
         animationSpec = tween(120),
         label = "progress-track-height",
     )
@@ -474,19 +476,31 @@ private fun MeloXProgressControlV3(state: MeloXPlaybackUiState) {
     ) {
         Slider(
             value = localProgress,
-            onValueChange = {
-                scrubbing = true
-                localProgress = it.coerceIn(0f, 1f)
+            onValueChange = { raw ->
+                // 首次按下只锚定、返回 null ⇒ 进度绝不跳到手指位置。
+                sliderGesture.onAbsoluteValue(raw, localProgress)?.let { v ->
+                    scrubbing = true
+                    localProgress = v.coerceIn(0f, 1f)
+                }
             },
             onValueChangeFinished = {
-                if (state.durationMs > 0L) {
-                    state.seekTo((state.durationMs * localProgress).roundToLong())
+                val end = sliderGesture.finish()
+                val tap = end.tapValue
+                if (end.dragged) {
+                    if (state.durationMs > 0L) {
+                        state.seekTo((state.durationMs * localProgress).roundToLong())
+                    }
+                    scrubbing = false
+                } else if (tap != null && state.durationMs > 0L) {
+                    // ★ 快速点一下 ⇒ 跳到该位置（与「按下不跳、拖动相对」共存）。
+                    localProgress = tap
+                    state.seekTo((state.durationMs * tap).roundToLong())
                 }
-                scrubbing = false
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(20.dp),
+                .height(20.dp)
+                .meloXRelativeSliderPress(sliderGesture),
             thumb = { Spacer(Modifier.size(0.dp)) },
             track = {
                 Box(
@@ -796,13 +810,17 @@ private fun CupertinoTransportButton(
 private fun MeloXVolumeControlV3(state: MeloXPlaybackUiState) {
     var dragging by remember { mutableStateOf(false) }
     var localVolume by remember { mutableFloatStateOf(state.volume) }
+    // ★ 统一「按压放大 + 相对拖动」（与进度条同一份交互状态）。
+    val sliderGesture = rememberMeloXRelativeSliderGesture()
+    // ★ 整行（滑块 + 左右喇叭）共用一份按压弹簧 ⇒ 图标跟着滑块一起放大。
+    val pressScale = rememberMeloXSliderPressScale(dragging || sliderGesture.pressed)
     val thumbSize by animateDpAsState(
         targetValue = if (dragging) 16.dp else 14.dp,
         animationSpec = tween(120),
         label = "volume-thumb-size",
     )
     val trackHeight by animateDpAsState(
-        targetValue = if (dragging) 4.dp else 3.dp,
+        targetValue = if (dragging) MeloXMediaBarThicknessActive else MeloXMediaBarThickness,
         animationSpec = tween(120),
         label = "volume-track-height",
     )
@@ -814,7 +832,9 @@ private fun MeloXVolumeControlV3(state: MeloXPlaybackUiState) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(42.dp),
+            .height(42.dp)
+            // ★ 整行一体缩放：滑块与两侧喇叭同步放大，静止态 s==1f 逐像素不变。
+            .meloXSliderPressVisual(pressScale),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -828,15 +848,33 @@ private fun MeloXVolumeControlV3(state: MeloXPlaybackUiState) {
             value = localVolume,
             // ⚠ 过渡期禁用（收起动画中/收尾瞬间音量仍可被点到，用户报障）。
             enabled = LocalMeloXPlayerControlsEnabled.current,
-            onValueChange = {
-                dragging = true
-                localVolume = it.coerceIn(0f, 1f)
-                state.changeVolume(localVolume)
+            onValueChange = { raw ->
+                // 首次按下只锚定、返回 null ⇒ 音量绝不跳到手指位置。
+                sliderGesture.onAbsoluteValue(raw, localVolume)?.let { v ->
+                    dragging = true
+                    localVolume = v.coerceIn(0f, 1f)
+                    state.changeVolume(localVolume)
+                }
             },
-            onValueChangeFinished = { dragging = false },
+            onValueChangeFinished = {
+                val end = sliderGesture.finish()
+                val tap = end.tapValue
+                if (end.dragged) {
+                    dragging = false
+                } else if (tap != null) {
+                    // ★ 快速点一下 ⇒ 跳到该音量（与「按下不跳、拖动相对」共存）。
+                    localVolume = tap.coerceIn(0f, 1f)
+                    state.changeVolume(localVolume)
+                }
+            },
             modifier = Modifier
                 .weight(1f)
-                .height(32.dp),
+                .height(32.dp)
+                // ⚠ 只旁听、不缩放：缩放由外层 Row 统一负责。
+                .meloXSliderPressDetector(
+                    sliderGesture,
+                    enabled = LocalMeloXPlayerControlsEnabled.current,
+                ),
             thumb = {
                 Box(
                     modifier = Modifier

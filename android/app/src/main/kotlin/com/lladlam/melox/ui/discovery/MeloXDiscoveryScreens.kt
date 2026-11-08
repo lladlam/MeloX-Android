@@ -103,6 +103,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -114,6 +115,8 @@ import com.lladlam.melox.core.dailyhistory.DailyHistoryStore
 import com.lladlam.melox.core.dailyhistory.MeloXDailyClock
 import com.lladlam.melox.core.dailyhistory.accountKeyOf
 import com.lladlam.melox.core.library.NeteaseHomeContent
+import com.lladlam.melox.ui.MeloXBottomContentClearance
+import com.lladlam.melox.ui.glass.MeloXPinnedListPage
 import com.lladlam.melox.core.library.NeteaseLibraryCache
 import com.lladlam.melox.core.library.NeteaseLibraryClient
 import com.lladlam.melox.core.library.NeteasePlaylistSummary
@@ -135,7 +138,7 @@ import com.lladlam.melox.playback.PlaybackCommands
 import com.lladlam.melox.playback.ProviderPlaybackCommands
 import com.lladlam.melox.ui.animation.MeloXMotion
 import com.lladlam.melox.ui.animation.MeloXPageBoundsTransform
-import com.lladlam.melox.ui.animation.meloXPageRedirectSpec
+import com.lladlam.melox.ui.animation.MeloXPageSpec
 import com.lladlam.melox.ui.MeloXInterruptiblePage
 import com.lladlam.melox.ui.animation.meloXSettledMillis
 import com.lladlam.melox.ui.account.MeloXAccountActivity
@@ -506,16 +509,19 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
             }
         }
         // ⚠ **hero push 时旧页也左移让出 1/3**（2026-10-02）：与推入页走同一条弹簧
-        //   （[meloXPagePushSpec] / [meloXPageRedirectSpec] 同参数）⇒ 两页严格互补，
+        //   （[meloXPagePushSpec] / [MeloXPageSpec] 同参数）⇒ 两页严格互补，
         //   观感与「无 hero 的整页推入」完全一致，区别只是多了一个封面 morph。
         //   ⚠ 旧页位移必须走 [meloXPageRecede] 的**布局期** place：共享元素 morph 的 bounds
         //     取自 lookahead 布局坐标，走 graphicsLayer 的话封面不跟随、半路与卡片脱开。
         val homeRecede = remember { Animatable(0f) }
-        val homeCollectionOpen = selectedCollection != null
+        // ⚠ 2026-10-18：旧页左移必须同时响应「每日推荐等列表页」（songList）——
+        //   此前只盯 selectedCollection（歌单卡片），打开每日推荐时旧页不动，
+        //   用户报「动画不完整，没有旧页左移」。
+        val homeCollectionOpen = selectedCollection != null || songList != null
         LaunchedEffect(homeCollectionOpen) {
             val target = if (homeCollectionOpen) 1f else 0f
             if (homeRecede.value == target) return@LaunchedEffect // 首帧 / 已到位：不重播
-            homeRecede.animateTo(target, meloXPageRedirectSpec())
+            homeRecede.animateTo(target, MeloXPageSpec)
         }
         Box(Modifier.fillMaxSize().meloXPageRecede { homeRecede.value }) {
         CompositionLocalProvider(LocalIndication provides HomeNoIndication) {
@@ -551,6 +557,22 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
                     }
                 }
                 activeAction = action
+                // ⚠ 2026-10-17「秒进」：列表类 action（每日推荐 / 热歌榜 / 私人雷达）
+                //   **先把页面骨架推上去**，网络请求在页面里跑。原先是等 `client.*`
+                //   返回才推页 ⇒ 点下去没反应、要等一次网络往返才进得去（用户报障：
+                //   「点击要刷新过一会儿才进去」）。与歌单卡片「点下去即响应」同口径。
+                if (action in HomeSongListActions) {
+                    val pending = HomeSongList(
+                        title = action,
+                        subtitle = "网易云音乐",
+                        artworkUrl = null,
+                        songs = emptyList(),
+                        loading = true,
+                    )
+                    onDetailSelected()
+                    songList = pending
+                    overlaySongList = pending
+                }
                 scope.launch {
                     quickActionCache[action]?.takeIf(List<SearchSong>::isNotEmpty)?.let { songs ->
                         if (action in HomeSongListActions) {
@@ -614,14 +636,24 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
                         }
                     }.onSuccess { songs ->
                         if (songs.isNotEmpty()) quickActionCache = quickActionCache + (action to songs)
-                        if (action in HomeSongListActions && songs.isNotEmpty()) {
-                            val list = HomeSongList(
-                                title = action,
-                                subtitle = "网易云音乐 · ${songs.size} 首歌曲",
-                                artworkUrl = songs.firstOrNull()?.artworkUrl,
-                                songs = songs,
-                            )
-                            onDetailSelected()
+                        if (action in HomeSongListActions) {
+                            // 已推入页面但结果是空的：把转圈换成提示，别停在那里。
+                            val list = if (songs.isNotEmpty()) {
+                                HomeSongList(
+                                    title = action,
+                                    subtitle = "网易云音乐 · ${songs.size} 首歌曲",
+                                    artworkUrl = songs.firstOrNull()?.artworkUrl,
+                                    songs = songs,
+                                )
+                            } else {
+                                HomeSongList(
+                                    title = action,
+                                    subtitle = "网易云音乐",
+                                    artworkUrl = null,
+                                    songs = emptyList(),
+                                    error = "没有可播放的推荐歌曲",
+                                )
+                            }
                             songList = list
                             overlaySongList = list
                             // 查看即归档：网络首拉成功同样记一次，与缓存路径共用同一日期口径。
@@ -647,7 +679,23 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
                                 PlaybackCommands.playQueue(context, songs, it.id, heartMode = action == "心动模式")
                             } ?: run { error = "没有可播放的推荐歌曲" }
                         }
-                    }.onFailure { error = it.message ?: "$action 加载失败" }
+                    }.onFailure { err ->
+                        val message = err.message ?: "$action 加载失败"
+                        if (action in HomeSongListActions) {
+                            // 页面已经推上去了 ⇒ 错误显示在页内，不再退回首页弹提示。
+                            val failed = HomeSongList(
+                                title = action,
+                                subtitle = "网易云音乐",
+                                artworkUrl = null,
+                                songs = emptyList(),
+                                error = message,
+                            )
+                            songList = failed
+                            overlaySongList = failed
+                        } else {
+                            error = message
+                        }
+                    }
                     activeAction = null
                 }
             },
@@ -739,6 +787,11 @@ private data class HomeSongList(
     val subtitle: String,
     val artworkUrl: String?,
     val songs: List<SearchSong>,
+    // ⚠ 内容还在路上（或失败）时只画页面骨架：标题 + 返回栏 + 中间的转圈 / 错误。
+    //   与 `MeloXAccountActivity` 的加载态同款写法 —— 背景、状态栏避让、返回键都现成，
+    //   这样点「每日推荐 / 热歌榜 / 私人雷达」是**页面先进来**，内容随后填充。
+    val loading: Boolean = false,
+    val error: String? = null,
 )
 
 private fun encodeHomeSongList(list: HomeSongList?): String? {
@@ -804,6 +857,34 @@ private fun HomeSongListDetail(
     list: HomeSongList,
     onBack: () -> Unit,
 ) {
+    // ⚠ 内容还在路上（或失败）时只画页面骨架：标题 + 返回栏 + 中间的转圈 / 错误。
+    //   与 `MeloXAccountActivity` 的加载态同款写法 —— 背景、状态栏避让、返回键都现成，
+    //   这样点「每日推荐 / 热歌榜 / 私人雷达」是**页面先进来**，内容随后填充。
+    if (list.loading || list.error != null) {
+        MeloXPinnedListPage(
+            title = list.title,
+            onNavigateBack = onBack,
+            bottomPadding = MeloXBottomContentClearance,
+        ) {
+            item(key = "home-song-list-state") {
+                Box(
+                    Modifier.fillMaxWidth().padding(vertical = 64.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (list.loading) {
+                        CircularProgressIndicator()
+                    } else {
+                        Text(
+                            list.error.orEmpty(),
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.48f),
+                            fontSize = 15.sp,
+                        )
+                    }
+                }
+            }
+        }
+        return
+    }
     val playlist = remember(list.title, list.artworkUrl, list.songs.size) {
         NeteasePlaylistSummary(
             id = -(list.title.hashCode().toLong() and 0x7fff_ffffL) - 1L,
@@ -927,7 +1008,7 @@ private fun ProviderHomeDataScreen(source: MusicSource, onOpenTool: (String) -> 
     SharedTransitionLayout(Modifier.fillMaxSize()) {
         val sharedScope = this
         // ⚠ hero push 时旧页也左移让出 1/3（与网易云首页 / 发现页同款）：与推入页走同一条弹簧
-        //   （[meloXPageRedirectSpec]），两页严格互补。旧页位移必须走 [meloXPageRecede]
+        //   （[MeloXPageSpec]），两页严格互补。旧页位移必须走 [meloXPageRecede]
         //   的**布局期** place：共享元素 morph 的 bounds 取自 lookahead 布局坐标，
         //   走 graphicsLayer 封面不跟随、半路与卡片脱开。
         val homeRecede = remember { Animatable(0f) }
@@ -935,7 +1016,7 @@ private fun ProviderHomeDataScreen(source: MusicSource, onOpenTool: (String) -> 
         LaunchedEffect(homeCollectionOpen) {
             val target = if (homeCollectionOpen) 1f else 0f
             if (homeRecede.value == target) return@LaunchedEffect
-            homeRecede.animateTo(target, meloXPageRedirectSpec())
+            homeRecede.animateTo(target, MeloXPageSpec)
         }
         Box(Modifier.fillMaxSize().meloXPageRecede { homeRecede.value }) {
             MeloXHomeLayout(
@@ -957,6 +1038,7 @@ private fun ProviderHomeDataScreen(source: MusicSource, onOpenTool: (String) -> 
                 },
                 onCollection = {
                     onDetailSelected()
+
                     selectedCollection = it
                     overlayCollection = it
                 },
@@ -1145,7 +1227,7 @@ private fun HomeQuickActions(source: MusicSource, active: String?, perform: (Str
         if (source == MusicSource.Netease) {
             add(HomeQuickAction("每日推荐", stringResource(R.string.home_eyebrow_daily), stringResource(R.string.home_subtitle_daily), MeloXSymbol.Calendar, listOf(Color(0xFFFF5B8A), Color(0xFFFF3147))))
             add(HomeQuickAction("热歌榜", stringResource(R.string.home_eyebrow_hot), stringResource(R.string.home_subtitle_hot), MeloXSymbol.Flame, listOf(Color(0xFFFFA14A), Color(0xFFFF5A36))))
-            add(HomeQuickAction("心动模式", stringResource(R.string.home_eyebrow_heart), stringResource(R.string.home_subtitle_heart), MeloXSymbol.Heart, listOf(Color(0xFFFF6EAC), Color(0xFF9B5DE5))))
+            add(HomeQuickAction("心动模式", stringResource(R.string.home_eyebrow_heart), stringResource(R.string.home_subtitle_heart), MeloXSymbol.HeartPulse, listOf(Color(0xFFFF6EAC), Color(0xFF9B5DE5))))
             add(HomeQuickAction("私人雷达", stringResource(R.string.home_eyebrow_radar), stringResource(R.string.home_subtitle_radar), MeloXSymbol.RadioWaves, listOf(Color(0xFF6B7BFF), Color(0xFF8C52FF))))
             add(HomeQuickAction("私人漫游", stringResource(R.string.home_eyebrow_roam), stringResource(R.string.home_subtitle_roam), MeloXSymbol.Walk, listOf(Color(0xFF26C6DA), Color(0xFF4285F4))))
             add(HomeQuickAction("相似歌曲", stringResource(R.string.home_eyebrow_similar), stringResource(R.string.home_subtitle_similar), MeloXSymbol.List, listOf(Color(0xFF58C9A3), Color(0xFF159D9A))))
@@ -1287,7 +1369,7 @@ private fun NeteaseExploreDataScreen() {
             }
         }
         // ⚠ hero push 时旧页也左移让出 1/3（与首页同款，2026-10-02）：与推入页走同一条弹簧
-        //   （[meloXPageRedirectSpec]），两页严格互补，观感与「无 hero 的整页推入」一致，
+        //   （[MeloXPageSpec]），两页严格互补，观感与「无 hero 的整页推入」一致，
         //   区别只是多一个封面 morph。旧页位移走 [meloXPageRecede] 的**布局期** place：
         //   共享元素 morph 的 bounds 取自 lookahead 布局坐标，走 graphicsLayer 封面不跟随、半路脱开。
         val exploreRecede = remember { Animatable(0f) }
@@ -1295,7 +1377,7 @@ private fun NeteaseExploreDataScreen() {
         LaunchedEffect(exploreCollectionOpen) {
             val target = if (exploreCollectionOpen) 1f else 0f
             if (exploreRecede.value == target) return@LaunchedEffect
-            exploreRecede.animateTo(target, meloXPageRedirectSpec())
+            exploreRecede.animateTo(target, MeloXPageSpec)
         }
         MeloXExploreLayout(
             modifier = Modifier.fillMaxSize().meloXPageRecede { exploreRecede.value },
@@ -1389,7 +1471,7 @@ private fun ProviderExploreDataScreen(source: MusicSource) {
     SharedTransitionLayout(Modifier.fillMaxSize()) {
         val sharedScope = this
         // ⚠ hero push 时旧页也左移让出 1/3（与首页/发现同款）：与推入页走同一条弹簧
-        //   （[meloXPageRedirectSpec]），两页严格互补，观感与「无 hero 的整页推入」一致，
+        //   （[MeloXPageSpec]），两页严格互补，观感与「无 hero 的整页推入」一致，
         //   区别只是多一个封面 morph。旧页位移走 [meloXPageRecede] 的**布局期** place：
         //   共享元素 morph 的 bounds 取自 lookahead 布局坐标，走 graphicsLayer 封面不跟随、半路脱开。
         val providerRecede = remember { Animatable(0f) }
@@ -1397,7 +1479,7 @@ private fun ProviderExploreDataScreen(source: MusicSource) {
         LaunchedEffect(providerCollectionOpen) {
             val target = if (providerCollectionOpen) 1f else 0f
             if (providerRecede.value == target) return@LaunchedEffect
-            providerRecede.animateTo(target, meloXPageRedirectSpec())
+            providerRecede.animateTo(target, MeloXPageSpec)
         }
         MeloXExploreLayout(
             modifier = Modifier.fillMaxSize().meloXPageRecede { providerRecede.value },
@@ -1459,14 +1541,20 @@ private fun MeloXExploreLayout(
     // 首屏内随 firstVisibleItemScrollOffset 从 0→1 收缩；越过首屏（index>0）后强制保持
     // 折叠态，绝不回弹，也不会因嵌套滚动错位导致头部与内容脱节而透出内容。
     val gridState = rememberLazyGridState()
-    val collapse by remember(gridState, collapseDistancePx) {
+    // ⚠⚠ 这里**故意不** `by` 展开成 Float（2026-10-19 修「滚动顿挫」）：
+    //   折叠进度随网格滚动每帧变化，一旦在 ExploreScreen 主体的组合期读取，
+    //   本页所有内容 —— 包括 `PullToRefreshBox` 与整块 `CollectionGrid` ——
+    //   都会跟着每帧重组（网格的 `onSelect` 等 lambda 每次新建 ⇒ 跳过优化失效），
+    //   滚动时的稳定掉帧就是这么来的。改为把 State 对象往下传，只在两个叶子消费点读：
+    //   ① `ExploreCollapsingHeader` 内部（它本来就要按进度做**布局**收缩）；
+    //   ② 下拉刷新指示器的 `offset { }`（绘制期读，不触发重组）。
+    val collapseState = remember(gridState, collapseDistancePx) {
         derivedStateOf {
             if (showPodcast) 0f
             else if (gridState.firstVisibleItemIndex > 0) 1f
             else (gridState.firstVisibleItemScrollOffset / collapseDistancePx).coerceIn(0f, 1f)
         }
     }
-    val headerHeight = lerp(EXPLORE_HEADER_EXPANDED, EXPLORE_HEADER_COLLAPSED, collapse)
     // 指示器状态提到这一层：网格分支要自绘指示器并把它整体下移一个头部高度。
     val refreshState = rememberPullToRefreshState()
 
@@ -1495,9 +1583,23 @@ private fun MeloXExploreLayout(
                     // 头部下方开始），于是指示器被头部整块盖住 —— 下拉时屏幕上看不到任何
                     // 反馈（内容本身也不位移），用户只能读成「下拉没刷新」。
                     // 对策：整体下移一个头部高度，让它从头部下缘滑出来。
+                    // ⚠ 必须在 `offset { }` 的绘制期 lambda 里读折叠进度：写
+                    //   `.offset(y = headerHeight)` 会把每帧变化的 Dp 带进**组合期**，
+                    //   指示器（进而整个 PullToRefreshBox / 网格）又要每帧重组。
                     indicator = {
                         PullToRefreshDefaults.Indicator(
-                            modifier = Modifier.align(Alignment.TopCenter).offset(y = headerHeight),
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .offset {
+                                    IntOffset(
+                                        0,
+                                        lerp(
+                                            EXPLORE_HEADER_EXPANDED,
+                                            EXPLORE_HEADER_COLLAPSED,
+                                            collapseState.value,
+                                        ).roundToPx(),
+                                    )
+                                },
                             state = refreshState,
                             isRefreshing = refreshing,
                         )
@@ -1525,7 +1627,8 @@ private fun MeloXExploreLayout(
             categories = categories,
             category = category,
             onCategory = onCategory,
-            collapse = collapse,
+            // 传 lambda：父作用域不订阅每帧变化的折叠进度（网格因此不再每帧重组）。
+            collapse = { collapseState.value },
             modifier = Modifier
                 .fillMaxWidth()
                 .zIndex(1f),
@@ -1539,9 +1642,13 @@ private fun ExploreCollapsingHeader(
     categories: List<String>,
     category: String,
     onCategory: (String) -> Unit,
-    collapse: Float,
+    // ⚠ 传 `() -> Float` 而不是 `Float`：折叠进度每帧变化，用值参数会让**调用方**
+    //   （ExploreScreen 主体，含整块网格）每帧重组。这里订阅、这里重组 ——
+    //   代价只剩这个头部自身（标题 + 分类行），且高度收缩本来就必须每帧测量。
+    collapse: () -> Float,
     modifier: Modifier = Modifier,
 ) {
+    val collapse = collapse()
     // 标题字号 34sp→24sp 等效缩放：1 → 24/34，手算线性插值（避免 Float 版 lerp 重载缺失）。
     val titleScale = 1f + (24f / 34f - 1f) * collapse
     Column(
@@ -2049,6 +2156,7 @@ private fun DiscoveryCollectionDetail(
         if (tracks != null) return@LaunchedEffect
         tracks = null
         error = null
+
         runCatching {
             withContext(Dispatchers.IO) {
                 val ranking = (collection as DiscoveryCollection.ProviderRanking).ranking
@@ -2155,6 +2263,7 @@ private fun DiscoveryCollectionDetail(
                                 fontSize = 13.sp,
                             )
                         }
+
                     }
                 }
             }
@@ -2166,6 +2275,7 @@ private fun DiscoveryCollectionDetail(
                     Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
                     Text(stringResource(R.string.account_retry), Modifier.clickable { refreshVersion++ }.padding(12.dp), color = foreground)
                 }
+
                 else -> item {
                     Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = Accent)

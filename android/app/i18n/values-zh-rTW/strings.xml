@@ -382,9 +382,6 @@
     <string name="provider_third_party_consent_hint">需要先同意第三方音樂源使用協議；不受雲控管理</string>
     <string name="provider_membership_fallback">遇到會員歌曲時再呼叫</string>
     <string name="provider_membership_fallback_subtitle">優先使用官方音源，僅在會員/版權受限時嘗試第三方解析</string>
-    <string name="provider_chksz">CHKSZ解析源</string>
-    <string name="provider_chksz_missing">未配置 API Key · 點選配置</string>
-    <string name="provider_chksz_configured">CHKSZ API Key 已配置</string>
     <string name="provider_view_third_party_terms">檢視第三方音樂源使用協議</string>
     <string name="provider_third_party_terms_subtitle">檢視責任範圍、內容合規和服務可用性說明</string>
     <string name="provider_added_sources">已新增音樂源</string>
@@ -414,8 +411,6 @@
     <string name="provider_jellyfin_failed">Jellyfin 登入失敗</string>
     <string name="provider_connecting">連線中…</string>
     <string name="provider_connect">連線</string>
-    <string name="provider_chksz_title">網易雲 SVIP 音樂解析</string>
-    <string name="provider_chksz_body">使用 api.chksz.com 的網易雲、QQ音樂和酷狗音樂解析介面。請先前往 api.chksz.com 註冊賬號並在登入後獲取個人 API Key；目前該服務僅支援 LinuxDo 使用者註冊。API Key 僅儲存在本機，不屬於 MeloX 雲控。</string>
     <string name="provider_api_key_placeholder">請輸入個人 API Key</string>
     <string name="provider_clear">清除</string>
     <string name="provider_save">儲存</string>
@@ -1211,6 +1206,11 @@
     <string name="settings_show_quality_tip_note">控制進度條下方的音質提示。</string>
     <string name="settings_player_transition_duration">播放器展開/收回時長</string>
     <string name="settings_duration_ms">%1$d ms</string>
+    <string name="settings_transition_duration_very_fast">很快</string>
+    <string name="settings_transition_duration_fast">快</string>
+    <string name="settings_transition_duration_standard">標準</string>
+    <string name="settings_transition_duration_slow">慢</string>
+    <string name="settings_transition_duration_very_slow">很慢</string>
     <string name="settings_equalizer">均衡器</string>
     <string name="settings_equalizer_note">使用 Android 原生多頻段 DSP，直接作用於目前播放器的音訊工作階段。</string>
     <string name="settings_eq_presets">預設</string>

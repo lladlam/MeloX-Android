@@ -22,6 +22,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -49,6 +51,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -162,6 +165,46 @@ private object UpstreamLyrics {
     const val CURRENT_LINE_SCALE = 1.02f
     const val FOCUS_POSITION = 0.25f
     const val BLUR_INTENSITY = 0.8f
+    // ★ 行 alpha 低于此值才跳过模糊（2026-10-24 回调 0.18 → 0.05）。
+    // 旧值 0.18 把 alpha<0.18 的远行整条跳过模糊，把 `distanceBlur` 的深度渐变从
+    // 「远处柔化」砍成「远处发暗但清晰」，视觉上只剩焦点紧邻前后两行（走 `focusBlur`）
+    // 还在糊 —— 与完整版本景深观感不符（用户反馈）。回调到 0.05 只跳过**接近不可见**
+    // 的行，恢复渐变；稳态播放时模糊半径恒定 ⇒ RenderEffect 缓存不逐帧重建，不会回到
+    // 10-19 之前 55% janky（那次是全局模糊强度过高，与此门槛正交）。
+    const val BLUR_SKIP_ALPHA = 0.05f
+    // ★★ 光晕「满档」的定义（2026-10-24，用户报障：设置显示 100%，实际生效不是 100%）。
+    //   「逐字光晕」是 4 档百分比（关闭/60/100/140），语义上就是**强度的直接倍数**。
+    //   但旧实现在 alpha 上另外乘了一个 `.648`，而字形光晕量本身峰值只有 `.7`
+    //   （长音 `glowAmount` = .32–.7；普通字 `sourceOrdinaryGlowStrength` 峰值 .55）
+    //   ⇒ 选 100% 实际峰值只有 .7×.648 ≈ **45%**，选 140% 也只有 ≈64%，60% 只剩 ≈27%
+    //   —— 「显示值」与「生效值」整体对不上，档位之间也只差一点点。
+    //   现在把满档归一到 1.0：先除掉各分支自身的峰值，再乘设置值 ⇒
+    //   100% = 满强度、60% = 六成、140% = 一倍四（超过纯白由 alpha 钳制）。
+    const val LONG_TONE_GLOW_PEAK = .7f
+    const val ORDINARY_GLOW_PEAK = .55f
+    // 进场揭示（见 `MeloXIOSLyricsPanel` 里 `lyricsReveal` 的注释）：0→1 的淡入曲线。
+    // ★★ 2026-11-03（「渐显再丝滑一点」）：从固定 260ms ease-out tween 改为**无回弹弹簧**
+    //   （`REVEAL_STIFFNESS` + `REVEAL_DAMPING_RATIO = 1`，即 `Spring.DampingRatioNoBounce`）。
+    //   弹簧天然缓入缓出、无速度拐点 ⇒ 比「快起慢收」的固定 bezier 更顺；等效落定 ≈ 320/刚度。
+    const val REVEAL_STIFFNESS = 320f
+    const val REVEAL_DAMPING_RATIO = 1f
+    // ★★ 2026-11-03（第 34 轮）：曾有的 `REVEAL_RISE_DP`(12f) 上浮已删除。
+    //   用户录屏逐帧取证：文字在 reveal≈0.3~0.5 时已经可读，而 translationY 还剩大半 ——
+    //   眼睛看到的是「歌词加载好了 → 整块又向上滑 11~12dp → 猛地落位」（互相关测得
+    //   1.62→1.67s 同帧跳 ~38 设备px ≈ 12dp）。上浮完成得比「可见」晚 ⇒ 被读成加载后的
+    //   第二次移动。现在 reveal **只做淡入**：第一帧就是最终位置，淡入呈现的即稳态画面。
+    //   位移感由逐行模糊模型的景深提供（未播放行模糊、当前行清晰），不再需要整块上浮。
+    // 首次定位允许消耗的 morph 时长（上限预算，配合 `shellTransitioning` 提前退出）。
+    // `shellTransitioning` = `transitionInFlightState`（`expansionProgress < 0.999f`，见 SharedHost）：
+    // 打开方向外壳展到 ≈99% 就落定 ⇒ 此预算**只卡安全上限**，实际等待 = 转场基本结束那一刻。
+    // ★★ 2026-11-03（第 27 轮，用户新需求「歌词可以不同步出现、但要渐渐出现、不要突兀跳变」）：
+    //   改回非 0（500ms 上限）⇒ 歌词 reveal 在**转场落定后**才启动（外壳先到、歌词后到），
+    //   用 alpha 缓入 + 12dp 上浮 + **高斯模糊收敛**（见 graphicsLayer）做渐显，
+    //   不再在展开首帧就硬出现（`scrollToItem` 的 measure/layout 也因此从最重首帧挪到运动之后）。
+    //   之前（2026-10-24）设 0 是治「等满弹簧尾段导致 2.30s 才硬切」；现在 `transitionInFlight`
+    //   判据已改为「转场基本结束就落定」（不是等弹簧停），所以 500ms 上限≈转场时长，不会回到 2.30s。
+    //   ⚠ `withTimeoutOrNull` 兜底：万一判据不回落也不会让歌词永远不出现。
+    const val INITIAL_REVEAL_POSITION_MS = 500L
     const val DIM_AMOUNT = 1f
     const val DISTANCE_BLUR_SCALE = 1.05f
     const val ROMANIZATION_FONT_SCALE = 0.65f
@@ -169,6 +212,17 @@ private object UpstreamLyrics {
     const val ANNOTATION_OPACITY = 0.9f
     const val ANNOTATION_SPACING_DP = 4f
     const val FOCUS_COLOR_DURATION_MS = 120
+    // ★★ 2026-11-03（第 31 轮）：**焦点模糊模型的渐入时长**。
+    //   与 `FOCUS_COLOR_DURATION_MS`（120ms，只翻颜色，快一点更跟手）分开：
+    //   这里的过渡要覆盖「整屏模糊半径」的变化，120ms 依然读得出台阶感，
+    //   260ms 与歌词 reveal 的节奏一致，观感是「焦点慢慢浮出来」。
+    const val FOCUS_MODEL_RAMP_MS = 260
+    // ★★ 2026-11-03（第 31 轮）：**每行最终模糊半径的输出平滑时长**（兜底）。
+    //   `FOCUS_MODEL_RAMP_MS` 只能覆盖「焦点模型切换」一类来源；半径的输入里还有随布局
+    //   即时变化的量（`visibleItemsByIndex[...].offset` 在 `scrollToItem` 那一帧整体换掉），
+    //   任何一处输入阶跃都会直接变成半径阶跃。这里对最终半径再叠一段短低通消除残差。
+    //   取 160ms：短到不拖慢正常换行手感，长到足以抹掉单帧台阶（<100ms 仍读得出跳）。
+    const val LYRIC_BLUR_SMOOTH_MS = 160
 
     const val CASCADE_DELAY_MS = 14f
     const val CASCADE_DELAY_INCREASE_MS = 2.5f
@@ -192,6 +246,11 @@ private object UpstreamLyrics {
     const val UNPLAYED_BLUR_LEAD_MS = 2400f
     const val MIN_UNPLAYED_BLUR_FRACTION = 0.12f
     const val LIFT_CONTINUATION_MS = 320f
+    // ★ 2026-11-03（第 33 轮）：曾有的 `REVEAL_BLUR_MAX_DP`(8f) / `REVEAL_BLUR_FRACTION`(0.72f)
+    //   —— 整块歌词层随 reveal 收敛的高斯模糊 —— 已删除。真机录屏逐帧取证：它把**当前
+    //   正在播放的行**也糊掉了（稳态里该行是清晰的），观感是「糊一大片→慢慢对焦」像
+    //   加载。模糊深度现在只由逐行模糊模型决定（未播放行的模糊本身就是朦胧感），
+    //   reveal 只做淡入 + 上浮；焦点模型在首次定位时（alpha=0 不可见）瞬时建立到稳态。
 }
 
 internal data class LyricsPanelPlaybackInitialization(
@@ -302,11 +361,64 @@ internal val MeloXLandscapeLyricsEdgeBlurMax = 6.dp
 internal val MeloXPortraitLyricsFadeBottom = 64.dp
 
 /**
+ * 竖屏歌词「顶部渐隐带」高度（唯一调参入口，2026-10-18 加）。
+ *
+ * 背景：竖屏歌词面板是从 `padding(top = 88.dp)` 开始的（曲名栏下方），面板自身
+ * `clipToBounds()` ⇒ 滚到最上面的那一行是被**视口顶沿一刀切断**的（用户报的
+ * 「竖屏歌词页最上面的歌词也有一种硬切的感觉」）。以前只给了底部渐隐，顶部没有。
+ *
+ * 做法与底部/横屏完全同一套（Apple 的 container edge fade）：行在抵达顶沿之前
+ * 就淡成透明，没有断面。取 48dp ≈ 竖屏一行歌词的高度，所以"半行"会自然溶解，
+ * 又不会把第二行也吃掉。`edgeBlurMax = 0.dp` ⇒ 竖屏只要渐隐、不要边缘模糊。
+ */
+internal val MeloXPortraitLyricsFadeTop = 48.dp
+
+/**
  * 横屏歌词的焦点行锚点。竖屏用户设置值 `lyricFocusPosition` 默认 0.25，但横屏右列只有
  * ~306dp 高、且顶部有 64dp 曲名栏 ⇒ 0.25 会让当前行（行顶）压到栏底。抬到 0.30 让当前行
  * 落在栏下方 ~11dp 处，同时仍比原来 `padding(top=48dp)` 的落点更高（消除栏下空白）。
  */
 internal const val MeloXLandscapeLyricsFocusPosition = 0.30f
+
+/**
+ * 拖动进度条（scrub）时向上层（歌词面板）广播「预览位置」，让歌词在对应进度跟随滚动
+ * （Apple Music 原版行为：拖拽滑块时歌词实时滚动到该时间点对应的那一行）。
+ *
+ * 仅在拖动期间持有非 null 值；松手后回到 null，歌词恢复正常播放跟随。
+ * 由 `MeloXNowPlayingCoreControls` 写入、由 `MeloXAppleMusicLyricsPanel` 读取。
+ */
+internal class MeloXScrubPreviewState {
+    var previewPositionMs by mutableStateOf<Long?>(null)
+        private set
+
+    // 最后一次更新的时间。用来兜底「手势被系统取消 ⇒ Slider 不回调
+    // `onValueChangeFinished`」的极端情况：若一直卡在非 null，静置自动隐藏会被
+    // 永远挂起（控件条再也收不起来）。
+    private var lastUpdateElapsedMs = 0L
+
+    fun update(positionMs: Long) {
+        previewPositionMs = positionMs
+        lastUpdateElapsedMs = android.os.SystemClock.elapsedRealtime()
+    }
+
+    fun clear() {
+        previewPositionMs = null
+        lastUpdateElapsedMs = 0L
+    }
+
+    /** 拖动位置超过 [timeoutMs] 没有新事件 ⇒ 视为手势已被取消。 */
+    fun isStale(timeoutMs: Long): Boolean = previewPositionMs != null &&
+        android.os.SystemClock.elapsedRealtime() - lastUpdateElapsedMs > timeoutMs
+}
+
+/**
+ * 「永远不在开闭转场中」的占位 State。
+ *
+ * `shellTransitioning` 的默认值用它而不是 `mutableStateOf(false)`：默认参数在**每次**
+ * 调用点求值，`mutableStateOf` 会在每次重组时新建一个可观察对象；这里用同一个常量，
+ * 不分配、不产生任何快照订阅。给不关心转场的调用点（Classic 外壳、天际等）使用。
+ */
+internal val MeloXLyricsNeverTransitioning: State<Boolean> = mutableStateOf(false)
 
 @Composable
 fun MeloXIOSLyricsPanel(
@@ -332,6 +444,25 @@ fun MeloXIOSLyricsPanel(
     // ★ 渐隐带内的最大边缘模糊（dp）。默认沿用横屏值；竖屏传 0dp（只要渐隐、不要模糊）。
     edgeBlurMax: Dp = MeloXLandscapeLyricsEdgeBlurMax,
     controlsRevealHeight: Dp = 0.dp,
+    // ★ 拖动进度条时的「预览位置」（ms）。非 null 时歌词滚动到该时间点对应的行
+    //   （Apple Music 原版行为）；松手后为 null，歌词恢复按播放进度跟随。
+    scrubPositionMs: Long? = null,
+    // ★★ 2026-10-23：开 / 闭播放页（迷你栏 ↔ 全屏）的 morph 是否进行中。
+    //
+    //   为什么需要它（用户：「迷你栏打开播放页还是不够丝滑，尤其停在歌词页时」）：
+    //   morph 期间外壳是**整页缩放**，而歌词每一行都挂着 `Modifier.blur` = 一个
+    //   `RenderEffect`（整行大小的离屏纹理 + 高斯），缩放导致每帧重建。此时若**又恰好
+    //   有一句歌词要滚动**，LazyColumn 的重新测量/布局会再叠上去 ⇒ 那一下就是顿挫。
+    //
+    //   ⇒ 本面板只在运动期间**推迟自动跟随滚动**（见下方 `LaunchedEffect` 里的等待）。
+    //
+    //   🔴 **不降任何视觉档**（不降模糊、不降帧率、不改字号）。2026-10-23 用户明令：
+    //     不许出现肉眼可见的降级，尤其不许「动画结束的瞬间画面闪一下」——
+    //     而「运动期间压低、落定弹回」正是那个形状。省成本只能省没画出来的东西。
+    //
+    //   ⚠ 传 **State 本体**：中间层（Scene）只转发、不读值。
+    //   默认恒 false ⇒ 其它调用点（天际 / Eva / TextPV / Classic 外壳）行为完全不变。
+    shellTransitioning: State<Boolean> = MeloXLyricsNeverTransitioning,
 ) {
     val revealHeightPx = with(LocalDensity.current) { controlsRevealHeight.toPx() }
     val revealInteraction = rememberUpdatedState(onInterfaceInteraction)
@@ -380,6 +511,8 @@ fun MeloXIOSLyricsPanel(
             focusPositionOverride,
             edgeFadeBottomTerminal,
             edgeBlurMax,
+            scrubPositionMs,
+            shellTransitioning,
         )
         MeloXLyricsStyle.Eva -> MeloXEvaLyricsPanel(state, lyricsModifier, onInterfaceInteraction, active)
         MeloXLyricsStyle.TextPV -> MeloXTextPVLyricsPanel(state, lyricsModifier, onInterfaceInteraction, active)
@@ -399,7 +532,7 @@ fun MeloXIOSLyricsPanel(
  *
  * @param onTap 识别为点按时回调（唤出控件条）。
  */
-private suspend fun PointerInputScope.detectPassThroughTap(onTap: () -> Unit) {
+internal suspend fun PointerInputScope.detectPassThroughTap(onTap: () -> Unit) {
     awaitPointerEventScope {
         while (true) {
             // requireUnconsumed=false：即使下游已消费也照样观察，避免漏判。
@@ -444,7 +577,22 @@ private fun MeloXAppleMusicLyricsPanel(
     focusPositionOverride: Float? = null,
     edgeFadeBottomTerminal: Dp = 0.dp,
     edgeBlurMax: Dp = MeloXLandscapeLyricsEdgeBlurMax,
+    // ★ 拖动进度条时的「预览位置」（ms）。见 `MeloXIOSLyricsPanel` 同名参数。
+    scrubPositionMs: Long? = null,
+    // ★ 开 / 闭播放页的 morph 是否进行中。见 `MeloXIOSLyricsPanel` 同名参数的完整说明。
+    shellTransitioning: State<Boolean> = MeloXLyricsNeverTransitioning,
 ) {
+    // 在循环里读取最新值（LaunchedEffect 不会因它变化而重起），用 state holder 承载。
+    val scrubPositionMsState = rememberUpdatedState(scrubPositionMs)
+    // ★ 拖动进度条期间的「扁平预览」进度（2026-10-19 用户要求）：
+    //   1 ⇒ 取消未播放歌词的模糊 / 缩放层级，整篇同层清晰、当前时间点那一行高亮；
+    //   0 ⇒ 完全回到正常的「按离焦点行距离衰减」的模糊 + 层级。
+    //   用动画而不是硬切：拖动开始 / 松手时 180ms 平滑过渡，松手后无缝接回原效果。
+    val scrubFlat by animateFloatAsState(
+        targetValue = if (scrubPositionMs != null) 1f else 0f,
+        animationSpec = tween(180, easing = FastOutSlowInEasing),
+        label = "lyricScrubFlat",
+    )
     val context = LocalContext.current
     val appContext = context.applicationContext
     val haptics = LocalHapticFeedback.current
@@ -494,10 +642,13 @@ private fun MeloXAppleMusicLyricsPanel(
     }
 
     LaunchedEffect(state.positionMs, state.isPlaying, mediaId) {
-        if (holdTrackAtStart) return@LaunchedEffect
+        // ⚠ hold 期间也照样收位置回调：只冻「显示位」（renderedPositionState 归上面的时钟
+        // 循环管，它 hold 期会跳过刷新），**不冻锚点**。否则歌词慢加载（红尘客栈实测
+        // 13.5s）期间播放/暂停的位置全被吞掉，歌词晚到时锚点还停在初始值 —— 暂停后
+        // 没有新回调进来，高亮位置会一直错着（2026-10-24 实测缺陷）。
         anchorPositionMs = state.positionMs
         anchorRealtimeMs = SystemClock.elapsedRealtime()
-        renderedPositionState.longValue = state.positionMs
+        if (!holdTrackAtStart) renderedPositionState.longValue = state.positionMs
     }
 
     val lyricRequestKey = lyricUiRequestKey(state, automaticLyricSelectionEnabled)
@@ -525,7 +676,26 @@ private fun MeloXAppleMusicLyricsPanel(
                 }
             }
         }
-            .onSuccess { lyrics = it }
+            .onSuccess { loaded ->
+                lyrics = loaded
+                // 诊断（2026-10-24 红尘客栈回归）：歌词时间轴跨度 vs 音频时长。选源选到带
+                // 片头垫层的剪辑（MV = 母带 + 1.9s 数字静音垫）时，同一份逐字歌词会整体
+                // 早 1.9s —— 跨度差会露出垫层长度。真机上用这条日志确认选源修复是否生效：
+                // 修复后 delta 应稳定等于「末句之后尾奏的长度」，不再随上传版本多出 1~2s。
+                val lyricEndMs = loaded.lines.maxOfOrNull { line ->
+                    maxOf(
+                        line.timeMs + (line.durationMs ?: 0L),
+                        line.syllables.maxOfOrNull { it.endTimeMs } ?: 0L,
+                    )
+                } ?: 0L
+                if (lyricEndMs > 0L && state.durationMs > 0L) {
+                    android.util.Log.i(
+                        "MeloXLyricsSpan",
+                        "track=$mediaId lyricEnd=${lyricEndMs}ms audioDuration=${state.durationMs}ms " +
+                            "delta=${state.durationMs - lyricEndMs}ms lines=${loaded.lines.size}",
+                    )
+                }
+            }
             .onFailure { errorMessage = it.message ?: "歌词加载失败" }
         // A newly selected item always enters from its lyric start anchor.
         // Subsequent seeks keep using the normal position callback above.
@@ -609,7 +779,10 @@ private fun MeloXAppleMusicLyricsPanel(
                 if (lastFrameNanos != 0L && frameNanos - lastFrameNanos < minimumFrameNanos) continue
                 lastFrameNanos = frameNanos
             }
-            val position = if (state.isPlaying) {
+            val scrub = scrubPositionMsState.value
+            val position = if (scrub != null) {
+                scrub
+            } else if (state.isPlaying) {
                 anchorPositionMs + (SystemClock.elapsedRealtime() - anchorRealtimeMs)
             } else {
                 anchorPositionMs
@@ -654,7 +827,10 @@ private fun MeloXAppleMusicLyricsPanel(
                 delay(200L)
                 continue
             }
-            val position = if (state.isPlaying) {
+            val scrub = scrubPositionMsState.value
+            val position = if (scrub != null) {
+                scrub
+            } else if (state.isPlaying) {
                 anchorPositionMs + (SystemClock.elapsedRealtime() - anchorRealtimeMs)
             } else {
                 anchorPositionMs
@@ -683,13 +859,18 @@ private fun MeloXAppleMusicLyricsPanel(
             val nextTimedLines = LyricTimelineProcessor.activeTimedLineIndexes(renderedDocument, timedPosition)
             if (nextTimedLines != activeTimedLineIndexes) activeTimedLineIndexes = nextTimedLines
 
-            val lineWait = LyricTimelineProcessor.nextEventTimeMs(renderedDocument, effectivePosition)
-                ?.minus(effectivePosition)
-            val timedWait = LyricTimelineProcessor.nextEventTimeMs(renderedDocument, timedPosition)
-                ?.minus(timedPosition)
-            val waitMs = listOfNotNull(lineWait, timedWait).minOrNull()?.coerceIn(16L, 500L) ?: 250L
-            withTimeoutOrNull(waitMs) { lineIndexSeekSignal.receive() }
-            if (!state.isPlaying) delay(200L)
+            if (scrub != null) {
+                // 拖动预览：每帧刷新行索引，紧跟滑块（不依赖 seek 信号，避免滞后）。
+                delay(16L)
+            } else {
+                val lineWait = LyricTimelineProcessor.nextEventTimeMs(renderedDocument, effectivePosition)
+                    ?.minus(effectivePosition)
+                val timedWait = LyricTimelineProcessor.nextEventTimeMs(renderedDocument, timedPosition)
+                    ?.minus(timedPosition)
+                val waitMs = listOfNotNull(lineWait, timedWait).minOrNull()?.coerceIn(16L, 500L) ?: 250L
+                withTimeoutOrNull(waitMs) { lineIndexSeekSignal.receive() }
+                if (!state.isPlaying) delay(200L)
+            }
         }
     }
 
@@ -722,6 +903,43 @@ private fun MeloXAppleMusicLyricsPanel(
     ) { mutableStateMapOf<Int, Int>() }
     var viewportHeightPx by remember(document) { mutableIntStateOf(0) }
     var visualFocusIndex by remember(document) { mutableIntStateOf(-1) }
+    // ★★ 2026-11-03（第 31 轮）：**焦点模糊模型 ramp（0→1）**——修「模糊→淡模糊跳变」。
+    //
+    //   背景（用户报障原文）：「歌词显隐后默认全部模糊，然后又触发了首句候选后应该是
+    //   淡模糊（准备播放到他了），这时候就会出现模糊向淡模糊转变（这不是问题），重点
+    //   在于他会跳变，过渡没做好」。
+    //
+    //   根因：每行模糊 = `sourceDistanceBlurRadius(...)`，是**纯函数、逐帧直算、零插值**，
+    //   而它的输入在两套模型之间硬切：
+    //     · `distance`：焦点无效（`visualFocusIndex = -1`，此分支里列表被 `scrollToItem(0)`
+    //       顶到最上面）⇒ 按「行中线到焦点锚点的**像素**距离」算 ⇒ 所有行都离锚点很远
+    //       ⇒ 整屏最大模糊（= 用户说的「默认全部模糊」）；
+    //       焦点一旦有效 ⇒ 换成「|行号 − 焦点行号| × 行高」。
+    //     · `focusBlur`：相邻行额外叠加 2.4× / 0.7× intensity，**只在焦点有效后出现**
+    //       （`preceding` / `following` 依赖 `visualFocusIndex`）。
+    //   ⇒ 「首句候选确立」那一帧，距离公式整套换 + `focusBlur` 从 0 突然出现 ⇒ 整屏
+    //     模糊半径集体阶跃，这就是那一下跳变。
+    //
+    //   修法：**不改任何一端的稳态取值**，只把两套模型按这个 ramp 线性混合 ——
+    //   ramp=0 时与「焦点未定」逐像素等价，ramp=1 时与「焦点已定」逐像素等价，
+    //   中间是连续插值 ⇒ 物理上不可能出现单帧阶跃。稳态 ramp 恒为 1 ⇒ 零额外成本。
+    //   ⚠ 只混合「会跳的这两项」（distance / focusBlur），不碰颜色、不碰透明度、
+    //     不削弱模糊强度（用户明令：不许靠降模糊或提不透明度掩盖）。
+    val focusModelRamp = remember(document) { Animatable(0f) }
+    LaunchedEffect(document, visualFocusIndex in lines.indices) {
+        val targetRamp = if (visualFocusIndex in lines.indices) 1f else 0f
+        if (MeloXSettingsRuntime.lyricReduceMotion) {
+            focusModelRamp.snapTo(targetRamp)
+        } else if (abs(focusModelRamp.value - targetRamp) > 0.0001f) {
+            focusModelRamp.animateTo(
+                targetValue = targetRamp,
+                animationSpec = tween(
+                    durationMillis = UpstreamLyrics.FOCUS_MODEL_RAMP_MS,
+                    easing = SourceSmoothStepEasing,
+                ),
+            )
+        }
+    }
     var isBrowsingLyrics by remember(document) { mutableStateOf(false) }
     var playbackFocusGeneration by remember(document) { mutableIntStateOf(0) }
     var browseGeneration by remember(document) { mutableIntStateOf(0) }
@@ -748,6 +966,38 @@ private fun MeloXAppleMusicLyricsPanel(
     var lastCanScrollForward by remember(document) { mutableStateOf<Boolean?>(null) }
     var lastCanScrollBackward by remember(document) { mutableStateOf<Boolean?>(null) }
     var initialLyricsPositioned by remember(renderedDocument) { mutableStateOf(lines.isEmpty()) }
+    // ★★ 2026-10-24（用户报障：「迷你栏直接进歌词页时，其他内容都显示好了、动画也结束了，
+    //   歌词才突然出现，太突兀太生硬」）。
+    //   原实现是 `alpha = if (initialLyricsPositioned) 1f else 0f` —— 一帧之内从 0 跳到 1，
+    //   而且这个跳变发生在 morph **尾段结束之后**（`shellTransitioning` 要等
+    //   `expansionProgress` 掉到 0.999 以下，弹簧尾巴很长）⇒ 观感是「页面先停住，然后歌词
+    //   啪一下出现」。
+    //   现在：定位完成的判据不变（必须先 `scrollToItem` 到当前行，否则会看到歌词从第一行
+    //   「跳」到当前行），但**表现**换成一段缓动 —— 无回弹弹簧淡入
+    //   （见 `REVEAL_STIFFNESS` / `REVEAL_DAMPING_RATIO`），弹簧天然缓入缓出无速度拐点 ⇒ 更丝滑；
+    //   ★★ 2026-11-03（第 34 轮）：曾经的「+ 12dp 上浮」已删 —— 上浮比「可见」完成得晚，
+    //   观感是「加载好了又整体上滑一下」（用户录屏逐帧 + 互相关取证，见 `REVEAL_RISE_DP`
+    //   删除处的注释）。现在 reveal 只做淡入，第一帧即最终位置；
+    //   并且首次定位不再吃满整个 morph 尾段（见 `INITIAL_REVEAL_POSITION_MS`），
+    //   于是这段淡入正好压在页面收尾的运动里，页面落定与歌词浮现是同一段运动。
+    //   ⚠ 只在绘制相位读 `lyricsReveal.value`（graphicsLayer）⇒ 不触发重组/布局。
+    val lyricsReveal = remember(renderedDocument) {
+        Animatable(if (lines.isEmpty()) 1f else 0f)
+    }
+    LaunchedEffect(renderedDocument, initialLyricsPositioned) {
+        if (initialLyricsPositioned) {
+            lyricsReveal.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = UpstreamLyrics.REVEAL_DAMPING_RATIO,
+                    stiffness = UpstreamLyrics.REVEAL_STIFFNESS,
+                ),
+            )
+        } else {
+            // 换歌 / 重新定位时直接归零，不做「淡出」——旧内容本来就在同一帧被替换掉。
+            lyricsReveal.snapTo(0f)
+        }
+    }
     LaunchedEffect(document) {
         snapshotFlow { listState.canScrollForward to listState.canScrollBackward }
             .collect { (canForward, canBackward) ->
@@ -962,16 +1212,61 @@ private fun MeloXAppleMusicLyricsPanel(
 
         val playbackFocusIndex = activeTimedLineIndexes.minOrNull() ?: highlightedIndex
 
+        // ★ 拖动进度条（scrub）时：由专用 LaunchedEffect 即时把歌词滚动到预览位置对应的那一行
+        //   （Apple Music 原版行为）。正常播放时本块不介入（scrubPositionMs == null）。
+        LaunchedEffect(scrubPositionMs, viewportHeightPx, document, lines) {
+            val scrub = scrubPositionMs ?: return@LaunchedEffect
+            if (viewportHeightPx <= 0 || isBrowsingLyrics) return@LaunchedEffect
+            val idx = renderedDocument?.highlightedIndex(
+                scrub + lineAdvanceMs,
+                LyricHighlightStrategy.FirstSyllableOrLineStart,
+            ) ?: -1
+            if (idx !in lines.indices) {
+                listState.scrollToItem(0)
+                return@LaunchedEffect
+            }
+            // 即时定位到该行的焦点锚点：跟随滑块手感，不做级联动画（拖动期间逐帧刷新）。
+            listState.scrollToItem(idx + 1, focusItemScrollOffset(idx))
+        }
+
         LaunchedEffect(
             playbackFocusIndex,
             playbackFocusGeneration,
             viewportHeightPx,
             isBrowsingLyrics,
             document,
+            // 拖动期间让自动跟随让位给上面的 preview 滚动，避免两套逻辑抢着滚。
+            scrubPositionMs,
         ) {
+            // ★ 2026-10-23：开 / 闭播放页的 morph 期间**推迟**自动跟随滚动。
+            //   滚动会让 LazyColumn 每帧重新测量 / 布局、每行重建离屏模糊层，而此刻整页
+            //   还在被 scale ⇒ 两笔成本叠在同一帧，就是用户说的「停在歌词页时开闭最不丝滑」。
+            //   ⚠ 这条为什么**不违反**「不许有肉眼可见降级」：
+            //     它不改任何**像素**——不降模糊、不降帧率、不改字号/亮度。
+            //     只是把「本来要滚的那一下」从运动中间挪到运动之后（≤400ms）。
+            //     高亮行的点亮时刻由 `colorHighlightedIndex` / `activeTimedLineIndexes`
+            //     独立驱动，**照常准点变色**，被推迟的只有列表位移。
+            //   ⚠ `withTimeoutOrNull` 兜底：万一判据不回落，也不会让歌词永远不跟随。
+            if (shellTransitioning.value) {
+                // ★ 2026-10-24：**首次定位**不再让出 morph 时间 —— 它是一次瞬时
+                //   `scrollToItem`（不是逐帧滚动），等满 `shellTransitioning` 的整个弹簧尾段
+                //   （判据是 `expansionProgress < 0.999f`）正是用户看到的
+                //   「动画都结束了歌词才出来」。真机逐帧实测见常量注释。
+                //   之后的自动跟随仍按原口径等满（1.2s 兜底），避免滚动与 morph 抢帧。
+                val settleBudgetMs = if (visualFocusIndex !in lines.indices) {
+                    UpstreamLyrics.INITIAL_REVEAL_POSITION_MS
+                } else {
+                    1_200L
+                }
+                if (settleBudgetMs > 0L) {
+                    withTimeoutOrNull(settleBudgetMs) {
+                        while (shellTransitioning.value) withFrameNanos { }
+                    }
+                }
+            }
             val sourceIndex = highlightedIndex
             val nextIndex = playbackFocusIndex
-            if (viewportHeightPx <= 0 || isBrowsingLyrics) {
+            if (viewportHeightPx <= 0 || isBrowsingLyrics || scrubPositionMs != null) {
                 if (isBrowsingLyrics && sourceIndex in lines.indices) {
                     visualFocusIndex = sourceIndex
                 }
@@ -987,19 +1282,47 @@ private fun MeloXAppleMusicLyricsPanel(
             val previousIndex = visualFocusIndex
             val targetOffset = focusItemScrollOffset(nextIndex)
 
-            if (previousIndex !in lines.indices) {
+            // ★★ 2026-11-03（第 35 轮）：两种「首次聚焦」必须分开处理 ——
+            //   ① 歌词尚未显示（打开播放页 / 换歌重新定位）：定位必须发生在淡入第一帧
+            //      之前 ⇒ 保持瞬时 `scrollToItem`，否则会看到歌词从第一行「跳」到当前行。
+            //   ② 歌词已经可见（典型：暂停在 0:00 打开播放页，首句随后才成为候选）：
+            //      原来同样瞬时 `scrollToItem`，整屏从「列表顶部」硬跳到「焦点锚点」，
+            //      差值 ≈ 行高 × focusPosition（真机十几 dp）—— 用户报的
+            //      「第一句歌词还是会上移，其他时间段正常」正是这一下（v34 删掉的
+            //      `REVEAL_RISE_DP` 只是另一半）。改为**不进本分支**，落进下方通用换行
+            //      路径：与后续每次换行完全同一段级联平滑滚动 + `handOffFocusScale`
+            //      焦点缩放交接；「无焦点模型 → 焦点模型」由 `focusModelRamp` 的
+            //      LaunchedEffect 平滑爬 0→1（可见状态下禁止瞬时换模型，见其声明处推导）。
+            //   `initialLyricsPositioned` 兜底：淡入开始即 true，但 reveal 值为 0 的那一帧
+            //   仍按不可见处理（阈值 0.02 ≪ 最早可辨 alpha）。
+            if (previousIndex !in lines.indices &&
+                !(initialLyricsPositioned && lyricsReveal.value > 0.02f)
+            ) {
                 listState.scrollToItem(nextIndex + 1, targetOffset)
-                focusProgress.forEachIndexed { index, anim ->
-                    val targets = activeTimedLineIndexes.ifEmpty {
-                        colorHighlightedIndex.takeIf(lines.indices::contains)?.let(::setOf).orEmpty()
-                    }
-                    anim.snapTo(if (index in targets) 1f else 0f)
+                // ★ 2026-11-03（第 31 轮）：首次确立焦点**不再 `snapTo` 焦点色**。
+                //   原来这里把整屏 `focusProgress` 在一帧内翻过去：如果这一刻歌词已经可见
+                //   （例如暂停在 0:00，点播放后首句刚成为候选），颜色/亮度就是一次硬跳。
+                //   改为走与后续每次换行**同一段** `handOffFocusColor`（120ms smooth-step）
+                //   ⇒ 连续收敛。模糊本身不靠它，由 `focusModelRamp` 负责。
+                //   `scaleProgress` 仍保持瞬时：首次定位时行位置被 `scrollToItem` 同时
+                //   改变，放大动画叠上去会像「文字在长大」，与后续换行手感不同。
+                val initialTargets = activeTimedLineIndexes.ifEmpty {
+                    colorHighlightedIndex.takeIf(lines.indices::contains)?.let(::setOf).orEmpty()
                 }
                 scaleProgress.forEachIndexed { index, anim ->
                     anim.snapTo(if (index == nextIndex) 1f else 0f)
                 }
                 clearCascadePresentation(nextIndex)
+                // ★ 2026-11-03（第 33 轮）：此刻 `lyricsReveal` 仍为 0 —— 整块歌词**完全不可
+                //   见**，所以「无焦点模型 → 焦点模型」的切换可以直接瞬时完成，不必走
+                //   260ms ramp：把 ramp 钉到 1，reveal 淡入呈现的第一帧就是稳态画面
+                //   （当前行清晰、未播放行模糊）。否则 ramp 会在可见状态下慢慢爬，
+                //   当前行从重模糊逐渐「对焦」，观感像加载（真机录屏逐帧取证）。
+                //   ramp 的 LaunchedEffect 见 `visualFocusIndex in lines.indices` 键：
+                //   目标已是 1 ⇒ 自动 no-op，后续换行/浏览态切换不受影响。
+                focusModelRamp.snapTo(1f)
                 initialLyricsPositioned = true
+                handOffFocusColor(initialTargets)
                 return@LaunchedEffect
             }
 
@@ -1028,7 +1351,11 @@ private fun MeloXAppleMusicLyricsPanel(
             // Overlapping cues keep the focus on the earliest line. When they
             // end together, the next cue is only one visual step away even if
             // its index skipped the lines that were already on screen.
-            val overlappingStep = previousIndex < nextIndex &&
+            // ★ 2026-11-03（第 35 轮）：previousIndex = -1（首焦点经 v35 可见分支落进本
+            //   路径）时 range 为 (-1 until nextIndex)，`lines[index]` 直接
+            //   IndexOutOfBoundsException（真机 18:17 栈：Index -1 / length 28）。
+            //   首焦点不存在「重叠 cue 判定」前提 ⇒ 置 false，走普通级联。
+            val overlappingStep = previousIndex >= 0 && previousIndex < nextIndex &&
                 (previousIndex until nextIndex).all { index ->
                     sourceLineActivationTimeMs(lines[index + 1]) -
                         sourceLineActivationTimeMs(lines[index]) <= 280L
@@ -1197,7 +1524,14 @@ private fun MeloXAppleMusicLyricsPanel(
                 val browsingVisibleItemsByIndex by remember(listState) {
                     derivedStateOf { listState.layoutInfo.visibleItemsInfo.associateBy { it.index } }
                 }
-                val visibleItemsByIndex = browsingVisibleItemsByIndex
+                // ⚠ 只在「用户手动浏览歌词」时才订阅 `layoutInfo`（上面注释描述的优化，
+                //   此前代码其实**无条件**读了它）：自动播放 / 拖动进度条时 `layoutInfo`
+                //   同样每帧变化 ⇒ `associateBy` 每帧重建一个 Map，并让包含 LazyColumn
+                //   的这一层每帧重组所有可见行。非浏览态走下面那条
+                //   `focusAnchorY + (index - visualFocusIndex) * lyricStridePx` 的解析路径，
+                //   不依赖可见项坐标，精度足够（这正是注释里说的「stable source-derived stride」）。
+                val visibleItemsByIndex =
+                    if (isBrowsingLyrics) browsingVisibleItemsByIndex else emptyMap()
 
                 val edgeFadeTopPx = with(density) { edgeFadeTop.toPx() }
                 val edgeFadeBottomPx = with(density) { edgeFadeBottom.toPx() }
@@ -1211,7 +1545,22 @@ private fun MeloXAppleMusicLyricsPanel(
                         // 上下边缘渐隐（替换此前"留空让位"的做法）。所有 fade 参数都是默认值
                         // （0 / 0 / 0）时不建离屏层、修饰符内部短路 ⇒ 旧调用点逐字节一致。
                         .graphicsLayer {
-                            alpha = if (initialLyricsPositioned) 1f else 0f
+                            // ★ 2026-10-24：硬切的 0/1 改成 `lyricsReveal` 的缓入
+                            //   （见变量声明处的长注释）。alpha 在绘制相位读，不触发重组/布局。
+                            // ★★ 2026-11-03（第 33 轮，真机录屏取证后回退）：曾在这里挂整块
+                            //   `BlurEffect` 随 reveal 收敛（「从朦胧对焦到清晰」）。真机录屏
+                            //   逐帧看下来它把**当前正在播放的那一行**也一起糊掉了 —— 稳态里
+                            //   当前行是清晰的，reveal 却让它从重模糊慢慢「对焦」，观感是
+                            //   「糊一大片→加载中」，而不是优雅浮现。
+                            //   现在模糊深度**只由逐行模糊模型决定**（当前行清晰、未播放行模糊
+                            //   —— 这本身就是「朦胧感」的来源），焦点模型在首次定位时（alpha=0、
+                            //   完全不可见）已瞬时建立到稳态（见首次定位分支的
+                            //   `focusModelRamp.snapTo(1f)`），淡入呈现的第一帧就是最终画面结构。
+                            // ★★★ 2026-11-03（第 34 轮）：曾有的 `translationY = (1-reveal)*rise`
+                            //   12dp 上浮也删了 —— 用户录屏互相关取证：文字可读时上浮还剩大半，
+                            //   观感是「加载好了又整体上滑一下再落位」。reveal 现在只做淡入，
+                            //   第一帧即最终位置。
+                            alpha = lyricsReveal.value
                             if (hasEdgeFade) {
                                 compositingStrategy = CompositingStrategy.Offscreen
                             }
@@ -1242,22 +1591,40 @@ private fun MeloXAppleMusicLyricsPanel(
                         val interludeHeightPx = if (showsInterlude) with(density) { 56.dp.toPx() } else 0f
                         val height = estimatedHeight(index) + interludeHeightPx
                         val cascadeOffset = currentMovementOffset(index)
-                        val visualOffset = cascadeOffset
+                        // 拖动预览时把级联绘制位移一并压平：定位已由 `scrollToItem` 即时完成，
+                        // 再叠一段旧级联位移会让行位置和手指对不上。
+                        val visualOffset = cascadeOffset * (1f - scrubFlat)
                         val disappearAlpha = 1f
                         val frameMinY = visibleItemsByIndex[index + 1]?.offset?.toFloat()
                             ?: focusAnchorY + (index - visualFocusIndex) * lyricStridePx
                         val visualMidY = frameMinY + visualOffset + height * 0.5f
+                        // ★★ 2026-11-03（第 31 轮）：两套 `distance` 模型**连续插值**，
+                        //   不再是「焦点一有效就整套换公式」（那会在同一帧让整屏模糊跳变，
+                        //   见 `focusModelRamp` 声明处的完整推导）。
+                        //   `focusRamp = 1` ⇒ 与旧行为逐像素一致；`= 0` ⇒ 与「焦点未定」
+                        //   的像素距离模型逐像素一致；中间是线性混合，平滑无阶跃。
+                        val focusRamp = focusModelRamp.value.coerceIn(0f, 1f)
+                        val distanceNoFocus = abs(visualMidY - focusAnchorY)
+                        val distanceFocus = abs(index - visualFocusIndex) * lyricStridePx
                         val distance = if (isBrowsingLyrics || visualFocusIndex !in lines.indices) {
-                            abs(visualMidY - focusAnchorY)
+                            distanceNoFocus
                         } else {
-                            abs(index - visualFocusIndex) * lyricStridePx
+                            distanceNoFocus + (distanceFocus - distanceNoFocus) * focusRamp
                         }
-                        val isActiveLine = index in activeTimedLineIndexes
+                        // ★ 拖动进度条时（`scrubFlat` → 1）的预览行：`activeTimedLineIndexes`
+                        //   由 scrub 位置驱动；纯 LRC 没有逐字行时退到 `highlightedIndex`，
+                        //   否则那一行不会被点亮（用户报的「对应部分不亮」）。
+                        val scrubActiveIndex = activeTimedLineIndexes.minOrNull() ?: highlightedIndex
+                        val isActiveLine = index in activeTimedLineIndexes ||
+                            (scrubFlat > 0.001f && index == scrubActiveIndex)
                         val fp = focusProgress[index].value.coerceIn(0f, 1f)
                         // Some LRC/YRC files deliberately provide two distinct
                         // lines at virtually the same time.  Keep both readable
                         // instead of promoting only the last binary-search hit.
-                        val effectiveFocus = fp
+                        //
+                        // 拖动预览时旧焦点行淡出（否则它还带着放大 / 高亮停在原地），
+                        // 松手后 `scrubFlat` 归 0，焦点自动跟随重新接管。
+                        val effectiveFocus = fp * (1f - scrubFlat)
                         val distanceBlur = sourceDistanceBlurRadius(
                             distancePx = distance,
                             lyricStridePx = lyricStridePx,
@@ -1265,17 +1632,35 @@ private fun MeloXAppleMusicLyricsPanel(
                                 (if (isInterfaceHidden) MeloXSettingsRuntime.lyricHiddenInterfaceBlurScale else MeloXSettingsRuntime.lyricDistanceBlurScale) *
                                 MeloXSettingsRuntime.lyricBlurStrength,
                             focusProgress = effectiveFocus,
-                        )
+                        ) * (1f - scrubFlat)
                         val preceding = index == visualFocusIndex - 1
                         val following = index == visualFocusIndex + 1
+                        // ★★ 2026-11-03（第 31 轮）：`focusBlur`（相邻行 2.4× / 0.7×）原先只在
+                        //   `visualFocusIndex` 变有效的那一帧**从 0 突然出现**，是跳变的第二个
+                        //   来源。乘 `focusRamp` 让它随 `distance` 同一段过渡一起浮出。
+                        //   ramp=1 时与旧行为完全一致（稳态零差异）。
                         val focusBlur = sourceFocusBlurRadius(
                             UpstreamLyrics.BLUR_INTENSITY * MeloXSettingsRuntime.lyricBlurStrength,
                             preceding,
                             following,
-                        ) * (1f - effectiveFocus)
+                        ) * (1f - effectiveFocus) * (1f - scrubFlat) * focusRamp
+                        // ★★ 2026-11-03（第 31 轮）：**最终半径输出平滑**（兜底，见
+                        //   `LYRIC_BLUR_SMOOTH_MS` 的注释）。`focusModelRamp` 负责把「焦点模型
+                        //   切换」变连续；这里再把从输入到半径的最后一段也做低通 —— 目标突变时
+                        //   半径滑过去而不是跳过去，稳态到达后无逐帧开销。
+                        //   ⚠ 只平滑「半径随时间的变化率」，不改任何稳态强度、不降模糊档。
+                        val rawBlurDp = max(distanceBlur, focusBlur)
+                        val smoothBlurDp = animateFloatAsState(
+                            targetValue = rawBlurDp,
+                            animationSpec = tween(
+                                durationMillis = UpstreamLyrics.LYRIC_BLUR_SMOOTH_MS,
+                                easing = FastOutSlowInEasing,
+                            ),
+                            label = "lyricLineBlur",
+                        ).value
                         // 横屏渐隐带内的边缘邻近模糊：行越贴近视口上/下边缘越糊。
                         // 竖屏 edgeFadeTop/Bottom 均为 0 ⇒ 恒 0，行为完全不变。
-                        val edgeBlur = if (hasEdgeFade && edgeBlurMax > 0.dp) {
+                        val edgeBlur = (if (hasEdgeFade && edgeBlurMax > 0.dp) {
                             sourceEdgeProximityBlur(
                                 rowMidYpx = visualMidY,
                                 viewportHeightPx = viewportHeightPx,
@@ -1285,7 +1670,7 @@ private fun MeloXAppleMusicLyricsPanel(
                             )
                         } else {
                             0f
-                        }
+                        }) * (1f - scrubFlat)
                         val distanceOpacity = sourceDistanceOpacity(
                             distance,
                             lyricStridePx,
@@ -1293,26 +1678,42 @@ private fun MeloXAppleMusicLyricsPanel(
                             effectiveFocus,
                         )
                         val emphasis = sourceEmphasis(effectiveFocus, MeloXSettingsRuntime.lyricDimAmount)
-                        val rowAlpha = (distanceOpacity * emphasis * disappearAlpha).coerceIn(0f, 1f)
+                        val rowAlphaRaw = (distanceOpacity * emphasis * disappearAlpha).coerceIn(0f, 1f)
+                        // 拖动预览时的「同层」目标：预览行保持全亮，其余行统一到固定浅灰
+                        //（不是随距离连续衰减的层级）⇒ 整篇一样清晰，只有对应位置亮。
+                        val flatLineAlpha = if (index == scrubActiveIndex) 1f else .62f
+                        val rowAlpha = rowAlphaRaw + (flatLineAlpha - rowAlphaRaw) * scrubFlat
                         val followingLineAlpha = sourceDistanceOpacity(
                             lyricStridePx,
                             lyricStridePx,
                             MeloXSettingsRuntime.lyricDimAmount,
                             0f,
                         ) * sourceEmphasis(0f, MeloXSettingsRuntime.lyricDimAmount)
-                        val timedUnplayedAlpha = (followingLineAlpha / rowAlpha.coerceAtLeast(.001f))
+                        val timedUnplayedRaw = (followingLineAlpha / rowAlphaRaw.coerceAtLeast(.001f))
                             .coerceIn(0f, 1f)
-                        val scale = 1f + (MeloXSettingsRuntime.lyricFocusScale - 1f) *
+                        // ⚠ 扁平化后行 alpha 已统一到 1，未播放字必须换成**绝对**透明度：
+                        //   再乘相对比值会 clamp 到 1 ⇒ 整行全白，"逐字亮到哪"就看不出来了。
+                        val timedUnplayedAlpha = timedUnplayedRaw +
+                            (followingLineAlpha - timedUnplayedRaw) * scrubFlat
+                        val scaleRaw = 1f + (MeloXSettingsRuntime.lyricFocusScale - 1f) *
                             max(scaleProgress[index].value, fp)
+                        // 拖动预览时取消聚焦放大 ⇒ 所有行同尺寸（用户在意的「大小层级」）。
+                        val scale = scaleRaw + (1f - scaleRaw) * scrubFlat
+                        // 逐行图层属性量化（性能，非观感）：近焦/稳态行 alpha≈0.95–1.0、
+                        // scale≈1.0，吸附到精确 1.0 ⇒ 去掉每帧 saveLayer / 图层重建；其余行
+                        // 按台阶量化，使同台阶内不触发逐行 recomposition。台阶在 34sp 文字上
+                        // 不可辨，过渡观感逐字节一致。滚动位移 visualOffset 保持连续（平滑）。
+                        val quantizedRowAlpha = meloxQuantizeRowAlpha(rowAlpha)
+                        val quantizedScale = meloxQuantizeLayerScale(scale)
 
                         if (showsInterlude) {
                             MeloXLyricInterludeCountdown(
                                 interlude = checkNotNull(interlude),
                                 playbackTimeProvider = { renderedPositionState.longValue },
                                 reduceMotion = MeloXSettingsRuntime.lyricReduceMotion,
-                                visualScale = scale,
+                                visualScale = quantizedScale,
                                 visualOffsetPx = visualOffset,
-                                rowAlpha = rowAlpha,
+                                rowAlpha = quantizedRowAlpha,
                                 modifier = Modifier.padding(bottom = 8.dp),
                             )
                         }
@@ -1332,11 +1733,15 @@ private fun MeloXAppleMusicLyricsPanel(
                             focusProgress = effectiveFocus,
                             timingEffectsStrength = if (isActiveLine) 1f else effectiveFocus,
                             timedUnplayedAlpha = timedUnplayedAlpha,
-                            visualScale = scale,
+                            visualScale = quantizedScale,
                             visualOffsetPx = visualOffset,
-                            rowAlpha = rowAlpha,
-                            distanceBlurDp = distanceBlur,
-                            focusBlurDp = focusBlur,
+                            rowAlpha = quantizedRowAlpha,
+                            // ★ 2026-11-03（第 31 轮）：传**平滑后**的半径。`distanceBlur` 与
+                            //   `focusBlur` 已经在 `smoothBlurDp` 里取过 `max`，而下游只做
+                            //   `max(distanceBlurDp, focusBlurDp, edgeBlurDp)`，所以这里
+                            //   `focusBlurDp = 0f` 不会丢信息 —— 反而避免把未平滑的值叠回去。
+                            distanceBlurDp = smoothBlurDp,
+                            focusBlurDp = 0f,
                             edgeBlurDp = edgeBlur,
                             renderingQuality = renderingQuality,
                             showTranslation = MeloXSettingsRuntime.showLyricTranslation &&
@@ -1408,7 +1813,12 @@ private fun MeloXLyricInstrumentalWave(
     modifier: Modifier = Modifier,
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "instrumental-wave")
-    val phase0 by infiniteTransition.animateFloat(
+    // ⚠⚠ 2026-10-22 动画流畅度：这三个值**不 `by` 解包**。
+    //   它们是 `infiniteRepeatable(750ms)` ⇒ 值永远在变；在组合体里读会让本 composable
+    //   **永久每帧重组**（器乐段一直停在歌词页时，90Hz 无休止）。而它们唯一的消费者
+    //   就是下面 `Canvas` 的 draw lambda ⇒ 在那里读 `.value` 即可：
+    //   同一组动画、同一条曲线、同一个相位关系，只是读取时机从组合期挪到绘制期。
+    val phase0 = infiniteTransition.animateFloat(
         initialValue = 0.3f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -1417,7 +1827,7 @@ private fun MeloXLyricInstrumentalWave(
         ),
         label = "instrumental-wave-0",
     )
-    val phase1 by infiniteTransition.animateFloat(
+    val phase1 = infiniteTransition.animateFloat(
         initialValue = 0.3f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -1426,7 +1836,7 @@ private fun MeloXLyricInstrumentalWave(
         ),
         label = "instrumental-wave-1",
     )
-    val phase2 by infiniteTransition.animateFloat(
+    val phase2 = infiniteTransition.animateFloat(
         initialValue = 0.3f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -1435,8 +1845,9 @@ private fun MeloXLyricInstrumentalWave(
         ),
         label = "instrumental-wave-2",
     )
-    val phases = listOf(phase0, phase1, phase2)
     Canvas(modifier.fillMaxWidth().height(46.dp)) {
+        // 绘制期读取（不触发重组，只重绘本 Canvas）
+        val phases = listOf(phase0.value, phase1.value, phase2.value)
         val barWidth = 7.dp.toPx()
         val gap = 9.dp.toPx()
         val totalWidth = barWidth * 3f + gap * 2f
@@ -1454,6 +1865,24 @@ private fun MeloXLyricInstrumentalWave(
             )
         }
     }
+}
+
+/**
+ * 逐行图层属性量化（性能，非观感）。每行歌词套一个 `graphicsLayer{ alpha; scaleX/Y }`，
+ * 只要 `alpha≠1` Compose 每帧就为该行做一次 `saveLayer` 离屏合成（trace 里约 8500 次/12s）。
+ * 稳态播放时近焦行本就接近全亮（alpha≈0.95–1.0），吸附到精确 1.0 即可去掉这笔合成；
+ * 其余行按 0.02 台阶量化，使同台阶内不触发逐行 recomposition / 图层重建。
+ * 台阶在 34sp 文字上不可辨，过渡观感逐字节一致。
+ */
+private fun meloxQuantizeRowAlpha(alpha: Float): Float {
+    if (alpha >= 0.98f) return 1f
+    return (alpha * 50f).roundToInt() / 50f
+}
+
+/** 同上，针对聚焦缩放：近 1.0 的值吸附到精确 1.0（去掉 transform/saveLayer），其余 0.01 台阶。 */
+private fun meloxQuantizeLayerScale(scale: Float): Float {
+    if (scale >= 0.995f && scale <= 1.005f) return 1f
+    return (scale * 100f).roundToInt() / 100f
 }
 
 @Composable
@@ -1489,11 +1918,26 @@ private fun MeloXUpstreamLyricLine(
     val lineAlignment = if (flipped) Alignment.End else Alignment.Start
     val lineTextAlign = if (flipped) TextAlign.End else TextAlign.Start
     val requestedBlur = max(max(distanceBlurDp, focusBlurDp), max(edgeBlurDp, 0f))
-    val effectiveBlur = when (renderingQuality) {
+    val qualityBlur = when (renderingQuality) {
         MeloXLyricsRenderingQuality.Low -> 0f
         MeloXLyricsRenderingQuality.Balanced -> requestedBlur * .55f
         MeloXLyricsRenderingQuality.High -> requestedBlur
     }
+    // ★ 远端行模糊门槛（见 [BLUR_SKIP_ALPHA] 常量注释）：只跳过**接近不可见**的行，
+    // 保留 `distanceBlur` 的深度模糊渐变（远行更糊，Apple Music 式景深）。
+    // 旧值 0.18 把这道渐变砍成了「远处发暗但清晰」，用户反馈不符完整版本观感，
+    // 2026-10-24 回调到 0.05。
+    //
+    // ★ 量化到 0.5dp：`Modifier.blur` 只要半径这个 Dp 值变了就换一个
+    // RenderEffect（新离屏层 + 高斯），而 `focusProgress` 驱动的模糊过渡是**每帧
+    // 连续**的 ⇒ 逐帧重建。0.5dp 台阶在 34sp 文字上不可辨，却能把重建次数降一个
+    // 数量级（同 `sourceEdgeProximityBlur` 的 0.25dp 量化思路）。稳态播放时每行模糊
+    // 半径恒定 ⇒ 纹理被缓存不重建；真正付费只在滚动 / 转场期间，且已受量化约束。
+    val quantizedBlur = (if (rowAlpha < UpstreamLyrics.BLUR_SKIP_ALPHA) 0f else qualityBlur).let {
+        (it * 2f).roundToInt() / 2f
+    }
+    // Merge note: keep local quantizedBlur (remote-row blur gate + 0.5dp quantization);
+    // adopt upstream precedesLead vocal-onset comparison with remember(line).
     val (accompanimentBefore, accompanimentAfter) = remember(line) {
         line.accompaniment.partition { it.precedesLead(line) }
     }
@@ -1518,7 +1962,7 @@ private fun MeloXUpstreamLyricLine(
         horizontalAlignment = lineAlignment,
     ) {
         accompanimentBefore.forEach { vocal ->
-            MeloXTimedAccompaniment(vocal, playbackTimeProvider, fontScale, reduceMotion, renderingQuality, effectiveBlur)
+            MeloXTimedAccompaniment(vocal, playbackTimeProvider, fontScale, reduceMotion, renderingQuality, quantizedBlur)
         }
         if (reserveRomanization) {
             MeloXRubyLyricText(
@@ -1533,7 +1977,7 @@ private fun MeloXUpstreamLyricLine(
                 timingEffectsStrength = timingEffectsStrength,
                 unplayedAlpha = timedUnplayedAlpha,
                 renderingQuality = renderingQuality,
-                softBlurDp = effectiveBlur,
+                softBlurDp = quantizedBlur,
                 showRuby = showRomanization,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -1550,13 +1994,13 @@ private fun MeloXUpstreamLyricLine(
                 timingEffectsStrength = timingEffectsStrength,
                 unplayedAlpha = timedUnplayedAlpha,
                 renderingQuality = renderingQuality,
-                softBlurDp = effectiveBlur,
+                softBlurDp = quantizedBlur,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
 
         accompanimentAfter.forEach { vocal ->
-            MeloXTimedAccompaniment(vocal, playbackTimeProvider, fontScale, reduceMotion, renderingQuality, effectiveBlur)
+            MeloXTimedAccompaniment(vocal, playbackTimeProvider, fontScale, reduceMotion, renderingQuality, quantizedBlur)
         }
 
         val translationSize = max(UpstreamLyrics.FONT_SIZE_SP * fontScale * MeloXSettingsRuntime.lyricTranslationFontScale, 13f)
@@ -1564,7 +2008,7 @@ private fun MeloXUpstreamLyricLine(
             Text(
                 text = line.translation.orEmpty(),
                 modifier = Modifier.fillMaxWidth()
-                    .blur(effectiveBlur.dp)
+                    .blur(quantizedBlur.dp)
                     .padding(top = UpstreamLyrics.ANNOTATION_SPACING_DP.dp),
                 color = Color.White.copy(alpha = MeloXSettingsRuntime.lyricTranslationOpacity),
                 textAlign = lineTextAlign,
@@ -1572,11 +2016,11 @@ private fun MeloXUpstreamLyricLine(
                 lineHeight = translationSize.sp * 1.2f,
                 fontWeight = MeloXSettingsRuntime.lyricFontWeight.composeWeight,
                 style = TextStyle(
-                    shadow = if (effectiveBlur > .05f) {
+                    shadow = if (quantizedBlur > .05f) {
                         Shadow(
                             color = Color.White.copy(alpha = .48f),
                             offset = Offset.Zero,
-                            blurRadius = effectiveBlur,
+                            blurRadius = quantizedBlur,
                         )
                     } else null,
                 ),
@@ -2180,6 +2624,33 @@ private fun MeloXGlyphLyricText(
             val radiusPx = with(density) { softBlurDp.dp.toPx() }
             radiusPx.takeIf { it > .05f }?.let { BlurMaskFilter(it, BlurMaskFilter.Blur.NORMAL) }
         }
+        // ★ 高光半径/蒙版提到绘制循环外 `remember`（2026-10-19）。
+        // 它只取决于字号与渲染质量（都是稳定的），此前却**每个字形每一帧**新建一个
+        // `BlurMaskFilter` —— 逐字歌词每帧几十次对象构造 + 蒙版重算，正是歌词页
+        // `issue` 段偏高的来源之一。复用一个不可变实例即可（`BlurMaskFilter` 无状态）。
+        //
+        // ★★ 2026-10-24 修「长音发光是一圈正方形白光」：半径原为字号 30%（High）/
+        //    18%（Balanced）。34sp 字号下 30% ≈ 30px，远大于笔画宽（~4px），而 CJK 汉字
+        //    本身撑满 em 方框 ⇒ BlurMaskFilter 按字形 alpha 外糊时四角被 em 框撑满，
+        //    糊出来就是一坨包住字的**白色方块**（真机截图实证，用户报障原话「高亮范围是
+        //    周围正方形」）。AM 口径（2026-10-24 查证）：逐字高亮只是「唱到的字变白」
+        //    （brightens the words as they're sung），至多一层极紧的辉光，没有方块光。
+        //    ⇒ 收紧到 12% / 8%：辉光贴字形、不再撑成方块；想要更亮可调设置里的
+        //      「发光强度」（alpha 0–1.5），半径不再提供。
+        val glowRadiusPx = remember(style.fontSize, renderingQuality, density) {
+            if (renderingQuality == MeloXLyricsRenderingQuality.Low) {
+                0f
+            } else {
+                with(density) {
+                    (style.fontSize.toPx() *
+                        if (renderingQuality == MeloXLyricsRenderingQuality.High) .12f else .08f)
+                        .coerceAtLeast(3.dp.toPx())
+                }
+            }
+        }
+        val glowBlurMask = remember(glowRadiusPx) {
+            glowRadiusPx.takeIf { it > 0f }?.let { BlurMaskFilter(it, BlurMaskFilter.Blur.NORMAL) }
+        }
 
         val animatesTiming = supportsTimedLyrics &&
             timingEffectsStrength > 0.001f &&
@@ -2301,17 +2772,17 @@ private fun MeloXGlyphLyricText(
                     drawGlyph(unplayedAlpha)
 
                     val reveal = fx.reveal.coerceIn(0f, 1f)
-                    val glow = fx.glow * effectsStrength * MeloXSettingsRuntime.lyricGlowStrength
+                    // ★ 2026-10-24：`fx.glow` 已归一到「满档 = 1.0」，这里只乘设置值，
+                    //   不再有额外的 `.648` 衰减 —— 设置显示 100% 时峰值就是满白。
+                    val glow = (fx.glow * effectsStrength * MeloXSettingsRuntime.lyricGlowStrength)
+                        .coerceIn(0f, 1f)
                     if (
                         reveal > 0f &&
                         glow > 0.001f &&
-                        renderingQuality != MeloXLyricsRenderingQuality.Low &&
+                        glowBlurMask != null &&
                         !reduceMotion
                     ) {
-                        val glowRadius = with(density) {
-                            (style.fontSize.toPx() * if (renderingQuality == MeloXLyricsRenderingQuality.High) .30f else .18f)
-                                .coerceAtLeast(3.dp.toPx())
-                        }
+                        val glowRadius = glowRadiusPx
                         val revealFront = if (isRtl) {
                             bounds.right - bounds.width * reveal
                         } else {
@@ -2323,8 +2794,8 @@ private fun MeloXGlyphLyricText(
                             right = if (isRtl) bounds.right + glowRadius else revealFront + glowRadius,
                             bottom = bounds.bottom + glowRadius,
                         ) {
-                            glyphPaint.alpha = (glow.coerceIn(0f, 1f) * .648f * 255f).roundToInt()
-                            glyphPaint.maskFilter = BlurMaskFilter(glowRadius, BlurMaskFilter.Blur.NORMAL)
+                            glyphPaint.alpha = (glow * 255f).roundToInt()
+                            glyphPaint.maskFilter = glowBlurMask
                             drawContext.canvas.nativeCanvas.drawText(
                                 glyph.text,
                                 glyph.bounds.left,
@@ -2563,11 +3034,16 @@ private fun sourceGlyphVisual(
     val glow = if (reduceMotion || !MeloXSettingsRuntime.lyricGlowEnabled ||
         (MeloXSettingsRuntime.lyricGlowLongTonesOnly && !timing.isLongTone)
     ) 0f else {
-        if (timing.isLongTone) envelope * timing.glowAmount else sourceOrdinaryGlowStrength(
-            playbackTimeMs = playbackTimeMs.toFloat(),
-            endMs = timing.end,
-            rawProgress = raw,
-        )
+        // 归一到「满档 = 1.0」：设置里的 100% 就是满强度（见 LONG_TONE_GLOW_PEAK 注释）。
+        if (timing.isLongTone) {
+            envelope * timing.glowAmount / UpstreamLyrics.LONG_TONE_GLOW_PEAK
+        } else {
+            sourceOrdinaryGlowStrength(
+                playbackTimeMs = playbackTimeMs.toFloat(),
+                endMs = timing.end,
+                rawProgress = raw,
+            ) / UpstreamLyrics.ORDINARY_GLOW_PEAK
+        }
     }
     val shakeAmplitude = if (reduceMotion || !timing.isLongTone || raw <= 0f || raw >= 1f) 0f else {
         min(.58f * density, UpstreamLyrics.FONT_SIZE_SP * fontScale * .013f * density) *
@@ -2713,7 +3189,10 @@ private fun sourceTimedAnnotatedString(line: LyricLine, playbackTimeMs: Long) =
                     )
                 } else 0f
                 val glowStrength = if (MeloXSettingsRuntime.lyricGlowEnabled) {
-                    longEnvelope * glowAmount * MeloXSettingsRuntime.lyricGlowStrength
+                    // 与 Canvas 路径同口径：满档归一（去掉旧的 `.7425` 额外衰减），
+                    // 设置显示 100% 即满强度，60%/140% 线性缩放。
+                    longEnvelope * glowAmount / UpstreamLyrics.LONG_TONE_GLOW_PEAK *
+                        MeloXSettingsRuntime.lyricGlowStrength
                 } else 0f
                 val opacity = MeloXSettingsRuntime.lyricInactiveOpacity +
                     (1f - MeloXSettingsRuntime.lyricInactiveOpacity) * revealProgress
@@ -2729,9 +3208,11 @@ private fun sourceTimedAnnotatedString(line: LyricLine, playbackTimeMs: Long) =
                             (playedRise / UpstreamLyrics.FONT_SIZE_SP) * liftProgress,
                         ),
                         shadow = if (glowStrength > 0f) {
+                            // ★ 2026-10-24：半径与 [MeloXGlyphLyricText] 的 glowRadiusPx 同口径
+                            //   收紧到字号 12%（原 30% 会糊成包住字的白色方块，见那边的长注释）。
                             Shadow(
-                                color = Color.White.copy(alpha = (glowStrength * 0.7425f).coerceIn(0f, 1f)),
-                                blurRadius = UpstreamLyrics.FONT_SIZE_SP * 0.3f,
+                                color = Color.White.copy(alpha = glowStrength.coerceIn(0f, 1f)),
+                                blurRadius = UpstreamLyrics.FONT_SIZE_SP * 0.12f,
                             )
                         } else null,
                     ),

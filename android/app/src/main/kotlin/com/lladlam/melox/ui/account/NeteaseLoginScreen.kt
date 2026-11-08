@@ -50,6 +50,7 @@ import com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigPolicy
 import com.lladlam.melox.ui.glass.meloXLiquidButton
 import com.lladlam.melox.ui.glass.MeloXGlassIconButton
 import com.lladlam.melox.ui.glass.MeloXSymbol
+import com.lladlam.melox.ui.theme.isMeloXDarkTheme
 import com.lladlam.melox.ui.animation.meloXPagePushSpec
 import com.lladlam.melox.ui.legal.MeloXLegalLinks
 import kotlinx.coroutines.delay
@@ -256,10 +257,16 @@ fun NeteaseLoginScreen(
             )
 
             if (verifying) {
+                // ⚠ 这层浮在 WebView（网易云登录页，本身是浅色）上面。原先无论明暗主题
+                // 都是 0.18 黑 + 白字 ⇒ 浅色主题下白字压在浅灰上几乎看不见。
+                // 按主题把遮罩给足对比度（2026-10-23 深色模式可读性排查）。
+                val dark = isMeloXDarkTheme()
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.18f)),
+                        .background(
+                            if (dark) Color.Black.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.72f),
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -267,7 +274,7 @@ fun NeteaseLoginScreen(
                         Text(
                             text = stringResource(R.string.account_verifying_login),
                             modifier = Modifier.padding(top = 12.dp),
-                            color = Color.White,
+                            color = if (dark) Color.White else Color.Black,
                         )
                     }
                 }

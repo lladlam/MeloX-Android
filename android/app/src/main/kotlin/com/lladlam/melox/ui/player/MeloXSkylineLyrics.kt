@@ -260,7 +260,18 @@ private fun SkylineAmbientField(
         infiniteRepeatable(tween(9_000), RepeatMode.Reverse),
         label = "skyline-drift",
     )
-    val driftValue = drift.value
+    // ⚠⚠⚠ 2026-10-22（动画流畅度，横屏卡顿主凶已修）：**⛔ 不许在这里 `drift.value` 解包**。
+    //
+    //   `drift` 是 `infiniteRepeatable(9s)` ⇒ 值**永远在变**。只要在组合体里读它，
+    //   本 composable 的 restartable scope 就**每帧失效** ⇒ 整棵天际歌词
+    //   （`BoxWithConstraints` 测量 + 每个词条一个 `Text` + 一个 `Modifier.blur` 图层）
+    //   在 90Hz 上被**无休止地重组**，静止不动也照跑。
+    //   后果不只是它自己贵：Compose 的 recomposer 被永久占住，同页面上别的动画
+    //   （切页 / 队列 / 滚动 / 转场）全都要和它抢帧 ⇒ 用户读成「横屏就是卡」。
+    //
+    //   而它**唯一的消费点**就是下面 `graphicsLayer{}` 里的位移/旋转 —— 所以把读取
+    //   下沉到绘制相位即可：数值、公式、时间轴**逐字不变**，只是「何时读」从组合期
+    //   换成绘制期 ⇒ 每帧只失效一个 RenderNode 的变换，不再重建任何组合/布局。
     BoxWithConstraints(
         modifier.clipToBounds().drawWithContent {
             drawContent()
@@ -299,23 +310,53 @@ private fun SkylineAmbientField(
                 animationSpec = tween(if (reduceMotion) 0 else 820),
                 label = "skyline-growth-${item.id}",
             )
-            val driftOffset = if (reduceMotion) 0f else driftValue
-            Text(
-                item.text,
-                color = accent.copy(alpha = (opacity * opacityScale).coerceIn(0f, 1f)),
-                fontSize = fontScale,
-                fontWeight = FontWeight.Black,
-                maxLines = 1,
+            // ⚠⚠⚠ 2026-10-22（第二批，GPU 侧）：**每帧变的位移/旋转必须待在模糊层的「外面」**。
+            //
+            //   上一批把 `drift.value` 从组合期挪到绘制期，确实消掉了 90Hz 的整树重组，
+            //   但**绘制期的漂移同样致命**：原来 `.graphicsLayer{translation/rotation}.blur(r)`
+            //   会让「漂移」落在**同一个 RenderNode** 里（Compose 会把同一 Modifier 链上相邻的
+            //   graphicsLayer 与 blur 合并成一个层）⇒ 每帧 translation/rotation 一变，
+            //   那个层的 displaylist 就失效 ⇒ **16 个词条每帧各自重新光栅化 + 重算一次高斯模糊**
+            //   （默认上限就是 16 条，见 [SkylineAmbientField] 的 `coerceIn(4, 24)` 与设置默认值）。
+            //   这就是「横屏歌词页静置也卡」真正剩下的那一半：CPU 侧已经空了，GPU 侧还在满负荷。
+            //
+            //   改法利用高斯模糊的**平移/旋转等变性**：
+            //       blur(translate(p, x)) ≡ translate(p, blur(x))
+            //       blur(rotate(θ, x))   ≡ rotate(θ, blur(x))
+            //   只要把 translation/rotation 提到 blur **外层**，输出的每一个像素都不变，
+            //   而模糊层的内容从此**恒定** ⇒ RenderNode 的纹理被缓存复用，
+            //   每帧只更新一次矩阵（GPU 上是一次纹理采样，不再是 16 次离屏高斯）。
+            //
+            //   ⛔ `scale` 必须留在内层（blur 的内侧）：高斯模糊对缩放**不**等变
+            //      （`blur(s·x)` 的等效半径是 `s·r`），挪出去会让生长动画期间的模糊强度整体跑偏。
+            //      而 scale 只由 820ms 的 `animateFloatAsState` 驱动，本来就不是每帧量。
+            //
+            //   ⚠ 外层 Box 尺寸 == 内层 Text 尺寸（wrap content），且都在父级 TopStart，
+            //     旋转原点（默认 Center）与原来完全重合 ⇒ 几何零变化。
+            Box(
                 modifier = Modifier
+                    // 绘制期读 `drift.value`（见上方长注释）：读 State 不触发重组，只让本层矩阵失效。
                     .graphicsLayer {
-                        translationX = maxWidth.toPx() * item.x + item.driftX * driftScale * driftOffset
-                        translationY = maxHeight.toPx() * item.y + item.driftY * driftScale * driftOffset
-                        scaleX = item.baseScale * animatedScale
-                        scaleY = item.baseScale * animatedScale
-                        rotationZ = item.rotation + sin(driftOffset * Math.PI.toFloat() * 2f) * 2f * driftScale
-                    }
-                    .blur((blurRadius * blurScale).dp),
-            )
+                        val d = if (reduceMotion) 0f else drift.value
+                        translationX = maxWidth.toPx() * item.x + item.driftX * driftScale * d
+                        translationY = maxHeight.toPx() * item.y + item.driftY * driftScale * d
+                        rotationZ = item.rotation + sin(d * Math.PI.toFloat() * 2f) * 2f * driftScale
+                    },
+            ) {
+                Text(
+                    item.text,
+                    color = accent.copy(alpha = (opacity * opacityScale).coerceIn(0f, 1f)),
+                    fontSize = fontScale,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .graphicsLayer {
+                            scaleX = item.baseScale * animatedScale
+                            scaleY = item.baseScale * animatedScale
+                        }
+                        .blur((blurRadius * blurScale).dp),
+                )
+            }
         }
     }
 }
@@ -416,7 +457,12 @@ private fun SkylineCentralLayout(
                         textAlign = TextAlign.Center,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.width(lyricWidth).blur((currentFontSize * .12f).dp),
+                        // ⛔ 这里原来挂着 `.blur((currentFontSize * .12f).dp)`。
+                        //   这一条是**全透明**的（alpha = 0f，纯占位测量），却挂着一个
+                        //   4.3~10dp 的模糊 ⇒ 每帧白建一个离屏层、白算一次高斯，然后
+                        //   把结果乘 0 合成。删掉它为零观感变化（看不见的东西不会因为
+                        //   变清晰而变得可见），并省掉一个每帧离屏 pass。
+                        modifier = Modifier.width(lyricWidth),
                     )
                 }
                 Text(

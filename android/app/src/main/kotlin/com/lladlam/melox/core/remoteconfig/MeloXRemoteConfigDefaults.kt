@@ -12,8 +12,18 @@ object MeloXRemoteConfigDefaults {
     )
     val AllowedProviders = setOf("netease", "qq_music", "kugou_lite", "qishui", "kuwo", "bilibili")
 
-    /** Non-NetEase sources are tried after the current source, in this order. */
-    val FallbackOrder = listOf("netease", "qq_music", "kugou_lite", "qishui", "kuwo", "bilibili")
+    /**
+     * 跨平台兜底的默认顺序。
+     *
+     * 2026-10-23 应用户要求把 B站 提到最前：B站 是唯一不依赖对方平台登录态的来源
+     * （QQ/酷狗的播放接口要 uin+musicKey），且覆盖大量上传音源。
+     * 2026-10-25 同步上游 0.7.0：成员集合换成上游的（新增 netease / kugou_lite /
+     * qishui / kuwo；上游把旧的 `kugou` 换成 `kugou_lite`，而注册表里现在也确实
+     * 只有概念版 KugouLiteProvider，旧的 `kugou` 会是个死 id）；**顺序仍沿用本地口径**
+     * —— bilibili 在最前，其余按上游顺序。
+     * 注意这只是默认值，远程配置仍可覆盖。
+     */
+    val FallbackOrder = listOf("bilibili", "netease", "qq_music", "kugou_lite", "qishui", "kuwo")
     val Strategies = mapOf(
         "netease_playback" to "v1",
         "qq_playback" to "v1",

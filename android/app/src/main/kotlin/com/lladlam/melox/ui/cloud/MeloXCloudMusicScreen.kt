@@ -331,7 +331,17 @@ fun MeloXCloudMusicScreen(
             if (query.isBlank()) {
                 Text(stringResource(R.string.cloud_search), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .4f))
             }
-            BasicTextField(query, { query = it }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            BasicTextField(
+                query,
+                { query = it },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                // 占位符走 onSurface，输入文字也必须走，否则深色模式下是黑字
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 15.sp,
+                ),
+            )
         }
         val cloudListState = rememberLazyListState()
         LaunchedEffect(cloudListState, values.size, hasMore, isSearching) {

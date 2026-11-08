@@ -58,6 +58,21 @@ internal class MeloSmoothCornerShape(
         size: Size,
         layoutDirection: LayoutDirection,
         density: Density,
+    ): Outline = outline(size, layoutDirection)
+
+    /**
+     * 与 [createOutline] **逐字相同**的轮廓，但不吃 [Density]。
+     *
+     * ★ 2026-11-02 新增，给 `MeloXPlayerGlassShape` 用：`CornerBasedShape` 的
+     *   `createOutline(size, 四角半径, layoutDirection)` 抽象重载**拿不到 Density**
+     *   （四角半径已被框架换算成 px 才传进来），而本实现从头到尾**不使用 density**
+     *   （只用 size + scaleX/scaleY + smoothing）⇒ 直接暴露这个入口，
+     *   避免在外面捏一个假 Density 实例。
+     */
+    internal fun outline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density = UnitDensity,
     ): Outline {
         val sx = scaleX.coerceAtLeast(0.01f)
         val sy = scaleY.coerceAtLeast(0.01f)
@@ -135,6 +150,17 @@ internal class MeloSmoothCornerShape(
     }
 
     private companion object {
+        /**
+         * [outline] 的默认密度。
+         *
+         * ⚠ 本实现**全程不使用 density**（只用 `size` + `scaleX/scaleY` + `smoothing`），
+         *   唯一需要它的地方是 ⓪ 分支里 kyant `Capsule().createOutline(...)` —— 而
+         *   它的字节码只 `checkNotNullParameter` 后就用 `size` + `style` 生成轮廓，
+         *   完全不读 density（已用 javap 核对）。
+         *   ⇒ 传一个固定实例即可，不会引入任何按密度缩放的偏差。
+         */
+        val UnitDensity: Density = Density(1f)
+
         /**
          * 每个角的直线逼近段数（性能旋钮）。
          *
