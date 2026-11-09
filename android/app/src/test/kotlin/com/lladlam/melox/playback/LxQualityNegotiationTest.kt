@@ -1,9 +1,15 @@
 package com.lladlam.melox.playback
 
 import com.lladlam.melox.core.music.model.AudioQualityTier
+import com.lladlam.melox.core.music.model.MusicArtistRef
+import com.lladlam.melox.core.music.model.MusicResourceId
+import com.lladlam.melox.core.music.model.MusicSource
+import com.lladlam.melox.core.music.model.MusicTrack
 import com.lladlam.melox.core.provider.lxuser.negotiateLxQuality
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LxQualityNegotiationTest {
@@ -59,4 +65,51 @@ class LxQualityNegotiationTest {
         assertNull(lxQualityTier(null))
         assertNull(lxQualityTier("unknown"))
     }
+
+    @Test
+    fun lxPlaybackMatchUsesTitleArtistAndVersionBeforeDuration() {
+        val target = track("提瓦特民谣", "宴宁", 240_000L)
+        assertTrue(isSafeLxPlaybackMatch("提瓦特民谣", "宴宁", 240_000L, target))
+        assertTrue(
+            isSafeLxPlaybackMatch(
+                "提瓦特民谣 feat. 陶典", "宴宁 / 陶典", 240_000L,
+                track("提瓦特民谣", "宴宁 / 陶典", 241_500L),
+            ),
+        )
+        assertFalse(
+            isSafeLxPlaybackMatch(
+                "提瓦特民谣", "宴宁", 240_000L,
+                track("提瓦特民谣 (Live)", "宴宁", 240_000L),
+            ),
+        )
+        assertFalse(
+            isSafeLxPlaybackMatch(
+                "提瓦特民谣", "宴宁", 240_000L,
+                track("提瓦特民谣", "其他歌手", 240_000L),
+            ),
+        )
+    }
+
+    @Test
+    fun lxPlaybackMatchAcceptsMinorDurationMetadataDrift() {
+        assertTrue(
+            isSafeLxPlaybackMatch(
+                "提瓦特民谣", "宴宁", 240_000L,
+                track("提瓦特民谣", "宴宁", 241_500L),
+            ),
+        )
+        assertFalse(
+            isSafeLxPlaybackMatch(
+                "提瓦特民谣", "宴宁", 240_000L,
+                track("提瓦特民谣", "宴宁", 243_000L),
+            ),
+        )
+    }
+
+    private fun track(title: String, artist: String, durationMs: Long) = MusicTrack(
+        id = MusicResourceId(MusicSource.Kugou, title),
+        title = title,
+        artists = listOf(MusicArtistRef(name = artist)),
+        durationMs = durationMs,
+    )
 }
