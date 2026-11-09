@@ -9,13 +9,11 @@ import com.lladlam.melox.core.provider.lxuser.LxUserRuntime
 import com.lladlam.melox.core.provider.lxuser.LxUserScript
 import com.lladlam.melox.core.provider.lxuser.LxUserSourceStore
 import com.lladlam.melox.core.provider.lxuser.buildLxMusicInfo
-import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.core.lyrics.LrcLyricsParser
 import com.lladlam.melox.core.lyrics.LyricFileParser
 import com.lladlam.melox.core.lyrics.LyricsDocument
 import com.lladlam.melox.core.music.model.MusicArtistRef
 import com.lladlam.melox.core.music.model.MusicResourceId
-import com.lladlam.melox.core.music.model.ProviderTrackMetadata
 import com.lladlam.melox.core.music.provider.MeloXMusicProviders
 import com.lladlam.melox.core.music.provider.SearchCapability
 import kotlinx.coroutines.Dispatchers
@@ -135,45 +133,85 @@ class LxUserPlaybackResolver(
     }
 
     private fun resolveUncached(track: MusicTrack, quality: AudioQualityTier): LxUserPlaybackResult? {
-        val directSources = lxDirectSources(track)
-        if (directSources.isEmpty()) return null
         val title = track.title
         val artist = track.artistText
         if (title.isBlank() || artist.isBlank()) return null
-        val lxQuality = quality.toLxQuality()
+        val origin = lxSourceCode(track.id.source) ?: return null
+        val supported = supportedLxSourceCodes()
+        if (supported.isEmpty()) return null
+        // The track's own platform is always first; all remaining LX platforms
+        // are attempted with a strict cross-source lookup so every call gets a
+        // real platform ID instead of a NetEase numeric id reused as `songmid`.
+        val orderedSources = buildList {
+            add(origin)
+            addAll(LX_ALL_SOURCES.filter { it != origin })
+        }.filter { it in supported }
         Log.d(
             TAG,
             "LX resolve start provider=${track.id.source.storageValue} id=${track.id.value.take(8)} " +
-                "quality=$lxQuality sources=${directSources.joinToString(",")} " +
+                "quality=${quality.toLxQuality()} sources=${orderedSources.joinToString(",")} " +
                 "title=${title.take(40)} artist=${artist.take(40)}",
         )
-        resolveSourceCandidates(track, quality, directSources)?.let { return it }
-        if (track.id.source != MusicSource.Netease) {
-            resolveViaNeteaseMatch(track, quality)?.let { return it }
+        for (code in orderedSources) {
+            val candidate = trackForLxSource(track, code) ?: continue
+            resolveSourceCandidates(candidate, quality, listOf(code))?.let { return it }
         }
-        resolveViaAlternateProviderMatches(track, quality, directSources)?.let { return it }
         Log.i(TAG, "LX unresolved source=${track.id.source.storageValue} scripts=${LxUserSourceStore.list(appContext).size}")
         return null
     }
 
-    /** Source codes that can use this track's own platform identity. */
-    private fun lxDirectSources(track: MusicTrack): List<String> = when (track.id.source) {
-        // A NetEase numeric ID is only valid for `wy`; other source codes are
-        // searched with their own provider metadata as a separate fallback.
-        MusicSource.Netease -> listOf("wy")
-        MusicSource.QQMusic -> listOf("tx")
+    private fun lxSourceCode(source: MusicSource): String? = when (source) {
+        MusicSource.Netease -> "wy"
+        MusicSource.QQMusic -> "tx"
         MusicSource.Kugou,
         MusicSource.KugouLite,
-        -> listOf("kg")
-        MusicSource.Kuwo -> listOf("kw")
-        else -> emptyList()
+        -> "kg"
+        MusicSource.Kuwo -> "kw"
+        else -> null
     }
 
     /**
-     * Runs one script against a set of LX source codes. The caller must pass a
-     * track whose IDs/metadata are valid for those codes (not a NetEase ID
-     * reused for QQ/Kugou).
+     * Strict cross-source ID lookup. The returned track must carry the target
+     * provider's own resource ID; we never pass a title match's numeric id from
+     * another platform to an LX script.
      */
+    private fun trackForLxSource(track: MusicTrack, code: String): MusicTrack? {
+        if (code == lxSourceCode(track.id.source)) return track
+        // MeloX has no Migu provider, so there is no trustworthy Migu id to look up.
+        if (code == "mg") return null
+        val providerSource = when (code) {
+            "wy" -> MusicSource.Netease
+            "tx" -> MusicSource.QQMusic
+            "kg" -> if (track.id.source == MusicSource.KugouLite) MusicSource.KugouLite else MusicSource.Kugou
+            "kw" -> MusicSource.Kuwo
+            else -> return null
+        }
+        val matched = searchMatchedProviderTrack(providerSource, track) ?: return null
+        // Reject a provider result that somehow escaped its own catalog identity.
+        if (matched.id.source != providerSource) {
+            Log.w(TAG, "LX cross-source match rejected code=$code idSource=${matched.id.source.storageValue}")
+            return null
+        }
+        Log.i(
+            TAG,
+            "LX cross-source match ${track.id.source.storageValue}:${track.id.value.take(8)} -> " +
+                "$code:${matched.id.value.take(8)}",
+        )
+        return matched
+    }
+
+    private fun supportedLxSourceCodes(): Set<String> {
+        val supported = linkedSetOf<String>()
+        for (record in LxUserSourceStore.list(appContext)) {
+            val script = LxUserSourceStore.script(appContext, record.id) ?: continue
+            val runtime = runCatching { LxUserRuntime.session(record.id, script) }.getOrNull() ?: continue
+            for (code in LX_ALL_SOURCES) {
+                if (runtime.supportsSource(code) && runtime.supportsAction(code, "musicUrl")) supported += code
+            }
+        }
+        return supported
+    }
+
     private fun resolveSourceCandidates(
         track: MusicTrack,
         quality: AudioQualityTier,
@@ -240,93 +278,6 @@ class LxUserPlaybackResolver(
         return null
     }
 
-    private fun resolveViaNeteaseMatch(track: MusicTrack, quality: AudioQualityTier): LxUserPlaybackResult? {
-        val queries = listOf(
-            "${track.title} ${track.artistText.substringBefore(" /")}".trim(),
-            track.title.trim(),
-        ).filter(String::isNotBlank).distinct()
-        var candidateCount = 0
-        val match = queries.asSequence().mapNotNull { query ->
-            val candidates = runCatching {
-                kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-                    NeteaseSearchClient().searchSongs(query, limit = 50)
-                }
-            }.onFailure {
-                Log.w(TAG, "LX Netease match search failed query=${query.take(40)} detail=${it.safeLogMessage()}")
-            }.getOrNull().orEmpty()
-            candidateCount += candidates.size
-            val found = candidates
-                .asSequence()
-                .filter { candidate ->
-                    isSafeLxPlaybackMatch(
-                        targetTitle = track.title,
-                        targetArtist = track.artistText,
-                        targetDurationMs = track.durationMs,
-                        candidate = MusicTrack(
-                            id = MusicResourceId(MusicSource.Netease, candidate.id.toString()),
-                            title = candidate.name,
-                            artists = listOf(MusicArtistRef(name = candidate.artists)),
-                            durationMs = candidate.durationMs,
-                        ),
-                    )
-                }
-                .sortedBy { candidate ->
-                    kotlin.math.abs(candidate.durationMs - (track.durationMs ?: candidate.durationMs))
-                }
-                .firstOrNull()
-            if (found != null) {
-                Log.d(TAG, "LX Netease match query=${query.take(40)} candidates=${candidates.size} id=${found.id}")
-            }
-            found
-        }.firstOrNull()
-        if (match == null) {
-            Log.w(TAG, "LX Netease match not found title=${track.title.take(40)} candidates=$candidateCount")
-            return null
-        }
-
-        val neteaseTrack = MusicTrack(
-            id = MusicResourceId(MusicSource.Netease, match.id.toString()),
-            title = match.name,
-            artists = listOf(MusicArtistRef(name = match.artists)),
-            durationMs = match.durationMs,
-            artworkUrl = match.artworkUrl,
-            providerMetadata = ProviderTrackMetadata.Netease(match.id),
-        )
-        Log.i(TAG, "LX Netease match source=${track.id.source.storageValue} id=${track.id.value.take(8)} -> ${match.id}")
-        return resolveSourceCandidates(neteaseTrack, quality, listOf("wy"))
-    }
-
-    /**
-     * Last resort after the track's own platform (and, for non-NetEase, the
-     * NetEase match) failed: search the other built-in providers for a safe
-     * match, then let LX use that source with its real platform ID. This avoids
-     * the old behaviour where only `wy` was retried after a NetEase match.
-     */
-    private fun resolveViaAlternateProviderMatches(
-        track: MusicTrack,
-        quality: AudioQualityTier,
-        alreadyTried: List<String>,
-    ): LxUserPlaybackResult? {
-        for (code in listOf("tx", "kg", "kw")) {
-            if (code in alreadyTried) continue
-            val source = when (code) {
-                "tx" -> MusicSource.QQMusic
-                "kg" -> if (track.id.source == MusicSource.KugouLite) MusicSource.KugouLite else MusicSource.Kugou
-                "kw" -> MusicSource.Kuwo
-                else -> continue
-            }
-            if (source == track.id.source) continue
-            val matched = searchMatchedProviderTrack(source, track) ?: continue
-            Log.i(
-                TAG,
-                "LX alternate match source=${track.id.source.storageValue} -> ${source.storageValue} " +
-                    "code=$code id=${matched.id.value.take(8)}",
-            )
-            resolveSourceCandidates(matched, quality, listOf(code))?.let { return it }
-        }
-        return null
-    }
-
     private fun searchMatchedProviderTrack(source: MusicSource, target: MusicTrack): MusicTrack? {
         val provider = runCatching { MeloXMusicProviders.create(appContext)[source] }.getOrNull() ?: return null
         val search = provider as? SearchCapability ?: return null
@@ -357,6 +308,7 @@ class LxUserPlaybackResolver(
 
     private companion object {
         const val TAG = "MeloXThirdParty"
+        val LX_ALL_SOURCES = listOf("kw", "kg", "tx", "wy", "mg")
     }
 }
 
