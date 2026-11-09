@@ -34,6 +34,26 @@ import org.json.JSONObject
 
 private const val HTTP_TIMEOUT_MS = 13_000L
 
+/**
+ * Low-to-high LX quality identifiers. `jyeffect`/`sky` are MeloX/NetEase names;
+ * LX scripts declare `atmos`/`atmos_plus` instead, so both must survive the
+ * `inited` handshake or Master/Hi-Res/Surround fall back to plain FLAC.
+ */
+internal val LX_QUALITY_ORDER = listOf(
+    "128k", "320k", "flac", "flac24bit", "hires", "atmos", "atmos_plus", "master",
+)
+
+/** Best quality declared by a source at or below [requested]. */
+internal fun negotiateLxQuality(supported: List<String>, requested: String): String {
+    if (supported.isEmpty() || requested in supported) return requested
+    val requestedIndex = LX_QUALITY_ORDER.indexOf(requested)
+    if (requestedIndex < 0) return requested
+    return LX_QUALITY_ORDER.asReversed()
+        .firstOrNull { it in supported && LX_QUALITY_ORDER.indexOf(it) <= requestedIndex }
+        ?: supported.firstOrNull()
+        ?: requested
+}
+
 data class LxUserScript(
     val source: String,
     val metadata: LxUserScriptMetadata = LxUserScriptMetadata.parse(source),
@@ -191,13 +211,7 @@ class LxUserRuntime(
 
     /** Returns the best quality this source declared through lx.send(inited, ...). */
     fun qualityFor(source: String, requested: String): String = runtimeThread.call {
-        val supported = sourceQualities[source].orEmpty()
-        if (supported.isEmpty() || requested in supported) return@call requested
-        val requestedIndex = QUALITY_ORDER.indexOf(requested).takeIf { it >= 0 } ?: QUALITY_ORDER.lastIndex
-        QUALITY_ORDER.asReversed()
-            .firstOrNull { it in supported && QUALITY_ORDER.indexOf(it) <= requestedIndex }
-            ?: supported.firstOrNull()
-            ?: requested
+        negotiateLxQuality(sourceQualities[source].orEmpty(), requested)
     }
 
     /**
@@ -848,9 +862,8 @@ class LxUserRuntime(
         private val httpPool = Executors.newFixedThreadPool(4) { runnable ->
             Thread(runnable, "melox-lx-http").apply { isDaemon = true }
         }
-        private val QUALITY_ORDER = listOf("128k", "320k", "flac", "flac24bit")
         private val LX_SOURCES = setOf("kw", "kg", "tx", "wy", "mg", "local")
-        private val SUPPORT_LX_QUALITIES = listOf("128k", "320k", "flac", "flac24bit")
+        private val SUPPORT_LX_QUALITIES = LX_QUALITY_ORDER
         // LX only lets 'local' serve lyric/pic; MeloX keeps those actions for
         // any declared source as an intentional, documented superset.
         private val SUPPORT_LX_ACTIONS = listOf("musicUrl", "lyric", "pic")

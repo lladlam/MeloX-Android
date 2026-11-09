@@ -247,6 +247,18 @@ internal val MeloXMediaBarThickness = 6.dp
  */
 internal val MeloXMediaBarThicknessActive = 8.dp
 
+/** Clock position between media-controller polls, clamped to the known duration. */
+internal fun interpolatedPlaybackPositionMs(
+    anchorPositionMs: Long,
+    anchorRealtimeMs: Long,
+    nowRealtimeMs: Long,
+    durationMs: Long,
+): Long {
+    val elapsed = (nowRealtimeMs - anchorRealtimeMs).coerceAtLeast(0L)
+    val projected = anchorPositionMs.coerceAtLeast(0L) + elapsed
+    return if (durationMs > 0L) projected.coerceAtMost(durationMs) else projected
+}
+
 @Composable
 internal fun SceneProgressControl(
     state: MeloXPlaybackUiState,
@@ -261,8 +273,33 @@ internal fun SceneProgressControl(
         state.incomingDurationMs
     } else state.durationMs
     val displayedPositionMs = if (state.isInTransition) state.incomingPositionMs else state.positionMs
+    // The controller clock is polled at 500/1000 ms. Interpolate between polls
+    // so a slow or stale media callback cannot leave the progress bar standing
+    // still while audio is playing; every real position update re-anchors it.
+    var clockPositionMs by remember(state.mediaId) { mutableLongStateOf(displayedPositionMs) }
+    LaunchedEffect(
+        state.mediaId,
+        state.isPlaying,
+        state.isInTransition,
+        displayedPositionMs,
+        displayedDurationMs,
+    ) {
+        clockPositionMs = displayedPositionMs
+        if (!state.isPlaying || state.isInTransition) return@LaunchedEffect
+        val anchorRealtimeMs = SystemClock.elapsedRealtime()
+        while (true) {
+            clockPositionMs = interpolatedPlaybackPositionMs(
+                anchorPositionMs = displayedPositionMs,
+                anchorRealtimeMs = anchorRealtimeMs,
+                nowRealtimeMs = SystemClock.elapsedRealtime(),
+                durationMs = displayedDurationMs,
+            )
+            delay(200L)
+        }
+    }
+    val animatedPositionMs = if (state.isInTransition) displayedPositionMs else clockPositionMs
     val sourceProgress = if (displayedDurationMs > 0L) {
-        (displayedPositionMs.toFloat() / displayedDurationMs.toFloat()).coerceIn(0f, 1f)
+        (animatedPositionMs.toFloat() / displayedDurationMs.toFloat()).coerceIn(0f, 1f)
     } else {
         0f
     }
@@ -280,6 +317,23 @@ internal fun SceneProgressControl(
 
     LaunchedEffect(sourceProgress, scrubbing) {
         if (!scrubbing) localProgress = sourceProgress
+    }
+    // A Slider gesture can be cancelled when the track changes or when the
+    // player enters/exits a transition. Material3 does not always deliver
+    // onValueChangeFinished after that cancel; without this reset `scrubbing`
+    // stayed true forever and froze the bar at the last drag position.
+    LaunchedEffect(state.mediaId) {
+        scrubbing = false
+        scrubMediaId = null
+        sliderGesture.reset()
+    }
+    LaunchedEffect(state.isInTransition) {
+        if (state.isInTransition) {
+            scrubbing = false
+            scrubMediaId = null
+            scrubPreviewState?.clear()
+            sliderGesture.reset()
+        }
     }
 
     Column(
@@ -355,7 +409,7 @@ internal fun SceneProgressControl(
             val shownPosition = if (scrubbing) {
                 (state.durationMs * localProgress).roundToLong()
             } else {
-                displayedPositionMs
+                animatedPositionMs
             }
             Text(
                 text = sceneFormatDuration(shownPosition),

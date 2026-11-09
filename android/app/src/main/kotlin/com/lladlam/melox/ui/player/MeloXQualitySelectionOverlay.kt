@@ -72,14 +72,20 @@ internal fun MeloXQualitySelectionOverlay(
         mutableStateOf(CrossProviderPlaybackRuntime.sourceFor(songId))
     }
 
+    // The provider/LX fallback records its negotiated tier asynchronously after
+    // Media3 asks for the source. Poll for every source, not only non-NetEase:
+    // a NetEase track may itself fall back to LX/CHKSZ.
+    LaunchedEffect(visible, identity) {
+        if (!visible) return@LaunchedEffect
+        while (visible) {
+            providerActual = ProviderPlaybackQualityRuntime.actualFor(identity)
+            delay(180L)
+        }
+    }
     LaunchedEffect(visible, source, songId, downloadedQuality) {
         if (!visible) return@LaunchedEffect
         if (source != MusicSource.Netease) {
             availability = SongAudioAvailability.Unknown
-            while (visible) {
-                providerActual = ProviderPlaybackQualityRuntime.actualFor(identity)
-                delay(180L)
-            }
             return@LaunchedEffect
         }
         fallbackSource = CrossProviderPlaybackRuntime.sourceFor(songId)
@@ -104,7 +110,9 @@ internal fun MeloXQualitySelectionOverlay(
     val selected = downloadedQuality ?: MusicQualityPreferences.read(context)
     val actualQuality = when {
         downloadedQuality != null -> downloadedQuality
-        source == MusicSource.Netease -> MusicQualityRuntime.actualFor(songId) ?: selected
+        source == MusicSource.Netease -> MusicQualityRuntime.actualFor(songId)
+            ?: providerActual?.toMusicQuality()
+            ?: selected
         providerActual != null -> providerActual!!.toMusicQuality() ?: selected
         else -> selected
     }

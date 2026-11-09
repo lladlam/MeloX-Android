@@ -2887,6 +2887,10 @@ private fun MeloXPlaylistDetailScreen(
                             )
                         },
                         isSaved = isSaved == true,
+                        // Playlist save state is a toggle, but a saved playlist's
+                        // action is destructive (unsubscribe/delete). A checkmark
+                        // reads as "already done", so show a trash glyph instead.
+                        savedActionIsDestructive = !isAlbum,
                         // ★ 收藏态未知（isSaved == null）时**不显示**收藏/取消收藏钮（2026-10-06）。
                         //   原式 `!isProviderCollection && (!isAlbum || isSaved != null)` 对网易云歌单
                         //   恒为 true（isAlbum=false ⇒ !isAlbum=true），于是状态还没查回来就先把
@@ -3458,6 +3462,7 @@ private fun MeloXStandardPlaylistHero(
     onShuffle: () -> Unit,
     isSaved: Boolean,
     showSaveAction: Boolean,
+    savedActionIsDestructive: Boolean = false,
     onToggleSaved: () -> Unit,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
@@ -3607,8 +3612,13 @@ private fun MeloXStandardPlaylistHero(
                         size = 54.dp,
                         onClick = onToggleSaved,
                     ) {
-                        if (isSaved) MeloXCheckGlyph(Modifier.size(24.dp), foreground)
-                        else MeloXPlusGlyph(Modifier.size(26.dp), foreground)
+                        if (isSaved && savedActionIsDestructive) {
+                            MeloXTrashGlyph(Modifier.size(22.dp), foreground)
+                        } else if (isSaved) {
+                            MeloXCheckGlyph(Modifier.size(24.dp), foreground)
+                        } else {
+                            MeloXPlusGlyph(Modifier.size(26.dp), foreground)
+                        }
                     }
                 }
             }
@@ -3789,6 +3799,44 @@ private fun MeloXCheckGlyph(modifier: Modifier, color: Color) {
             lineTo(size.width * 0.80f, size.height * 0.25f)
         }
         drawPath(p, color, style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+}
+
+@Composable
+private fun MeloXTrashGlyph(modifier: Modifier, color: Color) {
+    Canvas(modifier.meloXIconDrawingScale()) {
+        val stroke = size.minDimension * 0.11f
+        // Lid + handle.
+        drawLine(
+            color,
+            Offset(size.width * 0.18f, size.height * 0.27f),
+            Offset(size.width * 0.82f, size.height * 0.27f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color,
+            Offset(size.width * 0.40f, size.height * 0.27f),
+            Offset(size.width * 0.44f, size.height * 0.17f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color,
+            Offset(size.width * 0.60f, size.height * 0.27f),
+            Offset(size.width * 0.56f, size.height * 0.17f),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+        // Tapered body: the sides narrow towards the bottom.
+        val body = Path().apply {
+            moveTo(size.width * 0.25f, size.height * 0.36f)
+            lineTo(size.width * 0.75f, size.height * 0.36f)
+            lineTo(size.width * 0.68f, size.height * 0.83f)
+            lineTo(size.width * 0.32f, size.height * 0.83f)
+            close()
+        }
+        drawPath(body, color, style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
     }
 }
 

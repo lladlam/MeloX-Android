@@ -24,6 +24,10 @@ internal data class LxUserPlaybackResult(
     val sourceId: String,
     val url: String,
     val requestHeaders: Map<String, String> = emptyMap(),
+    /** Quality identifier negotiated with the script (`master`, `hires`, ...). */
+    val sourceQuality: String? = null,
+    /** Best-effort tier represented by [sourceQuality]; not a probe of the URL. */
+    val actualQuality: AudioQualityTier? = null,
 )
 
 /** Resolves a song through locally installed LX Music user API scripts. */
@@ -136,7 +140,6 @@ class LxUserPlaybackResolver(
         if (title.isBlank() || artist.isBlank()) return null
         val resourceId = track.id.value
         val lxQuality = quality.toLxQuality()
-        val song = buildLxMusicInfo(track, sourceCode, lxQuality)
         Log.d(TAG, "LX resolve start provider=${track.id.source.storageValue} id=${resourceId.take(8)} quality=$lxQuality " +
             "source=$sourceCode title=${title.take(40)} artist=${artist.take(40)}")
         for (record in LxUserSourceStore.list(appContext)) {
@@ -148,18 +151,21 @@ class LxUserPlaybackResolver(
                     (sourceCode?.let(::listOf) ?: listOf("kw", "kg", "tx", "wy", "mg"))
                         .filter { runtime.supportsSource(it) && runtime.supportsAction(it, "musicUrl") }
                         .flatMap { source ->
-                            lxQualityFallbacks(lxQuality).asSequence().map { requestedQuality -> source to requestedQuality }
+                            lxQualityFallbacks(lxQuality).map { requestedQuality ->
+                                source to runtime.qualityFor(source, requestedQuality)
+                            }
                         }
-                        .mapNotNull { (source, requestedQuality) ->
-                            val sourceQuality = runtime.qualityFor(source, requestedQuality)
-                            Log.d(TAG, "LX candidate script=${record.id} source=$source requested=$requestedQuality actual=$sourceQuality")
+                        .distinct()
+                        .mapNotNull { (source, sourceQuality) ->
+                            Log.d(TAG, "LX candidate script=${record.id} source=$source requested=$lxQuality actual=$sourceQuality")
+                            val candidateSong = buildLxMusicInfo(track, source, sourceQuality)
                             runCatching {
                                 runtime.callAction(
                                     "musicUrl",
-                                    song + mapOf(
+                                    candidateSong + mapOf(
                                         "source" to source,
                                         "type" to sourceQuality,
-                                        "musicInfo" to song,
+                                        "musicInfo" to candidateSong,
                                     ),
                                 )
                             }.onFailure {
@@ -171,7 +177,14 @@ class LxUserPlaybackResolver(
                                     else -> null
                                 }?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
                                 Log.d(TAG, "LX candidate result script=${record.id} source=$source quality=$sourceQuality url=${url != null}")
-                                url?.let { LxUserPlaybackResult(record.id, it) }
+                                url?.let {
+                                    LxUserPlaybackResult(
+                                        sourceId = record.id,
+                                        url = it,
+                                        sourceQuality = sourceQuality,
+                                        actualQuality = lxQualityTier(sourceQuality),
+                                    )
+                                }
                             }
                         }
                         .firstOrNull() ?: throw IOException("LX 音乐源没有返回可播放链接")
@@ -233,28 +246,38 @@ class LxUserPlaybackResolver(
     }
 
     private fun resolveNeteaseTrack(track: MusicTrack, quality: AudioQualityTier): LxUserPlaybackResult? {
-        val song = buildLxMusicInfo(track, "wy", quality.toLxQuality())
         for (record in LxUserSourceStore.list(appContext)) {
             val script = LxUserSourceStore.script(appContext, record.id) ?: continue
             val result = runCatching {
                 val runtime = LxUserRuntime.session(record.id, script)
                     if (!runtime.supportsAction("wy", "musicUrl")) return@runCatching null
-                    lxQualityFallbacks(quality.toLxQuality()).asSequence().mapNotNull { requestedQuality ->
-                        val sourceQuality = runtime.qualityFor("wy", requestedQuality)
-                        val response = runCatching {
-                            runtime.callAction("musicUrl", song + mapOf(
-                                "source" to "wy",
-                                "type" to sourceQuality,
-                                "musicInfo" to song,
-                            ))
-                        }.onFailure { Log.w(TAG, "LX Netease candidate failed quality=$sourceQuality detail=${it.safeLogMessage()}") }.getOrNull()
-                        val url = when (response) {
-                            is String -> response
-                            is Map<*, *> -> response["url"]?.toString()
-                            else -> null
-                        }?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
-                        url?.let { LxUserPlaybackResult(record.id, it) }
-                    }.firstOrNull()
+                    lxQualityFallbacks(quality.toLxQuality())
+                        .map { requestedQuality -> runtime.qualityFor("wy", requestedQuality) }
+                        .distinct()
+                        .asSequence()
+                        .mapNotNull { sourceQuality ->
+                            val candidateSong = buildLxMusicInfo(track, "wy", sourceQuality)
+                            val response = runCatching {
+                                runtime.callAction("musicUrl", candidateSong + mapOf(
+                                    "source" to "wy",
+                                    "type" to sourceQuality,
+                                    "musicInfo" to candidateSong,
+                                ))
+                            }.onFailure { Log.w(TAG, "LX Netease candidate failed quality=$sourceQuality detail=${it.safeLogMessage()}") }.getOrNull()
+                            val url = when (response) {
+                                is String -> response
+                                is Map<*, *> -> response["url"]?.toString()
+                                else -> null
+                            }?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+                            url?.let {
+                                LxUserPlaybackResult(
+                                    sourceId = record.id,
+                                    url = it,
+                                    sourceQuality = sourceQuality,
+                                    actualQuality = lxQualityTier(sourceQuality),
+                                )
+                            }
+                        }.firstOrNull()
             }.getOrNull()
             if (result != null) return result
         }
@@ -266,11 +289,13 @@ class LxUserPlaybackResolver(
     }
 }
 
-private fun lxQualityFallbacks(requested: String): List<String> = when (requested) {
-    "flac24bit" -> listOf("flac24bit", "flac", "320k", "128k")
-    "flac" -> listOf("flac", "320k", "128k")
-    "320k" -> listOf("320k", "128k")
-    else -> listOf(requested)
+/** Every LX quality at or below [requested], highest first. */
+internal fun lxQualityFallbacks(requested: String): List<String> {
+    val index = com.lladlam.melox.core.provider.lxuser.LX_QUALITY_ORDER.indexOf(requested)
+    if (index < 0) return listOf(requested)
+    return com.lladlam.melox.core.provider.lxuser.LX_QUALITY_ORDER
+        .subList(0, index + 1)
+        .asReversed()
 }
 
 private fun normalizeLxText(value: String): String = value
@@ -278,11 +303,25 @@ private fun normalizeLxText(value: String): String = value
     .replace(Regex("[\\s\\p{Punct}·•，。！？、（）()\\[\\]【】]"), "")
 
 
-private fun AudioQualityTier.toLxQuality(): String = when (this) {
+internal fun AudioQualityTier.toLxQuality(): String = when (this) {
     AudioQualityTier.Standard -> "128k"
     AudioQualityTier.High -> "320k"
     AudioQualityTier.Lossless -> "flac"
-    AudioQualityTier.HiResolution, AudioQualityTier.Immersive, AudioQualityTier.Master -> "flac24bit"
+    AudioQualityTier.HiResolution -> "hires"
+    // HighDefinitionSurround/ImmersiveSurround share this tier; ask for the
+    // higher LX name so qualityFor can still fall back to `atmos` when needed.
+    AudioQualityTier.Immersive -> "atmos_plus"
+    AudioQualityTier.Master -> "master"
+}
+
+internal fun lxQualityTier(quality: String?): AudioQualityTier? = when (quality) {
+    "128k" -> AudioQualityTier.Standard
+    "320k" -> AudioQualityTier.High
+    "flac" -> AudioQualityTier.Lossless
+    "flac24bit", "hires" -> AudioQualityTier.HiResolution
+    "atmos", "atmos_plus" -> AudioQualityTier.Immersive
+    "master" -> AudioQualityTier.Master
+    else -> null
 }
 
 private fun Throwable.safeLogMessage(): String = message.orEmpty()

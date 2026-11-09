@@ -886,15 +886,7 @@ internal object MeloXProviderLyricsLoader {
         }.distinct()
         for (query in queries) {
             val results = runCatching { search.searchSongs(query, 1, 10).items }.getOrDefault(emptyList())
-            val match = results
-                .filter { candidate ->
-                    isSafeCrossProviderLyricMatch(
-                        targetTitle = snapshot.title,
-                        targetArtist = snapshot.artist,
-                        targetDurationMs = snapshot.durationMs,
-                        candidate = candidate,
-                    )
-                }
+            val match = crossProviderLyricMatches(snapshot, results)
                 .maxByOrNull { candidate -> trackMatchScore(snapshot, candidate) }
                 ?: continue
             val document = runCatching { lyrics.lyrics(match) }.getOrNull()
@@ -958,12 +950,47 @@ internal object MeloXProviderLyricsLoader {
         val search = provider as? SearchCapability ?: return null
         val queries = listOf(snapshot.title, "${snapshot.title} ${snapshot.artist.substringBefore(" /")}").distinct()
         for (query in queries) {
-            val match = runCatching { search.searchSongs(query, 1, 10).items }.getOrDefault(emptyList())
-                .filter { isSafeCrossProviderLyricMatch(snapshot.title, snapshot.artist, snapshot.durationMs, it) }
+            val results = runCatching { search.searchSongs(query, 1, 10).items }.getOrDefault(emptyList())
+            val match = crossProviderLyricMatches(snapshot, results)
                 .maxByOrNull { trackMatchScore(snapshot, it) }
             if (match != null) return match
         }
         return null
+    }
+
+    /**
+     * Provider APIs occasionally report a different duration for the same
+     * master (intros/outros, gapless metadata). Prefer a duration-safe match,
+     * but keep an exact title/artist/version match as a second pass so a Kugou
+     * track can still reach the Apple/AMLL catalogue when only its duration
+     * metadata differs. Live/remix/instrumental versions remain rejected by
+     * [isSafeCrossProviderLyricMatch]'s version check.
+     */
+    private fun crossProviderLyricMatches(
+        snapshot: LyricTrackSnapshot,
+        candidates: List<MusicTrack>,
+    ): List<MusicTrack> {
+        val strict = candidates.filter {
+            isSafeCrossProviderLyricMatch(snapshot.title, snapshot.artist, snapshot.durationMs, it)
+        }
+        if (strict.isNotEmpty()) return strict
+        val relaxed = candidates.filter {
+            isSafeCrossProviderLyricMatch(
+                snapshot.title,
+                snapshot.artist,
+                snapshot.durationMs,
+                it,
+                checkDuration = false,
+            )
+        }
+        if (relaxed.isNotEmpty()) {
+            Log.d(
+                "MeloXLyricsAuto",
+                "cross-provider duration mismatch accepted source=${snapshot.resourceId.sourceId.value} " +
+                    "title=${snapshot.title.take(40)} duration=${snapshot.durationMs} candidates=${relaxed.size}",
+            )
+        }
+        return relaxed
     }
 
     private suspend fun loadCurrentProvider(
@@ -1166,13 +1193,14 @@ internal fun isSafeCrossProviderLyricMatch(
     targetArtist: String,
     targetDurationMs: Long,
     candidate: MusicTrack,
+    checkDuration: Boolean = true,
 ): Boolean {
     val target = lyricTitleIdentity(withoutFeaturedArtistSuffix(targetTitle, targetArtist))
     val other = lyricTitleIdentity(withoutFeaturedArtistSuffix(candidate.title, candidate.artistText))
     if (target.baseTitle.isBlank() || target.baseTitle != other.baseTitle) return false
     if (target.version != other.version) return false
     if (target.version != LyricTrackVersion.Original && target.versionLabel != other.versionLabel) return false
-    if (targetDurationMs > 0L) {
+    if (checkDuration && targetDurationMs > 0L) {
         val candidateDuration = candidate.durationMs ?: return false
         // Tolerances come from the signed rules so cross-provider matching can be
         // tightened or loosened without an APK.

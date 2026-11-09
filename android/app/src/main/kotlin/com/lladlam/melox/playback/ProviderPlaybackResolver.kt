@@ -197,6 +197,13 @@ class ProviderPlaybackResolver(
                             actual = cross.actualQuality,
                         )
                     }
+                    fallback.thirdParty?.actualQuality?.let { actual ->
+                        ProviderPlaybackQualityRuntime.recordActual(
+                            id = id,
+                            requested = quality,
+                            actual = actual,
+                        )
+                    }
                     return ResolvedRequest(
                         uri = Uri.parse(fallback.url),
                         headers = fallback.requestHeaders,

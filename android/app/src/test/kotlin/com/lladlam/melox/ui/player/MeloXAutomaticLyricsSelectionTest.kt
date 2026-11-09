@@ -207,6 +207,31 @@ class MeloXAutomaticLyricsSelectionTest {
     }
 
     @Test
+    fun durationMismatchRetryStillRejectsADifferentVersion() {
+        assertTrue(
+            isSafeCrossProviderLyricMatch(
+                "提瓦特民谣", "宴宁", 240_000,
+                track("提瓦特民谣", "宴宁", 249_000),
+                checkDuration = false,
+            ),
+        )
+        assertFalse(
+            isSafeCrossProviderLyricMatch(
+                "提瓦特民谣 DJ版", "宴宁", 240_000,
+                track("提瓦特民谣 Remix", "宴宁", 240_000),
+                checkDuration = false,
+            ),
+        )
+        assertFalse(
+            isSafeCrossProviderLyricMatch(
+                "提瓦特民谣", "宴宁", 240_000,
+                track("提瓦特民谣", "其他歌手", 240_000),
+                checkDuration = false,
+            ),
+        )
+    }
+
+    @Test
     fun selectedCandidateRetainsExactBindingIdentity() {
         val binding = LyricBinding(
             source = BoundLyricSource.AmlL,
