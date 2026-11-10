@@ -8,6 +8,18 @@ import org.junit.Test
 
 class NeteaseFavoriteRetryTest {
     @Test
+    fun likePayloadUsesThePersistedMobileContract() {
+        val liked = neteaseSongLikePayload(2058263032L, true)
+        assertEquals("2058263032", liked.getString("trackId"))
+        assertEquals("true", liked.getString("like"))
+        assertEquals("3", liked.getString("time"))
+        assertEquals("", liked.getString("checkToken"))
+
+        val unliked = neteaseSongLikePayload(2058263032L, false)
+        assertEquals("false", unliked.getString("like"))
+    }
+
+    @Test
     fun retriesTransientErrorsWithBoundedBackoff() = runBlocking {
         var attempts = 0
         val delays = mutableListOf<Long>()
