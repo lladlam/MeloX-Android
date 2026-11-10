@@ -33,6 +33,10 @@ python3 tools/melox_cli.py --package com.lladlam.melox.android.dev status
 - `status` 包括媒体 ID、标题、歌手、进度、时长、播放状态、音量和循环设置；不返回账号 Cookie 或 Token。
 - CLI 操作 Media3 播放队列；Apple Music 官方 SDK 独立播放路径不在此入口控制范围内。
 
+## 本地 MCP
+
+同一套命令也可通过实验性本地 MCP 服务调用，详见 [MCP.md](MCP.md)（仅回环监听，需要 Token）。
+
 ## 直接使用 ADB
 
 ```bash

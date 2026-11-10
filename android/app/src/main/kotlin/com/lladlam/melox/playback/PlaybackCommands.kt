@@ -133,7 +133,7 @@ object PlaybackCommands {
         serverOrder: List<Long>?,
     ) {
         val appContext = context.applicationContext
-        val quality = MusicQualityPreferences.read(appContext)
+        val quality = com.lladlam.melox.core.audio.MeloXNetworkQualityPolicy.effectiveQuality(appContext)
         MusicQualityRuntime.selected = quality
         MusicQualityRuntime.clear()
         CrossProviderPlaybackRuntime.clear()
@@ -270,7 +270,7 @@ object PlaybackCommands {
 
     fun addToQueue(context: Context, song: SearchSong) {
         val appContext = context.applicationContext
-        val quality = MusicQualityPreferences.read(appContext)
+        val quality = com.lladlam.melox.core.audio.MeloXNetworkQualityPolicy.effectiveQuality(appContext)
         val controller = activeController
         if (controller == null) {
             playQueue(context, listOf(song), song.id)
@@ -319,7 +319,7 @@ object PlaybackCommands {
 
     fun playNext(context: Context, song: SearchSong) {
         val appContext = context.applicationContext
-        val quality = MusicQualityPreferences.read(appContext)
+        val quality = com.lladlam.melox.core.audio.MeloXNetworkQualityPolicy.effectiveQuality(appContext)
         val controller = activeController
         if (controller == null) {
             playQueue(context, listOf(song), song.id)
@@ -359,8 +359,17 @@ object PlaybackCommands {
     }
 
     fun changeQuality(context: Context, quality: MusicQuality) {
+        applyQuality(context, quality, persist = true)
+    }
+
+    /** Network policy changes the effective tier without overwriting the user's saved default. */
+    internal fun applyNetworkQuality(context: Context, quality: MusicQuality) {
+        applyQuality(context, quality, persist = false)
+    }
+
+    private fun applyQuality(context: Context, quality: MusicQuality, persist: Boolean) {
         val appContext = context.applicationContext
-        MusicQualityPreferences.write(appContext, quality)
+        if (persist) MusicQualityPreferences.write(appContext, quality)
         MusicQualityRuntime.selected = quality
         MusicQualityRuntime.clear()
         CrossProviderPlaybackRuntime.clear()

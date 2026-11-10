@@ -16,6 +16,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -290,11 +291,22 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     var search by remember { mutableStateOf("") }
+    // Section headers are tappable. Persist the collapsed titles in the saved
+    // instance state so returning from a detail page does not expand everything.
+    var collapsedSections by remember {
+        mutableStateOf(MeloXSettingsPreferences.string(context, "settings_collapsed_sections", ""))
+    }
+    val collapsed = remember(collapsedSections) {
+        collapsedSections.split('|').filter(String::isNotBlank).toSet()
+    }
     // 设置主页的滚动位置：详情页现在是另一个 Activity，本组合在它盖住期间仍然存活，
     // 退回时列表位置自然保持（`rememberScrollState` 由 `rememberSaveable` 兜底）。
     val rootScrollState = rememberScrollState()
 
-    LaunchedEffect(Unit) { MeloXSettingsPreferences.initialize(context) }
+    LaunchedEffect(Unit) {
+        MeloXSettingsPreferences.initialize(context)
+        collapsedSections = MeloXSettingsPreferences.string(context, "settings_collapsed_sections", "")
+    }
     LaunchedEffect(Unit) {
         if (LocalRecommendationStore.isAlgorithmEnabled(context) && LocalRecommendationStore.hasPersonalizationConsent(context)) {
             LocalRecommendationEngine.start(context)
@@ -350,28 +362,50 @@ fun SettingsScreen(
         }
 
         visibleSections.forEach { section ->
-            Text(
-                stringResource(when (section.title) {
-                    "应用" -> R.string.settings_section_app
-                    "扩展" -> R.string.settings_section_more
-                    "历史" -> R.string.settings_section_history
-                    else -> R.string.settings_section_about
-                }),
-                modifier = Modifier.padding(start = 8.dp, bottom = 8.dp, top = 8.dp),
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.48f),
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-            )
-            SettingsSectionCard(section) { selected ->
-                if (selected == SettingsRoute.Messages && onOpenMessages != null) {
-                    onOpenMessages()
-                } else {
-                    // 详情页是**独立 Activity** ⇒ 整页推入转场由平台负责（可连续打断、
-                    // 带系统屏幕圆角、支持预测式返回）。见 [MeloXSettingsDetailActivity]。
-                    MeloXSettingsDetailActivity.launch(context, selected, source)
-                }
+            val sectionTitle = stringResource(when (section.title) {
+                "应用" -> R.string.settings_section_app
+                "扩展" -> R.string.settings_section_more
+                "历史" -> R.string.settings_section_history
+                else -> R.string.settings_section_about
+            })
+            // Search results must stay visible even when their section is collapsed.
+            val expanded = normalized.isNotBlank() || section.title !in collapsed
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        val next = if (section.title in collapsed) collapsed - section.title else collapsed + section.title
+                        collapsedSections = next.joinToString("|")
+                        MeloXSettingsPreferences.setString(context, "settings_collapsed_sections", collapsedSections)
+                    }
+                    .padding(start = 8.dp, end = 8.dp, bottom = 8.dp, top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    sectionTitle,
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.48f),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                MeloXSymbolIcon(
+                    symbol = MeloXSymbol.ChevronRight,
+                    modifier = Modifier.size(18.dp).rotate(if (expanded) 90f else 0f),
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.38f),
+                )
             }
-            Spacer(Modifier.height(22.dp))
+            if (expanded) {
+                SettingsSectionCard(section) { selected ->
+                    if (selected == SettingsRoute.Messages && onOpenMessages != null) {
+                        onOpenMessages()
+                    } else {
+                        // 详情页是**独立 Activity** ⇒ 整页推入转场由平台负责（可连续打断、
+                        // 带系统屏幕圆角、支持预测式返回）。见 [MeloXSettingsDetailActivity]。
+                        MeloXSettingsDetailActivity.launch(context, selected, source)
+                    }
+                }
+                Spacer(Modifier.height(22.dp))
+            }
         }
 
         if (visibleSections.isEmpty() && normalized.isNotBlank()) {
@@ -1067,6 +1101,46 @@ private fun ExperimentalSettings(context: android.content.Context, source: Music
         SettingsInfoCard("电脑运行：python3 tools/melox_cli.py status\n支持 play / pause / next / previous / seek / queue / search / search-play；完整说明见 docs/CLI.md。")
     }
     Spacer(Modifier.height(10.dp))
+    var mcpEnabled by remember { mutableStateOf(com.lladlam.melox.platform.mcp.MeloXMcpRuntime.isEnabled(context)) }
+    var mcpError by remember { mutableStateOf<String?>(null) }
+    var mcpCopied by remember { mutableStateOf(false) }
+    SettingsGlassGroup {
+        SettingsExternalToggleRow(
+            title = stringResource(R.string.settings_mcp_title),
+            value = mcpEnabled,
+            note = stringResource(R.string.settings_mcp_note),
+            grouped = true,
+        ) { enabled ->
+            mcpEnabled = enabled
+            mcpCopied = false
+            mcpError = com.lladlam.melox.platform.mcp.MeloXMcpRuntime.setEnabled(context, enabled)
+        }
+    }
+    if (mcpEnabled) {
+        val endpoint = com.lladlam.melox.platform.mcp.MeloXMcpRuntime.endpoint(context)
+        val token = com.lladlam.melox.platform.mcp.MeloXMcpRuntime.token(context)
+        SettingsInfoCard(
+            stringResource(R.string.settings_mcp_endpoint, endpoint) + "\n" +
+                stringResource(R.string.settings_mcp_token, token),
+        )
+        SettingsActionButton(stringResource(R.string.settings_mcp_copy_token)) {
+            val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+            clipboard?.setPrimaryClip(
+                android.content.ClipData.newPlainText("MeloX MCP token", token),
+            )
+            mcpCopied = true
+        }
+        if (mcpCopied) {
+            Text(
+                stringResource(R.string.settings_mcp_copied),
+                color = MeloXSystemColors.Red,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(start = 8.dp, top = 4.dp),
+            )
+        }
+        mcpError?.let { SettingsInfoCard(stringResource(R.string.settings_mcp_failed, it)) }
+    }
+    Spacer(Modifier.height(10.dp))
     var playbackEnabled by remember { mutableStateOf(PlaybackAccountStore.isEnabled(context)) }
     var showQQLogin by remember { mutableStateOf(false) }
     var showClearPlaybackConfirmation by remember { mutableStateOf(false) }
@@ -1370,6 +1444,49 @@ private fun PlaybackSettings(context: android.content.Context) {
             onSelected = { quality = it; PlaybackCommands.changeQuality(context, it) },
             grouped = true,
         )
+        var networkQualityEnabled by remember {
+            mutableStateOf(com.lladlam.melox.core.audio.MeloXNetworkQualityPolicy.isEnabled(context))
+        }
+        var wifiQuality by remember {
+            mutableStateOf(com.lladlam.melox.core.audio.MeloXNetworkQualityPolicy.wifiQuality(context))
+        }
+        var mobileQuality by remember {
+            mutableStateOf(com.lladlam.melox.core.audio.MeloXNetworkQualityPolicy.mobileQuality(context))
+        }
+        SettingsExternalToggleRow(
+            title = stringResource(R.string.settings_network_quality_auto),
+            value = networkQualityEnabled,
+            note = stringResource(R.string.settings_network_quality_auto_note),
+            grouped = true,
+        ) { enabled ->
+            networkQualityEnabled = enabled
+            com.lladlam.melox.core.audio.MeloXNetworkQualityPolicy.setEnabled(context, enabled)
+            com.lladlam.melox.playback.MeloXNetworkQualityMonitor.refresh(context)
+        }
+        if (networkQualityEnabled) {
+            MeloXSettingsDropdown(
+                title = stringResource(R.string.settings_network_quality_wifi),
+                selected = wifiQuality,
+                items = MusicQuality.entries.map { it to it.title },
+                onSelected = {
+                    wifiQuality = it
+                    com.lladlam.melox.core.audio.MeloXNetworkQualityPolicy.setWifiQuality(context, it)
+                    com.lladlam.melox.playback.MeloXNetworkQualityMonitor.refresh(context)
+                },
+                grouped = true,
+            )
+            MeloXSettingsDropdown(
+                title = stringResource(R.string.settings_network_quality_mobile),
+                selected = mobileQuality,
+                items = MusicQuality.entries.map { it to it.title },
+                onSelected = {
+                    mobileQuality = it
+                    com.lladlam.melox.core.audio.MeloXNetworkQualityPolicy.setMobileQuality(context, it)
+                    com.lladlam.melox.playback.MeloXNetworkQualityMonitor.refresh(context)
+                },
+                grouped = true,
+            )
+        }
         MeloXSettingsDropdown(
             title = stringResource(R.string.settings_volume_slider),
             selected = volumeMode,

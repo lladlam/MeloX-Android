@@ -1613,7 +1613,7 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
                     emptyList()
                 }
                 val existing = (0 until active.mediaItemCount).map { active.getMediaItemAt(it).mediaId }.toSet()
-                val quality = MusicQualityPreferences.read(this@MeloXPlaybackService)
+                val quality = com.lladlam.melox.core.audio.MeloXNetworkQualityPolicy.effectiveQuality(this@MeloXPlaybackService)
                 val additions = recommendations
                     .filterNot { it.id.toString() in existing }
                     .take(20)

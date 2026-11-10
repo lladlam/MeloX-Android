@@ -1592,4 +1592,15 @@
     <string name="settings_listen_solo_note">Keep the room online but control only this device. Your playback is not sent to the other listener, and the room keeps its current song. Turn off to sync back to the room.</string>
     <string name="settings_storage_playback_limit">Playback cache limit</string>
     <string name="settings_storage_playback_limit_note">When the limit is reached, the least recently used audio is evicted. The new limit takes effect after the app restarts.</string>
+    <string name="settings_network_quality_auto">Adjust quality by network</string>
+    <string name="settings_network_quality_auto_note">Use separate playback quality presets on Wi-Fi and mobile data. The network preset takes precedence when this is on.</string>
+    <string name="settings_network_quality_wifi">Wi-Fi quality</string>
+    <string name="settings_network_quality_mobile">Mobile data quality</string>
+    <string name="settings_mcp_title">Local MCP server</string>
+    <string name="settings_mcp_note">Expose playback controls to a local AI client on 127.0.0.1. Disabled by default. The endpoint requires the token below.</string>
+    <string name="settings_mcp_endpoint">Endpoint: %1$s</string>
+    <string name="settings_mcp_token">Token: %1$s</string>
+    <string name="settings_mcp_copy_token">Copy token</string>
+    <string name="settings_mcp_copied">Token copied</string>
+    <string name="settings_mcp_failed">MCP failed to start: %1$s</string>
 </resources>

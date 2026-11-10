@@ -1589,4 +1589,15 @@
     <string name="settings_listen_solo_note">一緒に聴くルームには接続したまま、この端末の再生だけを操作します。曲送りや一時停止は相手に送られず、ルームには元の曲が表示されます。オフにすると相手の現在の再生に同期します。</string>
     <string name="settings_storage_playback_limit">再生キャッシュの上限</string>
     <string name="settings_storage_playback_limit_note">上限に達すると、最も長く使われていない音声キャッシュから削除されます。変更はアプリの次回起動時に反映されます。</string>
+    <string name="settings_network_quality_auto">ネットワークで音質を自動調整</string>
+    <string name="settings_network_quality_auto_note">Wi-Fi とモバイル通信で別々の再生音質を設定します。オンの場合、こちらのプリセットが既定の音質より優先されます。</string>
+    <string name="settings_network_quality_wifi">Wi-Fi の音質</string>
+    <string name="settings_network_quality_mobile">モバイル通信の音質</string>
+    <string name="settings_mcp_title">ローカル MCP サーバー</string>
+    <string name="settings_mcp_note">127.0.0.1 のみで待ち受け、ローカルの AI クライアントに再生操作を公開します。既定では無効で、接続には下の Token が必要です。</string>
+    <string name="settings_mcp_endpoint">エンドポイント：%1$s</string>
+    <string name="settings_mcp_token">Token：%1$s</string>
+    <string name="settings_mcp_copy_token">Token をコピー</string>
+    <string name="settings_mcp_copied">Token をコピーしました</string>
+    <string name="settings_mcp_failed">MCP の起動に失敗しました：%1$s</string>
 </resources>

@@ -243,6 +243,8 @@ python3 tools/melox_cli.py --package com.lladlam.melox.android.dev status
 
 Supports playback controls, queue/status queries, seeking, volume, shuffle/repeat, and provider search/play. See [CLI documentation](docs/CLI.md) for setup and commands.
 
+A local, token-protected MCP endpoint is available under the same experimental section; see [MCP documentation](docs/MCP.md).
+
 ## Release signature
 
 Official APKs on GitHub Releases are signed with the MeloX release certificate. SHA-256 fingerprint:

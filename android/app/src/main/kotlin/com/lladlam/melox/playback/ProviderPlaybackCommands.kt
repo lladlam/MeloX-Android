@@ -58,7 +58,7 @@ object ProviderPlaybackCommands {
             return
         }
         ProviderPlaybackRuntime.initialize(appContext)
-        val neteaseQuality = MusicQualityPreferences.read(appContext)
+        val neteaseQuality = com.lladlam.melox.core.audio.MeloXNetworkQualityPolicy.effectiveQuality(appContext)
         MusicQualityRuntime.selected = neteaseQuality
         val qualityTier = neteaseQuality.toCommonTier()
         val startIndex = tracks.indexOfFirst { it.id == selectedTrackId }.coerceAtLeast(0)

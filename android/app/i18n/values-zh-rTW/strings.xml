@@ -1584,4 +1584,15 @@
     <string name="settings_listen_solo_note">保持一起聽房間在線，但只控制本機播放：你的切歌和暫停不會影響對方，房間仍顯示原來的歌。關閉後會同步回對方的目前播放。</string>
     <string name="settings_storage_playback_limit">播放快取上限</string>
     <string name="settings_storage_playback_limit_note">達到上限後會自動清除最久未使用的音訊快取；修改後下次啟動應用程式生效。</string>
+    <string name="settings_network_quality_auto">依網路自動調整音質</string>
+    <string name="settings_network_quality_auto_note">分別為 Wi-Fi 與行動網路設定播放音質；開啟後網路預設優先於上方預設音質。</string>
+    <string name="settings_network_quality_wifi">Wi-Fi 音質</string>
+    <string name="settings_network_quality_mobile">行動網路音質</string>
+    <string name="settings_mcp_title">本機 MCP 服務</string>
+    <string name="settings_mcp_note">僅監聽 127.0.0.1，向本機 AI 用戶端提供播放控制。預設關閉，連線時必須攜帶下方 Token。</string>
+    <string name="settings_mcp_endpoint">端點：%1$s</string>
+    <string name="settings_mcp_token">Token：%1$s</string>
+    <string name="settings_mcp_copy_token">複製 Token</string>
+    <string name="settings_mcp_copied">Token 已複製</string>
+    <string name="settings_mcp_failed">MCP 啟動失敗：%1$s</string>
 </resources>

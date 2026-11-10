@@ -40,6 +40,11 @@ class MeloXApplication : Application() {
         MeloXSystemScale.install(this)
         registerActivityLifecycleCallbacks(MeloXAppVisibility)
         registerComponentCallbacks(MeloXMemoryCallbacks)
+        // Opt-in local MCP endpoint; loopback only and disabled by default.
+        runCatching { com.lladlam.melox.platform.mcp.MeloXMcpRuntime.startIfEnabled(this) }
+            .onFailure { android.util.Log.w("MeloXStartup", "Skipping local MCP server", it) }
+        runCatching { com.lladlam.melox.playback.MeloXNetworkQualityMonitor.start(this) }
+            .onFailure { android.util.Log.w("MeloXStartup", "Skipping network quality monitor", it) }
     }
 }
 
