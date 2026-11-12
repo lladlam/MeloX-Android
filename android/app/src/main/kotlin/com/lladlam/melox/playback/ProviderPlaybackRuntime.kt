@@ -11,6 +11,7 @@ import com.lladlam.melox.core.provider.kugou.KugouSessionStore
 import com.lladlam.melox.core.provider.qqmusic.QQMusicSessionStore
 import com.lladlam.melox.core.provider.bilibili.BilibiliSessionStore
 import com.lladlam.melox.core.provider.bilibili.BilibiliPlaybackAssociationStore
+import com.lladlam.melox.core.provider.bilibili.BilibiliDirectedTrafficPolicy
 import com.lladlam.melox.core.provider.spotify.SpotifySessionStore
 import com.lladlam.melox.core.provider.youtubemusic.YouTubeSessionStore
 import java.security.MessageDigest
@@ -52,8 +53,11 @@ object ProviderPlaybackRuntime {
             MusicSource.AppleMusic -> AppleMusicSessionStore.read(context).let { session ->
                 listOf(session.developerToken, session.musicUserToken, session.storefront).joinToString("|")
             }
-            MusicSource.Bilibili -> BilibiliSessionStore.read(context).cookie + "|" +
-                BilibiliPlaybackAssociationStore.revision(context)
+            MusicSource.Bilibili -> bilibiliCacheIdentity(
+                BilibiliSessionStore.read(context).cookie,
+                BilibiliPlaybackAssociationStore.revision(context),
+                BilibiliDirectedTrafficPolicy.isActive(context),
+            )
             MusicSource.Spotify -> SpotifySessionStore.read(context).let { session ->
                 listOf(session.accountId, session.expiresAtEpochMs).joinToString("|")
             }
@@ -68,4 +72,8 @@ object ProviderPlaybackRuntime {
         return MessageDigest.getInstance("SHA-256").digest(credential.toByteArray())
             .joinToString("") { "%02x".format(it) }
     }
+
+    // Route changes must also partition resolved URLs and in-flight requests.
+    internal fun bilibiliCacheIdentity(cookie: String, associationRevision: Long, directedTrafficActive: Boolean): String =
+        "$cookie|$associationRevision|directedTraffic=$directedTrafficActive"
 }

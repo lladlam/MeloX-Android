@@ -43,7 +43,7 @@ object BilibiliDirectedTrafficPolicy {
 
     /** 开关打开且当前处于移动数据网络时才生效。 */
     fun isActive(context: Context): Boolean =
-        isEnabled(context) && MeloXNetworkQualityPolicy.isCellular(context) == true
+        isEnabled(context) && MeloXNetworkQualityPolicy.isCellular(context, allowMeteredFallback = false) == true
 
     // ---------------------------------------------------------------- 选线逻辑
 

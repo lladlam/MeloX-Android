@@ -47,15 +47,23 @@ object MeloXNetworkQualityPolicy {
     }
 
     /** null when the active transport cannot be classified. */
-    fun isCellular(context: Context): Boolean? {
+    fun isCellular(context: Context, allowMeteredFallback: Boolean = true): Boolean? {
         val manager = context.applicationContext.getSystemService(ConnectivityManager::class.java) ?: return null
         val capabilities = manager.getNetworkCapabilities(manager.activeNetwork) ?: return null
         val wifi = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
             capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+        return classifyTransport(
+            wifi = wifi,
+            cellular = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR),
+            meteredFallback = allowMeteredFallback && manager.isActiveNetworkMetered,
+        )
+    }
+
+    internal fun classifyTransport(wifi: Boolean, cellular: Boolean, meteredFallback: Boolean): Boolean? {
         if (wifi) return false
-        if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) return true
+        if (cellular) return true
         // VPNs may hide the underlying transport; metered is the safest proxy.
-        return if (manager.isActiveNetworkMetered) true else null
+        return if (meteredFallback) true else null
     }
 
     private fun quality(context: Context, key: String): MusicQuality? =
