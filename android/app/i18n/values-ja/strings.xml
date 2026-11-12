@@ -782,6 +782,9 @@
     <string name="settings_notify_test_big">これはテスト用の歌詞です\n次の行のプレビュー</string>
     <string name="settings_bilibili_align">Bilibili の音声を歌詞に自動で合わせる</string>
     <string name="settings_bilibili_align_warning">オンにすると、再生位置が実際の音声からずれることがあります。</string>
+    <string name="settings_bilibili_directed_traffic">Bilibili キャリアデータ（実験的）</string>
+    <string name="settings_bilibili_directed_traffic_note">モバイルデータ時のみ有効：公式 Bilibili CDN のアドレスを優先し、PCDN や第三者ホストを避けます。既定ではオフです。</string>
+    <string name="settings_bilibili_directed_traffic_warning">実際に課金対象から除外されるかはキャリアの課金方針次第であり、アプリでは確認も保証もできません。経路の選択のみを最適化します。</string>
     <string name="settings_bilibili_clear">Bilibili の音声の関連付けを消去</string>
     <string name="settings_bilibili_clear_title">Bilibili の音声の関連付けを消去しますか？</string>
     <string name="settings_bilibili_clear_body">元の動画と差し替え音声の保存済みリンクを削除します。</string>
@@ -1060,6 +1063,17 @@
     <string name="settings_tabs_shortcuts">ショートカット</string>
     <string name="settings_tabs_playlists">おすすめプレイリスト</string>
     <string name="settings_tabs_new_songs">おすすめの新曲</string>
+    <string name="settings_bottom_bar_lock_dark">ダークモードでボトムバーを暗色のままにする</string>
+    <string name="settings_bottom_bar_lock_dark_note">ダークモードでは、背後の内容に応じてボトムバーが淡色へ切り替わりません。ライトモードには影響しません。</string>
+    <string name="settings_library_playlist_search_hidden">プレイリストの検索バーを隠す</string>
+    <string name="settings_library_playlist_search_hidden_note">オンにすると固定検索バーが非表示になり、上からスワイプして引き出せます。オフにすると元のレイアウトに戻ります。</string>
+    <string name="settings_library_playlist_show_artwork">プレイリストでジャケットを表示する</string>
+    <string name="settings_library_playlist_show_artwork_note">オンにすると、プレイリストの曲がトラック番号の代わりに小さなジャケットを表示します。オフにすると再びトラック番号を表示します。</string>
+    <string name="settings_unified_favorites">MeloX「お気に入り」</string>
+    <string name="settings_unified_favorites_note">MeloX 内だけに保存されます。どの音源からでもお気に入りに追加でき、音源のアカウントには書き込まれません。</string>
+    <string name="settings_cli_title">CLI モード</string>
+    <string name="settings_cli_note">パソコンから ADB コマンドで状態取得、再生制御、曲の検索ができます。既定ではオフで、ADB shell からの呼び出しのみ許可されます。</string>
+    <string name="settings_cli_usage">パソコンで実行: python3 tools/melox_cli.py status\nplay / pause / next / previous / seek / queue / search / search-play に対応。詳細は docs/CLI.md を参照してください。</string>
     <string name="settings_tabs_remember_library">ライブラリのページを記憶</string>
     <string name="settings_tabs_default_library">ライブラリの既定ページ</string>
     <string name="settings_tabs_songs">曲</string>

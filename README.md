@@ -245,6 +245,10 @@ Supports playback controls, queue/status queries, seeking, volume, shuffle/repea
 
 A local, token-protected MCP endpoint is available under the same experimental section; see [MCP documentation](docs/MCP.md).
 
+## Bilibili carrier data (experimental)
+
+**Settings → Bilibili → Bilibili carrier data (experimental)** prefers official Bilibili CDN addresses for DASH audio on mobile data and avoids PCDN or third-party hosts. It only changes which media address is used — cookies, `Referer`, `User-Agent` and the WBI request identity are untouched, and host rewrites are limited to paths whose signature is host-agnostic. Whether traffic is actually exempt is decided by your carrier; the app cannot verify or guarantee it. See [the documentation](docs/BILIBILI-DIRECTED-TRAFFIC.md).
+
 ## Release signature
 
 Official APKs on GitHub Releases are signed with the MeloX release certificate. SHA-256 fingerprint:

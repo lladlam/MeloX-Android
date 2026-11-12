@@ -15,6 +15,7 @@ import com.lladlam.melox.core.provider.bilibili.BilibiliProvider
 import com.lladlam.melox.core.provider.bilibili.BilibiliSessionStore
 import com.lladlam.melox.core.provider.bilibili.BilibiliPlaybackAssociationStore
 import com.lladlam.melox.core.provider.bilibili.BilibiliApiCache
+import com.lladlam.melox.core.provider.bilibili.BilibiliDirectedTrafficPolicy
 import com.lladlam.melox.core.provider.spotify.SpotifyClientConfig
 import com.lladlam.melox.core.provider.spotify.SpotifyProvider
 import com.lladlam.melox.core.provider.youtubemusic.YouTubeMusicProvider
@@ -61,6 +62,7 @@ object MeloXMusicProviders {
                     { bvid, cid -> BilibiliPlaybackAssociationStore.read(appContext, bvid, cid) },
                     BilibiliApiCache.shared(appContext),
                     { BilibiliSessionStore.revision(appContext) },
+                    { BilibiliDirectedTrafficPolicy.isActive(appContext) },
                 ),
                 JellyfinProvider({ JellyfinSessionStore.read(appContext) }, httpClient),
                 LocalProvider(appContext),
@@ -120,6 +122,7 @@ object MeloXMusicProviders {
                     associationProvider = { bvid, cid -> BilibiliPlaybackAssociationStore.read(context, bvid, cid) },
                     apiCache = BilibiliApiCache.shared(context),
                     sessionRevisionProvider = { BilibiliSessionStore.revision(context) },
+                    directedTrafficProvider = { BilibiliDirectedTrafficPolicy.isActive(context) },
                 ),
                 JellyfinProvider({ JellyfinSessionStore.read(context) }, httpClient),
                 LocalProvider(context),

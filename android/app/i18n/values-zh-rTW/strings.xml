@@ -777,6 +777,9 @@
     <string name="settings_notify_test_big">這是測試歌詞\n下一句歌詞預覽</string>
     <string name="settings_bilibili_align">自動將 bilibili 音源與歌詞對齊</string>
     <string name="settings_bilibili_align_warning">開啟後可能與實際音訊不一致</string>
+    <string name="settings_bilibili_directed_traffic">B站定向流量（實驗性）</string>
+    <string name="settings_bilibili_directed_traffic_note">僅在行動數據下生效：優先使用 B 站官方 CDN 位址，避開 PCDN 與第三方線路。預設關閉。</string>
+    <string name="settings_bilibili_directed_traffic_warning">是否真正免流由電信商計費策略決定，應用程式無法查詢或保證，僅最佳化所走線路。</string>
     <string name="settings_bilibili_clear">清除 Bilibili 音訊關聯</string>
     <string name="settings_bilibili_clear_title">清除 Bilibili 音訊關聯？</string>
     <string name="settings_bilibili_clear_body">已儲存的原影片與替代音訊對應關係將會刪除。</string>
@@ -1055,6 +1058,17 @@
     <string name="settings_tabs_shortcuts">快捷入口</string>
     <string name="settings_tabs_playlists">推薦歌單</string>
     <string name="settings_tabs_new_songs">推薦新歌</string>
+    <string name="settings_bottom_bar_lock_dark">深色模式保持暗色底欄</string>
+    <string name="settings_bottom_bar_lock_dark_note">深色模式下底欄不再依據背後內容自適應翻成淺色；淺色模式不受影響。</string>
+    <string name="settings_library_playlist_search_hidden">隱藏歌單搜尋列</string>
+    <string name="settings_library_playlist_search_hidden_note">開啟後，固定搜尋列會隱藏，並可從頂端滑動拉出。關閉則恢復原本樣式。</string>
+    <string name="settings_library_playlist_show_artwork">歌單顯示封面</string>
+    <string name="settings_library_playlist_show_artwork_note">開啟後，歌單內的歌曲會顯示微小封面而不是數字序號。關閉則全部顯示數字。</string>
+    <string name="settings_unified_favorites">彌樂「我喜歡」</string>
+    <string name="settings_unified_favorites_note">只在彌樂內儲存；可從任一音源收藏，不寫入音源帳號。</string>
+    <string name="settings_cli_title">CLI 模式</string>
+    <string name="settings_cli_note">透過電腦 ADB 指令查詢狀態、控制播放和搜尋歌曲。預設關閉，僅允許 ADB shell 呼叫。</string>
+    <string name="settings_cli_usage">電腦執行：python3 tools/melox_cli.py status\n支援 play / pause / next / previous / seek / queue / search / search-play；完整說明見 docs/CLI.md。</string>
     <string name="settings_tabs_remember_library">記住音樂庫子頁面</string>
     <string name="settings_tabs_default_library">音樂庫預設頁</string>
     <string name="settings_tabs_songs">歌曲</string>

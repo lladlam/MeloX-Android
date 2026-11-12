@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -127,12 +128,22 @@ fun MeloXIosListRow(
     chevronTint: Color = MeloXSystemColors.Red.copy(alpha = 0.88f),
     onClick: (() -> Unit)? = null,
     showTopSeparator: Boolean = true,
+    /**
+     * 副标题最大行数。默认 2 行（与历史行为一致）；设置页的长说明可传更大的值，
+     * 让整段文字换行显示而不是被截断。
+     */
+    subtitleMaxLines: Int = 2,
 ) {
     val separator = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
+    val minHeight = if (subtitle == null) 56.dp else 68.dp
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(if (subtitle == null) 56.dp else 68.dp)
+            // 默认仍是固定高度（与历史行为一致）；只有显式放开行数的调用方才允许整行变高。
+            .then(
+                if (subtitleMaxLines > 2) Modifier.heightIn(min = minHeight)
+                else Modifier.height(minHeight),
+            )
             .drawBehind {
                 if (showTopSeparator) {
                     drawLine(
@@ -165,7 +176,7 @@ fun MeloXIosListRow(
                     it,
                     style = MeloXTypography.subheadline.inheritAmbientFamily(),
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.52f),
-                    maxLines = 2,
+                    maxLines = subtitleMaxLines,
                     overflow = TextOverflow.Ellipsis,
                 )
             }

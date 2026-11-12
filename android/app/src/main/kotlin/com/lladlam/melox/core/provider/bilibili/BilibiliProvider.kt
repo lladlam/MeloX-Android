@@ -16,6 +16,13 @@ class BilibiliProvider(
     private val associationProvider: (String, Long) -> BilibiliPlaybackAssociation? = { _, _ -> null },
     private val apiCache: BilibiliApiCache? = null,
     private val sessionRevisionProvider: () -> Long = { 0L },
+    /**
+     * 「B 站定向流量（实验性）」当前是否生效（开关打开 + 移动数据）。
+     *
+     * 默认关闭，保持既有选线行为；开启后只在候选地址之间挑选官方 CDN 线路，
+     * 不会改写 WBI 请求的平台身份，也不会动 Cookie / Referer / User-Agent。
+     */
+    private val directedTrafficProvider: () -> Boolean = { false },
 ) : MusicProvider, SearchCapability, PlaybackCapability, UserLibraryCapability, PlaylistCapability {
     override val source = MusicSource.Bilibili
     override val displayName = source.displayName
@@ -213,25 +220,38 @@ class BilibiliProvider(
             response = wbiGet("/x/player/wbi/playurl", params, retry403 = false)
         }
         val data = response.data()
+        val directedTrafficActive = directedTrafficProvider()
         val candidates = buildList {
             addAudio(data.optJSONObject("dash")?.optJSONArray("audio"))
             addAudio(data.optJSONObject("dash")?.optJSONObject("flac")?.opt("audio"))
             addAudio(data.optJSONObject("dash")?.optJSONObject("dolby")?.optJSONArray("audio"))
-        }.distinctBy { it.id to it.url }
+        }.distinctBy { it.id to it.urls }
             .filter { it.id in SafeAndroidAudioIds }
         val selected = quality.bilibiliAudioPreference()
-            .firstNotNullOfOrNull { preferredId -> candidates.firstOrNull { it.id == preferredId } }
+            .firstNotNullOfOrNull { preferredId ->
+                val group = candidates.filter { it.id == preferredId }
+                // 定向流量生效时，同音质优先选带官方 CDN 线路的候选。
+                if (directedTrafficActive) {
+                    group.firstOrNull { BilibiliDirectedTrafficPolicy.hasOfficialCandidate(it.urls) }
+                        ?: group.firstOrNull()
+                } else {
+                    group.firstOrNull()
+                }
+            }
             ?: candidates.firstOrNull()
+            ?: return PlaybackResolution.Unavailable("Bilibili 没有返回 DASH 音频")
+        val mediaUrl = BilibiliDirectedTrafficPolicy.selectMediaUrl(selected.urls, directedTrafficActive)
             ?: return PlaybackResolution.Unavailable("Bilibili 没有返回 DASH 音频")
         android.util.Log.i(
             "MeloXBilibiliPlayback",
             "selected bvid=$physicalBvid cid=$physicalCid requested=$quality " +
-                "audioId=${selected.id} mime=${selected.mime} bandwidth=${selected.bandwidth}",
+                "audioId=${selected.id} mime=${selected.mime} bandwidth=${selected.bandwidth} " +
+                "directedTraffic=$directedTrafficActive",
         )
         val cookie = sessionProvider().cookie
         if (cookie.isBlank()) return PlaybackResolution.LoginRequired
         return PlaybackResolution.Playable(
-            url = selected.url,
+            url = mediaUrl,
             requestHeaders = mapOf(
                 "Referer" to "https://www.bilibili.com/video/$physicalBvid",
                 "User-Agent" to UserAgent,
@@ -241,7 +261,7 @@ class BilibiliProvider(
             actualQuality = selected.id.bilibiliTier(),
             bitrate = selected.bandwidth,
             format = selected.mime,
-            expiresAtEpochMs = BilibiliApiCache.playbackExpiry(selected.url),
+            expiresAtEpochMs = BilibiliApiCache.playbackExpiry(mediaUrl),
         )
     }
 
@@ -333,7 +353,8 @@ class BilibiliProvider(
         return optJSONObject("data") ?: JSONObject()
     }
 
-    private data class Audio(val id: Int, val url: String, val bandwidth: Int?, val mime: String?)
+    /** 一条 DASH 音频轨：`urls` 为 `base_url` + 全部 `backup_url`（按服务端顺序）。 */
+    private data class Audio(val id: Int, val urls: List<String>, val bandwidth: Int?, val mime: String?)
     private fun MutableList<Audio>.addAudio(value: Any?) {
         when (value) {
             is JSONArray -> addAudio(value)
@@ -345,13 +366,22 @@ class BilibiliProvider(
         array.objects().forEach { addAudio(it) }
     }
     private fun MutableList<Audio>.addAudio(item: JSONObject) {
-        val url = item.optString("base_url").ifBlank { item.optString("baseUrl") }.ifBlank {
-            (item.optJSONArray("backup_url") ?: item.optJSONArray("backupUrl"))?.optString(0).orEmpty()
-        }
-        if (url.isNotBlank()) add(
+        val backups = item.optJSONArray("backup_url") ?: item.optJSONArray("backupUrl")
+        val urls = buildList {
+            item.optString("base_url").ifBlank { item.optString("baseUrl") }
+                .takeIf(String::isNotBlank)?.let(::add)
+            if (backups != null) {
+                for (index in 0 until backups.length()) {
+                    val value = backups.optString(index).orEmpty()
+                    if (value.isNotBlank()) add(value)
+                }
+            }
+        }.distinct()
+        if (urls.isEmpty()) return
+        add(
             Audio(
                 item.optInt("id"),
-                url,
+                urls,
                 item.optInt("bandwidth").takeIf { it > 0 },
                 item.optString("mime_type").ifBlank { item.optString("mimeType") },
             ),

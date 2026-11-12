@@ -841,6 +841,9 @@
     <string name="settings_notify_test_big">This is a test lyric\nPreview of the next line</string>
     <string name="settings_bilibili_align">Align Bilibili audio with lyrics automatically</string>
     <string name="settings_bilibili_align_warning">Turning this on may make playback drift from the actual audio.</string>
+    <string name="settings_bilibili_directed_traffic">Bilibili carrier data (experimental)</string>
+    <string name="settings_bilibili_directed_traffic_note">On mobile data, prefer official Bilibili CDN addresses and avoid PCDN or third-party hosts. Off by default.</string>
+    <string name="settings_bilibili_directed_traffic_warning">Only applies on mobile data. Whether traffic is actually exempt is decided by your carrier, and MeloX cannot verify or guarantee it.</string>
     <string name="settings_bilibili_clear">Clear Bilibili audio associations</string>
     <string name="settings_bilibili_clear_title">Clear Bilibili audio associations?</string>
     <string name="settings_bilibili_clear_body">Saved links between original videos and replacement audio will be deleted.</string>
@@ -1119,6 +1122,17 @@
     <string name="settings_tabs_shortcuts">Shortcuts</string>
     <string name="settings_tabs_playlists">Recommended playlists</string>
     <string name="settings_tabs_new_songs">Recommended new songs</string>
+    <string name="settings_bottom_bar_lock_dark">Keep the bottom bar dark in dark mode</string>
+    <string name="settings_bottom_bar_lock_dark_note">In dark mode the bottom bar no longer flips to a light shade based on the content behind it. Light mode is unaffected.</string>
+    <string name="settings_library_playlist_search_hidden">Hide the playlist search bar</string>
+    <string name="settings_library_playlist_search_hidden_note">When on, the fixed search bar is hidden and can be pulled out by swiping from the top. Turning this off restores the original layout.</string>
+    <string name="settings_library_playlist_show_artwork">Show artwork in playlists</string>
+    <string name="settings_library_playlist_show_artwork_note">When on, songs in a playlist show a tiny cover instead of the track number. Turning this off shows track numbers again.</string>
+    <string name="settings_unified_favorites">MeloX Favorites</string>
+    <string name="settings_unified_favorites_note">Saved only inside MeloX. You can favorite from any source without writing to that source\'s account.</string>
+    <string name="settings_cli_title">CLI mode</string>
+    <string name="settings_cli_note">Query status, control playback and search songs from a computer over ADB. Disabled by default; only ADB shell calls are allowed.</string>
+    <string name="settings_cli_usage">On the computer: python3 tools/melox_cli.py status\nSupports play / pause / next / previous / seek / queue / search / search-play. See docs/CLI.md for details.</string>
     <string name="settings_tabs_remember_library">Remember the library page</string>
     <string name="settings_tabs_default_library">Default library page</string>
     <string name="settings_tabs_songs">Songs</string>
