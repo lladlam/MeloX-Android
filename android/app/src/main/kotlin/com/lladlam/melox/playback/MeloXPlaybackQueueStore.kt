@@ -66,7 +66,9 @@ internal object MeloXPlaybackQueueStore {
             .edit()
             .putInt(INDEX, index.coerceAtLeast(0))
             .putLong(POSITION, positionMs.coerceAtLeast(0L))
-            .commit()
+            // This is called by the two-second playback monitor. Full queue saves
+            // still support a synchronous flush during teardown.
+            .apply()
     }
 
     fun read(context: Context): MeloXPersistedQueue? {
