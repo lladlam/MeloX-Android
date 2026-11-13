@@ -33,6 +33,8 @@ class SpotifyLibrespotPlayback(
     private val accountMarkerFile = File(credentialsDir, "account.id")
     @Volatile private var session: Session? = null
     @Volatile private var sessionAccountId: String? = null
+    private val connectionLock = Any()
+    private val trackLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
 
     val isConnected: Boolean get() = session != null
 
@@ -41,6 +43,7 @@ class SpotifyLibrespotPlayback(
      * back to the OAuth access token for first login. Returns the session.
      */
     suspend fun connect(accessToken: String, accountId: String = ""): Session = withContext(Dispatchers.IO) {
+        synchronized(connectionLock) {
         val existing = session
         if (existing != null) {
             val current = sessionAccountId.orEmpty()
@@ -82,14 +85,17 @@ class SpotifyLibrespotPlayback(
         sessionAccountId = accountId
         if (accountId.isNotBlank()) runCatching { accountMarkerFile.writeText(accountId) }
         created
+        }
     }
 
     /** Disconnect and clear the in-memory session. */
     fun disconnect() {
-        val existing = session ?: return
-        session = null
-        sessionAccountId = null
-        runCatching { existing.close() }
+        synchronized(connectionLock) {
+            val existing = session ?: return
+            session = null
+            sessionAccountId = null
+            runCatching { existing.close() }
+        }
     }
 
     /**
@@ -98,13 +104,15 @@ class SpotifyLibrespotPlayback(
      * and when the Spotify account changes.
      */
     fun invalidate() {
-        val existing = session
-        session = null
-        sessionAccountId = null
-        runCatching { existing?.close() }
-        runCatching { credentialsFile.delete() }
-        runCatching { accountMarkerFile.delete() }
-        runCatching { playbackCacheDir.listFiles()?.forEach { it.delete() } }
+        synchronized(connectionLock) {
+            val existing = session
+            session = null
+            sessionAccountId = null
+            runCatching { existing?.close() }
+            runCatching { credentialsFile.delete() }
+            runCatching { accountMarkerFile.delete() }
+            runCatching { playbackCacheDir.listFiles()?.forEach { it.delete() } }
+        }
     }
 
     /**
@@ -117,16 +125,30 @@ class SpotifyLibrespotPlayback(
             val playableId = TrackId.fromUri("spotify:track:$trackId")
             val destination = File(playbackCacheDir, "$trackId.audio")
             if (destination.isFile && destination.length() > 0L) return@runCatching destination
-            val loaded = s.contentFeeder().load(
-                playableId,
-                AudioQualityPicker { files -> files.firstOrNull() },
-                false,
-                null,
-            )
-            destination.outputStream().use { output ->
-                loaded.`in`.stream().use { input -> input.copyTo(output) }
+            val trackLock = trackLocks.getOrPut(trackId) { Any() }
+            synchronized(trackLock) {
+                // Another resolver may have completed this exact track meanwhile.
+                if (destination.isFile && destination.length() > 0L) return@synchronized destination
+                val loaded = s.contentFeeder().load(
+                    playableId,
+                    AudioQualityPicker { files -> files.firstOrNull() },
+                    false,
+                    null,
+                )
+                val temporary = File.createTempFile("$trackId.", ".part", playbackCacheDir)
+                try {
+                    temporary.outputStream().use { output ->
+                        loaded.`in`.stream().use { input -> input.copyTo(output) }
+                    }
+                    if (!temporary.renameTo(destination)) {
+                        throw IOException("cannot publish Spotify audio cache")
+                    }
+                } finally {
+                    temporary.delete()
+                    trackLocks.remove(trackId, trackLock)
+                }
+                destination
             }
-            destination
         }
     }
 
