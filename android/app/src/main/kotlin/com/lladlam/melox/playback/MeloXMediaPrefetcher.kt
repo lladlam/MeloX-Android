@@ -39,8 +39,9 @@ internal class MeloXMediaPrefetcher(
             target.setLastModified(System.currentTimeMillis())
             return target
         }
-        val temporary = File(target.parentFile, "${target.name}.part")
-        temporary.delete()
+        // Unique staging file: playlist analysis and AutoMix may materialize the
+        // same item concurrently; a shared ".part" lets them delete each other.
+        val temporary = File.createTempFile("${target.name}.", ".part", target.parentFile)
         val source = dataSourceFactory.createDataSource()
         try {
             source.open(dataSpec(mediaItem))
@@ -56,10 +57,14 @@ internal class MeloXMediaPrefetcher(
         } finally {
             source.close()
         }
-        check(temporary.length() > 0L) { "AutoMix: cached source is empty" }
-        if (!temporary.renameTo(target)) {
-            target.delete()
-            check(temporary.renameTo(target)) { "AutoMix: unable to publish cached analysis source" }
+        try {
+            check(temporary.length() > 0L) { "AutoMix: cached source is empty" }
+            if (!temporary.renameTo(target)) {
+                target.delete()
+                check(temporary.renameTo(target)) { "AutoMix: unable to publish cached analysis source" }
+            }
+        } finally {
+            temporary.delete()
         }
         trimAnalysisFiles(keep = 6)
         return target

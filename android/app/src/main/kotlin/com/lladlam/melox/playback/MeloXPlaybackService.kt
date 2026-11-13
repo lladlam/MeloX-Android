@@ -190,6 +190,15 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
     private var backgroundAnalysisJob: Job? = null
     private var backgroundAnalysisScheduledId: String? = null
     private var smartQueueJob: Job? = null
+    private var prefetchJob: Job? = null
+    private var notificationArtworkRevision = 0
+    private val notificationArtworkRefresh = Runnable {
+        if (notificationArtworkRevision <= 0) return@Runnable
+        lyricsNotificationSource?.let { (line, next, metadata) ->
+            postLyricsNotification(line, next, metadata)
+        }
+    }
+    @Volatile private var lyricsNotificationSource: Triple<String, String, MediaMetadata>? = null
     private var smartQueueJobGeneration = 0L
     private var smartQueueSourceId: String? = null
     private var smartQueueGeneration = -1L
@@ -518,11 +527,14 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
     private fun prefetchFollowing(active: ExoPlayer) {
         val current = active.currentMediaItemIndex
         if (current !in 0 until active.mediaItemCount) return
+        // A new track invalidates the previous prefetch; otherwise every skip
+        // leaves an unpausable CacheWriter running in parallel.
+        prefetchJob?.cancel()
         // Cache the active item as well as the next three. The active item is
         // needed by Smart analysis when it examines the outgoing tail later.
         val following = (current until minOf(current + PREFETCH_TRACK_COUNT + 1, active.mediaItemCount))
             .map(active::getMediaItemAt)
-        serviceScope.launch(Dispatchers.IO) {
+        prefetchJob = serviceScope.launch(Dispatchers.IO) {
             following.forEach { item ->
                 runCatching { mediaPrefetcher.cache(item) }
                     .onSuccess { Log.i(TAG, "Playback cache ready: ${item.mediaId}") }
@@ -2086,6 +2098,7 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
     }
 
     private fun postLyricsNotification(line: String, nextLine: String, metadata: MediaMetadata) {
+        lyricsNotificationSource = Triple(line, nextLine, metadata)
         val intent = Intent(this, MainActivity::class.java).apply {
             action = MainActivity.ACTION_OPEN_NOW_PLAYING
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -2113,7 +2126,15 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
             .setOngoing(player?.isPlaying == true)
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
         if (MeloXSettingsRuntime.lyricNotificationShowArtwork) {
-            lyricsNotificationArtwork.get(metadata.artworkData)?.let(builder::setLargeIcon)
+            lyricsNotificationArtwork.current()?.let(builder::setLargeIcon)
+            val bytes = metadata.artworkData
+            if (bytes != null && !lyricsNotificationArtwork.isCurrent(bytes)) {
+                lyricsNotificationArtwork.enqueue(bytes) { bitmap ->
+                    notificationArtworkRevision++
+                    handler.removeCallbacks(notificationArtworkRefresh)
+                    handler.postDelayed(notificationArtworkRefresh, 120L)
+                }
+            }
         } else {
             lyricsNotificationArtwork.clear()
         }
@@ -2560,6 +2581,7 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
         playlistAnalysisJob?.cancel()
         backgroundAnalysisJob?.cancel()
         smartQueueJob?.cancel()
+        prefetchJob?.cancel()
         systemLyricsJob?.cancel()
         VivoAtomicIslandBridge.clear(this)
         getSystemService(NotificationManager::class.java).cancel(LYRICS_NOTIFICATION_ID)
