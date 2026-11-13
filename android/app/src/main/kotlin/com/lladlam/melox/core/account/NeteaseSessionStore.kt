@@ -64,16 +64,19 @@ class NeteaseSessionStore(
             errorMessage = null
             return
         }
-        if (!force && profile != null) return
+        if (!force && (profile != null || isRefreshing)) return
 
+        val requestedCookie = cookie
         isRefreshing = true
         errorMessage = null
         runCatching {
-            NeteaseSearchClient(cookieProvider = { cookie }).accountProfile()
+            NeteaseSearchClient(cookieProvider = { requestedCookie }).accountProfile()
         }.onSuccess { account ->
-            profile = account
+            // A slow response for account A must not overwrite a later login as B.
+            if (cookie == requestedCookie) profile = account
         }.onFailure { error ->
-            errorMessage = error.message ?: "账号信息读取失败"
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            if (cookie == requestedCookie) errorMessage = error.message ?: "账号信息读取失败"
         }
         isRefreshing = false
     }
@@ -92,10 +95,10 @@ class NeteaseSessionStore(
         val persisted = preferences.getString(KEY_COOKIE, "").orEmpty()
         if (persisted == cookie) return false
         cookie = persisted
-        if (persisted.isBlank()) {
-            profile = null
-            errorMessage = null
-        }
+        // The cached profile belongs to the previous cookie, even when the new
+        // cookie is non-empty. Never present an A/B mixed account state.
+        profile = null
+        errorMessage = null
         return true
     }
 
@@ -158,8 +161,19 @@ class NeteaseSessionStore(
 
         fun clearWebViewCookies() {
             runCatching {
-                CookieManager.getInstance().removeAllCookies(null)
-                CookieManager.getInstance().flush()
+                val manager = CookieManager.getInstance()
+                // CookieManager is shared by every provider's login WebView.
+                // Expire only NetEase cookies instead of logging out QQ/YouTube/etc.
+                val names = listOf("MUSIC_U", "__csrf", "NMTID", "__remember_me")
+                for (domain in listOf("https://music.163.com", "https://interface.music.163.com")) {
+                    val existing = manager.getCookie(domain).orEmpty()
+                        .split(';').mapNotNull { it.trim().substringBefore('=', "").ifBlank { null } }
+                    for (name in (existing + names).distinct()) {
+                        manager.setCookie(domain, "$name=; Max-Age=0; Path=/; SameSite=Lax")
+                        manager.setCookie(domain, "$name=; Max-Age=0; Path=/; Domain=.163.com; SameSite=Lax")
+                    }
+                }
+                manager.flush()
             }
         }
     }
