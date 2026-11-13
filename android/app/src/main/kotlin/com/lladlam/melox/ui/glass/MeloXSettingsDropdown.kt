@@ -11,6 +11,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -64,6 +67,10 @@ import kotlin.math.max
 import kotlin.math.sin
 
 private const val PopupOvershootScale = 1.15f
+
+/** A long setting menu never grows beyond a small portrait viewport. */
+internal fun meloXSettingsMenuHeight(itemCount: Int) =
+    (20.dp + 44.dp * itemCount.coerceAtLeast(0)).coerceAtMost(360.dp)
 private val PopupOvershootStart = 64.dp
 private val PopupOvershootVertical = 32.dp
 
@@ -198,7 +205,7 @@ private fun <T> MeloXPopupSelector(
 
         if (popupAlive && anchorSize != IntSize.Zero) {
             val density = androidx.compose.ui.platform.LocalDensity.current
-            val targetHeight = with(density) { (20.dp + 44.dp * items.size).roundToPx() }
+            val targetHeight = with(density) { meloXSettingsMenuHeight(items.size).roundToPx() }
             val provider = remember(anchorSize, targetHeight) {
                 MeloXPopupPositionProvider(targetHeight) { opensAbove = it }
             }
@@ -266,7 +273,9 @@ private fun MeloXPopupGlassMenu(
     val collapsedWidth = with(density) { collapsedSize.width.toDp() }
     val collapsedHeight = with(density) { collapsedSize.height.toDp() }
     val menuWidth = 238.dp
-    val menuHeight = 20.dp + 44.dp * itemCount
+    // Keep every option reachable on landscape/split-screen/small windows.
+    // The cap matches positioning; the content scrolls instead of clipping.
+    val menuHeight = meloXSettingsMenuHeight(itemCount)
     val width = lerpDp(collapsedWidth, menuWidth, geometryProgress)
     val height = lerpDp(collapsedHeight, menuHeight, geometryProgress)
     val shape = ContinuousRoundedRectangle(34.dp)
@@ -319,6 +328,7 @@ private fun MeloXPopupGlassMenu(
                 Modifier
                     .fillMaxSize()
                     .clip(shape)
+                    .verticalScroll(rememberScrollState(), enabled = interactive)
                     .padding(10.dp)
                     .graphicsLayer {
                         val contentScale = .92f + .08f * visualProgress
