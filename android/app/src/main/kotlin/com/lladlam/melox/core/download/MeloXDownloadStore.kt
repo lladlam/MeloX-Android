@@ -31,6 +31,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
@@ -253,11 +256,13 @@ class MeloXDownloadStore private constructor(private val context: Context) {
         errorMessage = null
         pausedDownloads.remove(song.id)
         activeDownloads[song.id] = MeloXActiveDownload(song, quality)
-        jobs[song.id] = scope.launch {
+        lateinit var job: Job
+        job = scope.launch {
             transferSlots.withPermit {
-                download(song, quality)
+                download(song, quality, job)
             }
         }
+        jobs[song.id] = job
     }
 
     /**
@@ -266,12 +271,13 @@ class MeloXDownloadStore private constructor(private val context: Context) {
      * because partial files are not resumable across sessions.
      */
     fun pause(songId: Long) {
-        val job = jobs.remove(songId) ?: return
+        val job = jobs[songId] ?: return
         val active = activeDownloads[songId] ?: return
         pausedDownloads[songId] = active.copy(bytesPerSecond = 0L)
         activeDownloads.remove(songId)
         pendingPlaylistRefs.remove(songId)
-        storageCommands.trySend(StorageCommand.Delete(setOf("$songId.part")))
+        // Keep the job slot until its own finally cleanup finishes. Otherwise an
+        // immediate resume writes the same .part while the cancelled task deletes it.
         job.cancel()
     }
 
@@ -281,11 +287,11 @@ class MeloXDownloadStore private constructor(private val context: Context) {
     }
 
     fun cancel(songId: Long) {
-        jobs.remove(songId)?.cancel()
+        jobs[songId]?.cancel()
         activeDownloads.remove(songId)
         pausedDownloads.remove(songId)
         pendingPlaylistRefs.remove(songId)
-        storageCommands.trySend(StorageCommand.Delete(setOf("$songId.part")))
+        // The owning coroutine deletes its temporary file before releasing the slot.
     }
 
     fun remove(songId: Long) = removeMany(setOf(songId))
@@ -417,7 +423,7 @@ class MeloXDownloadStore private constructor(private val context: Context) {
         }
     }
 
-    private suspend fun download(song: SearchSong, quality: MusicQuality) {
+    private suspend fun download(song: SearchSong, quality: MusicQuality, job: Job) {
         val temp = File(directory, "${song.id}.part")
         try {
             val resolvedSong = runCatching {
@@ -445,6 +451,9 @@ class MeloXDownloadStore private constructor(private val context: Context) {
                     if (!response.isSuccessful) throw IOException("下载失败：HTTP ${response.code}")
                     val body = response.body
                     val expected = body.contentLength().takeIf { it > 0L }
+                    if (expected != null && expected > MAX_AUDIO_DOWNLOAD_BYTES) {
+                        throw IOException("下载文件超过大小限制")
+                    }
                     val startedAt = SystemClock.elapsedRealtime()
                     temp.outputStream().buffered().use { output ->
                         body.byteStream().use { input ->
@@ -454,8 +463,11 @@ class MeloXDownloadStore private constructor(private val context: Context) {
                             while (true) {
                                 val count = input.read(buffer)
                                 if (count < 0) break
-                                output.write(buffer, 0, count)
                                 received += count
+                                if (received > MAX_AUDIO_DOWNLOAD_BYTES) {
+                                    throw IOException("下载文件超过大小限制")
+                                }
+                                output.write(buffer, 0, count)
                                 if (received - lastPublished >= 256L * 1024L) {
                                     lastPublished = received
                                     val elapsed = (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(1L)
@@ -518,21 +530,23 @@ class MeloXDownloadStore private constructor(private val context: Context) {
                 lyricsFileName = lyricsFileName,
                 sourcePlaylists = sourcePlaylists,
             )
+            currentCoroutineContext().ensureActive()
+            if (jobs[song.id] !== job) return
             downloads.removeAll { it.song.id == song.id }
             downloads.add(0, record)
             downloadsBySongId[song.id] = record
             activeDownloads.remove(song.id)
-            jobs.remove(song.id)
+            jobs.remove(song.id, job)
             enqueuePersist()
         } catch (_: CancellationException) {
-            storageCommands.trySend(StorageCommand.Delete(setOf(temp.name)))
+            withContext(NonCancellable) { temp.delete() }
             activeDownloads.remove(song.id)
-            jobs.remove(song.id)
+            jobs.remove(song.id, job)
             pendingPlaylistRefs.remove(song.id)
         } catch (error: Throwable) {
-            storageCommands.trySend(StorageCommand.Delete(setOf(temp.name)))
+            withContext(NonCancellable) { temp.delete() }
             activeDownloads.remove(song.id)
-            jobs.remove(song.id)
+            jobs.remove(song.id, job)
             pendingPlaylistRefs.remove(song.id)
             errorMessage = "《${song.name}》下载失败：${error.message ?: error::class.java.simpleName}"
         }
@@ -894,6 +908,7 @@ class MeloXDownloadStore private constructor(private val context: Context) {
     }
 
     companion object {
+        private const val MAX_AUDIO_DOWNLOAD_BYTES = 512L * 1024L * 1024L
         @SuppressLint("StaticFieldLeak") // The store normalizes its field to applicationContext.
         @Volatile private var instance: MeloXDownloadStore? = null
 
