@@ -1,5 +1,8 @@
 package com.lladlam.melox.core.lyrics
 
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
 import java.util.Base64
 
 /** Shared entry point for local sidecars and custom-source lyric payloads. */
@@ -9,7 +12,18 @@ object LyricFileParser {
             return KugouKrcLyricsParser.decodeAndParse(Base64.getEncoder().encodeToString(bytes))
                 .copy(source = LyricSource.Local).withoutPlaceholderLyrics()
         }
-        return parse(bytes.toString(Charsets.UTF_8).removePrefix("\uFEFF"))
+        return parse(decodeText(bytes).removePrefix("\uFEFF"))
+    }
+
+    /** Common Chinese sidecars are GBK/GB18030; only fall back when UTF-8 is invalid. */
+    private fun decodeText(bytes: ByteArray): String = try {
+        Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(bytes))
+            .toString()
+    } catch (_: CharacterCodingException) {
+        String(bytes, charset("GB18030"))
     }
 
     fun parse(text: String): LyricsDocument {
