@@ -192,10 +192,12 @@ data class MeloXLanCastFormat(
 data class MeloXLanCastHandshake(
     val port: Int,
     val format: MeloXLanCastFormat,
+    val token: String = "",
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("castPort", port)
         .put("format", format.toJson())
+        .put("castToken", token)
 }
 
 /**

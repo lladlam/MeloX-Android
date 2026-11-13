@@ -121,6 +121,9 @@ internal class MeloXLanCastReceiver(
     fun start(format: MeloXLanCastFormat): MeloXLanCastHandshake? {
         stop()
         if (format.codec != "pcm_s16le") return null
+        val token = java.security.SecureRandom().let { random ->
+            ByteArray(16).also(random::nextBytes).joinToString("") { "%02x".format(it) }
+        }
         val preparedTrack = buildTrack(format) ?: return null
         val socket = runCatching { ServerSocket(0) }.getOrElse {
             preparedTrack.release()
@@ -133,21 +136,33 @@ internal class MeloXLanCastReceiver(
             try {
                 val client = socket.accept()
                 clientSocket = client
+                client.soTimeout = 5_000
+                val input = DataInputStream(BufferedInputStream(client.getInputStream()))
+                val presented = runCatching {
+                    val length = input.readInt()
+                    if (length !in 1..4096) return@runCatching null
+                    ByteArray(length).also(input::readFully).toString(Charsets.UTF_8)
+                }.getOrNull()
+                if (presented != token) {
+                    Log.w(TAG, "Cast audio connection rejected: bad token")
+                    client.close()
+                    return@launch
+                }
+                client.soTimeout = 0
                 Log.i(TAG, "Cast audio connection accepted: ${client.inetAddress.hostAddress}")
-                client.use { receive(it, format) }
+                client.use { receive(it, format, input) }
             } catch (error: Exception) {
                 if (serverSocket != null) Log.w(TAG, "Cast receiver stopped", error)
             } finally {
                 releaseTrack()
             }
         }
-        return MeloXLanCastHandshake(socket.localPort, format)
+        return MeloXLanCastHandshake(socket.localPort, format, token)
     }
 
-    private fun receive(socket: Socket, format: MeloXLanCastFormat) {
+    private fun receive(socket: Socket, format: MeloXLanCastFormat, input: DataInputStream) {
         val track = audioTrack ?: return
         track.play()
-        val input = DataInputStream(BufferedInputStream(socket.getInputStream()))
         var received = 0L
         while (scope.isActive && serverSocket != null) {
             val length = input.readInt()
@@ -241,6 +256,10 @@ internal class MeloXLanCastSender(
         job = scope.launch(Dispatchers.IO) {
             try {
                 val output = DataOutputStream(target.getOutputStream())
+                val tokenBytes = handshake.token.toByteArray(Charsets.UTF_8)
+                output.writeInt(tokenBytes.size)
+                output.write(tokenBytes)
+                output.flush()
                 var sent = 0L
                 var emptySince = 0L
                 while (scope.isActive && !stopped.get()) {
