@@ -206,6 +206,7 @@ object HyperOsFocusBridge {
         optionalIntegration { ShizukuXmsfNetworkHelper.requestPermission(context.applicationContext) }
     }
 
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.O)
     private fun ensureSuperIslandChannel(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
         if (manager.getNotificationChannel(SUPER_ISLAND_CHANNEL) != null) return
