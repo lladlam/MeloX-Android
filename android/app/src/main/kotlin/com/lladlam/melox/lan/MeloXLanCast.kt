@@ -213,11 +213,12 @@ internal class MeloXLanCastReceiver(
         val socket = serverSocket
         serverSocket = null
         runCatching { socket?.close() }
+        // Interrupt the blocking write first; the owning IO coroutine releases
+        // the AudioTrack in its finally block, avoiding a cross-thread race.
         runCatching { clientSocket?.close() }
         clientSocket = null
         job?.cancel()
         job = null
-        releaseTrack()
     }
 
     private fun releaseTrack() {
