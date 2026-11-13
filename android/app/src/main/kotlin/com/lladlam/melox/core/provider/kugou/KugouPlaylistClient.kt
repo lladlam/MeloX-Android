@@ -45,15 +45,17 @@ class KugouPlaylistClient(
             )
         }.getOrNull()
 
-        // The endpoint silently caps a request at 150 items while still reporting that
-        // the first page is complete. Use a conservative wire page size and exhaust pages
-        // from the first request so large playlists are not truncated at that boundary.
-        val wirePageSize = safeSize.coerceAtMost(50)
+        // The wire endpoint accepts at most 50 tracks. Translate the logical page to
+        // its exact wire range; do not re-read from page 1 or mistake a partial wire
+        // response for the end of a 200-track logical page.
+        val wirePageSize = 50
+        val firstWireIndex = (safePage - 1).toLong() * safeSize
+        val wireStartPage = (firstWireIndex / wirePageSize).toInt() + 1
+        val wireEndExclusive = (firstWireIndex + safeSize + wirePageSize - 1) / wirePageSize
+        val wireEndPage = wireEndExclusive.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val allTracks = linkedMapOf<String, MusicTrack>()
         var reportedTotal = -1L
-        val pagesToLoad = if (safePage == 1) 100 else 1
-        for (offset in 0 until pagesToLoad) {
-            val pageNumber = safePage + offset
+        for (pageNumber in wireStartPage..wireEndPage) {
             val songsResponse = requests.get(
                 path = "/pubsongs/v2/get_other_list_file_nofilt",
                 params = mapOf(
@@ -74,7 +76,7 @@ class KugouPlaylistClient(
             reportedTotal = maxOf(reportedTotal, findFirstLong(songsResponse, "total", "total_count", "count", "filesize"))
             val before = allTracks.size
             pageTracks.forEach { allTracks.putIfAbsent(it.id.value, it) }
-            if (pageTracks.isEmpty() || allTracks.size == before || safePage != 1) break
+            if (pageTracks.isEmpty() || allTracks.size == before) break
         }
         val tracks = allTracks.values.toList()
         val summary = detail
