@@ -176,6 +176,9 @@ class PluginManager(
         disable(source)
         store.uninstall(source)
         state.value = state.value - source
+        // Persistent diagnostics belong to the removed identity; otherwise an
+        // uninstalled plugin leaves a file no UI entry can reach.
+        runCatching { erasePersistentDiagnostics(source) }
     }
 
     /** Revoke in-flight requests and playback generation after an account change. */

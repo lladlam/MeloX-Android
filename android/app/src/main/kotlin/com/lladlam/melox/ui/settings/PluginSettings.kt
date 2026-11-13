@@ -111,13 +111,15 @@ internal fun PluginSettings() {
                 val clean = cleanPrivateData
                 pendingRemoval = null
                 perform {
-                    manager.uninstall(id)
+                    // Clear private data first: if it fails, the plugin remains
+                    // installed and the user can retry from the same entry.
                     if (clean) {
                         val vault = com.lladlam.melox.core.plugin.PluginAccountVault(context, id)
                         val accounts = vault.accounts().map { it.id }
                         com.lladlam.melox.core.plugin.PluginStorage.clear(context, id, accounts)
                         vault.clear()
                     }
+                    manager.uninstall(id)
                 }
             }) { Text("卸载") } },
             dismissButton = { TextButton(onClick = { pendingRemoval = null }) { Text("取消") } })
