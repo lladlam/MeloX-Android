@@ -126,15 +126,22 @@ class SpotifyOAuth(
                 .add("refresh_token", session.refreshToken)
                 .build(),
         )
-        session.copy(
+        val refreshed = session.copy(
             accessToken = token.accessToken,
             refreshToken = token.refreshToken ?: session.refreshToken,
             expiresAtEpochMs = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(token.expiresInSeconds),
-        ).also { SpotifySessionStore.write(context, it) }
+        )
+        // A refresh started for account A must not overwrite a newer login as B.
+        val current = SpotifySessionStore.read(context)
+        if (current == session) SpotifySessionStore.write(context, refreshed)
+        refreshed
     }
 
     private fun requestToken(body: FormBody): SpotifyTokenResponse {
-        val request = Request.Builder().url(TokenEndpoint).post(body).header("Accept", "application/json").build()
+        val request = Request.Builder().url(TokenEndpoint).post(body)
+            .header("Accept", "application/json")
+            .header(com.lladlam.melox.core.network.RetryInterceptor.NO_RETRY_HEADER, "true")
+            .build()
         httpClient.newCall(request).execute().use { response ->
             val responseBody = response.body.string()
             if (!response.isSuccessful) {
