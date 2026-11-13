@@ -257,7 +257,10 @@ internal class MeloXLanServer(
                 platform = message.optString("platform")
                 if (deviceId.isBlank()) return false
                 trusted = identity.isTrusted(deviceId)
-                var authenticated = trusted
+                // Discovery broadcasts every device ID, so an ID alone is public
+                // information and cannot authenticate a new socket. Trusted peers
+                // skip the trust prompt, not the PIN proof.
+                var authenticated = false
                 var attempts = 0
                 while (!authenticated && attempts < 5) {
                     if (message.optString("pin") == identity.pin) {
@@ -380,6 +383,7 @@ internal class MeloXLanServer(
                         respond {
                             put("ok", true)
                             put("castPort", handshake.port)
+                            put("castToken", handshake.token)
                             put("format", handshake.format.toJson())
                         }
                         host.control("pause", null, null)

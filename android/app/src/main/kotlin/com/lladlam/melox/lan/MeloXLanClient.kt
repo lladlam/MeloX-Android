@@ -64,10 +64,7 @@ internal class MeloXLanClient(
         socket = created
         reader = BufferedReader(InputStreamReader(created.getInputStream(), Charsets.UTF_8))
         writer = BufferedWriter(OutputStreamWriter(created.getOutputStream(), Charsets.UTF_8))
-        var result = sendHello(pin)
-        if (result == MeloXLanConnectResult.PinRequired && pin == null && device.trusted) {
-            result = sendHello(null)
-        }
+        val result = sendHello(pin)
         if (result != MeloXLanConnectResult.Connected) {
             close()
             return@withContext result
@@ -188,8 +185,13 @@ internal class MeloXLanClient(
             stopCast()
             return null
         }
+        val token = response.optString("castToken").takeIf { it.length in 16..128 } ?: run {
+            Log.w(TAG, "Cast receiver did not provide an authentication token")
+            stopCast()
+            return null
+        }
         Log.i(TAG, "Cast receiver ready: ${device.address}:$port $negotiated")
-        return MeloXLanCastHandshake(port, negotiated)
+        return MeloXLanCastHandshake(port, negotiated, token)
     }
 
     suspend fun stopCast(): Boolean = request("cast.stop")?.optBoolean("ok") == true
