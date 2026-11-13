@@ -77,6 +77,7 @@ object YouTubeSessionStore {
     }
 
     fun clear(context: Context) {
+        val savedCookie = read(context).cookie
         preferences(context).edit().clear().apply()
         YouTube.cookie = null
         YouTube.visitorData = null
@@ -86,7 +87,18 @@ object YouTubeSessionStore {
         appliedFingerprint = null
         expiredState.value = false
         revisionState.value += 1
-        runCatching { android.webkit.CookieManager.getInstance().removeAllCookies(null) }
+        runCatching {
+            val manager = android.webkit.CookieManager.getInstance()
+            val names = savedCookie.split(';')
+                .mapNotNull { it.trim().substringBefore('=', "").ifBlank { null } }
+            for (domain in listOf("https://music.youtube.com", "https://www.youtube.com", "https://accounts.google.com")) {
+                for (name in names) {
+                    manager.setCookie(domain, "$name=; Max-Age=0; Path=/; SameSite=Lax")
+                    manager.setCookie(domain, "$name=; Max-Age=0; Path=/; Domain=.youtube.com; SameSite=Lax")
+                }
+            }
+            manager.flush()
+        }
     }
 
     fun authFingerprint(context: Context): String {
