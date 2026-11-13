@@ -56,7 +56,7 @@ internal fun AutoSyncModelPanel(context: Context) {
     var index by remember { mutableStateOf<AutoSyncModelRepository.Index?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
-    var installed by remember { mutableStateOf(AutoSyncModelStore.installedLanguages(context)) }
+    var installed by remember { mutableStateOf(emptyList<String>()) }
     var busyLanguage by remember { mutableStateOf<String?>(null) }
     var progress by remember { mutableFloatStateOf(0f) }
     val downloadJobs = remember { mutableStateListOf<Job>() }
@@ -64,22 +64,28 @@ internal fun AutoSyncModelPanel(context: Context) {
     var deleteLanguage by remember { mutableStateOf<String?>(null) }
     var precisionLanguage by remember { mutableStateOf<String?>(null) }
     var manifests by remember { mutableStateOf(emptyMap<String, AutoSyncManifest>()) }
-    var dictionaryInstalled by remember {
-        mutableStateOf(AutoSyncDictionaryRepository.dictionaryDirectory(context) != null)
-    }
-    var dictionarySize by remember { mutableStateOf(AutoSyncDictionaryRepository.installedBytes(context)) }
+    var dictionaryInstalled by remember { mutableStateOf(false) }
+    var dictionarySize by remember { mutableStateOf(0L) }
     var dictionaryBusy by remember { mutableStateOf(false) }
     var dictionaryConfirming by remember { mutableStateOf(false) }
     var dictionaryDeleteConfirming by remember { mutableStateOf(false) }
     var dictionaryNotice by remember { mutableStateOf<String?>(null) }
 
-    fun reloadInstalled() {
-        dictionaryInstalled = AutoSyncDictionaryRepository.dictionaryDirectory(context) != null
-        dictionarySize = AutoSyncDictionaryRepository.installedBytes(context)
-        installed = AutoSyncModelStore.installedLanguages(context)
-        manifests = installed.mapNotNull { language ->
-            AutoSyncModelStore.manifest(context, language)?.let { language to it }
-        }.toMap()
+    suspend fun reloadInstalled() {
+        val snapshot = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val languages = AutoSyncModelStore.installedLanguages(context)
+            Triple(
+                AutoSyncDictionaryRepository.dictionaryDirectory(context) != null,
+                AutoSyncDictionaryRepository.installedBytes(context),
+                languages to languages.mapNotNull { language ->
+                    AutoSyncModelStore.manifest(context, language)?.let { language to it }
+                }.toMap(),
+            )
+        }
+        dictionaryInstalled = snapshot.first
+        dictionarySize = snapshot.second
+        installed = snapshot.third.first
+        manifests = snapshot.third.second
     }
 
     DisposableEffect(Unit) { onDispose { downloadJobs.forEach(Job::cancel) } }
@@ -139,10 +145,13 @@ internal fun AutoSyncModelPanel(context: Context) {
                         busyLanguage = pack.language
                         progress = 0f
                         launchDownload {
-                            repository.install(pack, snapshot) { fraction -> progress = fraction }
-                                .onSuccess { reloadInstalled() }
-                                .onFailure { error = it.message }
-                            busyLanguage = null
+                            try {
+                                repository.install(pack, snapshot) { fraction -> progress = fraction }
+                                    .onSuccess { reloadInstalled() }
+                                    .onFailure { error = it.message }
+                            } finally {
+                                busyLanguage = null
+                            }
                         }
                     },
                     onPrecision = { precisionLanguage = pack.language },
@@ -154,10 +163,13 @@ internal fun AutoSyncModelPanel(context: Context) {
                         busyLanguage = "<prefix>" + pack.language
                         progress = 0f
                         launchDownload {
-                            repository.install(pack, snapshot, precision = variant) { fraction -> progress = fraction }
-                                .onSuccess { reloadInstalled() }
-                                .onFailure { error = it.message }
-                            busyLanguage = null
+                            try {
+                                repository.install(pack, snapshot, precision = variant) { fraction -> progress = fraction }
+                                    .onSuccess { reloadInstalled() }
+                                    .onFailure { error = it.message }
+                            } finally {
+                                busyLanguage = null
+                            }
                         }
                     },
                     onPrecisionDelete = {
@@ -166,17 +178,19 @@ internal fun AutoSyncModelPanel(context: Context) {
                         busyLanguage = "<prefix>" + pack.language
                         progress = 0f
                         launchDownload {
-                            repository.install(pack, snapshot) { fraction -> progress = fraction }
-                                .onSuccess { reloadInstalled() }
-                                .onFailure { error = it.message }
-                            busyLanguage = null
+                            try {
+                                repository.install(pack, snapshot) { fraction -> progress = fraction }
+                                    .onSuccess { reloadInstalled() }
+                                    .onFailure { error = it.message }
+                            } finally {
+                                busyLanguage = null
+                            }
                         }
                     },
                     onDelete = {
                         deleteLanguage = null
                         precisionLanguage = null
-                        repository.delete(pack.language)
-                        reloadInstalled()
+                        launchDownload { repository.delete(pack.language) }
                     },
                     onDeleteRequest = { deleteLanguage = pack.language },
                     onCancelDelete = { deleteLanguage = null },
@@ -194,13 +208,16 @@ internal fun AutoSyncModelPanel(context: Context) {
                         progress = 0f
                         error = null
                         launchDownload {
-                            dictionaryRepository.install { fraction -> progress = fraction }
-                                .onSuccess {
-                                    dictionaryNotice = dictionaryRepository.licenseNotice()
-                                    reloadInstalled()
-                                }
-                                .onFailure { error = it.message }
-                            dictionaryBusy = false
+                            try {
+                                dictionaryRepository.install { fraction -> progress = fraction }
+                                    .onSuccess {
+                                        dictionaryNotice = dictionaryRepository.licenseNotice()
+                                        reloadInstalled()
+                                    }
+                                    .onFailure { error = it.message }
+                            } finally {
+                                dictionaryBusy = false
+                            }
                         }
                     },
                     onDictionaryDelete = {
