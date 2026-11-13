@@ -1282,8 +1282,22 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
     }
 
     override fun currentTrack(): MeloXLanTrack? {
-        val active = player ?: return null
-        val item = active.currentMediaItem ?: return null
+        // LAN transfer calls this from IO; ExoPlayer is confined to this service's
+        // main looper, so read the immutable media snapshot there.
+        val player = player ?: return null
+        val snapshot = if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            runCatching { player.currentMediaItem to player.duration }.getOrNull()
+        } else {
+            val latch = java.util.concurrent.CountDownLatch(1)
+            var value: Pair<androidx.media3.common.MediaItem?, Long>? = null
+            handler.post {
+                value = runCatching { player.currentMediaItem to player.duration }.getOrNull()
+                latch.countDown()
+            }
+            if (!latch.await(2, java.util.concurrent.TimeUnit.SECONDS)) return null
+            value
+        } ?: return null
+        val item = snapshot.first ?: return null
         val metadata = item.mediaMetadata
         return com.lladlam.melox.lan.meloXLanTrackFromMediaItem(
             mediaId = item.mediaId,
@@ -1291,7 +1305,7 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
             artist = metadata.artist?.toString().orEmpty(),
             album = metadata.albumTitle?.toString().orEmpty(),
             artworkUrl = metadata.artworkUri?.toString(),
-            durationMs = active.duration.takeIf { it > 0L && it != C.TIME_UNSET }
+            durationMs = snapshot.second.takeIf { it > 0L && it != C.TIME_UNSET }
                 ?: metadata.extras?.getLong(PlaybackTrackIdentity.DurationMsExtra, 0L)
                 ?: 0L,
         )
@@ -2526,6 +2540,10 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
 
     override fun onDestroy() {
         com.lladlam.melox.usb.MeloXUsbAudioSession.release()
+        // Remote sinks outlive a cancelled service scope; release them before
+        // the local player disappears so their polling cannot target a dead session.
+        runCatching { com.lladlam.melox.miplay.MiPlaySession.disconnect() }
+        serviceScope.launch { runCatching { com.lladlam.melox.dlna.DlnaSession.disconnect(resumeLocal = false) } }
         MeloXLanRuntime.detach(this)
         handler.removeCallbacks(lanStateRunnable)
         lanCastReceiver?.stop()
