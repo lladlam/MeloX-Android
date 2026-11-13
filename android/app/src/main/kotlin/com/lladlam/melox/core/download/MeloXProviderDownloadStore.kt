@@ -160,6 +160,10 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
     private fun start(track: MusicTrack, quality: AudioQualityTier, expectedAccountScope: String?) {
         val idKey = key(track.id)
         if (isDownloaded(track.id) || jobs.containsKey(idKey)) return
+        if (completedDownloadsBytes() >= MAX_COMPLETED_DOWNLOAD_BYTES) {
+            downloadErrors[idKey] = "下载存储已满，请先删除部分下载"
+            return
+        }
         val attempt = Attempt(track, quality, accountScope = expectedAccountScope)
         attempts[idKey] = attempt
         activeDownloads[idKey] = true
@@ -191,6 +195,9 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
                     pluginDownloadSlots.acquire(); acquired = true
                 }
                 val (playable, destination) = resolveAndDownload(track, quality, provider, downloader, accountScope)
+                check(completedDownloadsBytes() + destination.length() <= MAX_COMPLETED_DOWNLOAD_BYTES) {
+                    "下载存储已满，请先删除部分下载"
+                }
                 val fileName = destination.name
                 val record = MeloXProviderDownloadedSong(
                     track = track,
@@ -454,6 +461,10 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
         }
     } catch (_: java.io.FileNotFoundException) { JSONArray() }
 
+    private fun completedDownloadsBytes(): Long = recordsByKey.values.sumOf { record ->
+        runCatching { File(directory, record.fileName).length() }.getOrDefault(0L).coerceAtLeast(0L)
+    }
+
     private fun extensionFor(format: String?): String = when (format?.lowercase()) {
         "mp3" -> "mp3"
         "m4a", "mp4" -> "m4a"
@@ -468,6 +479,8 @@ class MeloXProviderDownloadStore private constructor(context: Context) {
     private fun key(id: MusicResourceId): String = "${id.sourceId.value}:${id.value}"
 
     companion object {
+        /** Host-level cap for completed downloads; plugins cannot raise it. */
+        private const val MAX_COMPLETED_DOWNLOAD_BYTES = 8L * 1024L * 1024L * 1024L
         @Volatile private var instance: MeloXProviderDownloadStore? = null
 
         fun get(context: Context): MeloXProviderDownloadStore =
