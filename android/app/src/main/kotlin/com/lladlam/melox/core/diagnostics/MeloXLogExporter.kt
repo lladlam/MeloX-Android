@@ -148,16 +148,29 @@ object MeloXLogExporter {
                 .start()
         }.getOrElse { throw IOException("无法读取应用日志", it) }
 
-        val output = process.inputStream.bufferedReader(Charsets.UTF_8).use { reader -> reader.readText() }
-        if (!process.waitFor(CommandTimeoutSeconds, TimeUnit.SECONDS)) {
-            process.destroyForcibly()
-            throw IOException("读取应用日志超时")
+        // Drain stdout concurrently: logcat can fill the pipe and deadlock if
+        // waitFor() runs before the stream is consumed. The polling fallback also
+        // keeps API 24–25 away from Java 8-only Process.waitFor(timeout).
+        val output = java.util.concurrent.CompletableFuture.supplyAsync {
+            process.inputStream.bufferedReader(Charsets.UTF_8).use { reader -> reader.readText() }
         }
+        output.exceptionally { error -> throw IOException("无法读取应用日志输出", error) }
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(CommandTimeoutSeconds)
+        while (true) {
+            val exited = runCatching { process.exitValue(); true }.getOrDefault(false)
+            if (exited) break
+            if (System.nanoTime() >= deadline) {
+                process.destroy()
+                throw IOException("读取应用日志超时")
+            }
+            Thread.sleep(50L)
+        }
+        val text = output.get(CommandTimeoutSeconds, TimeUnit.SECONDS)
         if (process.exitValue() != 0) {
             throw IOException("读取应用日志失败（退出码 ${process.exitValue()}）")
         }
 
-        val lines = output.lineSequence().filter(String::isNotBlank).toList()
+        val lines = text.lineSequence().filter(String::isNotBlank).toList()
         return ProcessLogResult(
             text = lines.joinToString(separator = "\n", postfix = if (lines.isEmpty()) "" else "\n"),
             lineCount = lines.size,
