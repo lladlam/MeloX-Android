@@ -196,6 +196,7 @@ data class AutoSyncTimeline(
             .put("lang", language)
             .put("engine", engine)
             .put("model_key", modelKey)
+            .put("audio_key", audioKey)
             .put("created", createdAtMs)
             .put("lines", linesJson)
     }
@@ -236,6 +237,7 @@ data class AutoSyncTimeline(
                 lines = lines,
                 createdAtMs = root.optLong("created"),
                 modelKey = root.optString("model_key"),
+                audioKey = root.optString("audio_key"),
             )
         }
     }
