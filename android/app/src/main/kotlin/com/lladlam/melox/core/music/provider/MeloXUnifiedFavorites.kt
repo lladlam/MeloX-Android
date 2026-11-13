@@ -107,18 +107,11 @@ object MeloXUnifiedFavorites {
                     // A later add from another source is an explicit choice:
                     // keep that source, but never downgrade an existing higher
                     // quality copy of the same logical song.
-                    if (track.id.sourceId != list[index].id.sourceId &&
+                    val keepExisting = track.id.sourceId != list[index].id.sourceId &&
                         qualityRank(track) < qualityRank(list[index])
-                    ) {
-                        list[index] = list[index].copy(
-                            title = track.title,
-                            artists = track.artists,
-                            album = track.album ?: list[index].album,
-                            artworkUrl = track.artworkUrl ?: list[index].artworkUrl,
-                        )
-                    } else {
-                        list[index] = track
-                    }
+                    // Keep the existing higher-quality source intact. Copying only
+                    // display fields would pair a new title/art with stale quality.
+                    if (!keepExisting) list[index] = track
                 }
             }
         } else {
