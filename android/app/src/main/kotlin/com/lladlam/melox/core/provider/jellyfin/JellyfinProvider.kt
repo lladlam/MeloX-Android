@@ -79,6 +79,7 @@ class JellyfinProvider(
 
     override suspend fun resolvePlayback(track: MusicTrack, quality: AudioQualityTier): PlaybackResolution =
         withContext(Dispatchers.IO) {
+            require(track.id.source == source) { "只能播放 Jellyfin 曲目" }
             val session = requireSession()
             // Ask the server to transcode down when the user selected a lower tier.
             // Lossless and above are left uncapped because the Jellyfin library may
@@ -146,6 +147,7 @@ class JellyfinProvider(
 
     override suspend fun setFavorite(track: MusicTrack, favorite: Boolean) {
         withContext(Dispatchers.IO) {
+            require(track.id.source == source) { "只能收藏 Jellyfin 曲目" }
             val session = requireSession()
             if (favorite) api.post(session, "/Users/${session.userId}/FavoriteItems/${track.id.value}")
             else api.delete(session, "/Users/${session.userId}/FavoriteItems/${track.id.value}")
@@ -157,6 +159,9 @@ class JellyfinProvider(
 
     override suspend fun addTrackToPlaylist(track: MusicTrack, playlist: MusicPlaylistSummary) {
         withContext(Dispatchers.IO) {
+            require(track.id.source == source && playlist.id.source == source) {
+                "只能将 Jellyfin 曲目添加到 Jellyfin 歌单"
+            }
             api.post(requireSession(), "/Playlists/${playlist.id.value}/Items?Ids=${track.id.value}")
         }
     }
@@ -175,6 +180,9 @@ class JellyfinProvider(
 
     override suspend fun removeTrackFromPlaylist(track: MusicTrack, playlist: MusicPlaylistSummary) {
         withContext(Dispatchers.IO) {
+            require(track.id.source == source && playlist.id.source == source) {
+                "只能从 Jellyfin 歌单移除 Jellyfin 曲目"
+            }
             api.delete(requireSession(), "/Playlists/${playlist.id.value}/Items?EntryIds=${track.id.value}")
         }
     }
