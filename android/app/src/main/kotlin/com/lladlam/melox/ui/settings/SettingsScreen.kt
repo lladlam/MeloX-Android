@@ -1277,7 +1277,6 @@ private fun ExperimentalSettings(context: android.content.Context, source: Music
             )
             MeloXIosListRow(
                 title = stringResource(R.string.settings_apple_music),
-                subtitle = stringResource(R.string.settings_apple_second_account),
                 leading = { MeloXSymbolIcon(MeloXSymbol.MusicNote, Modifier.size(24.dp), MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)) },
                 onClick = null,
             )
