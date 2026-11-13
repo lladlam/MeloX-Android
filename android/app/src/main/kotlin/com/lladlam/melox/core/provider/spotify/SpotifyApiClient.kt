@@ -378,6 +378,11 @@ class SpotifyApiClient(
         val request = Request.Builder().url(url)
             .header("Authorization", "Bearer ${session.accessToken}")
             .header("Accept", "application/json")
+            .apply {
+                if (method != "GET" && method != "HEAD") {
+                    header(com.lladlam.melox.core.network.RetryInterceptor.NO_RETRY_HEADER, "true")
+                }
+            }
             .method(method, requestBody.takeIf { method != "GET" })
             .build()
         httpClient.newCall(request).execute().use { response ->
