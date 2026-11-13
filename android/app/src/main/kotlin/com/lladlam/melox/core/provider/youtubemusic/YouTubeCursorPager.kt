@@ -42,7 +42,9 @@ internal class YouTubeCursorPager<T>(private val identity: (T) -> String) {
             val known = entry.items.mapTo(hashSetOf(), identity)
             val additions = batch.items.filter { known.add(identity(it)) }
             entry.items += additions
-            entry.cursor = batch.continuation.takeIf { batch.items.isEmpty() || additions.isNotEmpty() }
+            // A fully duplicated page can still advance to new items. The visited
+            // cursor set above is the loop guard; additions are not a stop signal.
+            entry.cursor = batch.continuation
         }
         MusicPage(
             items = entry.items.drop(offset).take(pageSize),
