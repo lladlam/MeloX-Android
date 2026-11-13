@@ -406,6 +406,42 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
     var localCandidates by rememberRetainedPageState { mutableStateOf(emptyList<MusicTrack>()) }
     val homeCacheKey = "${session.cookie.hashCode()}_${MeloXSettingsRuntime.musicArea}_${MeloXSettingsRuntime.podcastsEnabled}"
 
+    // A request running during recreation was cancelled; the restored skeleton
+    // must not stay "loaded but empty" forever.
+    var restoredSongListRetry by remember { mutableStateOf(false) }
+    LaunchedEffect(songList) {
+        val list = songList ?: return@LaunchedEffect
+        if (restoredSongListRetry || list.loading || list.error != null || list.songs.isNotEmpty()) return@LaunchedEffect
+        restoredSongListRetry = true
+        val action = list.title
+        if (action !in HomeSongListActions) return@LaunchedEffect
+        songList = list.copy(loading = true)
+        scope.launch {
+            val songs = runCatching {
+                when (action) {
+                    "每日推荐" -> client.dailyRecommendedSongs()
+                    "热歌榜" -> client.hotSongs()
+                    "私人雷达" -> {
+                        val uid = session.profile?.userId ?: throw IllegalStateException("请先登录网易云音乐")
+                        val radar = client.snapshot(uid).playlists.firstOrNull { it.name.contains("雷达") }
+                            ?: throw IllegalStateException("当前账号没有可用的私人雷达")
+                        client.playlistDetail(radar.id).songs
+                    }
+                    else -> emptyList()
+                }
+            }.getOrElse { emptyList() }
+            val current = songList ?: return@launch
+            val updated = if (songs.isEmpty()) {
+                current.copy(loading = false)
+            } else {
+                current.copy(loading = false, songs = songs, subtitle = "网易云音乐 · ${songs.size} 首歌曲")
+            }
+            songList = updated
+            overlaySongList = updated
+            if (songs.isNotEmpty()) quickActionCache = quickActionCache + (action to songs)
+        }
+    }
+
     fun refresh(forceServer: Boolean = false) {
         if (refreshing) return
         scope.launch {
@@ -803,6 +839,8 @@ private fun encodeHomeSongList(list: HomeSongList?): String? {
             .put("title", list.title)
             .put("subtitle", list.subtitle)
             .put("artworkUrl", list.artworkUrl.orEmpty())
+            .put("loading", list.loading)
+            .put("error", list.error.orEmpty())
             .put("songs", org.json.JSONArray().apply {
                 list.songs.forEach { song ->
                     put(JSONObject()
@@ -829,6 +867,8 @@ private fun decodeHomeSongList(raw: String?): HomeSongList? {
             title = value.optString("title"),
             subtitle = value.optString("subtitle"),
             artworkUrl = value.optString("artworkUrl").takeIf(String::isNotBlank),
+            loading = value.optBoolean("loading", false),
+            error = value.optString("error").takeIf(String::isNotBlank),
             songs = buildList {
                 for (index in 0 until songs.length()) {
                     val song = songs.optJSONObject(index) ?: continue
