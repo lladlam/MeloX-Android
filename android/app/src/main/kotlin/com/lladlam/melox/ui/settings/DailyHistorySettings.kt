@@ -63,6 +63,7 @@ import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSystemColors
 import com.lladlam.melox.ui.library.MeloXUnifiedSongListDetailScreen
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.DayOfWeek
@@ -132,6 +133,7 @@ private fun DailyHistoryPage(
     var entryLoading by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    var refreshJob by remember { mutableStateOf<Job?>(null) }
 
     val month = YearMonth.of(year, monthValue)
     val today = MeloXDailyClock.today()
@@ -139,8 +141,9 @@ private fun DailyHistoryPage(
     val cells = remember(month) { MeloXDailyClock.monthCells(month) }
     val contentState = MeloXDailyClock.isEmptyState(dateKeys, selectedKey)
 
-    val refresh: () -> Unit = {
-        scope.launch {
+    fun refresh() {
+        if (refreshJob?.isActive == true) return
+        refreshJob = scope.launch {
             loading = true
             error = null
             val key = withContext(Dispatchers.IO) {
@@ -155,7 +158,7 @@ private fun DailyHistoryPage(
             loading = false
         }
     }
-    val latestRefresh by rememberUpdatedState(refresh)
+    val latestRefresh by rememberUpdatedState(::refresh)
     LaunchedEffect(Unit) { refresh() }
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
