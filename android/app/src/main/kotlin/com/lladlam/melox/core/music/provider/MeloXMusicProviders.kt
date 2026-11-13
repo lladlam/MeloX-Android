@@ -5,6 +5,7 @@ import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.provider.applemusic.AppleMusicApiClient
 import com.lladlam.melox.core.provider.applemusic.AppleMusicSessionStore
 import com.lladlam.melox.core.provider.kugou.KugouLiteProvider
+import com.lladlam.melox.core.provider.kugou.KugouProvider
 import com.lladlam.melox.core.provider.kugou.KugouSessionStore
 import com.lladlam.melox.core.provider.kuwo.KuwoProvider
 import com.lladlam.melox.core.provider.kuwo.KuwoSessionStore
@@ -53,6 +54,7 @@ object MeloXMusicProviders {
         val nativeProviders = listOf<MusicProvider>(
                 NeteaseProvider({ PlaybackAccountStore.neteaseCookie(appContext) }, httpClient),
                 QQMusicProvider({ PlaybackAccountStore.qqSession(appContext) }, httpClient),
+                KugouProvider({ PlaybackAccountStore.kugouSession(appContext) }, httpClient),
                 liteProvider(appContext, httpClient),
                 QishuiProvider({ QishuiSessionStore.read(appContext) }, httpClient),
                 KuwoProvider({ PlaybackAccountStore.kuwoSession(appContext) }, httpClient),
