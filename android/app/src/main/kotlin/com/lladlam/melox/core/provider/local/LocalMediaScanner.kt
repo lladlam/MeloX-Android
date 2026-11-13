@@ -27,7 +27,7 @@ class LocalMediaScanner(
 ) {
     private val artworkScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    suspend fun scanAll(): List<LocalTrackRecord> {
+    suspend fun scanAll(): List<LocalTrackRecord> = withContext(Dispatchers.IO) {
         val records = coroutineScope {
             val mediaStore = async(Dispatchers.IO) { scanMediaStore() }
             val trees = repository.scanRoots().map { root ->
@@ -40,7 +40,7 @@ class LocalMediaScanner(
         }
         repository.replaceTracks(records)
         artworkScope.launch { extractMissingArtwork(records) }
-        return records
+        records
     }
 
     private fun scanMediaStore(): List<LocalTrackRecord> {
