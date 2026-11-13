@@ -97,16 +97,17 @@ internal class ZhAlignmentEngine private constructor(
             val loadStarted = android.os.SystemClock.elapsedRealtime()
             return runCatching {
                 val environment = OrtEnvironment.getEnvironment()
-                val options = OrtSession.SessionOptions().apply {
-                    setIntraOpNumThreads(2)
-                    setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                val engine = OrtSession.SessionOptions().use { options ->
+                    options.setIntraOpNumThreads(2)
+                    options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                    ZhAlignmentEngine(
+                        manifest = manifest,
+                        tokenNumName = tokenNumName,
+                        session = environment.createSession(path, options),
+                        environment = environment,
+                    )
                 }
-                ZhAlignmentEngine(
-                    manifest = manifest,
-                    tokenNumName = tokenNumName,
-                    session = environment.createSession(path, options),
-                    environment = environment,
-                ).also { engine ->
+                engine.also {
                     synchronized(lock) {
                         cache.entries.removeAll { (existingKey, existing) ->
                             if (existingKey.startsWith("$language|")) {
