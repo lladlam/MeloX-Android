@@ -453,7 +453,7 @@ internal class MeloXMcpServer(
             output.write(value)
             if (value.toByte() == terminator[matched]) {
                 matched++
-                if (matched == terminator.size) return output.toString(Charsets.UTF_8)
+                if (matched == terminator.size) return output.toString(Charsets.UTF_8.name())
             } else {
                 matched = if (value.toByte() == terminator[0]) 1 else 0
             }
