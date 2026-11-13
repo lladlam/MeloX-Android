@@ -286,7 +286,11 @@ class BilibiliProvider(
                          durationMs: Long? = null, owner: String? = null, pic: String? = null): MusicTrack {
         val baseTitle = cleanTitle(item.optString("title").ifBlank { "Bilibili 视频" })
         val title = part?.takeIf { it != baseTitle }?.let { "$baseTitle - $it" } ?: baseTitle
-        val artist = owner.orEmpty().ifBlank { item.optString("author").ifBlank { item.optString("upper_name") }.ifBlank { "未知 UP 主" } }
+        val artist = cleanTitle(
+            owner.orEmpty().ifBlank {
+                item.optString("author").ifBlank { item.optString("upper_name") }
+            },
+        ).ifBlank { "未知 UP 主" }
         return MusicTrack(
             MusicResourceId(source, "$bvid:$cid"), title, listOf(MusicArtistRef(name = artist)),
             artworkUrl = secure(pic.orEmpty().ifBlank { item.optString("pic").ifBlank { item.optString("cover") } }),
