@@ -242,17 +242,40 @@ class SpotifyApiClient(
     }
 
     suspend fun savedAlbums(page: Int, pageSize: Int): MusicPage<MusicAlbumSummary> = withContext(Dispatchers.IO) {
-        if (page > 1) return@withContext MusicPage(emptyList(), page, pageSize, 0)
-        val result = pageItems("me/albums", 1, pageSize) { SpotifyJsonMapper.album(it.optJSONObject("album") ?: it) }
-        MusicPage(result.items, page, pageSize, result.total, false)
+        val result = pageItems("me/albums", page, pageSize) { SpotifyJsonMapper.album(it.optJSONObject("album") ?: it) }
+        MusicPage(result.items, page, pageSize, result.total)
     }
 
+    private var followedArtistsCursor: String? = null
+
     suspend fun followedArtists(page: Int, pageSize: Int): MusicPage<MusicArtistSummary> = withContext(Dispatchers.IO) {
-        if (page > 1) return@withContext MusicPage(emptyList(), page, pageSize, 0)
-        val root = get("me/following", mapOf("type" to "artist", "limit" to pageSize.coerceIn(1, 50).toString()))
-        val artists = root.optJSONObject("artists")
-        val items = artists?.optJSONArray("items").objects().mapNotNull(SpotifyJsonMapper::artist)
-        MusicPage(items, page, pageSize, artists?.optLong("total")?.takeIf { it >= 0L }, false)
+        val safePage = page.coerceAtLeast(1)
+        if (safePage == 1) followedArtistsCursor = null
+        // Spotify's following endpoint uses `after`, not numeric offsets. Walk the
+        // cursor chain to the requested page rather than returning a fake empty page.
+        repeat((safePage - 1).coerceAtMost(1_000)) {
+            if (followedArtistsCursor == null) return@withContext MusicPage(emptyList(), safePage, pageSize, 0)
+            readFollowedArtistsPage(pageSize)
+        }
+        val root = readFollowedArtistsPage(pageSize)
+        val items = root.optJSONArray("items").objects().mapNotNull(SpotifyJsonMapper::artist)
+        MusicPage(
+            items,
+            safePage,
+            pageSize,
+            root.optLong("total").takeIf { it >= 0L },
+            hasMore = followedArtistsCursor != null,
+        )
+    }
+
+    private suspend fun readFollowedArtistsPage(pageSize: Int): JSONObject {
+        val root = get(
+            "me/following",
+            mapOf("type" to "artist", "limit" to pageSize.coerceIn(1, 50).toString()) +
+                followedArtistsCursor?.let { mapOf("after" to it) }.orEmpty(),
+        ).optJSONObject("artists") ?: JSONObject()
+        followedArtistsCursor = root.optJSONObject("cursors")?.optString("after")?.takeIf(String::isNotBlank)
+        return root
     }
 
     suspend fun createPlaylist(name: String): MusicPlaylistSummary = withContext(Dispatchers.IO) {
