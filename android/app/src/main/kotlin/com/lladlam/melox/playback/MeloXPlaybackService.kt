@@ -2835,18 +2835,22 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
             val songId = item.mediaId.toLongOrNull()?.takeIf { it > 0L }
                 ?: return outcome("unresolvable identity")
             val cookie = { NeteaseSessionStore.readCookie(this) }
-            val session = NeteaseSessionStore(this)
-            if (session.profile == null) session.refreshProfile()
-            val userId = session.profile?.userId
-            val currentlyFavorite = userId != null && runCatching {
-                NeteaseLibraryClient(cookieProvider = cookie)
-                    .likedSongIdsBlocking(userId)
-                    .contains(songId)
-            }.getOrDefault(false)
-            val targetFavorite = !currentlyFavorite
+            val targetFavorite = withContext(Dispatchers.IO) {
+                val session = NeteaseSessionStore(this@MeloXPlaybackService)
+                if (session.profile == null) session.refreshProfile()
+                val userId = session.profile?.userId
+                val currentlyFavorite = userId != null && runCatching {
+                    NeteaseLibraryClient(cookieProvider = cookie)
+                        .likedSongIdsBlocking(userId)
+                        .contains(songId)
+                }.getOrDefault(false)
+                !currentlyFavorite
+            }
             runCatching {
-                NeteaseMusicOperationsClient(cookieProvider = cookie)
-                    .setSongLiked(songId, targetFavorite)
+                withContext(Dispatchers.IO) {
+                    NeteaseMusicOperationsClient(cookieProvider = cookie)
+                        .setSongLiked(songId, targetFavorite)
+                }
             }.onSuccess {
                 Log.i(TAG, "System favorite toggled for NetEase song $songId -> $targetFavorite")
                 outcome("favorited=$targetFavorite")
