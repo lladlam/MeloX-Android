@@ -9,6 +9,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
 
 /** One archived daily-recommendation snapshot for a single local day. */
@@ -112,8 +113,10 @@ object DailyHistoryStore {
         val temporary = File.createTempFile("${file.name}.", ".tmp", file.parentFile)
         try {
             temporary.writeText(encoded)
+            // renameTo() replaces the destination on Android/Linux. If replacement
+            // fails, keep the previous complete file instead of truncating it.
             if (!temporary.renameTo(file)) {
-                file.writeText(encoded)
+                throw IOException("cannot replace daily history: ${file.name}")
             }
         } finally {
             temporary.delete()
