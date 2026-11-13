@@ -56,6 +56,7 @@ internal class NeteaseAuthenticatedEapi(
         val requestBuilder = Request.Builder()
             .url("${domain.trimEnd('/')}${uri.replace("/api/", "/eapi/")}")
             .header("Accept", "*/*")
+            .apply { if (isNonIdempotentNeteaseApi(uri)) header(RetryInterceptor.NO_RETRY_HEADER, "true") }
             .header("User-Agent", if (cookieOs == "osx") "NeteaseMusic 3.0.18 (Macintosh; Intel Mac OS X 14_5)" else if (authenticated) "NeteaseMusic 9.0.90/5038 (iPhone; iOS 16.2; zh_CN)" else "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148")
         if (authenticated) {
             requestBuilder.header("Cookie", encodedCookie(header))

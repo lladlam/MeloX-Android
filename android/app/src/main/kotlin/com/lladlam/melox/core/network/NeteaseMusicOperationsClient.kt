@@ -755,7 +755,7 @@ private fun collectWikiUiText(ui: JSONObject?, lines: MutableList<String>) {
         if(authenticated)b.header("Cookie",encodedCookie(header))
         // Creating / deleting / updating resources is not idempotent: a retry
         // would create a second playlist (or delete twice).
-        if (NON_IDEMPOTENT_API_MARKERS.any { uri.contains(it) }) {
+        if (isNonIdempotentNeteaseApi(uri)) {
             b.header(RetryInterceptor.NO_RETRY_HEADER, "true")
         }
         val req=b.post(FormBody.Builder().add("params",params).build()).build()
@@ -784,4 +784,15 @@ private fun collectWikiUiText(ui: JSONObject?, lines: MutableList<String>) {
 private val NON_IDEMPOTENT_API_MARKERS = listOf(
     "/create", "/delete", "/del", "/remove", "/add", "/update", "/subscribe",
     "/like", "/comment", "/upload", "/pub/", "/tracks", "/end/",
+    "/send", "/accept", "/command/report", "/captcha/sent", "/login",
 )
+
+/** Read/query endpoints are safe to retry even when their path mentions a resource. */
+private val READ_ONLY_NETEASE_API_SUFFIXES = listOf("/get", "/check", "/list", "/detail", "/query", "/status")
+
+internal fun isNonIdempotentNeteaseApi(uri: String): Boolean {
+    val path = uri.substringBefore('?').trimEnd('/')
+    if (READ_ONLY_NETEASE_API_SUFFIXES.any(path::endsWith)) return false
+    if (path.contains("/comments/") || path.contains("/comments?")) return false
+    return NON_IDEMPOTENT_API_MARKERS.any(path::contains)
+}

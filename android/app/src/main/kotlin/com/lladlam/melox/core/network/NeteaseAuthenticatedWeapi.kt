@@ -71,6 +71,7 @@ internal class NeteaseAuthenticatedWeapi(
             .header("User-Agent", WEB_USER_AGENT)
             .header("Referer", "https://music.163.com")
             .header("Cookie", processedCookie(cookies, uri))
+            .apply { if (isNonIdempotentNeteaseApi(uri)) header(RetryInterceptor.NO_RETRY_HEADER, "true") }
             .post(FormBody.Builder().add("params", params).add("encSecKey", encSecKey).build())
             .build()
 
