@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.MeloX" parent="android:style/Theme.Material.Light.NoActionBar">
+    <!-- API 29 adds navigation-bar contrast control. The v27 variant is not
+         merged automatically, so repeat its item and inherit the base style. -->
+    <style name="Theme.MeloX" parent="Theme.MeloX.Base">
+        <item name="android:windowLightNavigationBar">true</item>
         <item name="android:enforceNavigationBarContrast">false</item>
     </style>
 </resources>

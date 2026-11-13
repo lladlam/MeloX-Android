@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.MeloX" parent="android:style/Theme.Material.Light.NoActionBar">
+    <!-- API 27 adds the light navigation-bar flag. Inherit the base style so
+         version-qualified resource replacement does not drop shared items. -->
+    <style name="Theme.MeloX" parent="Theme.MeloX.Base">
         <item name="android:windowLightNavigationBar">true</item>
     </style>
 </resources>
