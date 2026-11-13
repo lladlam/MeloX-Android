@@ -103,7 +103,7 @@ class AppleMusicApiClient(
             path = "v1/catalog/${sessionProvider().storefront}/songs/${track.id.value}",
             query = mapOf("include" to "lyrics"),
         )
-        val lyrics = root.optJSONObject("relationships")
+        val lyrics = root.optJSONArray("data")?.optJSONObject(0)?.optJSONObject("relationships")
             ?.optJSONObject("lyrics")
             ?.optJSONArray("data")
             ?.optJSONObject(0)
@@ -179,9 +179,16 @@ class AppleMusicApiClient(
         page: Int,
         pageSize: Int,
     ): MusicPlaylistDetail = withContext(Dispatchers.IO) {
+        // userPlaylists() returns library IDs; those playlists are not catalog resources.
+        val libraryPlaylist = playlist.creatorName.isNullOrBlank()
         val root = getJson(
-            path = "v1/catalog/${sessionProvider().storefront}/playlists/${playlist.id.value}",
+            path = if (libraryPlaylist) {
+                "v1/me/library/playlists/${playlist.id.value}"
+            } else {
+                "v1/catalog/${sessionProvider().storefront}/playlists/${playlist.id.value}"
+            },
             query = mapOf("include" to "tracks"),
+            userRequired = libraryPlaylist,
         )
         val summary = root.optJSONArray("data")?.optJSONObject(0)?.let(::parsePlaylist) ?: playlist
         val tracks = root.relationshipData("tracks").mapNotNull(::parseTrack)
