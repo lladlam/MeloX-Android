@@ -277,6 +277,11 @@ internal class MeloXMcpServer(
         val value = raw.trim()
         if (value.startsWith("[")) {
             val input = JSONArray(value)
+            if (input.length() == 0) {
+                return JSONObject().put("jsonrpc", "2.0").put("id", JSONObject.NULL)
+                    .put("error", JSONObject().put("code", -32600).put("message", "Invalid Request"))
+                    .toString()
+            }
             val output = JSONArray()
             for (index in 0 until input.length()) {
                 input.optJSONObject(index)?.let { request ->
