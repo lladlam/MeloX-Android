@@ -46,15 +46,22 @@ internal class DlnaHttpServer(
 
     fun start(): String {
         // Match the interface used to reach this renderer, including multi-homed phones.
-        val local = java.net.DatagramSocket().use {
-            it.connect(peer, 1900); it.localAddress.hostAddress
+        val localAddress = java.net.DatagramSocket().use {
+            it.connect(peer, 1900); it.localAddress
         } ?: error("No LAN address")
+        val local = localAddress.hostAddress
         job = scope.launch(Dispatchers.IO) {
             while (!server.isClosed) {
                 val client = runCatching { server.accept() }.getOrNull() ?: break
                 if (client.inetAddress != peer || clients.size >= 8) { client.close(); continue }
                 clients.add(client)
-                launch { client.use { runCatching { serve(it) }; clients.remove(it) } }
+                launch {
+                    try {
+                        client.use { runCatching { serve(it) } }
+                    } finally {
+                        clients.remove(client)
+                    }
+                }
             }
         }
         return "http://$local:${server.localPort}$path"
