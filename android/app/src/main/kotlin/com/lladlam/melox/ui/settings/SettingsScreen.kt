@@ -3023,11 +3023,14 @@ private fun StorageSettings(context: android.content.Context) {
                 modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape),
             )
             Text(
-                "设备已使用 ${formatBytes(deviceUsed)} · 可用 ${formatBytes(usage.deviceAvailable)}",
+                stringResource(R.string.settings_storage_device, formatBytes(deviceUsed), formatBytes(usage.deviceAvailable)),
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = .50f),
             )
-            Text("可重新生成的缓存：${formatBytes(usage.reclaimable)}", fontSize = 12.sp)
+            Text(
+                stringResource(R.string.settings_storage_reclaimable, formatBytes(usage.reclaimable)),
+                fontSize = 12.sp,
+            )
         }
     }
     Spacer(Modifier.height(18.dp))
