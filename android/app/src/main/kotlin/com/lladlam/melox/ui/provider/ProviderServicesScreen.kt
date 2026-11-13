@@ -369,7 +369,6 @@ fun ProviderServicesScreen(
                 )
                 MeloXIosListRow(
                     title = stringResource(R.string.provider_add_folder),
-                    subtitle = stringResource(R.string.provider_add_folder_subtitle),
                     leading = { MeloXSymbolIcon(MeloXSymbol.Storage, Modifier.size(24.dp), MeloXSystemColors.Red) },
                     onClick = { localTreeLauncher.launch(null) },
                     showTopSeparator = true,
@@ -377,7 +376,6 @@ fun ProviderServicesScreen(
                 localScanMessage?.let { message ->
                     MeloXIosListRow(
                         title = message,
-                        subtitle = stringResource(R.string.provider_local_stays_local),
                         leading = { Spacer(Modifier.width(25.dp)) },
                         onClick = null,
                         showTopSeparator = true,
@@ -554,7 +552,11 @@ fun ProviderServicesScreen(
                                 MusicSource.Bilibili -> showBilibiliLogin = true
                                 MusicSource.Spotify -> showSpotifyLogin = true
                                 MusicSource.YouTubeMusic -> showYouTubeLogin = true
-                                MusicSource.Jellyfin -> Unit
+                                MusicSource.Jellyfin -> {
+                                    jellyfinError = null
+                                    jellyfinPassword = ""
+                                    showJellyfinDialog = true
+                                }
                                 MusicSource.Local -> Unit
                             }
                         }
