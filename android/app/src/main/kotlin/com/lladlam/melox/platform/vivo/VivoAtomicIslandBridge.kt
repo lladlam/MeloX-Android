@@ -79,18 +79,25 @@ object VivoAtomicIslandBridge {
     fun clear(context: Context) {
         if (!isSupported()) return
         synchronized(this) {
-            if (activeSongKey == null) return
-            publishNotification(
-                context = context.applicationContext,
-                operation = 2,
-                line = "",
-                songTitle = "",
-                artist = "",
-                positionMs = 0L,
-                durationMs = 0L,
-                isPlaying = false,
-                clickIntent = null,
-            )
+            val app = context.applicationContext
+            // Cancel unconditionally: after process death `activeSongKey` is null,
+            // while the vendor notification can still be on screen.
+            runCatching {
+                app.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
+            }
+            if (activeSongKey != null) {
+                publishNotification(
+                    context = app,
+                    operation = 2,
+                    line = "",
+                    songTitle = "",
+                    artist = "",
+                    positionMs = 0L,
+                    durationMs = 0L,
+                    isPlaying = false,
+                    clickIntent = null,
+                )
+            }
             activeSongKey = null
             lastPublishedAt = 0L
         }
