@@ -134,14 +134,14 @@ class JellyfinProvider(
 
     override suspend fun albumDetail(album: MusicAlbumSummary, page: Int, pageSize: Int): MusicAlbumDetail =
         withContext(Dispatchers.IO) {
-            val tracks = queryTracks(mapOf("ParentId" to album.id.value), page, pageSize)
-            MusicAlbumDetail(album, tracks, tracks.size.toLong())
+            val result = queryTracks(mapOf("ParentId" to album.id.value), page, pageSize)
+            MusicAlbumDetail(album, result.items, result.total ?: result.items.size.toLong())
         }
 
     override suspend fun artistDetail(artist: MusicArtistSummary, page: Int, pageSize: Int): MusicArtistDetail =
         withContext(Dispatchers.IO) {
-            val tracks = queryTracks(mapOf("ArtistIds" to artist.id.value), page, pageSize)
-            MusicArtistDetail(artist, tracks, tracks.size.toLong())
+            val result = queryTracks(mapOf("ArtistIds" to artist.id.value), page, pageSize)
+            MusicArtistDetail(artist, result.items, result.total ?: result.items.size.toLong())
         }
 
     override suspend fun setFavorite(track: MusicTrack, favorite: Boolean) {
@@ -202,17 +202,20 @@ class JellyfinProvider(
         return MusicPage(items, page, size, json.optLong("TotalRecordCount").takeIf { it > 0 })
     }
 
-    private fun queryTracks(filters: Map<String, String>, page: Int, pageSize: Int): List<MusicTrack> {
+    private data class TrackQueryResult(val items: List<MusicTrack>, val total: Long?)
+
+    private fun queryTracks(filters: Map<String, String>, page: Int, pageSize: Int): TrackQueryResult {
         val session = requireSession()
         val size = pageSize.coerceIn(1, 100)
         val json = api.get(session, "/Users/${session.userId}/Items", filters + mapOf(
             "IncludeItemTypes" to "Audio", "Recursive" to "true",
             "StartIndex" to ((page - 1).coerceAtLeast(0) * size).toString(), "Limit" to size.toString(),
         ))
-        val array = json.optJSONArray("Items") ?: return emptyList()
-        return buildList {
+        val array = json.optJSONArray("Items")
+        val items = if (array == null) emptyList() else buildList {
             for (index in 0 until array.length()) array.optJSONObject(index)?.let { add(toTrack(it)) }
         }
+        return TrackQueryResult(items, json.optLong("TotalRecordCount").takeIf { it >= 0L })
     }
 
     private fun toTrack(item: JSONObject): MusicTrack {
