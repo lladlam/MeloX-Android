@@ -32,10 +32,17 @@ class LrcLibLyricsClient(
                 ?: json.optString("plainLyrics").takeIf(String::isNotBlank)?.let { plain ->
                     LyricsDocument(
                         lines = plain.lines().filter(String::isNotBlank)
-                            .map { LyricLine(timeMs = 0L, text = it.trim()) },
+                            .map {
+                                LyricLine(
+                                    timeMs = 0L,
+                                    text = it.trim(),
+                                    timingKind = LyricTimingKind.LineSynchronized,
+                                )
+                            },
                         source = LyricSource.Local,
                         quality = LyricQuality.Fallback,
                         pseudoTimingAllowed = false,
+                        isUnsynchronized = true,
                     )
                 }
                 ?: LyricsDocument(emptyList())
