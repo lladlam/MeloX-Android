@@ -126,7 +126,7 @@ class QQMusicCatalogClient(
         val param = JSONObject()
             .put("query", query.trim()).put("highlight", 0)
             .put("searchid", "").put("sub_searchid", 0).put("search_type", 0)
-            .put("nqc_flag", 0).put("sin", start).put("ein", start + 30)
+            .put("nqc_flag", 0).put("sin", start).put("ein", start + pageSize)
             .put("page_num", page).put("num_per_page", pageSize)
             .put("cat", 2).put("grp", 1).put("remoteplace", "").put("from", "")
             .put("multi_zhida", 1).put("sem", 0).put("related_data", "").put("ambi_data", "")
