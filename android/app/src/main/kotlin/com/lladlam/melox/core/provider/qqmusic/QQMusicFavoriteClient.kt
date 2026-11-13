@@ -174,6 +174,7 @@ class QQMusicFavoriteClient(
         val request = Request.Builder()
             .url("https://u.y.qq.com/cgi-bin/musicu.fcg")
             .header("User-Agent", "QQMusic $AndroidClientVersion(android 15)")
+            .header(com.lladlam.melox.core.network.RetryInterceptor.NO_RETRY_HEADER, "true")
             .apply { if (session.cookie.isNotBlank()) header("Cookie", session.cookie) }
             .post(payload.toString().toRequestBody(JsonMediaType))
             .build()
