@@ -48,6 +48,7 @@ class MeloXFloatingLyricsService : Service() {
     private val mainExecutor = Executor { handler.post(it) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var controller: MediaController? = null
+    private var controllerFuture: com.google.common.util.concurrent.ListenableFuture<MediaController>? = null
     private var windowManager: WindowManager? = null
     private var overlay: View? = null
     private var primaryText: TextView? = null
@@ -119,8 +120,14 @@ class MeloXFloatingLyricsService : Service() {
             this,
             SessionToken(this, ComponentName(this, MeloXPlaybackService::class.java)),
         ).buildAsync()
+        controllerFuture = future
         future.addListener({
             runCatching { future.get() }.onSuccess { player ->
+                if (controllerFuture !== future) {
+                    player.release()
+                    return@onSuccess
+                }
+                controllerFuture = null
                 controller = player
                 player.addListener(listener)
                 loadLyrics(player.currentMediaItem)
@@ -299,6 +306,7 @@ class MeloXFloatingLyricsService : Service() {
         }
     }
 
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.O)
     private fun createNotificationChannel() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL_ID, getString(R.string.floating_lyrics_channel), NotificationManager.IMPORTANCE_LOW).apply {
@@ -338,6 +346,8 @@ class MeloXFloatingLyricsService : Service() {
     override fun onDestroy() {
         handler.removeCallbacks(ticker)
         lyricsJob?.cancel()
+        controllerFuture?.let(MediaController::releaseFuture)
+        controllerFuture = null
         controller?.removeListener(listener)
         controller?.release()
         controller = null
