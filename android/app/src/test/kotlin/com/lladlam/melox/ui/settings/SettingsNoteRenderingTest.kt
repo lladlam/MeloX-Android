@@ -6,11 +6,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 设置项的说明文字（`note`）必须真正显示出来。
+ * 设置项说明文字（`note`）已按产品要求隐藏。
  *
- * 历史回归：`SettingsToggleRow` / `SettingsExternalToggleRow` 仍然接收 `note` 参数，
- * 但实现里丢掉了 `subtitle = note`，导致所有说明文字（及其四语翻译）永远不显示，
- * 而调用点看起来一切正常，新加的文案也照样「翻译了却看不见」。
+ * 反向回归：开关行仍接收 `note` 参数，但实现不得再把它渲染成副标题，
+ * 否则设置页会重新出现用户明确要求删除的灰色备注。
  */
 class SettingsNoteRenderingTest {
     private val screen = File("src/main/kotlin/com/lladlam/melox/ui/settings/SettingsScreen.kt").readText()
@@ -24,31 +23,27 @@ class SettingsNoteRenderingTest {
     }
 
     @Test
-    fun toggleRowsRenderTheirNoteAsSubtitle() {
+    fun toggleRowsDoNotRenderNotes() {
         for (name in listOf("SettingsToggleRow", "SettingsExternalToggleRow")) {
             val body = functionBody(name)
-            assertTrue(
-                "$name must pass its note to MeloXIosListRow as subtitle",
+            assertFalse(
+                "$name must not pass note to MeloXIosListRow as subtitle",
                 body.contains("subtitle = note"),
             )
         }
     }
 
     @Test
-    fun settingsNotesAreAllowedToWrapInsteadOfBeingTruncated() {
-        assertTrue(
-            "settings notes must not be capped at two lines",
-            screen.contains("subtitleMaxLines = SettingsNoteMaxLines"),
-        )
-        assertTrue(
-            "SettingsNoteMaxLines must allow long notes to wrap",
-            screen.contains("private const val SettingsNoteMaxLines = "),
+    fun settingsNoteLineLimitHelperIsGone() {
+        assertFalse(
+            "settings notes are hidden, so the line-limit helper must not remain",
+            screen.contains("SettingsNoteMaxLines"),
         )
     }
 
     @Test
     fun settingsRowsDoNotHardcodeChineseCopy() {
-        // 说明文字恢复显示后，任何硬编码中文都会在英文／日文界面直接露出来。
+        // 仍保留的参数区域不得出现硬编码中文，避免未来恢复备注时漏翻。
         val hardcodedChinese = Regex("\"[^\"]*[\\u4e00-\\u9fff][^\"]*\"")
         val offenders = mutableListOf<String>()
         for (name in listOf("SettingsToggleRow", "SettingsExternalToggleRow")) {
