@@ -1256,6 +1256,7 @@ private fun HomeAccountButton(account: HomeAccountUi) {
 }
 
 private data class HomeQuickAction(
+    val key: String,
     val title: String,
     val eyebrow: String,
     val subtitle: String,
@@ -1267,23 +1268,23 @@ private data class HomeQuickAction(
 private fun HomeQuickActions(source: MusicSource, active: String?, perform: (String) -> Unit) {
     val actions = buildList {
         if (source == MusicSource.Netease) {
-            add(HomeQuickAction("每日推荐", stringResource(R.string.home_eyebrow_daily), stringResource(R.string.home_subtitle_daily), MeloXSymbol.Calendar, listOf(Color(0xFFFF5B8A), Color(0xFFFF3147))))
-            add(HomeQuickAction("热歌榜", stringResource(R.string.home_eyebrow_hot), stringResource(R.string.home_subtitle_hot), MeloXSymbol.Flame, listOf(Color(0xFFFFA14A), Color(0xFFFF5A36))))
-            add(HomeQuickAction("心动模式", stringResource(R.string.home_eyebrow_heart), stringResource(R.string.home_subtitle_heart), MeloXSymbol.HeartPulse, listOf(Color(0xFFFF6EAC), Color(0xFF9B5DE5))))
-            add(HomeQuickAction("私人雷达", stringResource(R.string.home_eyebrow_radar), stringResource(R.string.home_subtitle_radar), MeloXSymbol.RadioWaves, listOf(Color(0xFF6B7BFF), Color(0xFF8C52FF))))
-            add(HomeQuickAction("私人漫游", stringResource(R.string.home_eyebrow_roam), stringResource(R.string.home_subtitle_roam), MeloXSymbol.Walk, listOf(Color(0xFF26C6DA), Color(0xFF4285F4))))
-            add(HomeQuickAction("相似歌曲", stringResource(R.string.home_eyebrow_similar), stringResource(R.string.home_subtitle_similar), MeloXSymbol.List, listOf(Color(0xFF58C9A3), Color(0xFF159D9A))))
+            add(HomeQuickAction("每日推荐", stringResource(R.string.home_action_daily), stringResource(R.string.home_eyebrow_daily), stringResource(R.string.home_subtitle_daily), MeloXSymbol.Calendar, listOf(Color(0xFFFF5B8A), Color(0xFFFF3147))))
+            add(HomeQuickAction("热歌榜", stringResource(R.string.home_action_hot), stringResource(R.string.home_eyebrow_hot), stringResource(R.string.home_subtitle_hot), MeloXSymbol.Flame, listOf(Color(0xFFFFA14A), Color(0xFFFF5A36))))
+            add(HomeQuickAction("心动模式", stringResource(R.string.home_action_heart), stringResource(R.string.home_eyebrow_heart), stringResource(R.string.home_subtitle_heart), MeloXSymbol.HeartPulse, listOf(Color(0xFFFF6EAC), Color(0xFF9B5DE5))))
+            add(HomeQuickAction("私人雷达", stringResource(R.string.home_action_radar), stringResource(R.string.home_eyebrow_radar), stringResource(R.string.home_subtitle_radar), MeloXSymbol.RadioWaves, listOf(Color(0xFF6B7BFF), Color(0xFF8C52FF))))
+            add(HomeQuickAction("私人漫游", stringResource(R.string.home_action_roam), stringResource(R.string.home_eyebrow_roam), stringResource(R.string.home_subtitle_roam), MeloXSymbol.Walk, listOf(Color(0xFF26C6DA), Color(0xFF4285F4))))
+            add(HomeQuickAction("相似歌曲", stringResource(R.string.home_action_similar), stringResource(R.string.home_eyebrow_similar), stringResource(R.string.home_subtitle_similar), MeloXSymbol.List, listOf(Color(0xFF58C9A3), Color(0xFF159D9A))))
         }
-        add(HomeQuickAction("听歌识曲", stringResource(R.string.home_eyebrow_recognize), stringResource(R.string.home_subtitle_recognize), MeloXSymbol.Microphone, listOf(Color(0xFF7B61FF), Color(0xFF36C5F0))))
-        if (source == MusicSource.Netease) add(HomeQuickAction("私信", stringResource(R.string.home_eyebrow_messages), stringResource(R.string.home_subtitle_messages), MeloXSymbol.Mail, listOf(Color(0xFFFF6B8B), Color(0xFFFF3B30))))
+        add(HomeQuickAction("听歌识曲", stringResource(R.string.home_action_recognize), stringResource(R.string.home_eyebrow_recognize), stringResource(R.string.home_subtitle_recognize), MeloXSymbol.Microphone, listOf(Color(0xFF7B61FF), Color(0xFF36C5F0))))
+        if (source == MusicSource.Netease) add(HomeQuickAction("私信", stringResource(R.string.home_action_messages), stringResource(R.string.home_eyebrow_messages), stringResource(R.string.home_subtitle_messages), MeloXSymbol.Mail, listOf(Color(0xFFFF6B8B), Color(0xFFFF3B30))))
         if (source == MusicSource.Netease && MeloXSettingsRuntime.podcastsEnabled && MeloXSettingsRuntime.podcastsHomePlacement) {
-            add(HomeQuickAction("播客", stringResource(R.string.home_eyebrow_podcasts), stringResource(R.string.home_subtitle_podcasts), MeloXSymbol.RadioWaves, listOf(Color(0xFF8B5CF6), Color(0xFFEC4899))))
+            add(HomeQuickAction("播客", stringResource(R.string.home_action_podcasts), stringResource(R.string.home_eyebrow_podcasts), stringResource(R.string.home_subtitle_podcasts), MeloXSymbol.RadioWaves, listOf(Color(0xFF8B5CF6), Color(0xFFEC4899))))
         }
         if (MeloXSettingsRuntime.downloadsEnabled && MeloXSettingsRuntime.downloadsHomePlacement) {
-            add(HomeQuickAction("下载", stringResource(R.string.home_eyebrow_downloads), stringResource(R.string.home_subtitle_downloads), MeloXSymbol.Download, listOf(Color(0xFF0EA5E9), Color(0xFF14B8A6))))
+            add(HomeQuickAction("下载", stringResource(R.string.home_action_downloads), stringResource(R.string.home_eyebrow_downloads), stringResource(R.string.home_subtitle_downloads), MeloXSymbol.Download, listOf(Color(0xFF0EA5E9), Color(0xFF14B8A6))))
         }
         if (source == MusicSource.Netease && MeloXSettingsRuntime.cloudMusicEnabled && MeloXSettingsRuntime.cloudHomePlacement) {
-            add(HomeQuickAction("云盘", stringResource(R.string.home_eyebrow_cloud), stringResource(R.string.home_subtitle_cloud), MeloXSymbol.Storage, listOf(Color(0xFF64748B), Color(0xFF6366F1))))
+            add(HomeQuickAction("云盘", stringResource(R.string.home_action_cloud), stringResource(R.string.home_eyebrow_cloud), stringResource(R.string.home_subtitle_cloud), MeloXSymbol.Storage, listOf(Color(0xFF64748B), Color(0xFF6366F1))))
         }
     }
     if (actions.isEmpty()) return
@@ -1323,7 +1324,7 @@ private fun HomeQuickActionCard(
     modifier: Modifier,
 ) {
     Column(
-        modifier = modifier.clickable(enabled = active == null) { perform(action.title) },
+        modifier = modifier.clickable(enabled = active == null) { perform(action.key) },
     ) {
         Text(action.eyebrow.uppercase(), color = MaterialTheme.colorScheme.onBackground.copy(alpha = .55f), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(action.title, modifier = Modifier.padding(top = 2.dp), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1344,7 +1345,7 @@ private fun HomeQuickActionCard(
                 iconSize = 48.sp,
             )
             Text(action.title, modifier = Modifier.align(Alignment.BottomStart).padding(14.dp), color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            if (active == action.title) {
+            if (active == action.key) {
                 CircularProgressIndicator(Modifier.size(40.dp), color = Color.White, strokeWidth = 3.dp)
             }
         }
