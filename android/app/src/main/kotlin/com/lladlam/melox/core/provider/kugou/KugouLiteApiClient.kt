@@ -50,6 +50,7 @@ internal class KugouLiteApiClient(
 
     @Volatile private var vipCache: KugouLiteVip? = null
     @Volatile private var vipCacheAt: Long = 0L
+    @Volatile private var vipCacheAccount: String = ""
     @Volatile private var dfidVerified: Boolean = false
 
     suspend fun searchSongs(
@@ -322,12 +323,19 @@ internal class KugouLiteApiClient(
     /** Returns the concept VIP state. Results are cached briefly to avoid a request per track. */
     suspend fun vipStatus(force: Boolean = false): KugouLiteVip {
         val now = System.currentTimeMillis()
-        vipCache?.takeIf { !force && now - vipCacheAt < 60_000L }?.let { return it }
         val session = sessionProvider()
+        val accountKey = "${session.platform}:${session.userId}:${session.token}"
+        vipCache?.takeIf {
+            !force && vipCacheAccount == accountKey && now - vipCacheAt < 60_000L
+        }?.let { return it }
         if (!session.isLoggedIn) {
-            return KugouLiteVip.NONE.also { vipCache = it; vipCacheAt = now }
+            return KugouLiteVip.NONE.also { vipCache = it; vipCacheAt = now; vipCacheAccount = accountKey }
         }
-        val value = runCatching { withContext(Dispatchers.IO) { fetchVipStatus() } }.getOrElse {
+        val value = try {
+            withContext(Dispatchers.IO) { fetchVipStatus() }
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (_: Throwable) {
             KugouLiteVip(
                 isVip = session.vipActive || session.vipType > 0 || session.vipExpiresAtEpochSeconds > now / 1_000L,
                 superVip = session.superVip,
@@ -336,8 +344,10 @@ internal class KugouLiteApiClient(
                 freeListen = session.freeListenEligible,
             )
         }
+        if (sessionProvider().let { "${it.platform}:${it.userId}:${it.token}" } != accountKey) return value
         vipCache = value
         vipCacheAt = now
+        vipCacheAccount = accountKey
         persistVip(value)
         return value
     }
