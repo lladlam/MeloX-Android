@@ -180,10 +180,12 @@ internal class AutoSyncModelRepository(
     }
 
 
-    /** Removes an installed pack; the feature simply becomes unavailable. */
-    fun delete(language: String) {
-        File(root(context), language).deleteRecursively()
-        AutoSyncTimelineStore.clearLanguage(context, language)
+    /** Removes an installed pack; installation and deletion share the language lock. */
+    suspend fun delete(language: String) = withContext(Dispatchers.IO) {
+        installLock(language).withLock {
+            File(root(context), language).deleteRecursively()
+            AutoSyncTimelineStore.clearLanguage(context, language)
+        }
     }
 
     // ------------------------------------------------------------------ fetch
@@ -238,6 +240,7 @@ internal class AutoSyncModelRepository(
                         target.outputStream().buffered(1 shl 16).use { output ->
                             val buffer = ByteArray(1 shl 16)
                             while (true) {
+                                currentCoroutineContext().ensureActive()
                                 val read = input.read(buffer)
                                 if (read < 0) break
                                 digest.update(buffer, 0, read)
