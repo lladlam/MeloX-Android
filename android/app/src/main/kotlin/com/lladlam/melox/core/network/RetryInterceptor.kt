@@ -68,6 +68,7 @@ class RetryInterceptor(
                     Thread.sleep(backoff)
                 } catch (_: InterruptedException) {
                     Thread.currentThread().interrupt()
+                    throw IOException("网络请求已取消", lastException)
                 }
             }
         }
