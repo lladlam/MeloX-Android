@@ -188,8 +188,9 @@ fun MeloXCloudMusicScreen(
             }
                 .onSuccess {
                     uploadProgress = 1f
+                    // refresh() advances searchReloadToken; its LaunchedEffect owns
+                    // the remaining-page scan exactly once.
                     refresh()
-                    if (query.isNotBlank()) loadRemainingForSearch()
                 }
                 .onFailure { uploadError = it.message ?: app.getString(R.string.cloud_upload_failed) }
             uploading = false
