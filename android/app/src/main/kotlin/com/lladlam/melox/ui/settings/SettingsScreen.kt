@@ -1948,7 +1948,6 @@ private fun PlayerAppearanceSettings(context: android.content.Context) {
                         R.string.settings_custom_background_change
                     },
                 ),
-                subtitle = stringResource(R.string.settings_custom_background_note),
                 leading = {
                     Box(
                         modifier = Modifier
@@ -2937,7 +2936,6 @@ private fun ListenTogetherSettings(context: android.content.Context) {
             )
             MeloXIosListRow(
                 title = stringResource(R.string.settings_listen_solo),
-                subtitle = stringResource(R.string.settings_listen_solo_note),
                 leading = { MeloXSymbolIcon(MeloXSymbol.Person, Modifier.size(24.dp), MeloXSystemColors.Red) },
                 trailing = {
                     MeloXGlassToggle(
@@ -4273,14 +4271,6 @@ private fun DeveloperSettings() {
 private val LocalSettingsGroupedRows = staticCompositionLocalOf { false }
 internal val LocalSettingsGroupRowIndex = staticCompositionLocalOf { mutableIntStateOf(0) }
 
-/**
- * 设置项说明文字的最大行数。
- *
- * 说明文字最长可达 170+ 字符（英文），两行会被截断成看不出含义的残句，
- * 所以这里放开行数，让整段说明换行显示完整。
- */
-private const val SettingsNoteMaxLines = 8
-
 @Composable
 private fun SettingsToggleRow(
     context: android.content.Context,
@@ -4303,8 +4293,6 @@ private fun SettingsToggleRow(
     @Composable fun row() {
         MeloXIosListRow(
             title = title,
-            subtitle = note,
-            subtitleMaxLines = SettingsNoteMaxLines,
             trailing = {
                 MeloXGlassToggle(checked = value, onCheckedChange = {
                     value = it
@@ -4333,8 +4321,6 @@ private fun SettingsExternalToggleRow(
     val row = @Composable {
         MeloXIosListRow(
             title = title,
-            subtitle = note,
-            subtitleMaxLines = SettingsNoteMaxLines,
             trailing = { MeloXGlassToggle(checked = value, onCheckedChange = onValueChange) },
             showTopSeparator = effectiveShowTopSeparator,
         )
