@@ -399,9 +399,12 @@ fun ProviderServicesScreen(
                         leading = { Spacer(Modifier.width(25.dp)) },
                         detail = stringResource(R.string.provider_remove),
                         onClick = {
-                            localRepository.removeScanRoot(root.uri)
-                            runCatching { context.contentResolver.releasePersistableUriPermission(Uri.parse(root.uri), root.persistedFlags) }
-                            scanLocalMusic()
+                            scope.launch {
+                                withContext(Dispatchers.IO) { localRepository.removeScanRoot(root.uri) }
+                                runCatching { context.contentResolver.releasePersistableUriPermission(Uri.parse(root.uri), root.persistedFlags) }
+                                localStateRevision++
+                                scanLocalMusic()
+                            }
                         },
                         showTopSeparator = true,
                     )
