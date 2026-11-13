@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -127,7 +128,9 @@ fun ProviderServicesScreen(
     var jellyfinBusy by remember { mutableStateOf(false) }
     var jellyfinTrustServer by remember { mutableStateOf(false) }
     val localRepository = remember(context) { LocalMusicRepository(context) }
-    var localTrackCount by remember { mutableStateOf(localRepository.tracks().size) }
+    var localTrackCount by remember { mutableStateOf(0) }
+    var localScanRoots by remember { mutableStateOf(emptyList<LocalScanRoot>()) }
+    var localStateRevision by remember { mutableIntStateOf(0) }
     var localScanBusy by remember { mutableStateOf(false) }
     var localScanMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -141,10 +144,18 @@ fun ProviderServicesScreen(
                 .onSuccess { records ->
                     localTrackCount = records.size
                     localScanMessage = context.getString(R.string.provider_scanned_count, records.size)
+                    localStateRevision++
                 }
                 .onFailure { localScanMessage = it.message ?: context.getString(R.string.provider_scan_failed) }
             localScanBusy = false
         }
+    }
+    LaunchedEffect(localStateRevision) {
+        val snapshot = withContext(Dispatchers.IO) {
+            localRepository.tracks().size to localRepository.scanRoots()
+        }
+        localTrackCount = snapshot.first
+        localScanRoots = snapshot.second
     }
     val localPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -381,7 +392,7 @@ fun ProviderServicesScreen(
                         showTopSeparator = true,
                     )
                 }
-                localRepository.scanRoots().forEach { root ->
+                localScanRoots.forEach { root ->
                     MeloXIosListRow(
                         title = stringResource(R.string.provider_authorized_folder),
                         subtitle = root.uri,
