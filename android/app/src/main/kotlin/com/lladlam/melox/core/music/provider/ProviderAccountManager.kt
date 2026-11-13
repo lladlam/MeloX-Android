@@ -119,7 +119,17 @@ class ProviderAccountManager(
             MusicSource.Kuwo -> KuwoSessionStore.clear(appContext)
             MusicSource.AppleMusic -> AppleMusicSessionStore.clear(appContext)
             MusicSource.Bilibili -> BilibiliSessionStore.clear(appContext, clearWebCookies = true)
-            MusicSource.Spotify -> SpotifySessionStore.clear(appContext)
+            MusicSource.Spotify -> {
+                SpotifySessionStore.clear(appContext)
+                // The live librespot session must go too: after a logout the
+                // previous account must not keep playing.
+                runCatching {
+                    val provider = com.lladlam.melox.playback.ProviderPlaybackRuntime.registryOrNull()
+                        ?.get(MusicSource.Spotify)
+                    (provider as? com.lladlam.melox.core.provider.spotify.SpotifyProvider)
+                        ?.invalidatePlaybackSession()
+                }
+            }
             MusicSource.YouTubeMusic -> YouTubeSessionStore.clear(appContext)
             MusicSource.Jellyfin -> JellyfinSessionStore.clear(appContext)
             MusicSource.Local -> Unit

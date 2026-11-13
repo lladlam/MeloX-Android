@@ -297,7 +297,7 @@ apksigner verify --verbose --print-certs MeloX-Android-0.5.3.apk
 
 Android 版直接依赖 [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) 的 `backdrop` 组件；`MeloXBackdropComponents.kt` 基于其官方 `LiquidButton` 与 `LiquidBottomTabs` 示例适配，在保留弥乐 iOS 尺寸和布局的前提下提供折射、模糊、按压高光与底栏选中透镜。
 
-SF Pro / SF Symbols 为 Apple Inc. 系统字体，仅用于应用图标字形；正文继续使用 XiaomiLTPro / MiLanPro，不属于 GPLv3 范围；授权说明见 [SF-Pro-NOTICE.md](docs/SF-Pro-NOTICE.md)。
+SF Pro / SF Symbols 为 Apple Inc. 系统字体，仅用于应用图标字形；正文默认全局使用 Android 系统字体，可选的 MiSans 字体按需从 GitHub Release 下载，不打包进 APK；不属于 GPLv3 范围；授权说明见 [SF-Pro-NOTICE.md](docs/SF-Pro-NOTICE.md)。
 
 当前玻璃效果仍属于实验性实现，视觉与兼容性会继续调整。
 

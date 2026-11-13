@@ -1,4 +1,7 @@
+import java.net.URI
+import java.security.MessageDigest
 import java.util.Properties
+import java.util.zip.ZipFile
 
 plugins {
     id("com.android.application")
@@ -33,6 +36,113 @@ fun currentGitSha(): String {
         .ifBlank { "" }
         .take(40)
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// ONNX Runtime
+//
+// Upstream publishes no Android artifact on GitHub Releases (the release
+// assets only cover Linux/macOS/Windows), so the Android runtime is fetched
+// as a pinned archive whose SHA-256 is verified before it is used. The build
+// can be pointed at a GitHub release asset:
+//
+//   ./gradlew :app:assembleRelease \
+//     -PmeloxOnnxRuntimeUrl="https://github.com/<owner>/<repo>/releases/download/<tag>/<file>" \
+//     -PmeloxOnnxRuntimeSha256="<sha256>"
+//
+// The Java classes come from the archive while the native libraries are
+// staged separately, so the reduced runtime produced by
+// `app/onnxruntime/build-onnxruntime.sh` can replace the upstream ones.
+// ───────────────────────────────────────────────────────────────────────────
+val onnxRuntimeVersion = "1.31.0"
+val onnxRuntimeAarUrl: String = (project.findProperty("meloxOnnxRuntimeUrl") as String?)
+    ?: "https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/" +
+        "$onnxRuntimeVersion/onnxruntime-android-$onnxRuntimeVersion.aar"
+val onnxRuntimeAarSha256: String = (project.findProperty("meloxOnnxRuntimeSha256") as String?)
+    ?: "72683787a80d0608a3121b967d8e1239aef48286826661c953211626690540a7"
+
+val onnxRuntimeStageDir = layout.buildDirectory.dir("onnxruntime")
+val onnxRuntimeClassesJar = onnxRuntimeStageDir.map { it.file("classes.jar") }
+val onnxRuntimeJniLibsDir = layout.buildDirectory.dir("onnxruntime/jniLibs").get().asFile
+val onnxRuntimeCacheDir = File(gradle.gradleUserHomeDir, "melox/onnxruntime")
+val onnxRuntimePrebuiltDir = file("onnxruntime/prebuilt")
+
+val downloadOnnxRuntime by tasks.registering {
+    group = "build"
+    description = "Downloads the ONNX Runtime Android archive and verifies its SHA-256."
+    val url = onnxRuntimeAarUrl
+    val sha256 = onnxRuntimeAarSha256
+    val cacheDir = onnxRuntimeCacheDir
+    val stageDir = onnxRuntimeStageDir
+    val prebuilt = onnxRuntimePrebuiltDir
+    inputs.property("url", url)
+    inputs.property("sha256", sha256)
+    // A locally built reduced runtime (app/onnxruntime/prebuilt/<abi>/*.so) may
+    // appear after this task has already been cached. The file tree is
+    // snapshotted when the task runs, so a new or replaced reduced library
+    // invalidates the task and gets staged into the APK.
+    inputs.files(fileTree(prebuilt) { include("**/*.so") })
+    outputs.dir(stageDir)
+    doLast {
+        fun sha256Of(file: File): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buffer = ByteArray(1 shl 16)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    digest.update(buffer, 0, read)
+                }
+            }
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
+
+        val archive = File(cacheDir, "onnxruntime-android-$onnxRuntimeVersion.aar")
+        if (!archive.isFile || sha256Of(archive) != sha256) {
+            cacheDir.mkdirs()
+            val part = File(cacheDir, "${archive.name}.part")
+            URI(url).toURL().openStream().use { input ->
+                part.outputStream().use { output -> input.copyTo(output) }
+            }
+            val actual = sha256Of(part)
+            if (actual != sha256) {
+                part.delete()
+                throw GradleException("ONNX Runtime checksum mismatch: expected $sha256 but got $actual")
+            }
+            if (!part.renameTo(archive)) {
+                part.copyTo(archive, overwrite = true)
+                part.delete()
+            }
+        }
+
+        val stage = stageDir.get().asFile
+        stage.deleteRecursively()
+        stage.mkdirs()
+        ZipFile(archive).use { zip ->
+            val classes = zip.getEntry("classes.jar")
+                ?: throw GradleException("ONNX Runtime archive does not contain classes.jar")
+            zip.getInputStream(classes).use { input ->
+                File(stage, "classes.jar").outputStream().use { output -> input.copyTo(output) }
+            }
+            for (abi in listOf("arm64-v8a", "armeabi-v7a")) {
+                val target = File(stage, "jniLibs/$abi")
+                target.mkdirs()
+                for (name in listOf("libonnxruntime.so", "libonnxruntime4j_jni.so")) {
+                    val entry = zip.getEntry("jni/$abi/$name") ?: continue
+                    val reduced = File(prebuilt, "$abi/$name")
+                    if (reduced.isFile) {
+                        reduced.copyTo(File(target, name), overwrite = true)
+                    } else {
+                        zip.getInputStream(entry).use { input ->
+                            File(target, name).outputStream().use { output -> input.copyTo(output) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+tasks.named("preBuild").configure { dependsOn(downloadOnnxRuntime) }
 
 android {
     namespace = "com.lladlam.melox"
@@ -245,6 +355,9 @@ android {
             // per language without touching code or the default strings.
             // See `android/app/i18n/README.md`.
             res.srcDir("i18n")
+            // ONNX Runtime native libraries, staged by the `downloadOnnxRuntime`
+            // task (see the ONNX Runtime block at the top of this script).
+            jniLibs.srcDir(onnxRuntimeJniLibsDir)
         }
     }
 
@@ -335,7 +448,9 @@ dependencies {
 
     // AutoSync word-level lyric alignment. Inference is fully local (ONNX
     // Runtime on CPU); weights are supplied per language, never bundled here.
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.31.0")
+    // The runtime archive is fetched and checksum-verified by the
+    // `downloadOnnxRuntime` task instead of being resolved as a Maven artifact.
+    implementation(files(onnxRuntimeClassesJar).builtBy(downloadOnnxRuntime))
 
     implementation("io.coil-kt.coil3:coil-compose:3.5.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.5.0")

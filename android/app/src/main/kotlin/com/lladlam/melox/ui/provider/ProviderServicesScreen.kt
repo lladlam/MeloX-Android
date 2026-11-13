@@ -673,16 +673,25 @@ fun ProviderServicesScreen(
                 MeloXGlassButton(onClick = { JellyfinSessionStore.clear(context); showJellyfinDialog = false }, modifier = Modifier.weight(1f), style = MeloXGlassButtonStyle.Plain) { Text(stringResource(R.string.provider_logout)) }
                 MeloXGlassButton(
                     onClick = {
+                        // Only one connection attempt at a time, and the
+                        // credentials are captured here: editing the fields
+                        // while the request runs must not change (or let an
+                        // older response overwrite) the stored session.
+                        if (jellyfinBusy) return@MeloXGlassButton
                         jellyfinBusy = true
+                        val requestUrl = jellyfinServerUrl.trim()
+                        val requestUser = jellyfinUsername.trim()
+                        val requestPassword = jellyfinPassword
+                        val requestTrust = jellyfinTrustServer
                         scope.launch {
                             runCatching {
-                                require(jellyfinServerUrl.trim().startsWith("http://") || jellyfinServerUrl.trim().startsWith("https://")) { context.getString(R.string.provider_invalid_server) }
-                                require(jellyfinUsername.isNotBlank()) { context.getString(R.string.provider_username_required) }
+                                require(requestUrl.startsWith("http://") || requestUrl.startsWith("https://")) { context.getString(R.string.provider_invalid_server) }
+                                require(requestUser.isNotBlank()) { context.getString(R.string.provider_username_required) }
                                 withContext(Dispatchers.IO) {
                                     JellyfinApiClient(
                                         com.lladlam.melox.core.network.MeloXHttpClient.shared,
-                                        trustUserServer = jellyfinTrustServer,
-                                    ).authenticate(jellyfinServerUrl.trim(), jellyfinUsername.trim(), jellyfinPassword)
+                                        trustUserServer = requestTrust,
+                                    ).authenticate(requestUrl, requestUser, requestPassword)
                                         .also { JellyfinSessionStore.write(context, it) }
                                 }
                             }.onSuccess { jellyfinPassword = ""; jellyfinBusy = false; loginRevision++; showJellyfinDialog = false }

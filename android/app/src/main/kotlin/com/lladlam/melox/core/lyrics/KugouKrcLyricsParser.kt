@@ -1,8 +1,12 @@
 package com.lladlam.melox.core.lyrics
 
+import com.lladlam.melox.core.network.readBoundedBytes
 import java.io.ByteArrayInputStream
 import java.util.Base64
 import java.util.zip.InflaterInputStream
+
+/** Hard cap on decompressed lyric text; generous for any real document. */
+private const val MAX_DECOMPRESSED_LYRIC_BYTES = 4 * 1024 * 1024
 
 /** Decodes Kugou KRC and maps its relative word timing into MeloX lyric models. */
 object KugouKrcLyricsParser {
@@ -23,7 +27,7 @@ object KugouKrcLyricsParser {
                 compressed[index] = (compressed[index].toInt() xor xorKey[index % xorKey.size].toInt()).toByte()
             }
             InflaterInputStream(ByteArrayInputStream(compressed)).use { stream ->
-                stream.readBytes().toString(Charsets.UTF_8)
+                stream.readBoundedBytes(MAX_DECOMPRESSED_LYRIC_BYTES).toString(Charsets.UTF_8)
             }
         }.getOrDefault("")
     }

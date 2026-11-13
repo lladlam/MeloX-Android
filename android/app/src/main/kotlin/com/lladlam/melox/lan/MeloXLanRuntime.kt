@@ -46,13 +46,20 @@ internal object MeloXLanRuntime {
 
     private fun startServer(host: MeloXLanHost, identity: MeloXLanPreferences) {
         if (server != null) return
-        server = MeloXLanServer(
+        val candidate = MeloXLanServer(
             host = host,
             identity = identity,
             scope = scope,
             onTogetherEvent = { event -> handleTogetherEvent(event) },
             onTogetherChanged = { guestTogether = it },
-        ).also { it.start() }
+        )
+        if (candidate.start() < 0) {
+            // Binding failed: never keep the dead server around, otherwise the
+            // runtime would never retry even after the port conflict is gone.
+            candidate.stop()
+            return
+        }
+        server = candidate
     }
 
     fun ensureStarted(context: Context) {
@@ -91,6 +98,11 @@ internal object MeloXLanRuntime {
             server?.stop()
             server = null
             stopCastSender()
+            // Disabling LAN must also terminate the account-backed audio relay:
+            // otherwise a guest keeps receiving host audio for hours.
+            revokeActiveRelay()
+            audioProxy?.stop()
+            audioProxy = null
             hostTogetherJob?.cancel()
             hostTogetherJob = null
             hostTogetherClient?.close()

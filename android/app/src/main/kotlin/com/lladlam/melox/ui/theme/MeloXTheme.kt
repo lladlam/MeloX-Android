@@ -43,7 +43,7 @@ import com.lladlam.melox.core.remoteconfig.MeloXHotStyles
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.settings.MeloXThemeMode
 import com.lladlam.melox.ui.glass.MeloXTypography as GlassTypography
-import com.lladlam.melox.ui.theme.MeloXLanTingProFontFamily
+
 import androidx.core.view.WindowCompat
 
 // ⚠ 2026-09-25：由 `private` 放开到 `internal` —— 底部 chrome 需要在**这两套真实
@@ -76,7 +76,9 @@ internal val DarkColors = darkColorScheme(
 // system sans family as one app-wide typeface, including its CJK fallbacks,
 // while retaining MeloX's iOS-derived sizes, weights, and line heights.
 private val MeloXTypography = Typography().let { base ->
-    val family = MeloXLanTingProFontFamily
+    // System family is the global default; the optional MiSans family is applied
+    // through [LocalMeloXFontFamily] once the user provisions it.
+    val family = androidx.compose.ui.text.font.FontFamily.Default
     Typography(
         displayLarge = base.displayLarge.copy(fontFamily = family),
         displayMedium = base.displayMedium.copy(fontFamily = family),

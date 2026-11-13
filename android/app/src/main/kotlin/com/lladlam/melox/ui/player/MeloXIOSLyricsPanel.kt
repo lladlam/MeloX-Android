@@ -128,9 +128,8 @@ import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.meloXEdgeOverscrollHaptic
 import com.lladlam.melox.MeloXAppVisibility
 import com.lladlam.melox.ui.settings.MeloXLyricsStyle
-import com.lladlam.melox.ui.theme.MeloXLanTingProFontFamily
+import com.lladlam.melox.ui.theme.MeloXOnDemandFont
 import com.lladlam.melox.R
-import androidx.core.content.res.ResourcesCompat
 import com.lladlam.melox.ui.settings.MeloXLyricsRenderingQuality
 import com.lladlam.melox.ui.settings.MeloXLyricAnnotationDisplayMode
 import com.lladlam.melox.ui.settings.MeloXLyricsGroupingMode
@@ -2092,12 +2091,12 @@ private fun MeloXRubyLyricText(
     val context = LocalContext.current
     val density = LocalDensity.current
     val useSystemFont = MeloXSettingsRuntime.lyricSystemFontEnabled
-    val fontTypeface = remember(useSystemFont) {
+    val fontTypeface = remember(useSystemFont, MeloXOnDemandFont.revision) {
         if (useSystemFont) Typeface.DEFAULT
-        else ResourcesCompat.getFont(context, R.font.mi_lan_pro) ?: Typeface.DEFAULT
+        else MeloXOnDemandFont.typeface(context) ?: Typeface.DEFAULT
     }
     val measureStyle = TextStyle(
-        fontFamily = if (useSystemFont) FontFamily.Default else MeloXLanTingProFontFamily,
+        fontFamily = if (useSystemFont) FontFamily.Default else MeloXOnDemandFont.fontFamily(context) ?: FontFamily.Default,
         fontSize = (UpstreamLyrics.FONT_SIZE_SP * fontScale).sp,
         fontWeight = MeloXSettingsRuntime.lyricFontWeight.composeWeight,
         textAlign = if (line.agent?.alignment == com.lladlam.melox.core.lyrics.LyricAgentAlignment.Flipped) {
@@ -2179,13 +2178,13 @@ private fun MeloXRomanizationRow(
     val context = LocalContext.current
     val density = LocalDensity.current
     val useSystemFont = MeloXSettingsRuntime.lyricSystemFontEnabled
-    val typeface = remember(useSystemFont) {
+    val typeface = remember(useSystemFont, MeloXOnDemandFont.revision) {
         if (useSystemFont) Typeface.DEFAULT
-        else ResourcesCompat.getFont(context, R.font.mi_lan_pro) ?: Typeface.DEFAULT
+        else MeloXOnDemandFont.typeface(context) ?: Typeface.DEFAULT
     }
     val weight = MeloXSettingsRuntime.lyricFontWeight.composeWeight
     val measureStyle = TextStyle(
-        fontFamily = if (useSystemFont) FontFamily.Default else MeloXLanTingProFontFamily,
+        fontFamily = if (useSystemFont) FontFamily.Default else MeloXOnDemandFont.fontFamily(context) ?: FontFamily.Default,
         fontSize = (UpstreamLyrics.FONT_SIZE_SP * fontScale).sp,
         fontWeight = weight,
         textAlign = if (flipped) TextAlign.End else TextAlign.Start,
@@ -2543,16 +2542,16 @@ private fun MeloXGlyphLyricText(
     val density = LocalDensity.current
     val lyricWeight = MeloXSettingsRuntime.lyricFontWeight.composeWeight
     val useSystemFont = MeloXSettingsRuntime.lyricSystemFontEnabled
-    val fontTypeface = remember(useSystemFont) {
+    val fontTypeface = remember(useSystemFont, MeloXOnDemandFont.revision) {
         if (useSystemFont) Typeface.DEFAULT
-        else ResourcesCompat.getFont(context, R.font.mi_lan_pro) ?: Typeface.DEFAULT
+        else MeloXOnDemandFont.typeface(context) ?: Typeface.DEFAULT
     }
     val textMeasurer = rememberTextMeasurer(cacheSize = 64)
     BoxWithConstraints(modifier = modifier) {
         val widthPx = with(density) { maxWidth.roundToPx().coerceAtLeast(1) }
         val style = TextStyle(
             color = Color.White,
-            fontFamily = if (useSystemFont) FontFamily.Default else MeloXLanTingProFontFamily,
+            fontFamily = if (useSystemFont) FontFamily.Default else MeloXOnDemandFont.fontFamily(context) ?: FontFamily.Default,
             fontSize = (UpstreamLyrics.FONT_SIZE_SP * fontScale).sp,
             lineHeight = (UpstreamLyrics.LINE_HEIGHT_SP * fontScale).sp,
             fontWeight = lyricWeight,

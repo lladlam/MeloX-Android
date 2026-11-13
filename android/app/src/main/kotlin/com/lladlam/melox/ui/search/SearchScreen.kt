@@ -797,7 +797,13 @@ fun SearchScreen(
                 error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
                 }
-                kind == MeloXSearchKind.Songs && (unifiedEnabled || source != MusicSource.Netease) -> Column(Modifier.fillMaxSize()) {
+                // The render branch must use the same predicate as the fetch branch
+                // (unifiedEnabled && unifiedSources.size > 1). Otherwise enabling unified
+                // search with a single source renders an empty provider list while the
+                // legacy NetEase results were fetched successfully and discarded.
+                kind == MeloXSearchKind.Songs &&
+                    ((unifiedEnabled && unifiedSources.size > 1) || source != MusicSource.Netease) ->
+                    Column(Modifier.fillMaxSize()) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         TextButton(enabled = providerSearchPage > 1, onClick = { providerSearchPage-- }) { Text("上一页") }
                         Text("第 $providerSearchPage 页", Modifier.padding(12.dp))

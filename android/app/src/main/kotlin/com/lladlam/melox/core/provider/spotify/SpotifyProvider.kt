@@ -124,6 +124,14 @@ class SpotifyProvider(
     }
 
     /**
+     * Close the live librespot session and drop the stored credentials of the
+     * previous account. Called on logout / account change.
+     */
+    fun invalidatePlaybackSession() {
+        librespot.invalidate()
+    }
+
+    /**
      * Real Spotify playback through librespot. Falls back to the existing
      * cross-source matching only when the Access Point is unavailable.
      */
@@ -137,7 +145,7 @@ class SpotifyProvider(
                 return@coroutineScope PlaybackResolution.LoginRequired
             }
             // Ensure the librespot session is connected.
-            runCatching { librespot.connect(spSession.accessToken) }
+            runCatching { librespot.connect(spSession.accessToken, spSession.accountId) }
                 .onFailure { /* will fall through to the cross-source fallback */ }
             if (librespot.isConnected) {
                 val result = runCatching {
@@ -147,7 +155,7 @@ class SpotifyProvider(
                     return@coroutineScope PlaybackResolution.Playable(
                         url = Uri.fromFile(file).toString(),
                         requestedQuality = quality,
-                        actualQuality = quality,
+                        actualQuality = AudioQualityTier.High,
                         format = "ogg",
                         bitrate = null,
                     )
@@ -164,13 +172,13 @@ class SpotifyProvider(
         val session = SpotifySessionStore.read(appContext)
         if (!session.isLoggedIn) return PlaybackResolution.LoginRequired
         val file = runCatching {
-            librespot.connect(session.accessToken)
+            librespot.connect(session.accessToken, session.accountId)
             librespot.resolveToFile(track.id.value).getOrThrow()
         }.getOrElse { return PlaybackResolution.Unavailable(it.message ?: "Spotify 下载失败") }
         return PlaybackResolution.Playable(
             url = android.net.Uri.fromFile(file).toString(),
             requestedQuality = quality,
-            actualQuality = quality,
+            actualQuality = AudioQualityTier.High,
             format = "ogg",
         )
     }

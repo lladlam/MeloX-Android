@@ -3,6 +3,7 @@ package com.lladlam.melox.core.library
 import android.content.Context
 import com.lladlam.melox.core.model.SearchSong
 import java.io.File
+import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -67,12 +68,12 @@ class NeteaseLibraryCache internal constructor(
     }
 
     suspend fun loadExplore(category: String): List<NeteasePlaylistSummary>? = readJson(
-        File(directory, "explore_${category.hashCode()}.json"),
+        File(directory, "explore_${safeCacheKey(category)}.json"),
     ) { value -> decodePlaylists(value.optJSONArray("playlists") ?: JSONArray()) }
 
     suspend fun saveExplore(category: String, playlists: List<NeteasePlaylistSummary>) {
         writeJson(
-            File(directory, "explore_${category.hashCode()}.json"),
+            File(directory, "explore_${safeCacheKey(category)}.json"),
         ) { JSONObject().put("playlists", encodePlaylists(playlists)) }
     }
 
@@ -91,10 +92,13 @@ class NeteaseLibraryCache internal constructor(
     private suspend fun writeJson(file: File, value: () -> JSONObject) = withContext(Dispatchers.IO) {
         directory.mkdirs()
         val encoded = value().toString()
-        val temporary = File(file.parentFile, "${file.name}.tmp")
-        temporary.writeText(encoded)
-        if (!temporary.renameTo(file)) {
-            file.writeText(encoded)
+        val temporary = File.createTempFile("${file.name}.", ".tmp", file.parentFile)
+        try {
+            temporary.writeText(encoded)
+            if (!temporary.renameTo(file)) {
+                file.writeText(encoded)
+            }
+        } finally {
             temporary.delete()
         }
         pruneCache()
@@ -121,8 +125,21 @@ class NeteaseLibraryCache internal constructor(
     @Suppress("MemberVisibilityCanBePrivate")
     internal fun pruneCache() {
         val files = directory.listFiles()?.filter { it.isFile && !it.name.endsWith(".tmp") }.orEmpty()
-        val protectable = files.filter { it.name.startsWith("library_") || it.name.startsWith("playlist_") }
-        val transient = files.filterNot { it in protectable }
+        // Favorites snapshots must survive pruning (they are expensive to rebuild
+        // and a lost snapshot looks like the user's library disappeared).
+        val library = files.filter { it.name.startsWith("library_") }
+        // Playlist detail entries are useful but rebuildable; cap them separately
+        // so browsing many playlists cannot grow the cache without bound.
+        var playlistBytes = 0L
+        files.filter { it.name.startsWith("playlist_") }
+            .sortedByDescending(File::lastModified)
+            .forEachIndexed { index, cached ->
+                playlistBytes += cached.length()
+                if (index >= MAX_PLAYLIST_CACHE_FILES || playlistBytes > MAX_PLAYLIST_CACHE_BYTES) {
+                    cached.delete()
+                }
+            }
+        val transient = files.filterNot { it in library || it.name.startsWith("playlist_") }
             .sortedByDescending(File::lastModified)
         var retainedBytes = 0L
         transient.forEachIndexed { index, cached ->
@@ -145,26 +162,32 @@ class NeteaseLibraryCache internal constructor(
         // from background never forces a reload, long enough that abandoned caches refresh.
         @Synchronized
         fun beginLibraryColdStartRefresh(userId: Long, directory: File): Boolean {
-            if (!refreshedLibraries.add(userId)) return false
+            if (!rememberRefreshKey(refreshedLibraries, userId)) return false
             return isCacheStale(File(directory, "library_$userId.json"))
         }
 
         @Synchronized
         fun beginPlaylistColdStartRefresh(playlistId: Long, directory: File): Boolean {
-            if (!refreshedPlaylists.add(playlistId)) return false
+            if (!rememberRefreshKey(refreshedPlaylists, playlistId)) return false
             return isCacheStale(File(directory, "playlist_$playlistId.json"))
         }
 
         @Synchronized
         fun beginHomeColdStartRefresh(cacheKey: String, directory: File): Boolean {
-            if (!refreshedHomes.add(cacheKey)) return false
+            if (!rememberRefreshKey(refreshedHomes, cacheKey)) return false
             return isCacheStale(File(directory, "home_${safeCacheKey(cacheKey)}.json"))
         }
 
         @Synchronized
         fun beginExploreColdStartRefresh(category: String, directory: File): Boolean {
-            if (!refreshedExplore.add(category)) return false
-            return isCacheStale(File(directory, "explore_${category.hashCode()}.json"))
+            if (!rememberRefreshKey(refreshedExplore, category)) return false
+            return isCacheStale(File(directory, "explore_${safeCacheKey(category)}.json"))
+        }
+
+        /** Bounds the process-lifetime refresh gates; old entries may refresh once more. */
+        private fun <T> rememberRefreshKey(keys: MutableSet<T>, key: T): Boolean {
+            if (keys.size >= MAX_REFRESH_KEYS) keys.clear()
+            return keys.add(key)
         }
 
         private fun isCacheStale(file: File): Boolean =
@@ -173,6 +196,8 @@ class NeteaseLibraryCache internal constructor(
         private const val FRESH_WINDOW_MS = 30L * 60L * 1000L
         private const val MAX_CACHE_FILES = 128
         private const val MAX_CACHE_BYTES = 32L * 1024L * 1024L
+        private const val MAX_PLAYLIST_CACHE_FILES = 48
+        private const val MAX_PLAYLIST_CACHE_BYTES = 64L * 1024L * 1024L
         private const val MAX_CACHE_AGE_MS = 30L * 24L * 60L * 60L * 1_000L
         private const val MAX_REFRESH_KEYS = 256
     }
@@ -285,5 +310,7 @@ private fun decodeHomePodcasts(values: JSONArray) = buildList {
         )
     }
 }
-private fun safeCacheKey(value: String): String = value.hashCode().toUInt().toString(16)
+private fun safeCacheKey(value: String): String =
+    MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
+        .joinToString("") { "%02x".format(it) }
 private fun JSONObject.optNullableString(name: String): String? = if (isNull(name)) null else optString(name).takeIf(String::isNotBlank)

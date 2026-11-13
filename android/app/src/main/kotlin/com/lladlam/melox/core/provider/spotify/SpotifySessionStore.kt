@@ -3,6 +3,7 @@ package com.lladlam.melox.core.provider.spotify
 import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.io.File
 
 data class SpotifySession(
     val accessToken: String = "",
@@ -91,6 +92,15 @@ object SpotifySessionStore {
 
     fun clear(context: Context) {
         preferences(context).edit().clear().apply()
+        // The librespot credentials and the cached audio belong to the old
+        // account: they must not survive a logout, otherwise the next login
+        // keeps using the previous account's session.
+        runCatching {
+            val dir = File(context.applicationContext.filesDir, "librespot")
+            File(dir, "credentials.json").delete()
+            File(dir, "account.id").delete()
+            File(dir, "tracks").listFiles()?.forEach { it.delete() }
+        }
     }
 
     private fun preferences(context: Context) =

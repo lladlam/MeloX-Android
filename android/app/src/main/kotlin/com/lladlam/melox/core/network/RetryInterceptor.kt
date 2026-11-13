@@ -30,6 +30,12 @@ class RetryInterceptor(
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
+        // Explicitly non-idempotent calls (create a playlist, send an SMS, ...)
+        // must never be replayed: a retry duplicates the mutation on the server
+        // side (two playlists, two SMS codes, ...).
+        if (request.header(NO_RETRY_HEADER).equals("true", ignoreCase = true)) {
+            return chain.proceed(request.newBuilder().removeHeader(NO_RETRY_HEADER).build())
+        }
         val hosts = QQ_MUSICU_HOSTS.takeIf { request.url.host in it && isMusicuFcGCall(request.url) }
         val attempts = maxOf(maxAttempts, hosts?.size ?: 1)
         var lastException: IOException? = null
@@ -70,6 +76,9 @@ class RetryInterceptor(
     }
 
     companion object {
+        /** Requests carrying this header are sent exactly once (no retry). */
+        const val NO_RETRY_HEADER = "X-MeloX-No-Retry"
+
         /**
          * Front-ends that accept a `musicu.fcg` POST. Measured 2026-09-29:
          * `u.y.qq.com` and `u6.y.qq.com` answer 200, while `c.y.qq.com` and

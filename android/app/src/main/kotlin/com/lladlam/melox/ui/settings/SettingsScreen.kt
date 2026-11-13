@@ -186,10 +186,13 @@ import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
+import com.lladlam.melox.ui.theme.MeloXOnDemandFont
+import com.lladlam.melox.ui.theme.MeloXFontPolicy
 
 // ⚠ 必须 public：`MeloXSettingsDetailActivity.launch(context, route, source)` 是 public 的
 //   Activity 入口，签名里出现 internal 类型会直接编译不过（public 函数暴露 internal 类型）。
@@ -1860,7 +1863,6 @@ private fun PlayerAppearanceSettings(context: android.content.Context) {
                 "player_background_mode",
                 MeloXPlayerBackgroundMode.BlurredArtwork.name,
             )
-            MeloXSettingsRuntime.flowingBackdropEnabled = false
         }
     }
     val pickCustomBackground = rememberLauncherForActivityResult(
@@ -1884,7 +1886,6 @@ private fun PlayerAppearanceSettings(context: android.content.Context) {
                     "player_background_mode",
                     MeloXPlayerBackgroundMode.CustomImage.name,
                 )
-                MeloXSettingsRuntime.flowingBackdropEnabled = false
             }
         }
     }
@@ -1933,7 +1934,6 @@ private fun PlayerAppearanceSettings(context: android.content.Context) {
                     pickCustomBackgroundImage()
                 } else {
                     MeloXSettingsPreferences.setString(context, "player_background_mode", mode.name)
-                    MeloXSettingsRuntime.flowingBackdropEnabled = mode.usesFlowingBackdrop
                 }
             },
             grouped = true,
@@ -1986,7 +1986,6 @@ private fun PlayerAppearanceSettings(context: android.content.Context) {
                             "player_background_mode",
                             MeloXPlayerBackgroundMode.BlurredArtwork.name,
                         )
-                        MeloXSettingsRuntime.flowingBackdropEnabled = false
                     },
                 )
             }
@@ -2019,7 +2018,6 @@ private fun PlayerAppearanceSettings(context: android.content.Context) {
                 11,
             ) { "${(it * 100).toInt()}%" }
         }
-        SettingsToggleRow(context, stringResource(R.string.settings_flowing_backdrop), "player_flowing_backdrop", true, stringResource(R.string.settings_flowing_backdrop_note), grouped = true)
         SettingsToggleRow(context, stringResource(R.string.settings_background_isolation), "player_background_isolation", true, stringResource(R.string.settings_background_isolation_note), grouped = true)
         LyricsChoiceSetting(context, stringResource(R.string.settings_background_fps), "lyrics_background_frame_rate", 24, listOf(15, 24, 30, 45, 60), grouped = true) { value ->
             when (value) {
@@ -2143,7 +2141,7 @@ private fun LyricsSettings(context: android.content.Context) {
         )
         SettingsToggleRow(context, stringResource(R.string.settings_lyrics_auto_select), "lyrics_auto_select", true, grouped = true)
         SettingsToggleRow(context, stringResource(R.string.settings_lyrics_word_by_word), "lyrics_word_by_word", true, grouped = true)
-        SettingsToggleRow(context, stringResource(R.string.settings_lyrics_pseudo_timing), "lyrics_pseudo_timing", true, stringResource(R.string.settings_lyrics_pseudo_timing_note), grouped = true)
+        SettingsToggleRow(context, stringResource(R.string.settings_lyrics_pseudo_timing), "lyrics_pseudo_timing", false, stringResource(R.string.settings_lyrics_pseudo_timing_note), grouped = true)
         SettingsToggleRow(context, stringResource(R.string.settings_lyrics_qq_bracket_backing), "lyrics_qq_bracket_backing", false, stringResource(R.string.settings_lyrics_qq_bracket_backing_note), grouped = true)
         SettingsToggleRow(context, stringResource(R.string.settings_lyrics_tap_seek), "lyrics_tap_seek", true, grouped = true)
         SettingsToggleRow(context, stringResource(R.string.settings_lyrics_long_press_share), "lyrics_long_press_share", true, grouped = true)
@@ -3315,6 +3313,28 @@ private fun TabLayoutSettings(context: android.content.Context) {
 private fun GeneralSettings(context: android.content.Context) {
     var theme by remember { mutableStateOf(MeloXSettingsRuntime.themeMode) }
     var swipeFullAction by remember { mutableStateOf(MeloXSettingsRuntime.swipeFullAction) }
+    var fontScope by remember { mutableStateOf(MeloXSettingsRuntime.systemFontScope) }
+    var miSansInstalled by remember { mutableStateOf(MeloXOnDemandFont.fontFile(context) != null) }
+    var miSansDownloading by remember { mutableStateOf(false) }
+    var miSansError by remember { mutableStateOf<String?>(null) }
+    val miSansProgress = remember { MutableStateFlow(0L) }
+    val miSansProgressBytes by miSansProgress.collectAsState()
+    val settingsScope = rememberCoroutineScope()
+
+    fun startMiSansDownload() {
+        if (miSansDownloading) return
+        miSansDownloading = true
+        miSansError = null
+        miSansProgress.value = 0L
+        settingsScope.launch {
+            val result = MeloXOnDemandFont.ensureDownloaded(context) { done, _ ->
+                miSansProgress.value = done
+            }
+            result.onSuccess { miSansInstalled = true }
+                .onFailure { error -> miSansError = error.message ?: error.toString() }
+            miSansDownloading = false
+        }
+    }
     SettingsGlassGroup {
         if (Build.VERSION.SDK_INT >= 33) {
             val localeManager = context.getSystemService(android.app.LocaleManager::class.java)
@@ -3417,15 +3437,64 @@ private fun GeneralSettings(context: android.content.Context) {
         SettingsToggleRow(context, stringResource(R.string.settings_general_haptics), "general_haptic_feedback", true, grouped = true)
         MeloXSettingsDropdown(
             title = stringResource(R.string.settings_general_system_font),
-            selected = MeloXSettingsRuntime.systemFontScope,
+            selected = fontScope,
             items = listOf(
-                "off" to "关闭",
-                "nonlyrics" to "除歌词外",
-                "all" to "全局",
+                MeloXFontPolicy.SCOPE_MI_SANS to stringResource(R.string.settings_general_system_font_off),
+                MeloXFontPolicy.SCOPE_SYSTEM_EXCEPT_LYRICS to stringResource(R.string.settings_general_system_font_non_lyrics),
+                MeloXFontPolicy.SCOPE_SYSTEM to stringResource(R.string.settings_general_system_font_all),
             ),
-            onSelected = { MeloXSettingsPreferences.setString(context, "system_font_scope", it) },
+            onSelected = {
+                fontScope = it
+                MeloXSettingsPreferences.setString(context, "system_font_scope", it)
+                if (MeloXFontPolicy.requiresMiSans(it) && !miSansInstalled) startMiSansDownload()
+            },
             grouped = true,
         )
+        if (MeloXFontPolicy.requiresMiSans(fontScope)) {
+            Text(
+                stringResource(R.string.settings_general_system_font_note),
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp),
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .46f),
+            )
+            if (miSansInstalled) {
+                Text(
+                    stringResource(R.string.settings_general_system_font_installed),
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 2.dp),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .46f),
+                )
+                SettingsActionButton(stringResource(R.string.settings_general_system_font_remove)) {
+                    MeloXOnDemandFont.delete(context)
+                    miSansInstalled = false
+                }
+            } else {
+                SettingsActionButton(
+                    if (miSansDownloading) {
+                        stringResource(R.string.settings_general_system_font_downloading)
+                    } else {
+                        stringResource(R.string.settings_general_system_font_download)
+                    },
+                ) { startMiSansDownload() }
+            }
+            if (miSansDownloading) {
+                val percent = ((miSansProgressBytes * 100L) / MeloXOnDemandFont.DownloadBytes).coerceIn(0L, 100L)
+                Text(
+                    "$percent%",
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 2.dp),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .46f),
+                )
+            }
+            miSansError?.let { error ->
+                Text(
+                    error,
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 2.dp),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
         SettingsToggleRow(
             context,
             stringResource(R.string.settings_general_tabbar),
@@ -4331,10 +4400,24 @@ private fun SettingsRoundButton(text: String, onClick: () -> Unit) {
 @Composable
 private fun SettingsResetCard() {
     val context = LocalContext.current
-    SettingsDangerButton(stringResource(R.string.settings_reset_player)) {
-        MeloXSettingsPreferences.reset(context)
-        MeloXPlaybackModePreferences.reset(context)
-        PlaybackCommands.changeQuality(context, MusicQuality.Standard)
+    var showConfirmation by remember { mutableStateOf(false) }
+    SettingsDangerButton(stringResource(R.string.settings_reset_player)) { showConfirmation = true }
+    if (showConfirmation) {
+        MeloXGlassDialog(visible = true, onDismiss = { showConfirmation = false }) {
+            Text(stringResource(R.string.settings_reset_player_confirm_title), style = MaterialTheme.typography.titleLarge)
+            Text(stringResource(R.string.settings_reset_player_confirm_body), Modifier.padding(top = 8.dp))
+            Row(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SettingsActionButton(stringResource(R.string.action_cancel), Modifier.weight(1f)) { showConfirmation = false }
+                SettingsActionButton(stringResource(R.string.settings_reset_player_confirm_action), Modifier.weight(1f)) {
+                    // Only player/lyrics/AutoMix preferences are reset. Accounts,
+                    // downloads, legal consent and saved app-wide settings stay.
+                    MeloXSettingsPreferences.resetRecommendedPlayerSettings(context)
+                    MeloXPlaybackModePreferences.reset(context)
+                    PlaybackCommands.changeQuality(context, MusicQuality.Standard)
+                    showConfirmation = false
+                }
+            }
+        }
     }
 }
 

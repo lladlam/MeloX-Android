@@ -6,10 +6,13 @@ import com.lladlam.melox.core.network.MeloXGitHubRouting
 import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import org.json.JSONArray
@@ -116,20 +119,20 @@ internal class AutoSyncModelRepository(
         precision: FileSpec? = null,
         onProgress: ((Float) -> Unit)? = null,
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            check(knownIndex.minBackendProtocol <= BACKEND_PROTOCOL) {
-                "model pack requires backend protocol ${knownIndex.minBackendProtocol}"
-            }
-            check(knownIndex.releaseTag == RELEASE_TAG) { "refusing to install a non-pinned model release" }
-            val modelRoot = root(context)
-            modelRoot.mkdirs()
-            // beta.1 partial downloads are never resumable: remove their staging
-            // bytes before resolving only URLs from the pinned beta.2 index.
-            File(modelRoot, "${pack.language}.staging").deleteRecursively()
-            val staging = File(modelRoot, "${pack.language}.staging")
-            staging.deleteRecursively()
-            check(staging.mkdirs()) { "cannot create staging directory" }
-            try {
+        installLock(pack.language).withLock {
+            runCatching {
+                check(knownIndex.minBackendProtocol <= BACKEND_PROTOCOL) {
+                    "model pack requires backend protocol ${knownIndex.minBackendProtocol}"
+                }
+                check(knownIndex.releaseTag == RELEASE_TAG) { "refusing to install a non-pinned model release" }
+                val modelRoot = root(context)
+                modelRoot.mkdirs()
+                // Partial downloads are never resumable: remove their staging
+                // bytes before resolving only URLs from the pinned index.
+                val staging = File(modelRoot, "${pack.language}.staging")
+                staging.deleteRecursively()
+                check(staging.mkdirs()) { "cannot create staging directory" }
+                try {
                 val total = (pack.totalBytes + (precision?.bytes ?: 0L)).coerceAtLeast(1L)
                 var done = 0L
                 val tokens = LinkedHashMap<String, String>()
@@ -172,14 +175,15 @@ internal class AutoSyncModelRepository(
                 staging.deleteRecursively()
                 throw error
             }
-        }.onFailure { Log.w(TAG, "install failed for ${pack.language}", it) }
+            }.onFailure { Log.w(TAG, "install failed for ${pack.language}", it) }
+        }
     }
 
 
     /** Removes an installed pack; the feature simply becomes unavailable. */
     fun delete(language: String) {
         File(root(context), language).deleteRecursively()
-        AutoSyncTimelineStore.clear(context)
+        AutoSyncTimelineStore.clearLanguage(context, language)
     }
 
     // ------------------------------------------------------------------ fetch
@@ -280,36 +284,43 @@ internal class AutoSyncModelRepository(
     /** Promote byte-identical beta.1 packs to beta.2 metadata; discard partial staging. */
     private suspend fun migrateLegacyPacks(index: Index) {
         val base = root(context)
-        base.listFiles()?.filter { it.name.endsWith(".staging") || it.name.endsWith(".old") }
+        // Never delete an install that another coroutine is currently writing;
+        // every install removes and recreates its own language staging folder.
+        base.listFiles()?.filter { it.name.endsWith(".old") }
             ?.forEach { it.deleteRecursively() }
         for (pack in index.packs.values) {
             currentCoroutineContext().ensureActive()
             if (!File(File(base, pack.language), "manifest.json").isFile) continue
-            // A pack whose bytes no longer match the published index (for example
-            // the beta.2 Japanese model) is left installed and usable: it is only
-            // replaced when the user explicitly updates, so a flaky network can
-            // never take a working model away.
-            val verified = pack.requiredFiles.map { spec -> spec to existingVerifiedFile(pack.language, spec) }
-            if (verified.any { it.second == null }) continue
-            val staging = File(base, "${pack.language}.staging")
-            staging.deleteRecursively()
-            check(staging.mkdirs()) { "cannot create migration staging directory" }
-            try {
-                val tokens = LinkedHashMap<String, String>()
-                verified.forEach { (spec, source) ->
-                    val target = File(staging, spec.name)
-                    source!!.copyTo(target, overwrite = true)
-                    if (spec.name == pack.tokensFile) readTokens(target, tokens)
-                }
-                File(staging, "manifest.json").writeText(localManifest(pack, index.releaseTag, tokens).toString())
-                publish(pack.language, staging)
-                Log.i(TAG, "migrated ${pack.language} model metadata to ${index.releaseTag}; model bytes reused")
-            } catch (error: Throwable) {
+            installLock(pack.language).withLock {
+                // A pack whose bytes no longer match the published index (for example
+                // the beta.2 Japanese model) is left installed and usable: it is only
+                // replaced when the user explicitly updates, so a flaky network can
+                // never take a working model away.
+                val verified = pack.requiredFiles.map { spec -> spec to existingVerifiedFile(pack.language, spec) }
+                if (verified.any { it.second == null }) return@withLock
+                val staging = File(base, "${pack.language}.staging")
                 staging.deleteRecursively()
-                throw error
+                check(staging.mkdirs()) { "cannot create migration staging directory" }
+                try {
+                    val tokens = LinkedHashMap<String, String>()
+                    verified.forEach { (spec, source) ->
+                        val target = File(staging, spec.name)
+                        source!!.copyTo(target, overwrite = true)
+                        if (spec.name == pack.tokensFile) readTokens(target, tokens)
+                    }
+                    File(staging, "manifest.json").writeText(localManifest(pack, index.releaseTag, tokens).toString())
+                    publish(pack.language, staging)
+                    Log.i(TAG, "migrated ${pack.language} model metadata to ${index.releaseTag}; model bytes reused")
+                } catch (error: Throwable) {
+                    staging.deleteRecursively()
+                    throw error
+                }
             }
         }
     }
+
+    private fun installLock(language: String): Mutex =
+        installLocks.getOrPut(language) { Mutex() }
 
     private fun InputStream.readBounded(maxBytes: Long): ByteArray {
         val output = java.io.ByteArrayOutputStream()
@@ -437,6 +448,8 @@ internal class AutoSyncModelRepository(
         private const val TAG = "MeloXAutoSync"
         private const val USER_AGENT = "MeloX-Android"
         private const val BACKEND_PROTOCOL = 1
+        /** Serializes install/migration work for one language across instances. */
+        private val installLocks = ConcurrentHashMap<String, Mutex>()
 
         /**
          * Pinned release. The index itself is verified by SHA-256 against

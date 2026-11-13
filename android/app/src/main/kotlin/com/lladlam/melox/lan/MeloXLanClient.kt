@@ -1,6 +1,7 @@
 package com.lladlam.melox.lan
 
 import android.util.Log
+import com.lladlam.melox.core.network.readBoundedLine
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.InputStreamReader
@@ -250,7 +251,7 @@ internal class MeloXLanClient(
     }
 
     private fun readJson(): JSONObject? {
-        val line = reader?.readLine() ?: return null
+        val line = runCatching { reader?.readBoundedLine(MELOX_LAN_MAX_MESSAGE_BYTES) }.getOrNull() ?: return null
         if (line.length > MELOX_LAN_MAX_MESSAGE_BYTES) return null
         return runCatching { JSONObject(line) }.getOrNull()
     }

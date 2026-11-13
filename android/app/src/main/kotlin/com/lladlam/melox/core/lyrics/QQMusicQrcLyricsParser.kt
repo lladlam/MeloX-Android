@@ -1,9 +1,13 @@
 package com.lladlam.melox.core.lyrics
 
+import com.lladlam.melox.core.network.readBoundedBytes
 import java.io.ByteArrayInputStream
 import java.util.zip.InflaterInputStream
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
+
+/** Hard cap on decompressed lyric text; generous for any real document. */
+private const val MAX_DECOMPRESSED_LYRIC_BYTES = 4 * 1024 * 1024
 
 /**
  * QQ Music QRC decoder/parser.
@@ -79,7 +83,7 @@ object QQMusicQrcLyricsParser {
         if (compressed.isEmpty()) return ""
         return runCatching {
             InflaterInputStream(ByteArrayInputStream(compressed)).use { stream ->
-                stream.readBytes().toString(Charsets.UTF_8)
+                stream.readBoundedBytes(MAX_DECOMPRESSED_LYRIC_BYTES).toString(Charsets.UTF_8)
             }.trimEnd('\u0000')
         }.getOrDefault("")
     }

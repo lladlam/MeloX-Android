@@ -1,7 +1,11 @@
 package com.lladlam.melox.core.lyrics
 
+import com.lladlam.melox.core.network.readBoundedBytes
 import java.io.ByteArrayInputStream
 import java.util.zip.InflaterInputStream
+
+/** Hard cap on decompressed lyric text; generous for any real document. */
+private const val MAX_DECOMPRESSED_LYRIC_BYTES = 4 * 1024 * 1024
 
 object QQMusicMeiQrcDecoder {
     enum class DESMode {
@@ -497,7 +501,8 @@ object QQMusicMeiQrcDecoder {
     }
 
     private fun decompressZlib(data: ByteArray): ByteArray {
-        return InflaterInputStream(ByteArrayInputStream(data)).readBytes()
+        return InflaterInputStream(ByteArrayInputStream(data))
+            .use { it.readBoundedBytes(MAX_DECOMPRESSED_LYRIC_BYTES) }
     }
 
     fun byteArrayToHex(bytes: ByteArray): String {

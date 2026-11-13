@@ -4,7 +4,9 @@ import android.content.Context
 import android.net.Uri
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
+import com.lladlam.melox.core.network.BoundedLineResult
 import com.lladlam.melox.core.network.MeloXHttpClient
+import com.lladlam.melox.core.network.readBoundedLineResult
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
@@ -19,7 +21,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import okhttp3.Request
 
-/** A single opaque resource, kept alive for the playback session, including after UI dismissal. */
+/** Maximum accepted size of the DLNA request line. */
+private const val MAX_DLNA_REQUEST_LINE_BYTES = 8 * 1024
+
+/** Maximum accepted size of a single DLNA header line (and their sum). */
+private const val MAX_DLNA_HEADER_BYTES = 16 * 1024
+
+
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal class DlnaHttpServer(
     private val context: Context, private val scope: CoroutineScope,
@@ -55,15 +63,24 @@ internal class DlnaHttpServer(
     private fun serve(socket: Socket) {
         socket.soTimeout = 10_000
         val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.US_ASCII))
-        val first = reader.readLine()?.split(' ') ?: return
+        val requestLine = when (val line = reader.readBoundedLineResult(MAX_DLNA_REQUEST_LINE_BYTES)) {
+            is BoundedLineResult.Line -> line.value
+            is BoundedLineResult.TooLong -> { error(socket, 414); return }
+            BoundedLineResult.Eof -> return
+        }
+        val first = requestLine.split(' ')
         val method = first.firstOrNull()
         if (method !in listOf("GET", "HEAD") || first.getOrNull(1) != path) { error(socket, 404); return }
         val headers = mutableMapOf<String, String>()
         var length = 0
         while (true) {
-            val line = reader.readLine() ?: return
+            val line = when (val header = reader.readBoundedLineResult(MAX_DLNA_HEADER_BYTES)) {
+                is BoundedLineResult.Line -> header.value
+                is BoundedLineResult.TooLong -> { error(socket, 400); return }
+                BoundedLineResult.Eof -> return
+            }
             length += line.length
-            if (length > 16 * 1024) { error(socket, 400); return }
+            if (length > MAX_DLNA_HEADER_BYTES) { error(socket, 400); return }
             if (line.isBlank()) break
             headers[line.substringBefore(':').lowercase()] = line.substringAfter(':').trim()
         }

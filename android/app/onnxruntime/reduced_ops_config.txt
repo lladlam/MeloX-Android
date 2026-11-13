@@ -1,0 +1,39 @@
+# Reduced ONNX Runtime operator set for MeloX AutoSync.
+#
+# Generated with ONNX Runtime's own tool from the models shipped by the
+# MeloX-AutoSync catalog (android-models-v0.1.0-beta.4):
+#
+#   python tools/python/create_reduced_build_config.py <model-dir> reduced_ops_config.txt
+#
+# Models:
+#   - en-wav2vec2-base-960h-int8.onnx
+#   - ja-hubert-phoneme-ctc-int8.onnx
+#   - zh-fa-zh-int8.onnx
+#
+# Format: <operator domain>;<opset for domain>;<op1>[,op2]...
+#
+# The com.microsoft kernels are the fused CPU kernels that ONNX Runtime's own
+# graph optimizers can create (Conv+Add+Relu becomes FusedConv, and so on).
+# Leaving them out would make a fused model fail with "No Op registered for
+# FusedConv", so the same set the upstream mobile package ships is kept here.
+#
+# The list is not only about the kernels present in the models: with
+# ORT_ENABLE_ALL the graph optimizers introduce contrib nodes while the session
+# is created. Dumping the optimized model (Python ONNX Runtime 1.31.0,
+# GraphOptimizationLevel.ORT_ENABLE_ALL) shows that these three models are
+# rewritten to use:
+#
+#   DynamicQuantizeMatMul, FusedMatMul, Gelu, MatMulIntegerToFloat,
+#   SkipLayerNormalization
+#
+# SkipLayerNormalization is created by the layer norm fusion and was missing in
+# an earlier revision of this file; the reduced runtime then refused to create
+# a session for every model ("Failed to find kernel for
+# com.microsoft.SkipLayerNormalization").
+#
+# Regenerate this file whenever the AutoSync catalog publishes new models, then
+# rebuild the runtime with app/onnxruntime/build-onnxruntime.sh. After
+# regenerating, dump the optimized models again and add any newly introduced
+# com.microsoft kernel.
+ai.onnx;17;Add,Cast,Clip,Concat,Constant,ConstantOfShape,Conv,ConvTranspose,Cos,CumSum,Div,DynamicQuantizeLinear,Erf,Exp,Expand,Floor,Gather,Identity,InstanceNormalization,LSTM,LayerNormalization,Log,LogSoftmax,MatMul,MatMulInteger,Mul,Neg,Pad,QuantizeLinear,Range,ReduceMean,ReduceSum,Relu,Reshape,Shape,Sigmoid,Sin,Slice,Softmax,Split,Sqrt,Squeeze,Sub,Tile,Transpose,Unsqueeze
+com.microsoft;1;DynamicQuantizeMatMul,FusedConv,FusedGemm,FusedMatMul,Gelu,MatMulIntegerToFloat,NhwcMaxPool,QLinearAdd,QLinearAveragePool,QLinearConv,QLinearGlobalAveragePool,QLinearLeakyRelu,QLinearMatMul,QLinearMul,QLinearSigmoid,SkipLayerNormalization

@@ -19,6 +19,7 @@ import com.lladlam.melox.core.music.model.rank
 import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.core.provider.local.LocalMusicRepository
 import kotlin.math.abs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -37,11 +38,19 @@ object MeloXUnifiedFavorites {
     private const val KeyEnabled = "enabled"
     private const val KeyInitialized = "initialized"
     private const val KeyTracks = "tracks"
+    private const val KeyTracksCorruptBackup = "tracks_corrupt_backup"
     private const val DurationToleranceMs = 10_000L
     private const val PageSize = 100
 
     private val revisionState = mutableIntStateOf(0)
     private val writeLock = Any()
+    private val snapshotCache = java.util.WeakHashMap<Context, FavoriteSnapshot>()
+
+    private data class FavoriteSnapshot(
+        val raw: String,
+        val tracks: List<MusicTrack>,
+        val index: FavoriteTrackIndex,
+    )
 
     /** Observable for Compose screens that need to refresh their copy. */
     val revision: Int get() = revisionState.intValue
@@ -78,16 +87,16 @@ object MeloXUnifiedFavorites {
     fun tracks(context: Context): List<MusicTrack> = readTracks(context)
 
     fun contains(context: Context, track: MusicTrack): Boolean =
-        readTracks(context).any { sameSong(it, track) }
+        readSnapshot(context).index.contains(track)
 
     /** Toggles one logical song and returns its new favorite state. */
-    fun toggle(context: Context, track: MusicTrack): Boolean {
+    fun toggle(context: Context, track: MusicTrack): Boolean = synchronized(writeLock) {
         val favorite = !contains(context, track)
         set(context, track, favorite)
-        return favorite
+        favorite
     }
 
-    fun set(context: Context, track: MusicTrack, favorite: Boolean) {
+    fun set(context: Context, track: MusicTrack, favorite: Boolean) = synchronized(writeLock) {
         val current = readTracks(context)
         val updated = if (favorite) {
             val index = current.indexOfFirst { sameSong(it, track) }
@@ -120,10 +129,10 @@ object MeloXUnifiedFavorites {
 
     fun remove(context: Context, track: MusicTrack) = set(context, track, false)
 
-    fun reorder(context: Context, track: MusicTrack, newIndex: Int) {
+    fun reorder(context: Context, track: MusicTrack, newIndex: Int) = synchronized(writeLock) {
         val current = readTracks(context)
         val index = current.indexOfFirst { sameSong(it, track) }
-        if (index < 0) return
+        if (index < 0) return@synchronized
         val updated = current.toMutableList()
         val item = updated.removeAt(index)
         updated.add(newIndex.coerceIn(0, updated.size), item)
@@ -144,6 +153,7 @@ object MeloXUnifiedFavorites {
                 runCatching { loadFavorites(app, source) }
                     .onSuccess { migrated += it }
                     .onFailure { error ->
+                        if (error is CancellationException) throw error
                         failures += Failure(source, error.message ?: "${source.displayName} 收藏读取失败")
                     }
             }
@@ -262,25 +272,38 @@ object MeloXUnifiedFavorites {
     private fun qualityRank(track: MusicTrack): Int =
         (track.bestQuality ?: AudioQualityTier.Standard).rank()
 
-    private fun readTracks(context: Context): List<MusicTrack> = synchronized(writeLock) {
-        val raw = prefs(context).getString(KeyTracks, null).orEmpty()
-        if (raw.isBlank()) return@synchronized emptyList()
-        val array = runCatching { JSONArray(raw) }.getOrNull() ?: return@synchronized emptyList()
-        buildList {
+    private fun readTracks(context: Context): List<MusicTrack> = readSnapshot(context).tracks
+
+    private fun readSnapshot(context: Context): FavoriteSnapshot = synchronized(writeLock) {
+        val appContext = context.applicationContext
+        val raw = prefs(appContext).getString(KeyTracks, null).orEmpty()
+        snapshotCache[appContext]?.takeIf { it.raw == raw }?.let { return@synchronized it }
+        val array = if (raw.isBlank()) JSONArray() else runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
+        val tracks = buildList {
             for (index in 0 until array.length()) {
                 val value = array.optJSONObject(index) ?: continue
                 MeloXTrackJson.decode(value)?.let(::add)
             }
         }
+        FavoriteSnapshot(raw, tracks, FavoriteTrackIndex(tracks)).also { snapshotCache[appContext] = it }
     }
 
     private fun writeTracks(context: Context, tracks: List<MusicTrack>, notify: Boolean = true, removed: Set<MusicResourceId> = emptySet()) {
         synchronized(writeLock) {
             val raw = prefs(context).getString(KeyTracks, null).orEmpty()
-            // Refuse to overwrite a corrupt payload instead of silently erasing it.
-            val previous = if (raw.isBlank()) JSONArray() else JSONArray(raw)
+            // A corrupt payload must never crash a favorite toggle, and must not be
+            // silently destroyed either: keep a recoverable copy before starting over.
+            val previous = if (raw.isBlank()) {
+                JSONArray()
+            } else {
+                runCatching { JSONArray(raw) }.getOrElse {
+                    prefs(context).edit().putString(KeyTracksCorruptBackup, raw).apply()
+                    JSONArray()
+                }
+            }
             val array = mergeFavoriteRecords(previous, tracks, removed)
             prefs(context).edit().putString(KeyTracks, array.toString()).apply()
+            snapshotCache.remove(context.applicationContext)
         }
         if (notify) bumpRevision()
     }
@@ -290,6 +313,19 @@ object MeloXUnifiedFavorites {
 
     private fun bumpRevision() {
         revisionState.intValue++
+    }
+}
+
+/** Index only narrows candidates; duration matching retains the existing favorite semantics. */
+internal class FavoriteTrackIndex(tracks: List<MusicTrack>) {
+    private val byKey = tracks.groupBy(TrackAggregation::keyOf)
+
+    fun contains(track: MusicTrack): Boolean {
+        val duration = track.durationMs?.takeIf { it > 0L }
+        return byKey[TrackAggregation.keyOf(track)].orEmpty().any { candidate ->
+            val candidateDuration = candidate.durationMs?.takeIf { it > 0L }
+            duration == null || candidateDuration == null || abs(duration - candidateDuration) <= 10_000L
+        }
     }
 }
 

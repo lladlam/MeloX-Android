@@ -145,6 +145,9 @@ fun MeloXPhoneCodeLoginScreen(
     }
 
     BackHandler {
+        // While an authentication request is running the step must not change:
+        // the late callback would switch it back and undo the navigation.
+        if (loading) return@BackHandler
         if (step == PhoneLoginStep.Code) {
             step = PhoneLoginStep.Phone
             code = ""

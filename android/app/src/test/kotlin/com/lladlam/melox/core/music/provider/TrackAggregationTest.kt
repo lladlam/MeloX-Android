@@ -28,6 +28,28 @@ class TrackAggregationTest {
         bestBitrate = bitrate,
     )
 
+    @Test
+    fun favoriteIndexPreservesDurationTolerance() {
+        val index = FavoriteTrackIndex(listOf(track(MusicSource.Netease, "晴天", duration = 240_000L)))
+
+        assertTrue(index.contains(track(MusicSource.QQMusic, "晴天", duration = 249_000L)))
+        assertTrue(!index.contains(track(MusicSource.QQMusic, "晴天", duration = 251_000L)))
+    }
+
+    @Test
+    fun favoriteIndexMatchesUnknownDurationsButKeepsVersionsSeparate() {
+        val original = track(MusicSource.Netease, "晴天")
+        val index = FavoriteTrackIndex(listOf(original))
+
+        assertTrue(index.contains(original.copy(durationMs = null)))
+        assertTrue(index.contains(original.copy(durationMs = 0L)))
+        assertTrue(!index.contains(original.copy(title = "晴天 (Live)")))
+        assertTrue(!index.contains(original.copy(title = "夜曲")))
+        assertTrue(FavoriteTrackIndex(listOf(original.copy(durationMs = null)))
+            .contains(original.copy(durationMs = 600_000L)))
+        assertTrue(!FavoriteTrackIndex(emptyList()).contains(original))
+    }
+
     @Test fun sameStudioTracksAreAggregated() {
         val groups = TrackAggregation.aggregate(listOf(track(MusicSource.Netease, "晴天"), track(MusicSource.QQMusic, "晴天")))
         assertEquals(1, groups.size)

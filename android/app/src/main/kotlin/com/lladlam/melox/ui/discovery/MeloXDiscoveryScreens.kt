@@ -589,17 +589,18 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
                             if (action == "每日推荐") {
                                 val profileUserId = session.profile?.userId
                                 scope.launch(Dispatchers.IO) {
-                                    runCatching {
-                                        DailyHistoryStore.archive(
-                                            context = context,
-                                            accountKey = accountKeyOf(
-                                                NeteaseSessionStore.readCookie(context),
-                                                profileUserId,
-                                            ),
-                                            dateKey = MeloXDailyClock.todayKey(),
-                                            songs = songs,
-                                            userId = profileUserId,
-                                        )
+                                    val archived = DailyHistoryStore.archive(
+                                        context = context,
+                                        accountKey = accountKeyOf(
+                                            NeteaseSessionStore.readCookie(context),
+                                            profileUserId,
+                                        ),
+                                        dateKey = MeloXDailyClock.todayKey(),
+                                        songs = songs,
+                                        userId = profileUserId,
+                                    )
+                                    if (!archived) withContext(Dispatchers.Main) {
+                                        error = "每日推荐归档失败，请检查存储空间"
                                     }
                                 }
                             }
@@ -660,17 +661,18 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
                             if (action == "每日推荐") {
                                 val profileUserId = session.profile?.userId
                                 scope.launch(Dispatchers.IO) {
-                                    runCatching {
-                                        DailyHistoryStore.archive(
-                                            context = context,
-                                            accountKey = accountKeyOf(
-                                                NeteaseSessionStore.readCookie(context),
-                                                profileUserId,
-                                            ),
-                                            dateKey = MeloXDailyClock.todayKey(),
-                                            songs = songs,
-                                            userId = profileUserId,
-                                        )
+                                    val archived = DailyHistoryStore.archive(
+                                        context = context,
+                                        accountKey = accountKeyOf(
+                                            NeteaseSessionStore.readCookie(context),
+                                            profileUserId,
+                                        ),
+                                        dateKey = MeloXDailyClock.todayKey(),
+                                        songs = songs,
+                                        userId = profileUserId,
+                                    )
+                                    if (!archived) withContext(Dispatchers.Main) {
+                                        error = "每日推荐归档失败，请检查存储空间"
                                     }
                                 }
                             }
@@ -1332,30 +1334,42 @@ private fun NeteaseExploreDataScreen() {
     var category by rememberSaveable { mutableStateOf(visibleCategories.first()) }
     var collections by rememberRetainedPageState(category) { mutableStateOf<List<DiscoveryCollection>>(emptyList()) }
     var refreshing by remember { mutableStateOf(false) }
+    var refreshGeneration by remember { mutableStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
     var selectedCollection by rememberSaveable(stateSaver = DiscoveryCollectionSaver) { mutableStateOf<DiscoveryCollection?>(null) }
     // 见 NeteaseHomeDataScreen：内容保留到退出过渡结束，返回时封面才能 morph 回卡片。
     var overlayCollection by remember { mutableStateOf(selectedCollection) }
 
     fun refresh() {
-        if (category == "播客" || refreshing) return
+        if (category == "播客") return
         val requested = category
+        val generation = ++refreshGeneration
         scope.launch {
             refreshing = true
             runCatching { client.explorePlaylists(requested) }
                 .onSuccess {
-                    if (category == requested) collections = it.map { playlist -> DiscoveryCollection.Netease(playlist) }
+                    // A newer category switch may have started after this request;
+                    // never let the old response overwrite the new category's list.
+                    if (generation == refreshGeneration && category == requested) {
+                        collections = it.map { playlist -> DiscoveryCollection.Netease(playlist) }
+                        error = null
+                    }
                     cache.saveExplore(requested, it)
-                    error = null
                 }
-                .onFailure { error = it.message ?: "发现页加载失败" }
-            refreshing = false
+                .onFailure {
+                    if (generation == refreshGeneration) error = it.message ?: "发现页加载失败"
+                }
+            if (generation == refreshGeneration) refreshing = false
         }
     }
 
     LaunchedEffect(category) {
-        if (category == "播客") return@LaunchedEffect
-        if (collections.isEmpty()) collections = cache.loadExplore(category).orEmpty().map { DiscoveryCollection.Netease(it) }
+        if (category == "播客") {
+            refreshing = false
+            return@LaunchedEffect
+        }
+        error = null
+        collections = cache.loadExplore(category).orEmpty().map { DiscoveryCollection.Netease(it) }
         if (collections.isEmpty() || NeteaseLibraryCache.beginExploreColdStartRefresh(category, cache.cacheDir)) refresh()
     }
 

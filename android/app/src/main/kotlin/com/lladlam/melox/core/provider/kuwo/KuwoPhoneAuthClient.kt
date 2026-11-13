@@ -52,7 +52,7 @@ class KuwoPhoneAuthClient(
             append("&secret=").append(params.secret)
             appendCommonParams(includeUser = true)
         }
-        val response = get(SEND_SMS_PATH, body)
+        val response = get(SEND_SMS_PATH, body, noRetry = true)
         val code = response.optInt("code", -1)
         val result = response.optString("ret", response.optString("result"))
         if (code != 200 && !result.equals("succ", ignoreCase = true)) {
@@ -79,12 +79,19 @@ class KuwoPhoneAuthClient(
         parseLoginResponse(response)
     }
 
-    private fun get(path: String, plaintext: String): JSONObject {
+    private fun get(path: String, plaintext: String, noRetry: Boolean = false): JSONObject {
         val encrypted = encryptRequest(plaintext)
         val request = Request.Builder()
             .url("$KUWO_AUTH_BASE_URL$path?f=ar&q=${URLEncoder.encode(encrypted, Charsets.UTF_8.name())}")
             .header("User-Agent", KuwoRequestClient.UserAgent)
             .header("Accept", "application/json, */*")
+            .apply {
+                if (noRetry) {
+                    // Sending an SMS is not idempotent: a retry would send a
+                    // second verification code to the user.
+                    header(com.lladlam.melox.core.network.RetryInterceptor.NO_RETRY_HEADER, "true")
+                }
+            }
             .get()
             .build()
 

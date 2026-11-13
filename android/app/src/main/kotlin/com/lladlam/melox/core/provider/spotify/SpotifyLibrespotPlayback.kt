@@ -29,7 +29,10 @@ class SpotifyLibrespotPlayback(
     private val credentialsDir: File = File(context.filesDir, "librespot").apply { mkdirs() }
     private val credentialsFile = File(credentialsDir, "credentials.json")
     private val playbackCacheDir = File(credentialsDir, "tracks").apply { mkdirs() }
+    /** Which account the stored librespot credentials belong to. */
+    private val accountMarkerFile = File(credentialsDir, "account.id")
     @Volatile private var session: Session? = null
+    @Volatile private var sessionAccountId: String? = null
 
     val isConnected: Boolean get() = session != null
 
@@ -37,9 +40,21 @@ class SpotifyLibrespotPlayback(
      * Connect to Spotify's Access Point. Uses stored credentials first, falling
      * back to the OAuth access token for first login. Returns the session.
      */
-    suspend fun connect(accessToken: String): Session = withContext(Dispatchers.IO) {
+    suspend fun connect(accessToken: String, accountId: String = ""): Session = withContext(Dispatchers.IO) {
         val existing = session
-        if (existing != null) return@withContext existing
+        if (existing != null) {
+            val current = sessionAccountId.orEmpty()
+            if (accountId.isNotBlank() && current == accountId) return@withContext existing
+            // The account changed (or was logged out): the old session must not
+            // be reused, otherwise the previous account keeps playing.
+            invalidate()
+        }
+        // Stored credentials belong to an account and may only be reused for it.
+        val storedAccount = runCatching { accountMarkerFile.readText() }.getOrNull().orEmpty()
+        val useStored = credentialsFile.exists() && storedAccount.isNotBlank() && storedAccount == accountId
+        if (!useStored) {
+            runCatching { credentialsFile.delete() }
+        }
         val config = Session.Configuration.Builder()
             .setCacheEnabled(true)
             .setCacheDir(credentialsDir)
@@ -50,7 +65,7 @@ class SpotifyLibrespotPlayback(
             .setDeviceType(Connect.DeviceType.SMARTPHONE)
             .setDeviceName("MeloX")
             .setDeviceId(deviceId)
-        if (credentialsFile.exists()) {
+        if (useStored) {
             builder.stored(credentialsFile)
         } else if (accessToken.isNotBlank()) {
             builder.credentials(
@@ -64,6 +79,8 @@ class SpotifyLibrespotPlayback(
         }
         val created = builder.create()
         session = created
+        sessionAccountId = accountId
+        if (accountId.isNotBlank()) runCatching { accountMarkerFile.writeText(accountId) }
         created
     }
 
@@ -71,7 +88,23 @@ class SpotifyLibrespotPlayback(
     fun disconnect() {
         val existing = session ?: return
         session = null
+        sessionAccountId = null
         runCatching { existing.close() }
+    }
+
+    /**
+     * Fully invalidate the playback identity: close the session and delete the
+     * stored credentials plus the account scoped audio cache. Used on logout
+     * and when the Spotify account changes.
+     */
+    fun invalidate() {
+        val existing = session
+        session = null
+        sessionAccountId = null
+        runCatching { existing?.close() }
+        runCatching { credentialsFile.delete() }
+        runCatching { accountMarkerFile.delete() }
+        runCatching { playbackCacheDir.listFiles()?.forEach { it.delete() } }
     }
 
     /**

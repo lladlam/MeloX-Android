@@ -6,7 +6,6 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.os.Build
 import android.os.Handler
@@ -142,6 +141,7 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
     private var systemLyricsLastIndex = Int.MIN_VALUE
     private var systemLyricsLastDispatchRealtimeMs = 0L
     private var systemLyricsLastPlaying = false
+    private val lyricsNotificationArtwork = LyricsNotificationArtwork()
 
     private var notificationLeftAction = MeloXNotificationAction.PlayMode
     private var notificationRightAction = MeloXNotificationAction.Favorite
@@ -2011,6 +2011,7 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
             ?: (mediaId.hashCode().toLong() and 0xffffffffL)
 
     private fun resetSystemLyrics(item: MediaItem?) {
+        lyricsNotificationArtwork.clear()
         VivoAtomicIslandBridge.clear(this)
         colorOsLyricsPublisher?.setLyrics(null, null)
         superLyricPublisher?.stop()
@@ -2098,9 +2099,9 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
             .setOngoing(player?.isPlaying == true)
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
         if (MeloXSettingsRuntime.lyricNotificationShowArtwork) {
-            metadata.artworkData?.let { bytes ->
-                runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }.getOrNull()?.let(builder::setLargeIcon)
-            }
+            lyricsNotificationArtwork.get(metadata.artworkData)?.let(builder::setLargeIcon)
+        } else {
+            lyricsNotificationArtwork.clear()
         }
         if (MeloXSettingsRuntime.lyricNotificationShowProgress) {
             val duration = player?.duration?.takeIf { it != C.TIME_UNSET && it > 0L } ?: 0L

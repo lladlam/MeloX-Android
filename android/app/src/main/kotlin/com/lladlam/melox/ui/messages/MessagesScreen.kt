@@ -478,13 +478,21 @@ private fun MessagesDetailScreen(
         if (text.isNotBlank() && !busy) {
             busy = true
             scope.launch {
-                runCatching { ops.sendPrivateText(text, contact.id) }
-                    .onSuccess {
-                        draft = ""
-                        messages = ops.privateMessageHistory(contact.id)
-                    }
-                    .onFailure { error = it.message ?: context.getString(R.string.message_send_failed) }
-                busy = false
+                // The history refresh must stay inside the try block: an
+                // exception thrown from the old onSuccess lambda escaped the
+                // coroutine, skipped `busy = false` and left the send button
+                // permanently disabled (or crashed the screen).
+                try {
+                    ops.sendPrivateText(text, contact.id)
+                    draft = ""
+                    messages = ops.privateMessageHistory(contact.id)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    error = failure.message ?: context.getString(R.string.message_send_failed)
+                } finally {
+                    busy = false
+                }
             }
         }
     }

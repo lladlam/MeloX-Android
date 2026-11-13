@@ -76,6 +76,7 @@ internal class MeloXLanDiscoveryResponder(
         if (message.optInt("v", 0) != MELOX_LAN_VERSION) return
         if (message.optString("type") != "discover" && message.optString("type") != "announce") return
         val peerId = message.optString("deviceId")
+        val trusted = isTrusted(peerId)
         val reply = JSONObject()
             .put("magic", MELOX_LAN_MAGIC)
             .put("v", MELOX_LAN_VERSION)
@@ -86,12 +87,14 @@ internal class MeloXLanDiscoveryResponder(
             .put("model", android.os.Build.MODEL.orEmpty())
             .put("appVersion", identity.appVersion)
             .put("port", controlPort())
-            .put("pinRequired", !isTrusted(peerId))
-            .put("trusted", isTrusted(peerId))
+            .put("pinRequired", !trusted)
+            .put("trusted", trusted)
             .put("capabilities", meloXJsonStringArray(listOf("control", "cast", "transfer", "together", MELOX_LAN_BARRIER)))
             .put("address", localIpv4Address().orEmpty())
-            .put("state", snapshot().toJson())
             .put("nonce", message.optString("nonce").ifBlank { UUID.randomUUID().toString() })
+        // Playback state (title/artist/position) is personal data and is only
+        // announced to devices the user has explicitly paired with.
+        if (trusted) reply.put("state", snapshot().toJson())
         val bytes = reply.toString().toByteArray(Charsets.UTF_8)
         runCatching {
             socket.send(DatagramPacket(bytes, bytes.size, packet.address, packet.port))

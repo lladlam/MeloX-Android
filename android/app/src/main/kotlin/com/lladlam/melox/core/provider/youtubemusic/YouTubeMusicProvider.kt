@@ -348,16 +348,27 @@ class YouTubeMusicProvider(
             runCatching {
                 ensureNewPipe()
                 val info = StreamInfo.getInfo(ServiceList.YouTube, "https://www.youtube.com/watch?v=${track.id.value}")
-                val stream = info.audioStreams
-                    .filter { it.content.isNotBlank() }
-                    .maxByOrNull { it.averageBitrate }
+                val streams = info.audioStreams.filter { it.content.isNotBlank() }
+                // YouTube only serves lossy audio, so never report the requested
+                // Lossless/Hi-Res tier as if it had been delivered. Pick the stream
+                // closest to the requested data rate and report its real tier.
+                val targetBitrate = when (quality) {
+                    AudioQualityTier.Standard -> 128
+                    AudioQualityTier.High -> 256
+                    else -> Int.MAX_VALUE
+                }
+                val stream = streams.minByOrNull { kotlin.math.abs(it.averageBitrate - targetBitrate) }
                     ?: error("YouTube Music 无可用音频流")
+                val actualQuality = when {
+                    stream.averageBitrate >= 256 -> AudioQualityTier.High
+                    else -> AudioQualityTier.Standard
+                }
                 PlaybackResolution.Playable(
                     url = stream.content,
                     requestedQuality = quality,
-                    actualQuality = quality,
-                    bitrate = stream.averageBitrate.takeIf { it > 0 },
-                    format = "m4a",
+                    actualQuality = actualQuality,
+                    bitrate = stream.averageBitrate.takeIf { it > 0 }?.times(1_000),
+                    format = stream.format?.suffix,
                     expiresAtEpochMs = System.currentTimeMillis() + STREAM_URL_TTL_MS,
                 )
             }.getOrElse { PlaybackResolution.Unavailable(it.message ?: "YouTube Music 播放失败") }

@@ -1,6 +1,7 @@
 package com.lladlam.melox.lan
 
 import android.util.Log
+import com.lladlam.melox.core.network.readBoundedLine
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.InputStreamReader
@@ -67,6 +68,9 @@ internal class MeloXLanServer(
     private var eventJob: Job? = null
     private var discovery: MeloXLanDiscoveryResponder? = null
     private val clients = CopyOnWriteArraySet<Client>()
+    private val pendingHandshakes = java.util.concurrent.atomic.AtomicInteger(0)
+    private val pinFailures = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    private val pinLockedUntil = java.util.concurrent.ConcurrentHashMap<String, Long>()
     @Volatile private var togetherClient: Client? = null
     @Volatile private var togetherQueue: List<MeloXLanTrack> = emptyList()
     @Volatile private var togetherIndex: Int = 0
@@ -169,22 +173,35 @@ internal class MeloXLanServer(
     private fun acceptLoop(socket: ServerSocket) {
         while (running) {
             val clientSocket = runCatching { socket.accept() }.getOrNull() ?: break
-            if (clients.size >= 8) {
+            if (clients.size >= MAX_LAN_CLIENTS || pendingHandshakes.get() >= MAX_PENDING_HANDSHAKES) {
                 runCatching { clientSocket.close() }
                 continue
             }
             val client = Client(clientSocket)
-            if (client.handshake()) {
-                clients += client
-                client.startReader()
-                client.send(
-                    JSONObject()
-                        .put("type", "event")
-                        .put("event", "state")
-                        .put("state", host.snapshot().toJson()),
-                )
-            } else {
-                client.close()
+            pendingHandshakes.incrementAndGet()
+            // The handshake runs off the accept thread: a peer that connects and
+            // stays silent must not block every other peer from connecting.
+            scope.launch(Dispatchers.IO) {
+                try {
+                    if (!client.handshake()) {
+                        client.close()
+                        return@launch
+                    }
+                    if (!running || clients.size >= MAX_LAN_CLIENTS) {
+                        client.close()
+                        return@launch
+                    }
+                    clients += client
+                    client.startReader()
+                    client.send(
+                        JSONObject()
+                            .put("type", "event")
+                            .put("event", "state")
+                            .put("state", host.snapshot().toJson()),
+                    )
+                } finally {
+                    pendingHandshakes.decrementAndGet()
+                }
             }
         }
     }
@@ -225,6 +242,13 @@ internal class MeloXLanServer(
 
         fun handshake(): Boolean {
             socket.soTimeout = 10_000
+            val remoteAddress = runCatching { socket.inetAddress.hostAddress.orEmpty() }.getOrDefault("")
+            val lockedUntil = pinLockedUntil[remoteAddress] ?: 0L
+            if (lockedUntil > System.currentTimeMillis()) {
+                send(JSONObject().put("type", "auth_failed").put("reason", "locked"))
+                close()
+                return false
+            }
             return try {
                 var message = readJson() ?: return false
                 if (message.optString("type") != "hello") return false
@@ -254,6 +278,11 @@ internal class MeloXLanServer(
                     platform = message.optString("platform").ifBlank { platform }
                 }
                 if (!authenticated) {
+                    val failures = pinFailures.merge(remoteAddress, 1, Int::plus) ?: 1
+                    if (failures >= PIN_FAILURE_LIMIT) {
+                        pinLockedUntil[remoteAddress] = System.currentTimeMillis() + PIN_LOCKOUT_MS
+                        pinFailures.remove(remoteAddress)
+                    }
                     send(JSONObject().put("type", "auth_failed").put("reason", "pin"))
                     close()
                     return false
@@ -262,7 +291,7 @@ internal class MeloXLanServer(
                     deviceId = deviceId,
                     name = deviceName,
                     platform = platform,
-                    address = runCatching { socket.inetAddress.hostAddress.orEmpty() }.getOrDefault(""),
+                    address = remoteAddress,
                 )
                 send(
                     JSONObject()
@@ -488,7 +517,7 @@ internal class MeloXLanServer(
         }
 
         private fun readJson(): JSONObject? {
-            val line = reader.readLine() ?: return null
+            val line = runCatching { reader.readBoundedLine(MELOX_LAN_MAX_MESSAGE_BYTES) }.getOrNull() ?: return null
             if (line.length > MELOX_LAN_MAX_MESSAGE_BYTES) return null
             return runCatching { JSONObject(line) }.getOrNull()
         }

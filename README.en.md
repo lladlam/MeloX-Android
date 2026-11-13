@@ -296,7 +296,7 @@ MeloX Android comes from the MeloX Android migration and also uses or references
 
 The Android app depends on the `backdrop` component from [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass). `MeloXBackdropComponents.kt` adapts the official `LiquidButton` and `LiquidBottomTabs` samples while keeping MeloX iOS sizes and layout.
 
-SF Pro / SF Symbols are Apple Inc. system fonts used only for the app's icon glyphs. Normal UI text stays on XiaomiLTPro / MiLanPro. They are not covered by GPLv3; see [SF-Pro-NOTICE.md](docs/SF-Pro-NOTICE.md).
+SF Pro / SF Symbols are Apple Inc. system fonts used only for the app's icon glyphs. Normal UI text uses the Android system font everywhere by default; the optional MiSans family is downloaded on demand from its GitHub release and is not bundled in the APK. They are not covered by GPLv3; see [SF-Pro-NOTICE.md](docs/SF-Pro-NOTICE.md).
 
 The glass effect is still experimental.
 

@@ -118,14 +118,20 @@ internal fun AccountHomeScreen(userId: Long, onBack: () -> Unit) {
     var error by remember(userId) { mutableStateOf<String?>(null) }
     var selectedPlaylist by rememberRetainedPageState(userId) { mutableStateOf<NeteasePlaylistSummary?>(null) }
 
+    // Guards against a slow response of an older period overwriting the
+    // records of the period the user actually selected.
+    var rankGeneration by remember(userId) { mutableStateOf(0) }
+
     suspend fun loadRank(requested: MeloXUserPlayRecordPeriod) {
+        val generation = rankGeneration + 1
+        rankGeneration = generation
         period = requested
         loading = true
         error = null
         runCatching { social.userPlayRecords(userId, requested) }
-            .onSuccess { records = it }
-            .onFailure { error = it.message ?: context.getString(R.string.player_rank_failed) }
-        loading = false
+            .onSuccess { if (generation == rankGeneration) records = it }
+            .onFailure { if (generation == rankGeneration) error = it.message ?: context.getString(R.string.player_rank_failed) }
+        if (generation == rankGeneration) loading = false
     }
 
     suspend fun refresh() {
@@ -136,9 +142,11 @@ internal fun AccountHomeScreen(userId: Long, onBack: () -> Unit) {
         }.onSuccess { (loadedProfile, loadedPlaylists) ->
             profile = loadedProfile
             playlists = loadedPlaylists
+            val generation = rankGeneration + 1
+            rankGeneration = generation
             runCatching { social.userPlayRecords(userId, period) }
-                .onSuccess { records = it }
-                .onFailure { error = it.message ?: context.getString(R.string.player_rank_failed) }
+                .onSuccess { if (generation == rankGeneration) records = it }
+                .onFailure { if (generation == rankGeneration) error = it.message ?: context.getString(R.string.player_rank_failed) }
         }.onFailure { error = it.message ?: context.getString(R.string.account_profile_failed) }
         loading = false
     }

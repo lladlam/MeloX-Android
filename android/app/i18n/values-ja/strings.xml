@@ -924,6 +924,9 @@
     <string name="settings_account_loading">アカウントを読み込み中</string>
     <string name="settings_services_subtitle">ソースの切り替え、ログイン、まとめて検索</string>
     <string name="settings_reset_player">プレーヤーを初期設定に戻す</string>
+    <string name="settings_reset_player_confirm_title">プレーヤーを初期設定に戻しますか？</string>
+    <string name="settings_reset_player_confirm_body">再生・歌詞・AutoMix の設定をリセットし、保存された音質を標準に変更します。アカウント、ダウンロード、法的同意の記録、その他のアプリ設定は保持されます。</string>
+    <string name="settings_reset_player_confirm_action">初期化</string>
     <string name="settings_legal_documents">法律とプライバシーの文書</string>
     <string name="settings_legal_version">現在の文書バージョン: %1$s</string>
     <string name="settings_legal_no_consent">このインストールには、初回起動時に同意したバージョンの記録がありません。ここから全文を読めます。</string>
@@ -1092,8 +1095,15 @@
     <string name="settings_general_clipboard">クリップボードの网易云リンクを認識</string>
     <string name="settings_general_clipboard_note">アプリが前面に戻るたび、クリップボードを 1 回読みます。曲やプレイリストを開く前に確認します。</string>
     <string name="settings_general_haptics">触覚フィードバック</string>
-    <string name="settings_general_system_font">システムフォントを使う</string>
-    <string name="settings_general_system_font_note">歌詞は常に MiLan Pro を使います。ほかの画面はシステムフォントを使います。</string>
+    <string name="settings_general_system_font">フォントの範囲</string>
+    <string name="settings_general_system_font_note">既定ではすべてシステムフォントを使います。MiSans は必要に応じて（約 20 MB）ダウンロードされ、選択した範囲でのみ使われます。</string>
+    <string name="settings_general_system_font_off">MiSans フォント</string>
+    <string name="settings_general_system_font_non_lyrics">歌詞以外だけシステムフォント</string>
+    <string name="settings_general_system_font_all">すべてシステムフォント</string>
+    <string name="settings_general_system_font_download">MiSans フォントをダウンロード</string>
+    <string name="settings_general_system_font_downloading">MiSans をダウンロード中…</string>
+    <string name="settings_general_system_font_installed">MiSans はインストール済み</string>
+    <string name="settings_general_system_font_remove">MiSans フォントを削除</string>
     <string name="settings_general_tabbar">タブバーを自動で縮小しない</string>
     <string name="settings_general_tabbar_note">上にスクロールしても、下部バーは展開したままです。</string>
     <string name="settings_recognition_ready">音源に近づいてから開始してください</string>
@@ -1462,6 +1472,8 @@
     <string name="search_cat_night">夜</string>
     <string name="autosync_model_confirm">約 %1$s をダウンロードします。続行しますか？</string>
     <string name="autosync_model_delete">削除</string>
+    <string name="autosync_model_delete_confirm">この言語モデルとキャッシュされたタイムラインを削除しますか？後で再ダウンロードできます。</string>
+    <string name="autosync_dict_delete_confirm">日本語辞書を削除しますか？日本語の整列には約 24 MB の再ダウンロードが必要です。</string>
     <string name="autosync_model_download">ダウンロード</string>
     <string name="autosync_model_downloading">ダウンロード中 %1$d%%</string>
     <string name="autosync_model_failed">失敗：%1$s</string>

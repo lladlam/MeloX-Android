@@ -4,8 +4,14 @@ import java.security.KeyFactory
 import java.security.Signature
 import java.security.interfaces.ECPublicKey
 import java.security.spec.X509EncodedKeySpec
-import java.util.Base64
+import okio.ByteString.Companion.decodeBase64
 import org.json.JSONObject
+
+private fun decodeBase64Bytes(value: String): ByteArray {
+    // java.util.Base64 requires API 26; Okio's decoder accepts both the
+    // standard and the URL-safe alphabet on every supported Android version.
+    return requireNotNull(value.decodeBase64()) { "Invalid base64 value" }.toByteArray()
+}
 
 data class MeloXVerifiedRemoteConfig(
     val keyId: String,
@@ -13,7 +19,7 @@ data class MeloXVerifiedRemoteConfig(
 )
 
 class MeloXRemoteConfigVerifier(
-    publicKeyDer: ByteArray = Base64.getDecoder().decode(PinnedPublicKeyBase64),
+    publicKeyDer: ByteArray = decodeBase64Bytes(PinnedPublicKeyBase64),
     private val allowedKeyId: String = KeyId,
 ) {
     private val publicKey = KeyFactory.getInstance("EC")
@@ -30,8 +36,8 @@ class MeloXRemoteConfigVerifier(
         val keyId = envelope.getString("keyId")
         require(keyId == allowedKeyId) { "Unknown remote config key" }
         require(envelope.getString("algorithm") == Algorithm) { "Unsupported remote config algorithm" }
-        val payload = Base64.getUrlDecoder().decode(envelope.getString("payload"))
-        val signatureBytes = Base64.getDecoder().decode(envelope.getString("signature"))
+        val payload = decodeBase64Bytes(envelope.getString("payload"))
+        val signatureBytes = decodeBase64Bytes(envelope.getString("signature"))
         val signature = Signature.getInstance(Algorithm)
         signature.initVerify(publicKey)
         signature.update(payload)

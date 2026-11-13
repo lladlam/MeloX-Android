@@ -87,12 +87,28 @@ object ProviderPlaybackCommands {
                     val smartQueue = MeloXPlaybackModePreferences.autoMix(appContext) &&
                         MeloXPlaybackModePreferences.smartQueue(appContext) &&
                         items.size > 1
+                    // The persisted shuffle mode is a cross-source playback mode:
+                    // the legacy path honours it, the provider path used to
+                    // ignore it and always queued the tracks in source order
+                    // while the UI still showed "shuffle on".
+                    val useShuffle = MeloXPlaybackModePreferences.shuffle(appContext) && !smartQueue
+                    val orderedItems: List<androidx.media3.common.MediaItem>
+                    val orderedStartIndex: Int
+                    if (useShuffle && items.size > 1 && startIndex in items.indices) {
+                        val selected = items[startIndex]
+                        val rest = items.filterIndexed { index, _ -> index != startIndex }.shuffled()
+                        orderedItems = listOf(selected) + rest
+                        orderedStartIndex = 0
+                    } else {
+                        orderedItems = items
+                        orderedStartIndex = startIndex
+                    }
                     // 与 PlaybackCommands.playQueue 同款修法：智能队列也全量入队，
                     // 候选只用于重排，不再扣在池外。QQ/酷狗/B站/搜索结果同样踩过
                     // "播放完列表没歌"（provider 路径也 setMediaItems 了 1 首）。
                     if (smartQueue) MeloXSmartQueueBuilder.begin(items, startIndex)
                     else MeloXSmartQueueBuilder.reset()
-                    controller.setMediaItems(items, startIndex, startPositionMs)
+                    controller.setMediaItems(orderedItems, orderedStartIndex, startPositionMs)
                     controller.prepare()
                     controller.play()
                 }.onFailure { error ->

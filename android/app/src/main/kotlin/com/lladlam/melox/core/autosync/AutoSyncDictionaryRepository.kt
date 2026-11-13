@@ -78,7 +78,12 @@ internal class AutoSyncDictionaryRepository(
     fun isInstalled(): Boolean = dictionaryDirectory(context) != null
 
     fun delete() {
-        root(context).deleteRecursively()
+        // Only the dictionary lives under these names. The parent directory
+        // also holds downloaded model packs and must not be wiped.
+        val root = root(context)
+        listOf("g2p", "g2p.old", "g2p.staging").forEach { name ->
+            File(root, name).deleteRecursively()
+        }
     }
 
     fun licenseNotice(): String? {

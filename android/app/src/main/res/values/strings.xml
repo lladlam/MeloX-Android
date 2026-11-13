@@ -983,6 +983,9 @@
     <string name="settings_account_loading">Loading account</string>
     <string name="settings_services_subtitle">Switch sources, sign in, and combined search</string>
     <string name="settings_reset_player">Restore default player settings</string>
+    <string name="settings_reset_player_confirm_title">Restore default player settings?</string>
+    <string name="settings_reset_player_confirm_body">This resets playback, lyrics, and AutoMix preferences and switches the saved quality to Standard. Accounts, downloads, legal consent, and other app settings are kept.</string>
+    <string name="settings_reset_player_confirm_action">Restore</string>
     <string name="settings_legal_documents">Legal and privacy documents</string>
     <string name="settings_legal_version">Current text version: %1$s</string>
     <string name="settings_legal_no_consent">This install has no record of the version accepted at first launch. You can still read the full documents here.</string>
@@ -1151,8 +1154,15 @@
     <string name="settings_general_clipboard">Recognize NetEase links on the clipboard</string>
     <string name="settings_general_clipboard_note">The clipboard is read once each time the app returns to the foreground. MeloX asks before opening a song or playlist.</string>
     <string name="settings_general_haptics">Haptics</string>
-    <string name="settings_general_system_font">System font scope</string>
-    <string name="settings_general_system_font_note">Off: MiLan Pro everywhere. Non-lyrics: system font except lyrics. Global: system font including lyrics.</string>
+    <string name="settings_general_system_font">Font scope</string>
+    <string name="settings_general_system_font_note">The system font is used everywhere by default. MiSans is fetched on demand (about 20 MB) and only applies to the selected scope.</string>
+    <string name="settings_general_system_font_off">MiSans font</string>
+    <string name="settings_general_system_font_non_lyrics">System font except lyrics</string>
+    <string name="settings_general_system_font_all">System font everywhere</string>
+    <string name="settings_general_system_font_download">Download MiSans font</string>
+    <string name="settings_general_system_font_downloading">Downloading MiSans…</string>
+    <string name="settings_general_system_font_installed">MiSans is installed</string>
+    <string name="settings_general_system_font_remove">Remove MiSans font</string>
     <string name="settings_general_tabbar">Don\'t shrink the tab bar automatically</string>
     <string name="settings_general_tabbar_note">The bottom bar stays expanded while you scroll up.</string>
     <string name="settings_recognition_ready">Move closer to the sound, then start</string>
@@ -1548,6 +1558,8 @@
     <string name="account_web_login_done">I have finished signing in</string>
     <string name="autosync_model_confirm">This downloads about %1$s. Continue?</string>
     <string name="autosync_model_delete">Delete</string>
+    <string name="autosync_model_delete_confirm">Delete this language model and its cached timelines? The feature can be downloaded again later.</string>
+    <string name="autosync_dict_delete_confirm">Delete the Japanese dictionary? It will need to be downloaded again (about 24 MB) before Japanese alignment can run.</string>
     <string name="autosync_model_download">Download</string>
     <string name="autosync_model_downloading">Downloading %1$d%%</string>
     <string name="autosync_model_failed">Failed: %1$s</string>

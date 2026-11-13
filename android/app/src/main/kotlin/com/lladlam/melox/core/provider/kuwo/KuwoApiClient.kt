@@ -210,8 +210,9 @@ private fun AudioQualityTier.kuwoPlaybackCandidates(): List<KuwoPlaybackCandidat
     AudioQualityTier.Master,
     -> listOf(
         // The public antiserver endpoint only exposes ~128 kbps MP3/AAC.
-        // We still report the requested tier as the closest available quality.
-        KuwoPlaybackCandidate("mp3", AudioQualityTier.High),
+        // ~128 kbps maps to Standard in the project-wide bitrate mapping, so
+        // the reported tier must not overstate what is actually delivered.
+        KuwoPlaybackCandidate("mp3", AudioQualityTier.Standard),
         KuwoPlaybackCandidate("aac", AudioQualityTier.Standard),
     )
 }

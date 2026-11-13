@@ -753,6 +753,11 @@ private fun collectWikiUiText(ui: JSONObject?, lines: MutableList<String>) {
         val b=Request.Builder().url("https://interface.music.163.com${uri.replace("/api/","/eapi/")}")
             .header("Accept","*/*").header("User-Agent",if(authenticated) "NeteaseMusic 9.0.90/5038 (iPhone; iOS 16.2; zh_CN)" else "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148")
         if(authenticated)b.header("Cookie",encodedCookie(header))
+        // Creating / deleting / updating resources is not idempotent: a retry
+        // would create a second playlist (or delete twice).
+        if (NON_IDEMPOTENT_API_MARKERS.any { uri.contains(it) }) {
+            b.header(RetryInterceptor.NO_RETRY_HEADER, "true")
+        }
         val req=b.post(FormBody.Builder().add("params",params).build()).build()
         httpClient.newCall(req).execute().use { response ->
             val body=response.body.string(); if(!response.isSuccessful)throw NeteaseRequestException(response.code, "网易云请求失败：HTTP ${response.code}")
@@ -770,3 +775,13 @@ private fun collectWikiUiText(ui: JSONObject?, lines: MutableList<String>) {
     private fun aes(d:ByteArray,k:ByteArray)=Cipher.getInstance("AES/ECB/PKCS5Padding").run{init(Cipher.ENCRYPT_MODE,SecretKeySpec(k,"AES"));doFinal(d)}
     private fun ByteArray.toHex()=joinToString(""){"%02X".format(it)}
 }
+
+
+/**
+ * NetEase endpoints that mutate server state. A replayed request would create
+ * a second playlist, delete twice, ...
+ */
+private val NON_IDEMPOTENT_API_MARKERS = listOf(
+    "/create", "/delete", "/del", "/remove", "/add", "/update", "/subscribe",
+    "/like", "/comment", "/upload", "/pub/", "/tracks", "/end/",
+)

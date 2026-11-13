@@ -5,8 +5,10 @@ import android.net.Uri
 import android.util.Log
 import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.download.MeloXDownloadStore
+import com.lladlam.melox.core.network.BoundedLineResult
 import com.lladlam.melox.core.network.MeloXHttpClient
 import com.lladlam.melox.core.network.NeteaseSearchClient
+import com.lladlam.melox.core.network.readBoundedLineResult
 import java.io.BufferedReader
 import java.io.DataOutputStream
 import java.io.File
@@ -17,7 +19,9 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +30,12 @@ import kotlinx.coroutines.launch
 import okhttp3.Request
 
 private const val TAG = "MeloXLanAudioProxy"
+
+/** Cap concurrent proxy connections so a LAN peer cannot exhaust file descriptors. */
+private const val MAX_PROXY_CLIENTS = 8
+
+/** Hard limit for the HTTP request line and each header line. */
+private const val MAX_PROXY_REQUEST_BYTES = 8 * 1024
 
 /**
  * Host-side, credential-free audio proxy for Together guests.
@@ -48,6 +58,8 @@ internal class MeloXLanAudioProxy(
     private var serverSocket: ServerSocket? = null
     private var acceptThread: Thread? = null
     private val tokens = ConcurrentHashMap<String, RelayToken>()
+    private val clients = CopyOnWriteArraySet<Socket>()
+    private val clientCount = AtomicInteger(0)
 
     private data class RelayToken(
         val guestAddress: String,
@@ -86,6 +98,8 @@ internal class MeloXLanAudioProxy(
         tokens.clear()
         runCatching { serverSocket?.close() }
         serverSocket = null
+        clients.forEach { runCatching { it.close() } }
+        clients.clear()
         acceptThread?.join(500)
         acceptThread = null
     }
@@ -100,7 +114,20 @@ internal class MeloXLanAudioProxy(
         acceptThread = thread(name = "MeloXLanAudioProxy") {
             while (serverSocket === socket && !socket.isClosed) {
                 val client = runCatching { socket.accept() }.getOrNull() ?: break
-                scope.launch(Dispatchers.IO) { handle(client) }
+                if (clientCount.incrementAndGet() > MAX_PROXY_CLIENTS) {
+                    clientCount.decrementAndGet()
+                    runCatching { client.close() }
+                    continue
+                }
+                clients += client
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        handle(client)
+                    } finally {
+                        clients -= client
+                        clientCount.decrementAndGet()
+                    }
+                }
             }
         }
         return socket
@@ -111,7 +138,14 @@ internal class MeloXLanAudioProxy(
             socket.soTimeout = 10_000
             try {
                 val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
-                val requestLine = reader.readLine() ?: return
+                val requestLine = when (val line = reader.readBoundedLineResult(MAX_PROXY_REQUEST_BYTES)) {
+                    is BoundedLineResult.Line -> line.value
+                    is BoundedLineResult.TooLong -> {
+                        runCatching { writeError(socket, 431, "Request line too long") }
+                        return
+                    }
+                    BoundedLineResult.Eof -> return
+                }
                 val parts = requestLine.split(' ')
                 if (parts.size < 2 || parts[0] != "GET") {
                     writeError(socket, 405, "Method Not Allowed")
@@ -148,7 +182,14 @@ internal class MeloXLanAudioProxy(
                 token.expiresAt = now + 6 * 60 * 60 * 1000L
                 val headers = mutableMapOf<String, String>()
                 while (true) {
-                    val line = reader.readLine() ?: break
+                    val line = when (val header = reader.readBoundedLineResult(MAX_PROXY_REQUEST_BYTES)) {
+                        is BoundedLineResult.Line -> header.value
+                        is BoundedLineResult.TooLong -> {
+                            runCatching { writeError(socket, 431, "Header line too long") }
+                            return
+                        }
+                        BoundedLineResult.Eof -> break
+                    }
                     if (line.isBlank()) break
                     val separator = line.indexOf(':')
                     if (separator > 0) {

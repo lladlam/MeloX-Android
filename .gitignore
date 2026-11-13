@@ -16,3 +16,6 @@ keystore.properties
 
 # CMake/native build output
 android/app/.cxx/
+
+# Locally built reduced ONNX Runtime (see android/app/onnxruntime/build-onnxruntime.sh)
+android/app/onnxruntime/prebuilt/

@@ -2,7 +2,9 @@
 
 `android/app/src/main/res/font/sf_pro_vf.ttf` is a copy of the SF Pro variable
 font used **only** as the icon font (the SF Symbols glyphs). Normal UI text
-continues to use XiaomiLTPro / MiLanPro.
+uses the Android system font everywhere by default; the optional MiSans
+family is downloaded on demand from its GitHub release and is not bundled in
+the APK.
 
 - Copyright: Apple Inc.
 - Source used for this copy:

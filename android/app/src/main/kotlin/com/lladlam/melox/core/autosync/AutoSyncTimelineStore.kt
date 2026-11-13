@@ -31,17 +31,36 @@ object AutoSyncTimelineStore {
         runCatching {
             val file = fileFor(context, timeline.trackKey)
             file.parentFile?.mkdirs()
-            val temporary = File(file.parentFile, file.name + ".part")
-            temporary.writeText(timeline.toJson().toString())
-            if (!temporary.renameTo(file)) {
-                file.delete()
-                check(temporary.renameTo(file)) { "unable to publish AutoSync timeline" }
+            val temporary = File.createTempFile("${file.name}.", ".part", file.parentFile)
+            try {
+                temporary.writeText(timeline.toJson().toString())
+                if (!temporary.renameTo(file)) {
+                    file.delete()
+                    check(temporary.renameTo(file)) { "unable to publish AutoSync timeline" }
+                }
+            } finally {
+                temporary.delete()
             }
         }.onFailure { Log.w(TAG, "cannot store timeline for ${timeline.trackKey}", it) }
     }
 
     fun clear(context: Context) {
         runCatching { File(context.filesDir, DIR).listFiles()?.forEach(File::delete) }
+    }
+
+    /**
+     * Removes only timelines generated with [language], leaving other
+     * languages' cached alignments intact.
+     */
+    fun clearLanguage(context: Context, language: String) {
+        if (language.isBlank()) return
+        runCatching {
+            File(context.filesDir, DIR).listFiles()?.forEach { file ->
+                if (!file.isFile) return@forEach
+                val stored = runCatching { JSONObject(file.readText()).optString("lang") }.getOrNull()
+                if (stored == language) file.delete()
+            }
+        }
     }
 
     /** Identity of the exact line-level document a timeline was generated from. */
@@ -54,6 +73,9 @@ object AutoSyncTimelineStore {
             .joinToString("") { "%02x".format(it) }
     }
 
-    private fun fileFor(context: Context, trackKey: String): File =
-        File(File(context.filesDir, DIR), "${trackKey.hashCode().toUInt().toString(16)}.json")
+    private fun fileFor(context: Context, trackKey: String): File {
+        val name = MessageDigest.getInstance("SHA-256").digest(trackKey.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+        return File(File(context.filesDir, DIR), "$name.json")
+    }
 }

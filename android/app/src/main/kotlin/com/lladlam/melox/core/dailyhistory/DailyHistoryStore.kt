@@ -65,34 +65,30 @@ object DailyHistoryStore {
         dateKey: String,
         songs: List<SearchSong>,
         userId: Long? = null,
-    ) {
-        if (songs.isEmpty() || MeloXDailyClock.parseKey(dateKey) == null) return
-        mutex.withLock {
+    ): Boolean {
+        if (songs.isEmpty() || MeloXDailyClock.parseKey(dateKey) == null) return false
+        return mutex.withLock {
             withContext(Dispatchers.IO) {
                 runCatching {
                     val dir = accountDir(context, accountKey)
                     dir.mkdirs()
                     writeAtomic(File(dir, "$dateKey.json"), encodeEntry(dateKey, userId, songs))
                     prune(dir)
-                }
+                }.isSuccess
             }
         }
     }
 
     /** All archived day keys for this account, newest first. */
     suspend fun listDateKeys(context: Context, accountKey: String): List<String> = mutex.withLock {
-        withContext(Dispatchers.IO) {
-            runCatching { dateKeysIn(accountDir(context, accountKey)) }.getOrDefault(emptyList())
-        }
+        withContext(Dispatchers.IO) { dateKeysIn(accountDir(context, accountKey)) }
     }
 
     suspend fun read(context: Context, accountKey: String, dateKey: String): DailyHistoryEntry? =
         mutex.withLock {
             withContext(Dispatchers.IO) {
-                runCatching {
-                    val file = File(accountDir(context, accountKey), "$dateKey.json")
-                    if (file.isFile) decodeEntry(file.readText()) else null
-                }.getOrNull()
+                val file = File(accountDir(context, accountKey), "$dateKey.json")
+                if (file.isFile) decodeEntry(file.readText()) else null
             }
         }
 
@@ -113,10 +109,13 @@ object DailyHistoryStore {
 
     private fun writeAtomic(file: File, encoded: String) {
         file.parentFile?.mkdirs()
-        val temporary = File(file.parentFile, "${file.name}.tmp")
-        temporary.writeText(encoded)
-        if (!temporary.renameTo(file)) {
-            file.writeText(encoded)
+        val temporary = File.createTempFile("${file.name}.", ".tmp", file.parentFile)
+        try {
+            temporary.writeText(encoded)
+            if (!temporary.renameTo(file)) {
+                file.writeText(encoded)
+            }
+        } finally {
             temporary.delete()
         }
     }

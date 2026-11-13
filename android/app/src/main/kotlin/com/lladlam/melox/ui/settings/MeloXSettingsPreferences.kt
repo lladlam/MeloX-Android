@@ -8,6 +8,7 @@ import androidx.annotation.StringRes
 import androidx.compose.ui.text.font.FontWeight
 import com.lladlam.melox.R
 import com.lladlam.melox.playback.MeloXPlaybackModePreferences
+import com.lladlam.melox.ui.theme.MeloXFontPolicy
 
 enum class MeloXThemeMode { System, Light, Dark }
 enum class MeloXSwipeFullAction { PlayNext, AddToQueue }
@@ -148,8 +149,6 @@ object MeloXSettingsRuntime {
     var cloudTabPlacement by mutableStateOf(false)
         internal set
     var cloudLibraryPlacement by mutableStateOf(true)
-        internal set
-    var flowingBackdropEnabled by mutableStateOf(true)
         internal set
     var flowingLightSpeed by mutableStateOf(1f)
         internal set
@@ -447,10 +446,10 @@ object MeloXSettingsRuntime {
         internal set
     var showPlayerQualityTip by mutableStateOf(true)
         internal set
-    var systemFontScope by mutableStateOf("off")
+    var systemFontScope by mutableStateOf(MeloXFontPolicy.DEFAULT_SCOPE)
         internal set
-    val systemFontEnabled: Boolean get() = systemFontScope == "nonlyrics" || systemFontScope == "all"
-    val lyricSystemFontEnabled: Boolean get() = systemFontScope == "all"
+    val systemFontEnabled: Boolean get() = MeloXFontPolicy.usesSystemUiFont(systemFontScope)
+    val lyricSystemFontEnabled: Boolean get() = MeloXFontPolicy.usesSystemLyricFont(systemFontScope)
     var smartQueueEnabled by mutableStateOf(false)
         internal set
     var transitionUiEnabled by mutableStateOf(false)
@@ -496,7 +495,9 @@ object MeloXSettingsRuntime {
         rememberLibraryPage = MeloXSettingsPreferences.boolean(app, "library_remember_page", true)
         defaultLibraryPage = MeloXSettingsPreferences.string(app, "library_default_page", "Songs")
         clipboardLinksEnabled = MeloXSettingsPreferences.boolean(app, "general_clipboard_links", true)
-        systemFontScope = MeloXSettingsPreferences.string(app, "system_font_scope", "off")
+        systemFontScope = MeloXFontPolicy.normalize(
+            MeloXSettingsPreferences.string(app, "system_font_scope", MeloXFontPolicy.DEFAULT_SCOPE),
+        )
     }
 
     fun initialize(context: Context, force: Boolean = false) {
@@ -530,7 +531,6 @@ object MeloXSettingsRuntime {
             } else {
                 MeloXPlayerBackgroundMode.BlurredArtwork
             }
-        flowingBackdropEnabled = playerBackgroundMode.usesFlowingBackdrop
         flowingLightSpeed = MeloXSettingsPreferences.float(app, "player_flowing_speed", 1f).coerceIn(.25f, 2f)
         flowingLightSaturation = MeloXSettingsPreferences.float(app, "player_flowing_saturation", 1f).coerceIn(0f, 2f)
         flowingLightBrightness = MeloXSettingsPreferences.float(app, "player_flowing_brightness", 1f).coerceIn(.4f, 1.6f)
@@ -572,7 +572,9 @@ object MeloXSettingsRuntime {
         }.getOrDefault(MeloXScreenAwakeMode.Disabled)
         immersivePlaybackEnabled = MeloXSettingsPreferences.boolean(app, "immersive_playback", false)
         showPlayerQualityTip = MeloXSettingsPreferences.boolean(app, "player_show_quality_tip", true)
-        systemFontScope = MeloXSettingsPreferences.string(app, "system_font_scope", "off")
+        systemFontScope = MeloXFontPolicy.normalize(
+            MeloXSettingsPreferences.string(app, "system_font_scope", MeloXFontPolicy.DEFAULT_SCOPE),
+        )
         smartQueueEnabled = MeloXPlaybackModePreferences.smartQueue(app)
         transitionUiEnabled = MeloXSettingsPreferences.boolean(app, "transition_ui_enabled", false)
         playlistSearchBarHidden = MeloXSettingsPreferences.boolean(app, "library_playlist_search_hidden", false)
@@ -893,7 +895,6 @@ object MeloXSettingsPreferences {
             "placement_cloud_home" -> MeloXSettingsRuntime.cloudHomePlacement = value
             "placement_cloud_tab" -> MeloXSettingsRuntime.cloudTabPlacement = value
             "placement_cloud_library" -> MeloXSettingsRuntime.cloudLibraryPlacement = value
-            "player_flowing_backdrop" -> MeloXSettingsRuntime.flowingBackdropEnabled = value
             "player_artwork_motion" -> MeloXSettingsRuntime.artworkMotionEnabled = value
             "reduce_motion" -> MeloXSettingsRuntime.reduceMotion = value
             "player_background_isolation" -> MeloXSettingsRuntime.playerBackgroundIsolationEnabled = value
@@ -1073,13 +1074,9 @@ object MeloXSettingsPreferences {
                 MeloXLyricsStyle.valueOf(value)
             }.getOrDefault(MeloXLyricsStyle.AppleMusic)
             "lyric_language" -> MeloXSettingsRuntime.lyricLanguage = value
-            "player_background_mode" -> {
-                MeloXSettingsRuntime.playerBackgroundMode = runCatching {
-                    MeloXPlayerBackgroundMode.valueOf(value)
-                }.getOrDefault(MeloXPlayerBackgroundMode.FlowingLight)
-                MeloXSettingsRuntime.flowingBackdropEnabled =
-                    MeloXSettingsRuntime.playerBackgroundMode.usesFlowingBackdrop
-            }
+            "player_background_mode" -> MeloXSettingsRuntime.playerBackgroundMode = runCatching {
+                MeloXPlayerBackgroundMode.valueOf(value)
+            }.getOrDefault(MeloXPlayerBackgroundMode.FlowingLight)
             "player_custom_background_path" -> MeloXSettingsRuntime.customBackgroundPath =
                 value.takeIf { it.isNotBlank() }
             "player_shell" -> MeloXSettingsRuntime.playerShell = runCatching {

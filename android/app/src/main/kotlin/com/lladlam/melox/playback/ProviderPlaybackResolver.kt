@@ -1,5 +1,6 @@
 package com.lladlam.melox.playback
 
+
 import android.net.Uri
 import android.util.Log
 import androidx.annotation.OptIn
@@ -24,6 +25,10 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.TimeUnit
+
+/** Hard bound for a single provider resolution attempt. */
+private const val PROVIDER_RESOLVE_TIMEOUT_MS = 20_000L
 
 /**
  * Adds provider-aware `melox://track/...` URIs while delegating every legacy
@@ -78,6 +83,18 @@ class ProviderPlaybackResolver(
     }
 
     private fun resolveDynamicRequest(dataSpec: DataSpec, source: SourceId, expected: PluginMusicProvider? = null): DataSpec {
+        val uri = dataSpec.uri
+        val value = uri.pathSegments.getOrNull(1)?.takeIf { it.isNotBlank() }
+            ?: throw IOException("Invalid plugin resource ID")
+        // A downloaded plugin track has to play from the local file, exactly
+        // like the built-in sources do. The local copy wins and the plugin is
+        // only asked when there is no local file (otherwise the download is
+        // useless and offline playback of a plugin track fails).
+        if (expected == null) {
+            localSourceProvider(MusicResourceId(source, value))?.let { local ->
+                return dataSpec.buildUpon().setUri(local).setKey(local.toString()).build()
+            }
+        }
         if (providers[source] == null) providers.awaitPluginRestore()
         val generation = providers.generation
         val provider = providers[source] as? PluginMusicProvider
@@ -85,9 +102,6 @@ class ProviderPlaybackResolver(
         if (expected != null && provider !== expected) throw IOException("Plugin account or package changed before retry")
         if (!provider.supports(com.lladlam.melox.core.music.provider.MusicCapability.Playback))
             throw IOException("Plugin does not support playback")
-        val uri = dataSpec.uri
-        val value = uri.pathSegments.getOrNull(1)?.takeIf { it.isNotBlank() }
-            ?: throw IOException("Invalid plugin resource ID")
         val restored = uri.getQueryParameter("standardTrack")?.let { raw ->
             runCatching {
                 com.lladlam.melox.core.plugin.PluginJson.check(raw)
@@ -98,7 +112,11 @@ class ProviderPlaybackResolver(
             uri.getQueryParameter(TrackArtistsQuery).orEmpty().split('\u001f').filter { it.isNotBlank() }
                 .map { com.lladlam.melox.core.music.model.MusicArtistRef(name = it) },
             durationMs = uri.getQueryParameter(TrackDurationQuery)?.toLongOrNull())
-        val resolution = runBlocking(Dispatchers.IO) { provider.resolvePlayback(track, currentQuality(uri)) }
+        val resolution = runBlocking(Dispatchers.IO) {
+            kotlinx.coroutines.withTimeout(PROVIDER_RESOLVE_TIMEOUT_MS) {
+                provider.resolvePlayback(track, currentQuality(uri))
+            }
+        }
         if (providers.generation != generation || providers[source] !== provider) throw IOException("Plugin changed during resolution")
         val (url, headers) = when (resolution) {
             is PlaybackResolution.Playable -> resolution.url to resolution.requestHeaders
@@ -140,8 +158,14 @@ class ProviderPlaybackResolver(
         cached(key)?.let { return it }
         val pending = CompletableFuture<ResolvedRequest>()
         val existing = inFlight.putIfAbsent(key, pending)
-        if (existing != null) return runCatching { existing.get() }
-            .getOrElse { throw IOException("Unable to resolve provider playback source", it.cause ?: it) }
+        if (existing != null) return runCatching {
+            // A provider that never completes must not block the resolver
+            // thread forever; the waiting caller gets a bounded failure.
+            existing.get(PROVIDER_RESOLVE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        }.getOrElse { error ->
+            inFlight.remove(key, existing)
+            throw IOException("Unable to resolve provider playback source", error.cause ?: error)
+        }
 
         return try {
             val id = MusicResourceId(source, resourceValue)
@@ -167,7 +191,9 @@ class ProviderPlaybackResolver(
             val playback = provider as? PlaybackCapability
                 ?: throw IOException("${provider.displayName} 当前没有实现播放能力")
             val resolution = runBlocking(Dispatchers.IO) {
-                playback.resolvePlayback(track, quality)
+                kotlinx.coroutines.withTimeout(PROVIDER_RESOLVE_TIMEOUT_MS) {
+                    playback.resolvePlayback(track, quality)
+                }
             }
 
             /**

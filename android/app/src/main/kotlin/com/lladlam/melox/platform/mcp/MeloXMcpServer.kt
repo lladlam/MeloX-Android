@@ -4,7 +4,6 @@ import android.content.Context
 import android.util.Log
 import com.lladlam.melox.BuildConfig
 import com.lladlam.melox.platform.cli.MeloCliCommands
-import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
@@ -12,8 +11,13 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
-import java.net.SocketTimeoutException
+import java.security.MessageDigest
 import java.security.SecureRandom
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import kotlinx.coroutines.runBlocking
@@ -26,6 +30,7 @@ private const val KEY_ENABLED = "enabled"
 private const val KEY_TOKEN = "token"
 private const val DEFAULT_PORT = 8765
 private const val MAX_BODY_BYTES = 1_048_576
+private const val MAX_CLIENT_WORKERS = 8
 
 /** Process-local lifecycle for the opt-in loopback MCP endpoint. */
 object MeloXMcpRuntime {
@@ -51,18 +56,27 @@ object MeloXMcpRuntime {
     @Synchronized
     fun setEnabled(context: Context, enabled: Boolean): String? {
         val app = context.applicationContext
-        preferences(app).edit().putBoolean(KEY_ENABLED, enabled).apply()
         if (!enabled) {
+            preferences(app).edit().putBoolean(KEY_ENABLED, false).apply()
             stop()
             return null
         }
-        return start(app)
+        val error = start(app)
+        // Keep the persisted flag in sync with reality: a failed start must not
+        // leave the settings switch claiming that the server is running.
+        preferences(app).edit().putBoolean(KEY_ENABLED, error == null).apply()
+        return error
     }
 
     @Synchronized
     fun startIfEnabled(context: Context) {
-        if (!isEnabled(context)) return
-        start(context.applicationContext)
+        val app = context.applicationContext
+        if (!isEnabled(app)) return
+        val error = start(app)
+        if (error != null) {
+            Log.w(TAG, "MCP server failed to start: $error")
+            preferences(app).edit().putBoolean(KEY_ENABLED, false).apply()
+        }
     }
 
     @Synchronized
@@ -73,6 +87,8 @@ object MeloXMcpRuntime {
 
     private fun start(context: Context): String? {
         if (server?.isRunning == true) return null
+        server?.stop()
+        server = null
         val token = token(context)
         val next = MeloXMcpServer(context, token)
         val error = next.start()
@@ -94,7 +110,9 @@ internal class MeloXMcpServer(
     private val token: String,
 ) {
     private val running = AtomicBoolean(false)
+    private val clients = ConcurrentHashMap.newKeySet<Socket>()
     private var socket: ServerSocket? = null
+    private var workers: ThreadPoolExecutor? = null
     var port: Int = DEFAULT_PORT
         private set
 
@@ -112,14 +130,34 @@ internal class MeloXMcpServer(
         socket = server
         port = server.localPort
         running.set(true)
+        // Bounded worker pool: a client must not be able to spawn an unbounded
+        // number of platform threads by opening connections.
+        val executor = ThreadPoolExecutor(
+            1,
+            MAX_CLIENT_WORKERS,
+            30L,
+            TimeUnit.SECONDS,
+            ArrayBlockingQueue(16),
+        ) { runnable ->
+            Thread(runnable, "melox-mcp-client").apply { isDaemon = true }
+        }
+        workers = executor
         thread(name = "melox-mcp-accept", isDaemon = true) {
             while (running.get()) {
                 val client = runCatching { server.accept() }.getOrNull() ?: break
-                thread(name = "melox-mcp-client", isDaemon = true) {
-                    runCatching { handle(client) }.onFailure {
-                        Log.w(TAG, "MCP request failed", it)
+                clients.add(client)
+                try {
+                    executor.execute {
+                        runCatching { handle(client) }.onFailure {
+                            Log.w(TAG, "MCP request failed", it)
+                        }
+                        clients.remove(client)
+                        runCatching { client.close() }
                     }
+                } catch (rejected: RejectedExecutionException) {
+                    clients.remove(client)
                     runCatching { client.close() }
+                    Log.w(TAG, "MCP connection rejected: too many concurrent clients")
                 }
             }
         }
@@ -130,12 +168,20 @@ internal class MeloXMcpServer(
         running.set(false)
         runCatching { socket?.close() }
         socket = null
+        workers?.shutdownNow()
+        workers = null
+        // Accepted clients keep their socket open for up to the read timeout.
+        // Close them so that disabling MCP really terminates live sessions.
+        clients.forEach { runCatching { it.close() } }
+        clients.clear()
     }
 
     private fun handle(client: Socket) {
+        if (!running.get()) return
         client.soTimeout = 10_000
         val input = BufferedInputStream(client.getInputStream())
         val header = readHeader(input) ?: return
+        if (!running.get()) return
         val lines = header.split("\r\n")
         val request = lines.firstOrNull().orEmpty().split(' ')
         if (request.size < 2) return
@@ -154,29 +200,33 @@ internal class MeloXMcpServer(
             if (index <= 0) null else line.substring(0, index).trim().lowercase() to
                 line.substring(index + 1).trim()
         }.toMap()
+        // The endpoint is loopback-only: only loopback browser origins may read
+        // responses. Any other Origin receives no CORS grant at all.
+        val origin = corsOrigin(headers["origin"])
         val length = headers["content-length"]?.toIntOrNull()?.coerceIn(0, MAX_BODY_BYTES) ?: 0
         val body = readBody(input, length)
 
         if (method == "OPTIONS") {
-            write(client, 204, "", "application/json")
+            write(client, 204, "", "application/json", origin)
             return
         }
         if (path == "/health") {
-            write(client, 200, JSONObject().put("ok", true).put("name", "melox-mcp").toString(), "application/json")
+            write(client, 200, JSONObject().put("ok", true).put("name", "melox-mcp").toString(), "application/json", origin)
             return
         }
         if (path != "/mcp") {
-            write(client, 404, JSONObject().put("error", "not found").toString(), "application/json")
+            write(client, 404, JSONObject().put("error", "not found").toString(), "application/json", origin)
             return
         }
         if (method != "POST") {
-            write(client, 405, JSONObject().put("error", "POST required").toString(), "application/json")
+            write(client, 405, JSONObject().put("error", "POST required").toString(), "application/json", origin)
             return
         }
         if (!authorized(headers, queryToken)) {
-            write(client, 401, JSONObject().put("error", "invalid MCP token").toString(), "application/json")
+            write(client, 401, JSONObject().put("error", "invalid MCP token").toString(), "application/json", origin)
             return
         }
+        if (!running.get()) return
         val reply = runCatching { handleJson(body) }
             .getOrElse { error ->
                 Log.w(TAG, "MCP JSON-RPC failure", error)
@@ -185,15 +235,42 @@ internal class MeloXMcpServer(
                     .toString()
             }
         if (reply == null) {
-            write(client, 202, "", "application/json")
+            write(client, 202, "", "application/json", origin)
         } else {
-            write(client, 200, reply, "application/json")
+            write(client, 200, reply, "application/json", origin)
         }
     }
 
     private fun authorized(headers: Map<String, String>, queryToken: String?): Boolean {
         val header = headers["authorization"].orEmpty()
-        return header == "Bearer $token" || queryToken == token
+        val headerOk = constantTimeEquals(header, "Bearer $token")
+        val queryOk = queryToken != null && constantTimeEquals(queryToken, token)
+        return headerOk || queryOk
+    }
+
+    /** Constant-time comparison so a rejected token leaks no timing signal. */
+    private fun constantTimeEquals(actual: String, expected: String): Boolean =
+        MessageDigest.isEqual(
+            actual.toByteArray(Charsets.UTF_8),
+            expected.toByteArray(Charsets.UTF_8),
+        )
+
+    /** Only loopback browser origins may read MCP responses. */
+    private fun corsOrigin(origin: String?): String? {
+        val value = origin?.trim().orEmpty()
+        if (value.isEmpty()) return null
+        return value.takeIf { isLoopbackOrigin(it) }
+    }
+
+    private fun isLoopbackOrigin(origin: String): Boolean {
+        val authority = origin.substringAfter("://", origin).substringBefore('/')
+        val host = when {
+            authority.startsWith("[") -> authority.substringBefore(']').removePrefix("[")
+            else -> authority.substringBefore(':')
+        }
+        return host.equals("127.0.0.1", ignoreCase = true) ||
+            host.equals("localhost", ignoreCase = true) ||
+            host == "::1"
     }
 
     private fun handleJson(raw: String): String? {
@@ -395,7 +472,7 @@ internal class MeloXMcpServer(
         return String(bytes, 0, read, Charsets.UTF_8)
     }
 
-    private fun write(client: Socket, status: Int, body: String, contentType: String) {
+    private fun write(client: Socket, status: Int, body: String, contentType: String, origin: String? = null) {
         val bytes = body.toByteArray(Charsets.UTF_8)
         val reason = when (status) {
             200 -> "OK"
@@ -411,7 +488,10 @@ internal class MeloXMcpServer(
             append("Content-Type: ").append(contentType).append("\r\n")
             append("Content-Length: ").append(bytes.size).append("\r\n")
             append("Connection: close\r\n")
-            append("Access-Control-Allow-Origin: *\r\n")
+            if (origin != null) {
+                append("Access-Control-Allow-Origin: ").append(origin).append("\r\n")
+                append("Vary: Origin\r\n")
+            }
             append("Access-Control-Allow-Headers: authorization, content-type\r\n")
             append("Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n")
             append("\r\n")

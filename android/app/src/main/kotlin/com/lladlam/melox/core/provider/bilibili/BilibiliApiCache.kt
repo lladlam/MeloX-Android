@@ -73,11 +73,15 @@ class BilibiliApiCache private constructor(context: Context) {
     private fun writeDisk(key: String, value: String, now: Long) = runCatching {
         directory.mkdirs()
         val target = fileFor(key)
-        val temp = File(directory, target.name + ".tmp")
-        temp.writeText(JSONObject().put("storedAtMs", now).put("payload", JSONObject(value)).toString())
-        if (!temp.renameTo(target)) {
-            target.delete()
-            temp.renameTo(target)
+        val temp = File.createTempFile("${target.name}.", ".tmp", directory)
+        try {
+            temp.writeText(JSONObject().put("storedAtMs", now).put("payload", JSONObject(value)).toString())
+            if (!temp.renameTo(target)) {
+                target.delete()
+                temp.renameTo(target)
+            }
+        } finally {
+            temp.delete()
         }
     }
 

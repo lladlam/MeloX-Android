@@ -16,6 +16,7 @@ import com.lladlam.melox.core.music.model.MusicSource
 import com.lladlam.melox.core.music.model.MusicTrack
 import com.lladlam.melox.core.music.model.PlaybackResolution
 import com.lladlam.melox.core.music.model.TrackAvailability
+import com.lladlam.melox.core.music.model.rank
 import com.lladlam.melox.core.music.provider.MusicCapability
 import com.lladlam.melox.core.music.provider.MusicProvider
 import com.lladlam.melox.core.music.provider.PlaybackCapability
@@ -79,11 +80,24 @@ class JellyfinProvider(
     override suspend fun resolvePlayback(track: MusicTrack, quality: AudioQualityTier): PlaybackResolution =
         withContext(Dispatchers.IO) {
             val session = requireSession()
+            // Ask the server to transcode down when the user selected a lower tier.
+            // Lossless and above are left uncapped because the Jellyfin library may
+            // contain hi-res masters that would otherwise be needlessly transcoded.
+            val bitrateCap = when (quality) {
+                AudioQualityTier.Standard -> 128_000
+                AudioQualityTier.High -> 320_000
+                else -> null
+            }
+            val url = buildString {
+                append("${session.baseUrl}/Audio/${track.id.value}/universal")
+                if (bitrateCap != null) append("?MaxStreamingBitrate=$bitrateCap")
+            }
+            val actual = listOfNotNull(track.bestQuality, quality).minBy { it.rank() }
             PlaybackResolution.Playable(
-                url = "${session.baseUrl}/Audio/${track.id.value}/universal",
+                url = url,
                 requestHeaders = mapOf("X-Emby-Token" to session.accessToken),
                 requestedQuality = quality,
-                actualQuality = quality,
+                actualQuality = actual,
                 format = "audio",
             )
         }
