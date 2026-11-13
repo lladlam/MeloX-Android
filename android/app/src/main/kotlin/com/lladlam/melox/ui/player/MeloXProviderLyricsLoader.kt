@@ -194,13 +194,19 @@ internal object MeloXProviderLyricsLoader {
             // for upgrades. Returning straight here would permanently suppress
             // AutoSync for the track, so a cache hit still gets its pass.
             if (onUpgrade != null) {
-                scheduleAutoSyncIfNeeded(
-                    appContext,
-                    cacheKey,
-                    "${resourceId.sourceId.value}:${resourceId.value}",
-                    hit,
-                    onUpgrade,
+                val snapshot = LyricTrackSnapshot(
+                    resourceId = resourceId,
+                    title = localRecord?.recognizedTitle ?: localRecord?.title ?: title,
+                    artist = localRecord?.recognizedArtist ?: localRecord?.artist ?: artist,
+                    album = localRecord?.recognizedAlbum ?: localRecord?.album ?: album,
+                    artworkUrl = localRecord?.recognizedArtworkUrl ?: localRecord?.artworkUri ?: artworkUrl,
+                    durationMs = durationMs,
+                    automaticSelection = auto,
+                    bilibiliAlignment = bilibiliAlignment,
+                    binding = binding,
+                    preference = preference,
                 )
+                scheduleCachedUpgrade(appContext, cacheKey, snapshot, hit, onUpgrade)
             }
             return scripted(hit)
         }
@@ -271,13 +277,7 @@ internal object MeloXProviderLyricsLoader {
     ): LyricsDocument {
         cached(cacheKey)?.let { hit ->
             if (onUpgrade != null) {
-                scheduleAutoSyncIfNeeded(
-                    appContext,
-                    cacheKey,
-                    "${snapshot.resourceId.sourceId.value}:${snapshot.resourceId.value}",
-                    hit,
-                    onUpgrade,
-                )
+                scheduleCachedUpgrade(appContext, cacheKey, snapshot, hit, onUpgrade)
             }
             return scripted(hit)
         }
@@ -370,6 +370,27 @@ internal object MeloXProviderLyricsLoader {
      * generation is started (after the AMLL chase, which always wins). A
      * document that already carries word timing is left untouched.
      */
+    /** Preloading only caches the fast document; the first real screen still chases AMLL. */
+    private fun scheduleCachedUpgrade(
+        appContext: Context,
+        cacheKey: String,
+        snapshot: LyricTrackSnapshot,
+        document: LyricsDocument,
+        onUpgrade: (LyricsDocument) -> Unit,
+    ) {
+        val trackKey = "${snapshot.resourceId.sourceId.value}:${snapshot.resourceId.value}"
+        val stored = runCatching { AutoSyncCoordinator.applyStored(appContext, document, trackKey) }.getOrNull()
+        if (stored != null) {
+            remember(cacheKey, stored)
+            workerScope.launch {
+                withContext(Dispatchers.Main.immediate) { onUpgrade(scripted(stored)) }
+            }
+            return
+        }
+        val amllJob = scheduleWordTimingUpgrade(appContext, cacheKey, snapshot, document, onUpgrade)
+        scheduleAutoSyncUpgrade(appContext, cacheKey, trackKey, document, amllJob, onUpgrade)
+    }
+
     private fun scheduleAutoSyncIfNeeded(
         appContext: Context,
         cacheKey: String,
