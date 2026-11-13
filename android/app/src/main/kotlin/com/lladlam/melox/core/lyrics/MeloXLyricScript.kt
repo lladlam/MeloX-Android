@@ -65,39 +65,50 @@ data class MeloXLyricPreference(
 
 object MeloXLyricScriptConverter {
     private val toSimplified by lazy {
-        runCatching { Transliterator.getInstance("Traditional-Simplified") }.getOrNull()
+        if (Build.VERSION.SDK_INT >= 29) {
+            runCatching { Transliterator.getInstance("Traditional-Simplified") }.getOrNull()
+        } else {
+            null
+        }
     }
     private val toTraditional by lazy {
-        runCatching { Transliterator.getInstance("Simplified-Traditional") }.getOrNull()
+        if (Build.VERSION.SDK_INT >= 29) {
+            runCatching { Transliterator.getInstance("Simplified-Traditional") }.getOrNull()
+        } else {
+            null
+        }
     }
 
     fun convertText(value: String, script: MeloXLyricScript): String {
         if (script == MeloXLyricScript.Original || Build.VERSION.SDK_INT < 29) return value
-        val converter = (if (script == MeloXLyricScript.Simplified) toSimplified else toTraditional)
-            ?: return value
-        return converter.transliterate(value)
+        return transliterate(value, script)
     }
 
     fun convert(document: LyricsDocument, script: MeloXLyricScript): LyricsDocument {
         if (script == MeloXLyricScript.Original || Build.VERSION.SDK_INT < 29) return document
-        val converter = (if (script == MeloXLyricScript.Simplified) toSimplified else toTraditional)
-            ?: return document
-        return document.copy(lines = document.lines.map { it.convert(converter, document.source) })
+        return document.copy(lines = document.lines.map { it.convert(script, document.source) })
     }
 
-    private fun LyricLine.convert(converter: Transliterator, source: LyricSource): LyricLine = copy(
-        text = converter.transliterate(text),
+    @androidx.annotation.RequiresApi(29)
+    private fun transliterate(value: String, script: MeloXLyricScript): String {
+        val converter = if (script == MeloXLyricScript.Simplified) toSimplified else toTraditional
+        return converter?.transliterate(value) ?: value
+    }
+
+    @androidx.annotation.RequiresApi(29)
+    private fun LyricLine.convert(script: MeloXLyricScript, source: LyricSource): LyricLine = copy(
+        text = transliterate(text, script),
         translation = translation
             ?.takeIf { source != LyricSource.AmlL || adaptTranslation }
-            ?.let(converter::transliterate)
+            ?.let { transliterate(it, script) }
             ?: translation,
         adaptTranslation = false,
-        syllables = syllables.map { it.copy(text = converter.transliterate(it.text)) },
+        syllables = syllables.map { it.copy(text = transliterate(it.text, script)) },
         accompaniment = accompaniment.map { vocal ->
             vocal.copy(
-                text = converter.transliterate(vocal.text),
-                translation = vocal.translation?.let(converter::transliterate),
-                syllables = vocal.syllables.map { it.copy(text = converter.transliterate(it.text)) },
+                text = transliterate(vocal.text, script),
+                translation = vocal.translation?.let { transliterate(it, script) },
+                syllables = vocal.syllables.map { it.copy(text = transliterate(it.text, script)) },
             )
         },
     )
