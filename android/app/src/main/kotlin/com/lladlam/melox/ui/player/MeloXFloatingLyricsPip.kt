@@ -53,8 +53,16 @@ internal object MeloXFloatingLyricsPip {
         handler = requestHandler
     }
 
+    /** An old Activity must not clear a replacement Activity's handler. */
+    fun uninstall(requestHandler: (MeloXPlaybackService) -> Boolean) {
+        synchronized(this) {
+            if (handler === requestHandler) handler = null
+        }
+    }
+
     fun request(service: MeloXPlaybackService): Boolean = handler?.invoke(service) ?: false
 
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.O)
     fun params(context: Context, isPlaying: Boolean): PictureInPictureParams {
         fun action(requestCode: Int, serviceAction: String, iconRes: Int, title: String): RemoteAction {
             val intent = Intent(context, MeloXPlaybackService::class.java).setAction(serviceAction)
@@ -97,13 +105,19 @@ internal fun MeloXFloatingLyricsPipScreen(
     DisposableEffect(Unit) {
         val token = SessionToken(appContext, ComponentName(appContext, MeloXPlaybackService::class.java))
         val future = MediaController.Builder(appContext, token).buildAsync()
+        var disposed = false
         future.addListener(
             {
-                runCatching { future.get() }.onSuccess { state.bind(it) }
+                runCatching { future.get() }.onSuccess { controller ->
+                    if (disposed) controller.release() else state.bind(controller)
+                }
             },
             MoreExecutors.directExecutor(),
         )
-        onDispose { runCatching { future.get().release() } }
+        onDispose {
+            disposed = true
+            MediaController.releaseFuture(future)
+        }
     }
 
     val lyrics = rememberAlternativeLyrics(state, active = true)

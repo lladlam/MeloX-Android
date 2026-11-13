@@ -4,6 +4,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.ViewTreeObserver
@@ -58,9 +59,12 @@ class MainActivity : ComponentActivity(), MeloXDetailPageOwner {
     private var clipboardScanJob: Job? = null
     private var handledRemoteConfigForegroundSession = -1L
     private val pipModeState = mutableStateOf(false)
+    private val floatingLyricsPipHandler: (com.lladlam.melox.playback.MeloXPlaybackService) -> Boolean =
+        { service -> requestFloatingLyricsPip(service) }
 
     /** Installs the service → PiP bridge used by the notification's floating-lyrics action. */
     private fun requestFloatingLyricsPip(service: com.lladlam.melox.playback.MeloXPlaybackService): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
         if (isInPictureInPictureMode) {
             moveTaskToBack(true)
             return true
@@ -74,7 +78,9 @@ class MainActivity : ComponentActivity(), MeloXDetailPageOwner {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (MeloXSettingsRuntime.floatingLyricsEnabled && !isInPictureInPictureMode) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            MeloXSettingsRuntime.floatingLyricsEnabled && !isInPictureInPictureMode
+        ) {
             runCatching {
                 enterPictureInPictureMode(
                     MeloXFloatingLyricsPip.params(this, false),
@@ -100,7 +106,7 @@ class MainActivity : ComponentActivity(), MeloXDetailPageOwner {
         consumePlaybackIntent(intent)
         MeloXSettingsPreferences.initializeCritical(this)
         completeAfterFirstDraw()
-        MeloXFloatingLyricsPip.install { service -> requestFloatingLyricsPip(service) }
+        MeloXFloatingLyricsPip.install(floatingLyricsPipHandler)
 
         setContent {
             MeloXTheme {
@@ -277,6 +283,11 @@ class MainActivity : ComponentActivity(), MeloXDetailPageOwner {
 
     override fun onPause() {
         super.onPause()
+    }
+
+    override fun onDestroy() {
+        MeloXFloatingLyricsPip.uninstall(floatingLyricsPipHandler)
+        super.onDestroy()
     }
 
     private fun completeAfterFirstDraw() {
