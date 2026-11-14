@@ -1694,18 +1694,6 @@ private fun MeloXAppleMusicLyricsPanel(
                         //   再乘相对比值会 clamp 到 1 ⇒ 整行全白，"逐字亮到哪"就看不出来了。
                         val timedUnplayedAlpha = timedUnplayedRaw +
                             (followingLineAlpha - timedUnplayedRaw) * scrubFlat
-                        // A backing vocal has its own visibility window. When the
-                        // host line's own clock is idle but an accompaniment track
-                        // is sounding, the row must stay bright and keep running
-                        // its accompaniment timeline instead of being dimmed by
-                        // the lead-vocal row alpha.
-                        val accompanimentActive = line.accompaniment.any { vocal ->
-                            val end = vocal.durationMs?.let { vocal.timeMs + it }
-                                ?: vocal.syllables.maxOfOrNull { it.endTimeMs }
-                                ?: vocal.timeMs
-                            val now = renderedPositionState.longValue
-                            now in (vocal.timeMs - 600L)..(end + 600L)
-                        }
                         val scaleRaw = 1f + (MeloXSettingsRuntime.lyricFocusScale - 1f) *
                             max(scaleProgress[index].value, fp)
                         // 拖动预览时取消聚焦放大 ⇒ 所有行同尺寸（用户在意的「大小层级」）。
@@ -1736,27 +1724,17 @@ private fun MeloXAppleMusicLyricsPanel(
                             // needs the playback clock. Subscribing every visible
                             // syllable row made the complete LazyColumn redraw at
                             // the lyric refresh rate on low-end devices.
-                            //
-                            // An accompaniment track keeps its own clock too: when
-                            // only the backing vocal is sounding, the host line is
-                            // not the active one and would otherwise suppress the
-                            // accompaniment's timing effects entirely.
-                            supportsTimedLyrics = (
-                                line.syllables.isNotEmpty() &&
-                                    MeloXSettingsRuntime.lyricWordByWordEnabled &&
-                                    (effectiveFocus > 0.001f || isActiveLine)
-                                ) || accompanimentActive,
+                            supportsTimedLyrics = line.syllables.isNotEmpty() &&
+                                MeloXSettingsRuntime.lyricWordByWordEnabled &&
+                                (effectiveFocus > 0.001f || isActiveLine),
                             fontScale = lyricFontScale,
                             reduceMotion = MeloXSettingsRuntime.lyricReduceMotion,
                             focusProgress = effectiveFocus,
-                            timingEffectsStrength = if (isActiveLine || accompanimentActive) 1f else effectiveFocus,
+                            timingEffectsStrength = if (isActiveLine) 1f else effectiveFocus,
                             timedUnplayedAlpha = timedUnplayedAlpha,
                             visualScale = quantizedScale,
                             visualOffsetPx = visualOffset,
-                            // Backing vocals must not inherit the host line's dimming:
-                            // their own visibility window is handled inside
-                            // MeloXTimedAccompaniment.
-                            rowAlpha = if (accompanimentActive && !isActiveLine) 1f else quantizedRowAlpha,
+                            rowAlpha = quantizedRowAlpha,
                             // ★ 2026-11-03（第 31 轮）：传**平滑后**的半径。`distanceBlur` 与
                             //   `focusBlur` 已经在 `smoothBlurDp` 里取过 `max`，而下游只做
                             //   `max(distanceBlurDp, focusBlurDp, edgeBlurDp)`，所以这里
