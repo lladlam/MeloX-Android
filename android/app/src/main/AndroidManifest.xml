@@ -207,12 +207,10 @@
                 android:value="Live rendering of lyrics for Xiaomi Super Island" />
         </service>
 
-        <!-- Shizuku starts this binder in its own process. It is not an app Service,
-             so the empty-constructor and Service-subclass checks do not apply. -->
-        <service
-            android:name=".platform.xiaomi.ShizukuKeepAliveService"
-            android:exported="true"
-            tools:ignore="Instantiatable" />
+        <!-- ShizukuKeepAliveService is a Shizuku user-service Binder, not an
+             Android Service. It is bound through Shizuku.bindUserService and must
+             not be declared here: a <service> entry would expose an instantiating
+             component for a class that is not a Service. -->
         <meta-data android:name="lyricon_module" android:value="true" />
         <meta-data android:name="lyricon_module_author" android:value="lladlam" />
         <meta-data
