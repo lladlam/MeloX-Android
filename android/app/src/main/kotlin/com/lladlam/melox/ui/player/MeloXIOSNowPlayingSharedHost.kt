@@ -1248,6 +1248,7 @@ fun MeloXIOSNowPlayingSharedHost(
                             // shellExpandedEnough made the first frames compete with
                             // the open animation.
                             isPlaying = state.isPlaying,
+                            mixProgress = { state.transitionProgress },
                             mixOutgoingArtworkUrl = state.outgoingArtworkUrl
                                 .takeIf { state.isInTransition && !state.transitionHandedOff },
                             mixIncomingArtworkUrl = state.incomingArtworkUrl

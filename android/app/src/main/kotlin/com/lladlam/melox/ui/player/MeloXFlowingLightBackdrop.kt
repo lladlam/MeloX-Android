@@ -5,9 +5,6 @@ import android.os.Build
 import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -304,23 +301,28 @@ internal fun MeloXFlowingLightBackdrop(
     modifier: Modifier = Modifier,
     mixOutgoingArtworkUrl: String? = null,
     mixIncomingArtworkUrl: String? = null,
+    /**
+     * AutoMix cross-fade progress (0 → 1), read lazily because it updates every
+     * frame. Its duration comes from the analysed beat grid, so the boost follows
+     * the real transition instead of a fixed timer.
+     */
+    mixProgress: () -> Float = { 0f },
 ) {
     val context = LocalContext.current
     val appInForeground = MeloXAppVisibility.isForeground
     var targetPalette by remember { mutableStateOf(ArtworkDynamicPalette.Fallback) }
     // AutoMix transition: both covers are on screen, so the background can be
-    // pushed to its most saturated / fastest state. The ramp is deliberately
-    // asymmetric (slower on the way down) so the boost fades out gracefully
-    // instead of snapping back when the handoff completes.
+    // pushed to its most saturated / fastest state. The weight follows the real
+    // cross-fade progress (whose duration is derived from the beat analysis), so
+    // it peaks at the middle of the mix and returns to zero as it completes —
+    // no fixed 1.4s/2s timers that would drift from the actual transition.
     val mixingCovers = mixIncomingArtworkUrl != null
-    val mixBoostState = animateFloatAsState(
-        targetValue = if (mixingCovers && MeloXSettingsRuntime.flowingLightMixBoostEnabled) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = if (mixingCovers) 1_400 else 2_000,
-            easing = FastOutSlowInEasing,
-        ),
-        label = "flowingLightMixBoost",
-    )
+    fun mixBoostAt(progress: Float): Float =
+        if (mixingCovers && MeloXSettingsRuntime.flowingLightMixBoostEnabled) {
+            sin(Math.PI * progress.coerceIn(0f, 1f).toDouble()).toFloat().coerceIn(0f, 1f)
+        } else {
+            0f
+        }
     // Base values stay the cache/retention key; only the rendered values ramp.
     val baseSaturation = MeloXSettingsRuntime.flowingLightSaturation.coerceIn(0f, 2f)
     val baseSpeed = MeloXSettingsRuntime.flowingLightSpeed.coerceIn(.25f, 2f)
@@ -558,7 +560,7 @@ internal fun MeloXFlowingLightBackdrop(
             }
             // 用户可调的速度倍率（设置 → 播放器外观 → 流动速度）；
             // 自动混音时按 mixBoost 平滑推到 2.00x，混音结束后再缓回。
-            val speed = speedFor(mixBoostState.value)
+            val speed = speedFor(mixBoostAt(mixProgress()))
             phase[0] = (phase[0] + motion * speed * elapsedMs / (1_000f / 60f)) % FlowPhasePeriod
             if (animatePalette) {
                 val paletteBlend = (elapsedMs / 280f).coerceIn(.08f, .45f)
@@ -573,7 +575,7 @@ internal fun MeloXFlowingLightBackdrop(
             }
             energy.value += (sample.energy - energy.value) * .18f
             beatPulse.value += (sample.beat - beatPulse.value) * .32f
-            val saturation = saturationFor(mixBoostState.value)
+            val saturation = saturationFor(mixBoostAt(mixProgress()))
             val brightness = MeloXSettingsRuntime.flowingLightBrightness.coerceIn(.4f, 1.6f)
             if (gpuShader == null) {
                 val bitmap = meshBitmaps[writeIndex]
@@ -671,7 +673,7 @@ internal fun MeloXFlowingLightBackdrop(
                 phase = phase[0],
                 energy = energy.value,
                 beatPulse = beatPulse.value,
-                saturation = saturationFor(mixBoostState.value),
+                saturation = saturationFor(mixBoostAt(mixProgress())),
                 brightness = MeloXSettingsRuntime.flowingLightBrightness.coerceIn(.4f, 1.6f),
                 meshWidth = meshWidth,
                 meshHeight = meshHeight,
