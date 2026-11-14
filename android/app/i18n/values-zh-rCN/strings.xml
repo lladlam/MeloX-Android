@@ -1367,6 +1367,7 @@
     <string name="settings_flowing_speed">流动速度</string>
     <string name="settings_flowing_saturation">色彩强度</string>
     <string name="settings_flowing_brightness">明暗</string>
+    <string name="settings_flowing_mix_boost">自动混音时增强</string>
     <string name="settings_background_isolation">播放器背景隔离</string>
     <string name="settings_background_isolation_note">开启后播放器独立覆盖首页；关闭后恢复原始透明背景，可能透出下层页面。</string>
     <string name="settings_background_fps">动态背景帧率</string>

@@ -2015,6 +2015,14 @@ private fun PlayerAppearanceSettings(context: android.content.Context) {
                 .4f..1.6f,
                 11,
             ) { "${(it * 100).toInt()}%" }
+            // 自动混音时把饱和度与速度平滑推到 2.00x，混音结束再缓回。
+            SettingsToggleRow(
+                context,
+                stringResource(R.string.settings_flowing_mix_boost),
+                "player_flowing_mix_boost",
+                false,
+                grouped = true,
+            )
         }
         SettingsToggleRow(context, stringResource(R.string.settings_background_isolation), "player_background_isolation", true, stringResource(R.string.settings_background_isolation_note), grouped = true)
         LyricsChoiceSetting(context, stringResource(R.string.settings_background_fps), "lyrics_background_frame_rate", 24, listOf(15, 24, 30, 45, 60), grouped = true) { value ->

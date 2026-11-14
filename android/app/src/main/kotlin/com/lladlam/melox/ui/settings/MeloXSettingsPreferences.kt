@@ -156,6 +156,13 @@ object MeloXSettingsRuntime {
         internal set
     var flowingLightBrightness by mutableStateOf(1f)
         internal set
+    /**
+     * AutoMix boost: while two covers are being cross-faded, ramp the flowing
+     * background's saturation and speed up to their maximum (2.00x), then ease
+     * them back down once the mix hands off.
+     */
+    var flowingLightMixBoostEnabled by mutableStateOf(false)
+        internal set
     var playerBackgroundMode by mutableStateOf(MeloXPlayerBackgroundMode.FlowingLight)
         internal set
     /** Absolute path of the imported image used by [MeloXPlayerBackgroundMode.CustomImage]. */
@@ -534,6 +541,7 @@ object MeloXSettingsRuntime {
         flowingLightSpeed = MeloXSettingsPreferences.float(app, "player_flowing_speed", 1f).coerceIn(.25f, 2f)
         flowingLightSaturation = MeloXSettingsPreferences.float(app, "player_flowing_saturation", 1f).coerceIn(0f, 2f)
         flowingLightBrightness = MeloXSettingsPreferences.float(app, "player_flowing_brightness", 1f).coerceIn(.4f, 1.6f)
+        flowingLightMixBoostEnabled = MeloXSettingsPreferences.boolean(app, "player_flowing_mix_boost", false)
         customBackgroundPath = MeloXSettingsPreferences.string(app, "player_custom_background_path", "")
             .takeIf { it.isNotBlank() && java.io.File(it).isFile }
         // Interrupted imports can leave orphan files behind; neither of them is
@@ -896,6 +904,7 @@ object MeloXSettingsPreferences {
             "placement_cloud_tab" -> MeloXSettingsRuntime.cloudTabPlacement = value
             "placement_cloud_library" -> MeloXSettingsRuntime.cloudLibraryPlacement = value
             "player_artwork_motion" -> MeloXSettingsRuntime.artworkMotionEnabled = value
+            "player_flowing_mix_boost" -> MeloXSettingsRuntime.flowingLightMixBoostEnabled = value
             "reduce_motion" -> MeloXSettingsRuntime.reduceMotion = value
             "player_background_isolation" -> MeloXSettingsRuntime.playerBackgroundIsolationEnabled = value
             "player_frosted_glass" -> MeloXSettingsRuntime.frostedGlassEnabled = value
