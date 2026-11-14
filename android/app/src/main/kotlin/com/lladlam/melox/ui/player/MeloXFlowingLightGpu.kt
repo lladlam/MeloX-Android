@@ -6,7 +6,6 @@ import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ShaderBrush
-import androidx.compose.ui.graphics.toArgb
 
 /**
  * AGSL shader that reproduces `fillFlowingMeshPixels` entirely on the GPU.
@@ -25,6 +24,7 @@ internal object MeloXFlowingLightGpu {
     private const val TAG = "MeloXFlowLightGpu"
 
     fun createShader(): RuntimeShader? = runCatching { RuntimeShader(AGSL) }
+        .onSuccess { Log.i(TAG, "AGSL flowing-light shader ready") }
         .onFailure { Log.w(TAG, "AGSL flowing-light shader rejected; using CPU mesh", it) }
         .getOrNull()
 
@@ -54,9 +54,9 @@ internal object MeloXFlowingLightGpu {
         // the shader never needs a dynamic loop bound.
         for (index in 0 until 9) {
             val color = colors.getOrNull(index) ?: average
-            shader.setIntUniform("uColor$index", color.toArgb())
+            shader.setFloatUniform("uColor$index", color.red, color.green, color.blue)
         }
-        shader.setIntUniform("uAverage", average.toArgb())
+        shader.setFloatUniform("uAverage", average.red, average.green, average.blue)
     }
 
     fun brush(shader: RuntimeShader): ShaderBrush = object : ShaderBrush() {
@@ -71,24 +71,16 @@ uniform float uEnergy;
 uniform float uBeatPulse;
 uniform float uSaturation;
 uniform float uBrightness;
-uniform int uColor0;
-uniform int uColor1;
-uniform int uColor2;
-uniform int uColor3;
-uniform int uColor4;
-uniform int uColor5;
-uniform int uColor6;
-uniform int uColor7;
-uniform int uColor8;
-uniform int uAverage;
-
-vec3 unpackColor(int packed) {
-    return vec3(
-        float((packed >> 16) & 0xFF) / 255.0,
-        float((packed >> 8) & 0xFF) / 255.0,
-        float(packed & 0xFF) / 255.0
-    );
-}
+uniform vec3 uColor0;
+uniform vec3 uColor1;
+uniform vec3 uColor2;
+uniform vec3 uColor3;
+uniform vec3 uColor4;
+uniform vec3 uColor5;
+uniform vec3 uColor6;
+uniform vec3 uColor7;
+uniform vec3 uColor8;
+uniform vec3 uAverage;
 
 // Quarter-turn frequency multiples keep the 8pi phase wrap seamless.
 vec2 roamCenter(int index, float t) {
@@ -103,7 +95,7 @@ vec2 roamCenter(int index, float t) {
     return vec2(0.5 + 0.3 * sin(t * 0.75 + 13.6), 0.5 + 0.3 * cos(t * 0.75 + 7.2));
 }
 
-int colorAt(int index) {
+vec3 colorAt(int index) {
     if (index == 0) return uColor0;
     if (index == 1) return uColor1;
     if (index == 2) return uColor2;
@@ -128,20 +120,20 @@ vec3 flowingLight(vec2 fragCoord) {
     float warpY = cos(uv.x * 2.9 - t) * sin(uv.y * 2.6 + t * 0.5)
         + 0.5 * cos((uv.x - uv.y) * 5.4 + t);
 
-    vec2 sampleUv = uv + warp * vec2(warpX, warpY);
-    sampleUv.x += warp * 0.28 * sin(sampleUv.y * 6.7 - t * 1.5);
-    sampleUv.y += warp * 0.28 * cos(sampleUv.x * 7.1 + t * 1.5);
+    vec2 warpedUv = uv + warp * vec2(warpX, warpY);
+    warpedUv.x += warp * 0.28 * sin(warpedUv.y * 6.7 - t * 1.5);
+    warpedUv.y += warp * 0.28 * cos(warpedUv.x * 7.1 + t * 1.5);
 
     float totalWeight = 0.16;
-    vec3 sum = unpackColor(uAverage) * totalWeight;
+    vec3 sum = uAverage * totalWeight;
 
     for (int i = 0; i < 9; i++) {
-        vec2 delta = (sampleUv - roamCenter(i, t)) * uAspect;
+        vec2 delta = (warpedUv - roamCenter(i, t)) * uAspect;
         float dist2 = dot(delta, delta) / (radius * radius);
         float falloff = 1.0 / (1.0 + dist2 * 4.5);
         float weight = falloff * falloff;
         totalWeight += weight;
-        sum += unpackColor(colorAt(i)) * weight;
+        sum += colorAt(i) * weight;
     }
 
     vec3 rgb = sum / totalWeight;

@@ -4,10 +4,16 @@ import android.content.ContentResolver
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.net.Uri
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
+import coil3.SingletonImageLoader
+import coil3.request.ErrorResult
+import coil3.request.ImageRequest
+import coil3.request.SuccessResult
+import coil3.size.Precision
 import java.net.URI
 import java.util.LinkedHashMap
 import kotlinx.coroutines.Dispatchers
@@ -91,18 +97,11 @@ internal object ArtworkDynamicPaletteProvider {
         return withContext(Dispatchers.IO) {
             cached(source)?.let { return@withContext it }
             val palette = runCatching {
-                val decoded = decodeArtwork(context, source)
-                val scaled = if (decoded.width == TARGET_SIZE && decoded.height == TARGET_SIZE) {
-                    decoded
-                } else {
-                    Bitmap.createScaledBitmap(decoded, TARGET_SIZE, TARGET_SIZE, true)
-                }
-                try {
-                    makePalette(scaled)
-                } finally {
-                    if (scaled !== decoded) scaled.recycle()
-                    decoded.recycle()
-                }
+                // Reuse whatever Coil already fetched for the now-playing artwork.
+                // A private OkHttp decode here bypassed both the memory and disk
+                // caches, so every player open re-downloaded and re-decoded the
+                // cover just to read nine colours.
+                makePalette(paletteSource(context, source))
             }.getOrNull()
 
             // Do not cache transient HTTP/decoder failures. A cold start or a
@@ -114,6 +113,37 @@ internal object ArtworkDynamicPaletteProvider {
     }
 
     private fun cached(source: String): ArtworkDynamicPalette? = synchronized(cache) { cache[source] }
+
+    /**
+     * Returns a software bitmap for [source] using Coil's existing memory/disk
+     * cache. Coil owns its bitmaps, so callers must never recycle the result;
+     * only hardware bitmaps are copied into a readable ARGB buffer.
+     */
+    private suspend fun paletteSource(context: Context, source: String): Bitmap {
+        val app = context.applicationContext
+        val request = ImageRequest.Builder(app)
+            .data(source)
+            .size(TARGET_SIZE, TARGET_SIZE)
+            .precision(Precision.INEXACT)
+            .build()
+        val image = when (val result = SingletonImageLoader.get(app).execute(request)) {
+            is SuccessResult -> result.image
+            is ErrorResult -> error(result.throwable.message ?: "Artwork load failed")
+            else -> error("Artwork load failed")
+        }
+        val cached = (image as? coil3.BitmapImage)?.bitmap
+        if (cached != null) {
+            return if (cached.config == Bitmap.Config.HARDWARE) {
+                cached.copy(Bitmap.Config.ARGB_8888, false)
+                    ?: error("Unable to read hardware artwork")
+            } else {
+                cached
+            }
+        }
+        val target = Bitmap.createBitmap(TARGET_SIZE, TARGET_SIZE, Bitmap.Config.ARGB_8888)
+        image.draw(Canvas(target))
+        return target
+    }
 
     fun clearMemoryCache() = synchronized(cache) { cache.clear() }
 
