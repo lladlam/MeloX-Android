@@ -787,6 +787,12 @@ internal object MeloXProviderLyricsLoader {
      * language and carries no translation, borrow the translation track from an
      * already-finished candidate whose timeline matches.
      *
+     * Word-level timing always wins: candidates that carry per-syllable timing
+     * are preferred as the merge source, and the merge itself only copies
+     * `translation` strings — it never replaces the selected document's lines,
+     * timings or syllables. A line-timed alternative can therefore never
+     * downgrade a word-timed main lyric.
+     *
      * Only completed jobs are consulted, so this never adds a request or delays
      * the first paint for a translation that may not exist.
      */
@@ -804,11 +810,20 @@ internal object MeloXProviderLyricsLoader {
         )
         if (decision != LyricTranslationDecision.NeedTranslation) return selected
 
+        // Word-timed candidates first, then source priority.
+        val ordered = jobs.entries
+            .filter { (_, job) -> job.isCompleted }
+            .mapNotNull { entry ->
+                val document = runCatching { entry.value.await().document }.getOrNull()
+                    ?: return@mapNotNull null
+                if (document.lines.isEmpty()) return@mapNotNull null
+                Triple(entry.key, document, hasWordTiming(document))
+            }
+            .filterNot { it.first == skipped }
+            .sortedWith(compareByDescending<Triple<LyricAutoSource, LyricsDocument, Boolean>> { it.third })
+
         var merged: LyricsDocument? = null
-        jobs.forEach { (source, job) ->
-            if (source == skipped || !job.isCompleted) return@forEach
-            val document = runCatching { job.await().document }.getOrNull() ?: return@forEach
-            if (document.lines.isEmpty()) return@forEach
+        ordered.forEach { (_, document, _) ->
             val translations = document.lines.mapNotNull { it.translation?.takeIf(String::isNotBlank) }
             if (translations.isEmpty()) return@forEach
             if (!LyricTranslationPolicy.translationMatches(translations, preference)) return@forEach
