@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.lladlam.melox.R
+import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.music.model.MusicArtistRef
 import com.lladlam.melox.core.music.model.MusicPlaylistSummary
 import com.lladlam.melox.core.music.model.MusicResourceId
@@ -281,6 +282,21 @@ internal fun MeloXProviderSongActionsOverlay(
                                         val targetFavorite = favoriteKnownState != true
                                         if (unifiedFavoritesEnabled) {
                                             favoriteKnownState = MeloXUnifiedFavorites.toggle(context, actionTrack)
+                                            favoriteWorking = true
+                                            actionError = null
+                                            // Mirror into the owning provider as well. NetEase's
+                                            // library refresh reads /api/song/like/get, so a
+                                            // local-only write disappeared on the next refresh.
+                                            scope.launch {
+                                                runCatching {
+                                                    if (identity.sourceId.builtIn == MusicSource.Netease) {
+                                                        com.lladlam.melox.core.network.NeteaseMusicOperationsClient(
+                                                            cookieProvider = { NeteaseSessionStore.readCookie(context) },
+                                                        ).setSongLiked(identity.value.toLong(), targetFavorite)
+                                                    }
+                                                }
+                                                favoriteWorking = false
+                                            }
                                             actionStatus = if (favoriteKnownState == true) {
                                                 context.getString(R.string.player_added_favorite, "弥乐「我喜欢」")
                                             } else {

@@ -345,11 +345,18 @@ fun MeloXSongActionsOverlay(
                                         scope.launch { loadOwnedPlaylists() }
                                     },
                                     MeloXMoreAction(if (liked == true) stringResource(R.string.player_unlike) else stringResource(R.string.player_like), MeloXSymbol.Heart) {
+                                        val desired = liked != true
                                         if (unifiedFavoritesEnabled) {
+                                            // Keep the local unified playlist and NetEase in step.
+                                            // Writing only locally made the next library refresh
+                                            // (which trusts /api/song/like/get) silently drop the song.
                                             liked = MeloXUnifiedFavorites.toggle(app, MeloXUnifiedFavorites.fromNetease(song))
+                                            scope.launch {
+                                                runCatching { ops.setSongLiked(song.id, desired) }
+                                                    .onFailure { message = it.message }
+                                            }
                                             return@MeloXMoreAction
                                         }
-                                        val desired = liked != true
                                         busy = true
                                         scope.launch {
                                             runCatching { ops.setSongLiked(song.id, desired) }

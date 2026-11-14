@@ -214,13 +214,19 @@ internal fun MeloXSongDetailScreen(song: SearchSong, onBack: () -> Unit) {
                     onClick = {
                         if (busy) return@MeloXGlassButton
                         busy = true
+                        val target = liked != true
                         if (unifiedFavoritesEnabled) {
+                            // The unified playlist is a local mirror; NetEase still owns the
+                            // source of truth used by the next library refresh.
                             liked = MeloXUnifiedFavorites.toggle(app, MeloXUnifiedFavorites.fromNetease(song))
-                            busy = false
+                            scope.launch {
+                                runCatching { operations.setSongLiked(song.id, target) }
+                                    .onFailure { error = it.message ?: "收藏失败" }
+                                busy = false
+                            }
                             return@MeloXGlassButton
                         }
                         scope.launch {
-                            val target = liked != true
                             val generation = favoriteGeneration + 1
                             favoriteGeneration = generation
                             runCatching { operations.setSongLiked(song.id, target) }

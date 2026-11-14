@@ -2148,7 +2148,22 @@ private fun rememberTrackFavorite(state: MeloXPlaybackUiState): MeloXTrackFavori
     val toggle = remember(mediaId, track, unifiedFavoritesEnabled, scope) {
         {
             if (unifiedFavoritesEnabled) {
+                // Local unified playlist + the owning provider must both change;
+                // writing only locally let the next library refresh restore the
+                // server value and visually drop the favorite.
+                val desired = likedState.value != true
                 track?.let { likedState.value = MeloXUnifiedFavorites.toggle(app, it) }
+                val neteaseId = identity?.takeIf { it.sourceId.builtIn == MusicSource.Netease }
+                    ?.value?.toLongOrNull()
+                if (neteaseId != null) {
+                    scope.launch {
+                        runCatching {
+                            com.lladlam.melox.core.network.NeteaseMusicOperationsClient(
+                                cookieProvider = { NeteaseSessionStore.readCookie(app) },
+                            ).setSongLiked(neteaseId, desired)
+                        }
+                    }
+                }
                 return@remember
             }
             val id = identity?.takeIf { it.sourceId.builtIn == MusicSource.Netease }
