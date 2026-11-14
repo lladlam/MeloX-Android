@@ -1243,7 +1243,11 @@ fun MeloXIOSNowPlayingSharedHost(
                         MeloXFlowingLightBackdrop(
                             mediaId = state.mediaId,
                             artworkUrl = state.artworkUrl,
-                            isPlaying = shellExpandedEnough,
+                            // Keep rendering while the shell is still expanding. The
+                            // retained frame makes reopen instant; waiting for
+                            // shellExpandedEnough made the first frames compete with
+                            // the open animation.
+                            isPlaying = state.isPlaying,
                             mixOutgoingArtworkUrl = state.outgoingArtworkUrl
                                 .takeIf { state.isInTransition && !state.transitionHandedOff },
                             mixIncomingArtworkUrl = state.incomingArtworkUrl

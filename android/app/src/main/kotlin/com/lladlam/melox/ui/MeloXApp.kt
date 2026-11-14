@@ -201,6 +201,8 @@ import androidx.core.view.WindowInsetsCompat
 import com.lladlam.melox.ui.player.MeloXIOSMiniPlayer
 import com.lladlam.melox.ui.player.MeloXProviderLyricsLoader
 import com.lladlam.melox.ui.player.MeloXIOSNowPlayingSharedHost
+import com.lladlam.melox.ui.player.MeloXFlowingLightBackdropPrewarm
+import com.lladlam.melox.ui.settings.MeloXPlayerBackgroundMode
 import com.lladlam.melox.ui.player.meloXPlayerRecedeSpec
 import com.lladlam.melox.ui.player.meloXPlayerTweenDurationMillis
 import com.lladlam.melox.ui.player.rememberMeloXDisplayCornerPx
@@ -383,6 +385,22 @@ fun MeloXApp(
         transitionSpec = { meloXPlayerRecedeSpec(initialState, targetState) },
         label = "melox-player-root-recede",
     ) { open -> if (open) 1f else 0f }
+
+    // Prewarm the flowing-light backdrop while the player is closed. A track can
+    // be selected without ever opening the shell; computing palette + first mesh
+    // then would otherwise land inside the open transition and fight it for the
+    // main thread. The store keeps the result for the later expansion.
+    LaunchedEffect(playbackState.mediaId, playbackState.artworkUrl, playbackState.isPlaying) {
+        if (MeloXSettingsRuntime.playerBackgroundMode != MeloXPlayerBackgroundMode.FlowingLight) return@LaunchedEffect
+        MeloXFlowingLightBackdropPrewarm.prewarm(
+            context = context,
+            artworkUrl = playbackState.artworkUrl,
+            outgoingArtworkUrl = playbackState.outgoingArtworkUrl
+                .takeIf { playbackState.isInTransition && !playbackState.transitionHandedOff },
+            incomingArtworkUrl = playbackState.incomingArtworkUrl
+                .takeIf { playbackState.isInTransition && !playbackState.transitionHandedOff },
+        )
+    }
 
     // ★★ 2026-11-06（无真机轮 · 第 3 轮）：播放页是否**已经铺满整屏**（底页 100% 被盖住）。
     //   用途见 `AnimatedContent` 的 modifier：为 true 时底页整棵停止绘制。

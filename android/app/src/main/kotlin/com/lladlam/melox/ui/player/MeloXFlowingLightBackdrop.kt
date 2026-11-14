@@ -328,6 +328,44 @@ internal fun MeloXFlowingLightBackdrop(
     }
     val currentAverage = remember(meshWidth, meshHeight) { arrayOf(ArtworkDynamicPalette.Fallback.average) }
     val phase = remember(meshWidth, meshHeight) { floatArrayOf(0f) }
+    val retained = remember(
+        artworkUrl, mixOutgoingArtworkUrl, mixIncomingArtworkUrl,
+        meshWidth, meshHeight, MeloXSettingsRuntime.flowingLightSaturation,
+        MeloXSettingsRuntime.flowingLightBrightness, MeloXSettingsRuntime.reduceMotion,
+    ) {
+        MeloXFlowingLightVisualStore.take(
+            artworkUrl = artworkUrl,
+            mixOutgoingArtworkUrl = mixOutgoingArtworkUrl,
+            mixIncomingArtworkUrl = mixIncomingArtworkUrl,
+            meshWidth = meshWidth,
+            meshHeight = meshHeight,
+            saturation = MeloXSettingsRuntime.flowingLightSaturation.coerceIn(0f, 2f),
+            brightness = MeloXSettingsRuntime.flowingLightBrightness.coerceIn(.4f, 1.6f),
+            reduceMotion = MeloXSettingsRuntime.reduceMotion,
+        )
+    }
+    // Paint the retained frame before the first animation frame so reopening the
+    // player never shows the fallback/blank mesh again.
+    var hasRetainedPixels by remember(retained, meshBitmaps) { mutableStateOf(false) }
+    LaunchedEffect(retained, meshBitmaps, meshImages) {
+        if (hasRetainedPixels) return@LaunchedEffect
+        val snapshot = retained ?: return@LaunchedEffect
+        val pixels = snapshot.pixels ?: return@LaunchedEffect
+        targetPalette = snapshot.palette
+        currentColors.indices.forEach { index ->
+            currentColors[index] = snapshot.colors.getOrElse(index) { snapshot.palette.average }
+        }
+        currentAverage[0] = snapshot.average
+        phase[0] = snapshot.phase
+        withContext(Dispatchers.Default) {
+            val bitmap = meshBitmaps[0]
+            if (!bitmap.isRecycled && pixels.size == meshWidth * meshHeight) {
+                bitmap.setPixels(pixels, 0, meshWidth, 0, 0, meshWidth, meshHeight)
+            }
+        }
+        meshImage = meshImages[0]
+        hasRetainedPixels = true
+    }
 
     // Deliberately no recycle() on dispose. The render coroutine runs on a
     // background dispatcher and can still be inside setPixels() when this
@@ -387,6 +425,23 @@ internal fun MeloXFlowingLightBackdrop(
                 }
             }
             meshImage = meshImages[writeIndex]
+            MeloXFlowingLightVisualStore.publish(
+                artworkUrl = artworkUrl,
+                mixOutgoingArtworkUrl = mixOutgoingArtworkUrl,
+                mixIncomingArtworkUrl = mixIncomingArtworkUrl,
+                meshWidth = meshWidth,
+                meshHeight = meshHeight,
+                saturation = MeloXSettingsRuntime.flowingLightSaturation.coerceIn(0f, 2f),
+                brightness = MeloXSettingsRuntime.flowingLightBrightness.coerceIn(.4f, 1.6f),
+                reduceMotion = true,
+                palette = targetPalette,
+                colors = currentColors,
+                average = currentAverage[0],
+                phase = phase[0],
+                energy = energy,
+                beatPulse = beatPulse,
+                pixels = pixels,
+            )
             awaitCancellation()
         }
         var lastRenderNanos = 0L
@@ -444,17 +499,16 @@ internal fun MeloXFlowingLightBackdrop(
             else ((frameNanos - lastRenderNanos) / 1_000_000f).coerceIn(1f, 100f)
             lastRenderNanos = frameNanos
             val sample = MeloXAudioReactiveRuntime.sample(mediaId)
-            // Freeze in step with the music. A backdrop bound to a track pauses
-            // with it; pages that render this without a media id (playlist
-            // covers, dead scenes) keep drifting.
+            // Pausing must stop the motion, but it no longer discards the frame.
+            // The last computed mesh stays on the bitmap (and is retained in
+            // MeloXFlowingLightVisualStore), so reopening the player while paused
+            // shows the frozen backdrop instead of a blank mesh.
             //
-            // ⛔⛔ 2026-10-22 恢复作者原意（用户指正）：**暂停时不出帧是设计，不是 bug**。
-            //   我在修上一条「转场黑屏」时顺手加了 `&& hasRendered`，理由是「暂停打开播放页
-            //   会停在空位图上 ⇒ 整片黑」。但用户确认那个黑屏是作者有意的 —— 这一行的本意
-            //   就是「跟着音乐一起停」，从未渲染过的时候停在空白位图上正是这个语义的结果。
-            //   ⇒ 已回退成原样。**不要再把它当缺陷「修」一次。**
-            //   真正属于回归的是下面 `frozen` 那一段（转场 LOD 冻在从未绘制的位图上），
-            //   那里的 `hasRendered` 门槛**必须保留**，两者互不相干。
+            // Historical note: this used to `continue` for every paused frame,
+            // which is why a paused player opened on an empty bitmap. That was
+            // the author's original intent for "follow the music", but it also
+            // forced a full palette+mesh rebuild on every reopen. Motion still
+            // stops here; only the destructive part is gone.
             if (mediaId != null && !sample.isPlaying) continue
             // Shape follows the music only when a real beat analysis exists.
             // Otherwise the mesh drifts at a constant speed instead of tracking
@@ -507,6 +561,26 @@ internal fun MeloXFlowingLightBackdrop(
                 }
             }
             meshImage = meshImages[writeIndex]
+            // Retain the exact frame just computed. Reopening the player paints
+            // this before the animation loop resumes, so the shell transition is
+            // not competing with palette extraction + first-frame generation.
+            MeloXFlowingLightVisualStore.publish(
+                artworkUrl = artworkUrl,
+                mixOutgoingArtworkUrl = mixOutgoingArtworkUrl,
+                mixIncomingArtworkUrl = mixIncomingArtworkUrl,
+                meshWidth = meshWidth,
+                meshHeight = meshHeight,
+                saturation = saturation,
+                brightness = brightness,
+                reduceMotion = MeloXSettingsRuntime.reduceMotion,
+                palette = targetPalette,
+                colors = currentColors,
+                average = currentAverage[0],
+                phase = phase[0],
+                energy = energy,
+                beatPulse = beatPulse,
+                pixels = pixels,
+            )
             writeIndex = 1 - writeIndex
         }
     }
@@ -640,7 +714,7 @@ private const val FlowWarpStrength = .15f
 private val RoamFrequencyX = floatArrayOf(.50f, .25f, .75f, .50f, .25f, .75f, .50f, .25f, .75f)
 private val RoamFrequencyY = floatArrayOf(.25f, .75f, .50f, .75f, .50f, .25f, .50f, .25f, .75f)
 
-private fun fillFlowingMeshPixels(
+internal fun fillFlowingMeshPixels(
     pixels: IntArray,
     meshWidth: Int,
     meshHeight: Int,
