@@ -74,7 +74,14 @@ internal object MeloXProviderLyricsLoader {
      * lookups usually answer in well under a second, so this only covers the
      * common case while keeping playback snappy.
      */
-    private const val AmllWordTimingWindowMs = 2_000L
+    private const val AmllWordTimingWindowMs = 5_000L
+
+    /**
+     * How long a slow, already-running source may still deliver word timing
+     * after the first line-timed lyric was shown. QQ QRC routinely needs more
+     * than the first-paint window, so the result is applied as a live upgrade.
+     */
+    private const val LateWordTimingWindowMs = 12_000L
 
     /**
      * Background budget for upgrading a line-timed document to an authored
@@ -276,7 +283,7 @@ internal object MeloXProviderLyricsLoader {
         val deferred = synchronized(lock) {
             cache[cacheKey]?.let { return scripted(it) }
             inFlight[cacheKey] ?: workerScope.async {
-                LyricTimelineProcessor.process(loadDocument(appContext, snapshot).withoutPlaceholderLyrics()).also { document ->
+                LyricTimelineProcessor.process(loadDocument(appContext, snapshot, onUpgrade).withoutPlaceholderLyrics()).also { document ->
                     if (document.lines.isNotEmpty()) remember(cacheKey, document)
                 }
             }.also { created ->
@@ -474,6 +481,7 @@ internal object MeloXProviderLyricsLoader {
     private suspend fun loadDocument(
         appContext: Context,
         snapshot: LyricTrackSnapshot,
+        onUpgrade: ((LyricsDocument) -> Unit)? = null,
     ): LyricsDocument {
         if (snapshot.resourceId.sourceId.builtIn == MusicSource.Bilibili) {
             val policy = bilibiliLyricLoadPolicy(
@@ -492,7 +500,7 @@ internal object MeloXProviderLyricsLoader {
                 // binding suppress a newly available QRC/YRC word timeline.
                 if (hasWordTiming(bound)) return bound
             }
-            return loadAutomatic(appContext, snapshot)
+            return loadAutomatic(appContext, snapshot, onUpgrade)
         }
         return loadCurrentProvider(appContext, snapshot)
     }
@@ -691,6 +699,7 @@ internal object MeloXProviderLyricsLoader {
     private suspend fun loadAutomatic(
         appContext: Context,
         snapshot: LyricTrackSnapshot,
+        onUpgrade: ((LyricsDocument) -> Unit)? = null,
     ): LyricsDocument {
         val orderedSources = snapshot.resourceId.sourceId.builtIn?.let(::automaticLyricSourcesFor) ?: listOf(LyricAutoSource.Current)
         // Every source is started together. The current provider still supplies
@@ -729,8 +738,17 @@ internal object MeloXProviderLyricsLoader {
                     document = currentResolved.document,
                     binding = currentResolved.binding,
                 )
-                jobs.forEach { (source, job) ->
-                    if (source != selectedSource) job.cancel()
+                // A line-timed current lyric paints immediately, but a slower
+                // source may still deliver the real word-by-word (QRC) timeline.
+                // Keep those jobs alive and upgrade in place instead of waiting
+                // 2s and then discarding them.
+                val canUpgradeLater = onUpgrade != null && !hasWordTiming(selected.document)
+                if (canUpgradeLater) {
+                    scheduleLateWordTimingUpgrade(appContext, snapshot, jobs, selectedSource, selected.document, onUpgrade!!)
+                } else {
+                    jobs.forEach { (source, job) ->
+                        if (source != selectedSource) job.cancel()
+                    }
                 }
                 Log.d(
                     "MeloXLyricsAuto",
@@ -796,6 +814,46 @@ internal object MeloXProviderLyricsLoader {
      * Only completed jobs are consulted, so this never adds a request or delays
      * the first paint for a translation that may not exist.
      */
+    /**
+     * Delivers a word-by-word timeline that arrives after the first (line-timed)
+     * lyric was already shown. This is what makes QQ QRC usable: its request does
+     * a cross-provider search plus several profile attempts and routinely exceeds
+     * the 2 s first-paint window.
+     */
+    private fun scheduleLateWordTimingUpgrade(
+        appContext: Context,
+        snapshot: LyricTrackSnapshot,
+        jobs: Map<LyricAutoSource, Deferred<ResolvedLyrics>>,
+        selectedSource: LyricAutoSource,
+        selected: LyricsDocument,
+        onUpgrade: (LyricsDocument) -> Unit,
+    ) {
+        val watchers = jobs.filterKeys { it != selectedSource }.values
+        if (watchers.isEmpty()) return
+        workerScope.launch {
+            val resolved = withTimeoutOrNull(LateWordTimingWindowMs) {
+                // They already run in parallel; awaiting in order waits for the
+                // slowest one, not the sum.
+                watchers.map { job -> runCatching { job.await() }.getOrNull() }
+            }.orEmpty()
+            val best = selectAutomaticLyricCandidate(
+                resolved.mapIndexedNotNull { index, value ->
+                    val document = value?.document ?: return@mapIndexedNotNull null
+                    if (document.lines.isEmpty() || !hasWordTiming(document)) return@mapIndexedNotNull null
+                    AutoLyricCandidate(index, document, value.binding)
+                },
+            ) ?: return@launch
+            if (!hasWordTiming(best.document) || best.document == selected) return@launch
+            remember(snapshot.cacheKey(), best.document)
+            Log.d(
+                "MeloXLyricsAuto",
+                "lateWordTimingUpgrade source=${best.document.source} " +
+                    "wordLines=${best.document.lines.count { it.syllables.isNotEmpty() }}",
+            )
+            withContext(Dispatchers.Main.immediate) { onUpgrade(scripted(best.document)) }
+        }
+    }
+
     private suspend fun combineAvailableTranslations(
         selected: LyricsDocument,
         jobs: Map<LyricAutoSource, Deferred<ResolvedLyrics>>,
