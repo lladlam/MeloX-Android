@@ -1230,6 +1230,7 @@
     <string name="settings_show_quality_tip">顯示播放音質提示</string>
     <string name="settings_show_quality_tip_note">控制進度條下方的音質提示。</string>
     <string name="settings_player_transition_duration">播放器展開/收回時長</string>
+    <string name="settings_section_transition">展開 / 收回動畫</string>
     <string name="settings_duration_ms">%1$d ms</string>
     <string name="settings_transition_duration_very_fast">很快</string>
     <string name="settings_transition_duration_fast">快</string>

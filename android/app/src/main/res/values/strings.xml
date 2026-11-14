@@ -1300,6 +1300,7 @@
     <string name="settings_show_quality_tip">Show the quality hint</string>
     <string name="settings_show_quality_tip_note">Controls the quality hint under the progress bar.</string>
     <string name="settings_player_transition_duration">Player expand and collapse duration</string>
+    <string name="settings_section_transition">Expand / collapse animation</string>
     <string name="settings_duration_ms">%1$d ms</string>
     <!-- 播放器展开/收回时长的五档文字标签（2026-10-29）。
          档位值与标签的对应关系见 MeloXPlayerTransitionDurationTier（单一真源）：

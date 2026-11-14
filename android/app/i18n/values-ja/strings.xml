@@ -1233,6 +1233,7 @@
     <string name="settings_show_quality_tip">音質のヒントを表示</string>
     <string name="settings_show_quality_tip_note">進行バーの下にある音質のヒントを制御します。</string>
     <string name="settings_player_transition_duration">プレーヤーの展開と収納にかかる時間</string>
+    <string name="settings_section_transition">展開 / 収納アニメーション</string>
     <string name="settings_duration_ms">%1$d ms</string>
     <string name="settings_transition_duration_very_fast">とても速い</string>
     <string name="settings_transition_duration_fast">速い</string>

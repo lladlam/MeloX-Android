@@ -1561,26 +1561,6 @@ private fun PlaybackSettings(context: android.content.Context) {
             stringResource(R.string.settings_show_quality_tip_note),
             grouped = true,
         )
-        // ⚠⚠ 2026-10-29：档位表重划（240/300/360/460/600 → 270/360/460/600/780），
-        //   且**不再显示 ms 数值**，改用**文字档位**（Very fast / Fast / Standard / Slow / Very slow）。
-        //   ⚠ 档位值与文案都取自 `MeloXPlayerTransitionDurationTier`（**单一真源**）——
-        //     枚举把 millis 和 labelRes 绑在一起 ⇒ 文案与数值不可能错位。
-        //   ⚠ 标签必须先在 **Composable 作用域**取好：`stringResource` 只能在 Composable 里
-        //     调用，而 `LyricsChoiceSetting` 的 `label` 是普通 `(Int) -> String`。
-        val transitionDurationLabels = meloXTransitionDurationLabels()
-        LyricsChoiceSetting(
-            context,
-            stringResource(R.string.settings_player_transition_duration),
-            // ⚠⚠ 2026-10-03：这一项不能直接用 `MeloXSettingsPreferences.int(context, key, default)`
-            //   —— 那是裸 `getInt`，**不做旧默认迁移**，而运行时的迁移在
-            //   `playerTransitionDurationMs()` 里 ⇒ 两条路径不同源。
-            //   正好会复现用户报障的「**不要实际变，设置显示没变**」（显示 360 / 实际 240）。
-            //   ⇒ 走专用读取函数：读 + 迁移 + 写回同一处，保证「显示 == 实际」。
-            key = MeloXSettingsPreferences.KEY_PLAYER_TRANSITION_DURATION_MS,
-            selectedProvider = { MeloXSettingsPreferences.playerTransitionDurationMs(context) },
-            values = MeloXPlayerTransitionDurationTier.allMillis,
-            grouped = true,
-        ) { ms -> transitionDurationLabels[ms] ?: ms.toString() }
     }
     Spacer(Modifier.height(10.dp))
     EqualizerSettings(context)
@@ -1913,6 +1893,31 @@ private fun PlayerAppearanceSettings(context: android.content.Context) {
         false,
         stringResource(R.string.settings_frosted_glass_note),
     )
+    Spacer(Modifier.height(18.dp))
+    // 独立的「展开 / 收起动画」分类：与背景、玻璃等外观项并列，
+    // 不再混在「播放」页里。
+    Text(
+        stringResource(R.string.settings_section_transition),
+        fontSize = 13.sp,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f),
+        modifier = Modifier.padding(start = 8.dp, bottom = 8.dp),
+    )
+    SettingsGlassGroup {
+        // ⚠ 档位值与文案都取自 `MeloXPlayerTransitionDurationTier`（单一真源），
+        //   标签必须先在 Composable 作用域取好（label 是普通 (Int) -> String）。
+        val transitionDurationLabels = meloXTransitionDurationLabels()
+        LyricsChoiceSetting(
+            context,
+            stringResource(R.string.settings_player_transition_duration),
+            // ⚠ 不能直接用裸 getInt：运行时的旧默认迁移在
+            //   `playerTransitionDurationMs()` 里，两条路径不同源会导致
+            //   「设置显示没变、实际已变」。
+            key = MeloXSettingsPreferences.KEY_PLAYER_TRANSITION_DURATION_MS,
+            selectedProvider = { MeloXSettingsPreferences.playerTransitionDurationMs(context) },
+            values = MeloXPlayerTransitionDurationTier.allMillis,
+            grouped = true,
+        ) { ms -> transitionDurationLabels[ms] ?: ms.toString() }
+    }
     Spacer(Modifier.height(10.dp))
     SettingsGlassGroup {
         MeloXSettingsDropdown(
