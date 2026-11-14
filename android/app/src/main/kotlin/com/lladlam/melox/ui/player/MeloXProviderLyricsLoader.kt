@@ -7,6 +7,8 @@ import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.autosync.AutoSyncCoordinator
 import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.core.lyrics.LyricSource
+import com.lladlam.melox.core.lyrics.LyricTranslationDecision
+import com.lladlam.melox.core.lyrics.LyricTranslationPolicy
 import com.lladlam.melox.core.lyrics.LyricsDocument
 import com.lladlam.melox.core.lyrics.MeloXLyricPreference
 import com.lladlam.melox.core.lyrics.withoutPlaceholderLyrics
@@ -152,19 +154,9 @@ internal object MeloXProviderLyricsLoader {
             ?: return LyricsDocument(emptyList())
         val resourceId = PlaybackTrackIdentity.decode(resolvedMediaId)
             ?: return LyricsDocument(emptyList())
-        if (resourceId.sourceId.builtIn == null) {
-            val registry = MeloXMusicProviders.create(appContext)
-            val generation = registry.generation
-            val provider = registry[resourceId.sourceId] ?: return LyricsDocument(emptyList())
-            if (!provider.supports(com.lladlam.melox.core.music.provider.MusicCapability.Lyrics)) return LyricsDocument(emptyList())
-            val capability = provider as? com.lladlam.melox.core.music.provider.LyricsCapability
-                ?: return LyricsDocument(emptyList())
-            val track = com.lladlam.melox.core.music.model.MusicTrack(resourceId, title,
-                listOf(com.lladlam.melox.core.music.model.MusicArtistRef(name = artist)), durationMs = durationMs)
-            val document = capability.lyrics(track)
-            return if (generation == registry.generation && registry[resourceId.sourceId] === provider) document
-                else LyricsDocument(emptyList())
-        }
+        // Every source — built-in or plugin — now flows through the same cached
+        // pipeline below, so translation policy, script conversion and AutoSync
+        // scheduling apply uniformly.
         val localRecord = if (resourceId.sourceId.builtIn == MusicSource.Local) {
             LocalMusicRepository(appContext).track(resourceId.value)
         } else null
@@ -751,7 +743,12 @@ internal object MeloXProviderLyricsLoader {
                     appContext,
                     snapshot,
                     selected.binding,
-                    selected.document,
+                    combineAvailableTranslations(
+                        selected = selected.document,
+                        jobs = jobs,
+                        skipped = selectedSource,
+                        preference = snapshot.preference,
+                    ),
                 )
             }
         }
@@ -770,8 +767,58 @@ internal object MeloXProviderLyricsLoader {
             "selectedPriority=${selected?.priority} lines=${selected?.document?.lines?.size ?: 0} " +
                 "wordLines=${selected?.document?.lines?.count { it.syllables.isNotEmpty() } ?: 0}",
         )
-        return selected?.let { rememberBinding(appContext, snapshot, it.binding, it.document) }
-            ?: LyricsDocument(emptyList())
+        return selected?.let {
+            rememberBinding(
+                appContext,
+                snapshot,
+                it.binding,
+                combineAvailableTranslations(
+                    selected = it.document,
+                    jobs = jobs,
+                    skipped = null,
+                    preference = snapshot.preference,
+                ),
+            )
+        } ?: LyricsDocument(emptyList())
+    }
+
+    /**
+     * Cross-source translation merge: when the selected document is in another
+     * language and carries no translation, borrow the translation track from an
+     * already-finished candidate whose timeline matches.
+     *
+     * Only completed jobs are consulted, so this never adds a request or delays
+     * the first paint for a translation that may not exist.
+     */
+    private suspend fun combineAvailableTranslations(
+        selected: LyricsDocument,
+        jobs: Map<LyricAutoSource, Deferred<ResolvedLyrics>>,
+        skipped: LyricAutoSource?,
+        preference: MeloXLyricPreference,
+    ): LyricsDocument {
+        if (selected.lines.isEmpty()) return selected
+        if (selected.lines.any { !it.translation.isNullOrBlank() }) return selected
+        val decision = LyricTranslationPolicy.decide(
+            LyricTranslationPolicy.detectLanguage(selected),
+            preference,
+        )
+        if (decision != LyricTranslationDecision.NeedTranslation) return selected
+
+        var merged: LyricsDocument? = null
+        jobs.forEach { (source, job) ->
+            if (source == skipped || !job.isCompleted) return@forEach
+            val document = runCatching { job.await().document }.getOrNull() ?: return@forEach
+            if (document.lines.isEmpty()) return@forEach
+            val translations = document.lines.mapNotNull { it.translation?.takeIf(String::isNotBlank) }
+            if (translations.isEmpty()) return@forEach
+            if (!LyricTranslationPolicy.translationMatches(translations, preference)) return@forEach
+            merged = LyricTranslationPolicy.combineTranslations(selected, document) ?: merged
+        }
+        if (merged != null) {
+            Log.d("MeloXLyricsAuto", "combined translation lines=${merged!!.lines.count { !it.translation.isNullOrBlank() }}")
+            return merged!!
+        }
+        return selected
     }
 
     /**
@@ -1105,13 +1152,36 @@ internal fun requestedLyricPreference(): MeloXLyricPreference =
     MeloXLyricPreference.fromSetting(MeloXSettingsRuntime.lyricLanguage)
 
 internal fun applyLyricTranslationPreference(document: LyricsDocument, preference: MeloXLyricPreference): LyricsDocument {
-    // These endpoints supply Chinese translations, with no target-language API.
-    val chineseOnly = document.source in setOf(LyricSource.Netease, LyricSource.QQMusic, LyricSource.Kugou)
-    val selected = if (preference.languageTag != null && chineseOnly) document.copy(
-        lines = document.lines.map { line ->
-            line.copy(translation = null, accompaniment = line.accompaniment.map { it.copy(translation = null) })
-        },
-    ) else document
+    if (document.lines.isEmpty()) return MeloXLyricScriptConverter.convert(document, preference.script)
+
+    val mainLanguage = LyricTranslationPolicy.detectLanguage(document)
+    val decision = LyricTranslationPolicy.decide(mainLanguage, preference)
+    val selected = when (decision) {
+        // Same language as the listener: a translation would only repeat the
+        // lyric, so neither fetch nor display one.
+        LyricTranslationDecision.KeepMainOnly,
+        LyricTranslationDecision.ConvertScriptOnly,
+        -> LyricTranslationPolicy.withoutTranslations(document)
+        // Different language: keep only translations that really are in the
+        // requested language. Unknown/unverifiable text is kept (best effort).
+        LyricTranslationDecision.NeedTranslation -> {
+            val translations = buildList {
+                document.lines.forEach { line ->
+                    line.translation?.takeIf(String::isNotBlank)?.let(::add)
+                    line.accompaniment.forEach { vocal ->
+                        vocal.translation?.takeIf(String::isNotBlank)?.let(::add)
+                    }
+                }
+            }
+            if (translations.isEmpty() ||
+                LyricTranslationPolicy.translationMatches(translations, preference)
+            ) {
+                document
+            } else {
+                LyricTranslationPolicy.withoutTranslations(document)
+            }
+        }
+    }
     return MeloXLyricScriptConverter.convert(selected, preference.script)
 }
 

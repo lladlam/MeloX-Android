@@ -36,8 +36,12 @@ class MeloXLyricLanguageRoutingTest {
     }
 
     @Test
-    fun anAmllTranslationAlreadySelectedForTheRequestedLanguageIsPreserved() {
+    fun aSameLanguageTranslationIsDroppedInsteadOfDuplicatingTheLyric() {
         val document = LyricsDocument(listOf(LyricLine(0, text = "Original", translation = "Hello")), source = LyricSource.AmlL)
-        assertEquals(document, applyLyricTranslationPreference(document, MeloXLyricPreference.fromSetting("en")))
+        val result = applyLyricTranslationPreference(document, MeloXLyricPreference.fromSetting("en"))
+        // 2026-11-15: when the main lyric already is in the listener's language,
+        // a translation would only repeat it, so it is not shown at all.
+        assertEquals("Original", result.lines.single().text)
+        assertEquals(null, result.lines.single().translation)
     }
 }
