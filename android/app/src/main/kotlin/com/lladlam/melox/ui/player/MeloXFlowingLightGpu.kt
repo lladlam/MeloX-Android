@@ -160,9 +160,3 @@ half4 main(vec2 fragCoord) {
 }
 """
 }
-
-/** Shared constants used by both CPU and GPU implementations. */
-internal object MeloXFlowingLightBackdropConstants {
-    val RoamFrequencyX = floatArrayOf(.50f, .25f, .75f, .50f, .25f, .75f, .50f, .25f, .75f)
-    val RoamFrequencyY = floatArrayOf(.25f, .75f, .50f, .75f, .50f, .25f, .50f, .25f, .75f)
-}
