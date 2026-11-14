@@ -46,6 +46,31 @@ class MeloXDeviceProfileTest {
     }
 
     @Test
+    fun highDensityTabletLandscapeWithShortSideBelow480StaysTablet() {
+        // High-density OEM tablets can map to a short edge below 480dp
+        // (e.g. 2560x1600@640dpi => 640x400dp, ratio 1.6). The old absolute
+        // `heightDp >= 480` gate misclassified them as Phone and lost the
+        // two-pane player; the aspect-ratio rule (ratio < 2.0) keeps them Tablet.
+        assertProfile(MeloXDeviceProfile.Tablet, 640, 400)
+        // Same class: 3000x2000@600dpi => 800x533dp, ratio 1.5.
+        assertProfile(MeloXDeviceProfile.Tablet, 800, 533)
+        // Upper bound of common tablet landscape (16:9 = 1.78) must stay Tablet.
+        assertProfile(MeloXDeviceProfile.Tablet, 960, 540)
+    }
+
+    @Test
+    fun phoneLandscapeRatioBoundaryKeepsPhone() {
+        // Aspect-ratio boundary (ratio = 2.0):
+        //   - exactly 2.0 (700x350dp) => phone landscape, Phone.
+        assertProfile(MeloXDeviceProfile.Phone, 700, 350)
+        //   - a 20:9 phone landscape wider than 600dp (680x306dp, ratio 2.22)
+        //     must still be Phone: the width gate alone must not promote it.
+        assertProfile(MeloXDeviceProfile.Phone, 680, 306)
+        //   - 19.5:9 (900x411dp, ratio 2.19): wide but ratio >= 2.0 => Phone.
+        assertProfile(MeloXDeviceProfile.Phone, 900, 411)
+    }
+
+    @Test
     fun desktopNarrowStripStaysPhoneOrTabletNeverCar() {
         // 桌面自由窗口拉出的矮横条：高度 200dp 远低于车机的 380dp 下限。
         assertProfile(MeloXDeviceProfile.Phone, 1600, 200)

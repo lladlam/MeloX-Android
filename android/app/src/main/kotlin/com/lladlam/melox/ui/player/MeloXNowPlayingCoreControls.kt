@@ -177,6 +177,15 @@ internal fun MeloXNowPlayingCoreControls(
      * 全部逐像素不变。
      */
     carHeadUnit: Boolean = false,
+    /**
+     * 平板双栏左列专用（2026-11-14）：垂直间距收紧到**肉眼可辨** ——
+     * 进度条→三键 19→8dp、三键→音量条 31→14dp；**音量条→底部三键的 3dp 不变**。
+     * 控件块总高保持 [MeloXNowPlayingControlsHeight]（279）⇒ 封面尺寸公式不变、
+     * **封面自动保持原大小**（用户要求）；内部用垂直居中消化省下的 28dp ⇒
+     * 控件整体中心与原来完全一致，不偏上。
+     * 默认 false ⇒ 竖屏 / 车机 / Classic / 横屏封面页全部逐像素不变。
+     */
+    tabletLandscape: Boolean = false,
     selectorModifier: Modifier = Modifier,
     /**
      * 拖动进度条时向上层广播「预览位置」，供歌词面板在对应进度跟随滚动
@@ -187,18 +196,33 @@ internal fun MeloXNowPlayingCoreControls(
 ) {
     // 横屏布局把「歌词 / 播放设备 / 列表」三个按钮抽成常驻底栏，
     // 控制区本身只保留进度 + 走带 + 音量，高度相应收窄。
+    // ★ 平板双栏档：间距收紧但**总高保持 279**（封面尺寸公式不变 ⇒ 封面原大小），
+    //   省下的 28dp 靠 Column 内部垂直居中消化，控件整体中心不变。
     val controlsHeight = when {
         carHeadUnit -> MeloXCarHeadUnitControlsHeight +
             if (showPageSelector) MeloXCarHeadUnitSelectorHeight else 0
         showPageSelector -> MeloXNowPlayingControlsHeight
         else -> MeloXNowPlayingControlsHeight - 53
     }
-    val transportGap = if (compact) 14.dp else 19.dp
-    val volumeGap = if (compact) 22.dp else 31.dp
+    val transportGap = when {
+        tabletLandscape -> 8.dp
+        carHeadUnit -> 14.dp
+        compact -> 14.dp
+        else -> 19.dp
+    }
+    val volumeGap = when {
+        tabletLandscape -> 6.dp
+        carHeadUnit -> 0.dp
+        compact -> 22.dp
+        else -> 31.dp
+    }
+    val verticalArrangement = if (tabletLandscape) Arrangement.Center else
+        Arrangement.Top
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .height(controlsHeight.dp),
+        verticalArrangement = verticalArrangement,
     ) {
         SceneProgressControl(
             state,

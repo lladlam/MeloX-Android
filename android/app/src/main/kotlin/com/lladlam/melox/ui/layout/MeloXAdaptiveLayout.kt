@@ -65,6 +65,25 @@ private const val CAR_MIN_HEIGHT_DP = 380
 private const val CAR_RATIO_TIMES_TEN = 22 // width * 10 >= height * 22
 
 /**
+ * 横屏「手机 vs 平板」分界比例（整数比较：width * 10 >= height * 20 ⇔ 宽高比 ≥ 2.0）。
+ *
+ * 手机横屏 20:9 ≈ 2.22 / 21:9 ≈ 2.33 都 ≥ 2.0；平板横屏 3:2 = 1.5 / 16:10 = 1.6 /
+ * 16:9 = 1.78 都 < 2.0。**用比例而非绝对 height 门槛**区分两者，避免 OEM 高 density 平板
+ * （短边 dp 被压到 < 480）被误判成 Phone、丢失双栏播放页。
+ */
+private const val PHONE_LANDSCAPE_RATIO_TIMES_TEN = 20 // width * 10 >= height * 20 ⇒ ratio ≥ 2.0
+
+/**
+ * 2026-11-13 回归开关：横屏平板识别是否退回旧的「heightDp ≥ 480」绝对门槛。
+ *
+ * 默认 `false` = 用**宽高比（≥ 2.0）**区分平板 / 手机横屏——任何 density 下 3:2 平板都双栏，
+ * 手机横屏（比例 ≥ 2.0）仍单栏。设 `true` 回到旧逻辑（[meloXClassifyDevice] ④ 与
+ * [MeloXWindowInfo.supportsPlayerTwoPane] 的 Tablet 分支同时回退），OEM 高 density 平板可能
+ * 因短边 dp < 480 漏判成 Phone。纯编译期开关：改值需重编。
+ */
+const val MeloXTabletRecognitionKeepLegacy = false
+
+/**
  * 纯几何「超宽横屏」判据（横屏 且 宽高比 ≥ 2.2），**不看 automotive**。
  *
  * ⚠ 这是与 [MeloXDeviceProfile] **正交**的第二个维度，两者不能互相替代：
@@ -116,8 +135,15 @@ fun meloXClassifyDevice(
     ) {
         return MeloXDeviceProfile.CarHeadUnit
     }
-    // ④ 横屏平板：宽 / 高都非 Compact（官方 600 / 480 断点）；其余一律 Phone。
-    return if (widthDp >= WIDTH_MEDIUM_DP && heightDp >= HEIGHT_MEDIUM_DP) {
+    // ④ 横屏平板 vs 手机横屏：用**宽高比**而非绝对 height 门槛区分。
+    //   手机横屏（20:9 / 21:9，ratio ≥ 2.0）宽 = 其竖屏宽（≈ 360~440dp），与平板横屏
+    //   （3:2~16:9，ratio ≤ 1.78）比例明显不同。横屏且 width ≥ 600 且**非手机横屏比例**
+    //   ⇒ Tablet；否则 Phone。彻底摆脱对绝对 height 的依赖，任何 density 下 3:2 平板都双栏，
+    //   手机横屏恒单栏。⚠ [MeloXTabletRecognitionKeepLegacy]=true 时退回旧 `heightDp ≥ 480`。
+    val phoneLandscape = widthDp * 10 >= heightDp * PHONE_LANDSCAPE_RATIO_TIMES_TEN
+    val tabletByRatio = widthDp >= WIDTH_MEDIUM_DP && !phoneLandscape
+    val tabletByLegacy = widthDp >= WIDTH_MEDIUM_DP && heightDp >= HEIGHT_MEDIUM_DP
+    return if (if (MeloXTabletRecognitionKeepLegacy) tabletByLegacy else tabletByRatio) {
         MeloXDeviceProfile.Tablet
     } else {
         MeloXDeviceProfile.Phone
@@ -130,9 +156,10 @@ fun meloXClassifyDevice(
  * 采用 Android 官方 **WindowSizeClass** 语义（宽 / 高各自分 Compact / Medium / Expanded），
  * 断点（宽 600 / 840、高 480 / 900）由官方统一维护，App 不自己发明数字。
  *
- * 高度 != Compact（≥ 480dp）是手机的真正拦路虎 —— 手机横屏高度 = 其竖屏宽度，
- * 普遍 ≤ 440dp。**唯一例外是车机**：车机天生矮，[MeloXDeviceProfile.CarHeadUnit]
- * 档豁免高度门槛（见 [MeloXWindowInfo.supportsPlayerTwoPane]），否则会漏判成手机单栏。
+ * 平板档已靠「宽高比 ≥ 2.0」在 [meloXClassifyDevice] 排除手机横屏（手机横屏比例
+ * 20:9 / 21:9 ≥ 2.0，平板 3:2~16:9 ≤ 1.78），无需再卡绝对 height；[MeloXTabletRecognitionKeepLegacy]
+ * =true 时退回旧的 `heightDp ≥ 480` 门槛。**唯一特例仍是车机**：[MeloXDeviceProfile.CarHeadUnit]
+ * 档恒双栏（豁免高度），否则天生矮的车机会漏判成手机单栏。
  */
 data class MeloXWindowInfo(
     val widthClass: MeloXWindowWidthClass,
@@ -167,7 +194,11 @@ data class MeloXWindowInfo(
     val supportsPlayerTwoPane: Boolean
         get() = splitScreenEnabled && when (deviceProfile) {
             MeloXDeviceProfile.CarHeadUnit -> true
-            MeloXDeviceProfile.Tablet -> heightClass != MeloXWindowHeightClass.Compact
+            // 平板档已靠「宽高比 ≥ 2.0」在 [meloXClassifyDevice] 排除手机横屏 ⇒ 恒双栏。
+            // 旧逻辑额外卡 `heightClass != Compact`（= heightDp ≥ 480），会让 OEM 高 density
+            // 平板（短边 dp < 480）退化成单栏；[MeloXTabletRecognitionKeepLegacy]=true 才保留。
+            MeloXDeviceProfile.Tablet ->
+                !MeloXTabletRecognitionKeepLegacy || heightClass != MeloXWindowHeightClass.Compact
             MeloXDeviceProfile.Phone -> false
         }
 
