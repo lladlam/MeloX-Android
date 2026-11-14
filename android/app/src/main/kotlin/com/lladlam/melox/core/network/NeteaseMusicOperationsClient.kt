@@ -134,6 +134,25 @@ internal fun neteasePlaylistMutationSpec(
     return NeteasePlaylistMutationSpec(songId, playlistId, operation)
 }
 
+/**
+ * `trackIds` is a JSON **string** whose payload is an array of **numbers**.
+ * Sending the ids as quoted strings is accepted by the gateway but the write is
+ * not persisted, which looked exactly like "the song disappears later".
+ */
+internal fun neteasePlaylistTrackIdsPayload(ids: List<Long>): String =
+    org.json.JSONArray().apply { ids.forEach { put(it) } }.toString()
+
+/**
+ * `manipulate/tracks` reports the real outcome inside `body.code`; the outer
+ * object can still say 200. Checking only the outer code made rejected writes
+ * look successful (issue #119: songs silently vanished on the next refresh).
+ */
+internal fun neteaseMutationCode(response: JSONObject): Int {
+    val outer = response.optInt("code", response.optInt("status", 200))
+    val inner = response.optJSONObject("body")?.optInt("code", 200) ?: 200
+    return if (outer in 200..299) inner else outer
+}
+
 /** Authenticated write/comment/wiki routes mirrored from upstream MeloX NeteaseAPI. */
 class NeteaseMusicOperationsClient(
     private val cookieProvider: () -> String,
@@ -178,16 +197,16 @@ class NeteaseMusicOperationsClient(
     suspend fun addSongToPlaylist(songId: Long, playlistId: Long) = withContext(Dispatchers.IO) {
         val spec = neteasePlaylistMutationSpec(songId, playlistId, "add")
         ensureLoggedIn()
-        val path = "/api/v1/playlist/manipulate/tracks"
-        val id = spec.songId.toString()
-        val first = runCatching {
-            eapi(path, JSONObject().put("op", spec.operation).put("pid", spec.playlistId)
-                .put("trackIds", "[\"$id\"]").put("imme", "true"), true)
-        }
-        if (first.isFailure) {
-            eapi(path, JSONObject().put("op", spec.operation).put("pid", spec.playlistId)
-                .put("trackIds", "[\"$id\",\"$id\"]").put("imme", "true"), true)
-        }
+        val response = eapi(
+            "/api/v1/playlist/manipulate/tracks",
+            JSONObject()
+                .put("op", spec.operation)
+                .put("pid", spec.playlistId)
+                .put("trackIds", neteasePlaylistTrackIdsPayload(listOf(spec.songId)))
+                .put("imme", "true"),
+            true,
+        ).requirePlaylistMutationAccepted()
+        Log.i("NeteaseOps", "playlist add pid=${spec.playlistId} id=${spec.songId} code=${neteaseMutationCode(response)}")
         Unit
     }
 
@@ -222,16 +241,15 @@ class NeteaseMusicOperationsClient(
     suspend fun removeSongFromPlaylist(songId: Long, playlistId: Long) = withContext(Dispatchers.IO) {
         val spec = neteasePlaylistMutationSpec(songId, playlistId, "del")
         ensureLoggedIn()
-        val id = spec.songId.toString()
         eapi(
             "/api/v1/playlist/manipulate/tracks",
             JSONObject()
                 .put("op", spec.operation)
                 .put("pid", spec.playlistId)
-                .put("trackIds", "[\"$id\"]")
+                .put("trackIds", neteasePlaylistTrackIdsPayload(listOf(spec.songId)))
                 .put("imme", "true"),
             true,
-        )
+        ).requirePlaylistMutationAccepted()
         Unit
     }
 
@@ -742,6 +760,20 @@ private fun collectWikiUiText(ui: JSONObject?, lines: MutableList<String>) {
 
     private fun ensureLoggedIn() {
         if (!NeteaseSessionStore.containsMusicU(cookieProvider())) throw IOException("请先登录网易云音乐")
+    }
+
+    private fun JSONObject.requirePlaylistMutationAccepted(): JSONObject {
+        val code = neteaseMutationCode(this)
+        if (code !in 200..299) {
+            val nested = optJSONObject("body")
+            val message = nested?.optString("message").orEmpty()
+                .ifBlank { nested?.optString("msg").orEmpty() }
+                .ifBlank { optString("message") }
+                .ifBlank { optString("msg") }
+                .ifBlank { "歌单写入失败（$code）" }
+            throw NeteaseRequestException(code, message)
+        }
+        return this
     }
 
     private fun eapi(uri: String, data: JSONObject, authenticated: Boolean): JSONObject {
