@@ -388,6 +388,15 @@ internal object MeloXProviderLyricsLoader {
         }
         val amllJob = scheduleWordTimingUpgrade(appContext, cacheKey, snapshot, document, onUpgrade)
         scheduleAutoSyncUpgrade(appContext, cacheKey, trackKey, document, amllJob, onUpgrade)
+        // A cached document may be line-timed simply because the first fetch
+        // arrived before QQ QRC did. Re-resolve once in the background so the
+        // word-by-word timeline can still replace it.
+        if (!hasWordTiming(document) && snapshot.automaticSelection) {
+            workerScope.launch {
+                runCatching { loadAutomatic(appContext, snapshot, onUpgrade) }
+                    .onFailure { Log.d("MeloXLyricsAuto", "cached word-timing chase failed: ${it.message}") }
+            }
+        }
     }
 
     private fun scheduleAutoSyncIfNeeded(
