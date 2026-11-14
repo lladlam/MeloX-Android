@@ -100,6 +100,7 @@
     <string name="player_share_netease_friends">发送给网易云好友</string>
     <string name="player_listening_rank">我的听歌排行</string>
     <string name="player_wiki">歌曲百科</string>
+    <string name="player_album">专辑</string>
     <string name="player_listen_together">一起听</string>
     <string name="player_play_next">下一首播放</string>
     <string name="player_add_to_queue">添加到播放队列</string>

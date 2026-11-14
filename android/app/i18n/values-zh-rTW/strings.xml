@@ -82,6 +82,7 @@
     <string name="player_share_netease_friends">傳送給網易雲好友</string>
     <string name="player_listening_rank">我的聽歌排行</string>
     <string name="player_wiki">歌曲百科</string>
+    <string name="player_album">專輯</string>
     <string name="player_listen_together">一起聽</string>
     <string name="player_play_next">下一首播放</string>
     <string name="player_add_to_queue">新增到播放佇列</string>

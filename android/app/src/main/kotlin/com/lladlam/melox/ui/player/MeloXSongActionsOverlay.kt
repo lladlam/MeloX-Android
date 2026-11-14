@@ -393,6 +393,22 @@ fun MeloXSongActionsOverlay(
                                         MeloXSongDetailActivity.launch(context, song)
                                         onDismiss()
                                     },
+                                    MeloXMoreAction(stringResource(R.string.player_album), MeloXSymbol.MusicNote) {
+                                        // Jump straight to the album this song belongs to.
+                                        song.albumId?.takeIf { it > 0L }?.let { albumId ->
+                                            com.lladlam.melox.ui.collection.MeloXCollectionDetailActivity.launchAlbum(
+                                                context,
+                                                com.lladlam.melox.core.network.MeloXAlbumSummary(
+                                                    id = albumId,
+                                                    name = song.album.ifBlank { song.name },
+                                                    artworkUrl = song.artworkUrl,
+                                                    artistText = song.artists,
+                                                    type = null,
+                                                ),
+                                            )
+                                        }
+                                        onDismiss()
+                                    },
                                     MeloXMoreAction(stringResource(R.string.player_wiki), MeloXSymbol.Book) {
                                         MeloXSongWikiActivity.launch(context, song)
                                         onDismiss()

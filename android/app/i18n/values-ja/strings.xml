@@ -82,6 +82,7 @@
     <string name="player_share_netease_friends">NetEaseの友達に送る</string>
     <string name="player_listening_rank">再生履歴</string>
     <string name="player_wiki">曲のWiki</string>
+    <string name="player_album">アルバム</string>
     <string name="player_listen_together">一緒に聴く</string>
     <string name="player_play_next">次に再生</string>
     <string name="player_add_to_queue">キューに追加</string>

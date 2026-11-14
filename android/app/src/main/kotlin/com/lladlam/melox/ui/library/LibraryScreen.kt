@@ -3381,7 +3381,7 @@ private fun MeloXPlaylistToolbar(
                 size = 44.dp,
                 onClick = onShare,
             ) {
-                MeloXShareGlyph(Modifier.size(22.dp), Color(0xFFFF3147))
+                MeloXShareGlyph(Modifier.size(19.8.dp), Color(0xFFFF3147))
             }
             if (showMore) {
                 MeloXGlassCircleButton(
@@ -3392,7 +3392,7 @@ private fun MeloXPlaylistToolbar(
                     Text(
                         "•••",
                         color = Color(0xFFFF3147),
-                        fontSize = 15.sp,
+                        fontSize = 13.5.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp,
                     )

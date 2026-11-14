@@ -82,6 +82,7 @@
     <string name="player_share_netease_friends">Send to NetEase friends</string>
     <string name="player_listening_rank">My listening history</string>
     <string name="player_wiki">Song wiki</string>
+    <string name="player_album">Album</string>
     <string name="player_listen_together">Listen Together</string>
     <string name="player_play_next">Play next</string>
     <string name="player_add_to_queue">Add to queue</string>
