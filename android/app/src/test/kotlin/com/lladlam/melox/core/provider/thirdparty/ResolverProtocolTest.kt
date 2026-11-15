@@ -91,6 +91,19 @@ class ResolverProtocolTest {
         assertEquals("https://cdn.test/song.mp3", ResolverAudioUrl.parse("""{"data":{"url":"https://cdn.test/song.mp3","name":"[song]"}}"""))
     }
 
+    @Test fun thirdPartyResolversDescendToStandardQuality() {
+        assertEquals(listOf(AudioQualityTier.Standard), resolverQualityFallbacks(AudioQualityTier.Standard))
+        assertEquals(
+            listOf(AudioQualityTier.High, AudioQualityTier.Standard),
+            resolverQualityFallbacks(AudioQualityTier.High),
+        )
+        assertEquals(AudioQualityTier.Standard, resolverQualityFallbacks(AudioQualityTier.Master).last())
+        assertTrue(
+            resolverQualityFallbacks(AudioQualityTier.Master)
+                .containsAll(listOf(AudioQualityTier.Lossless, AudioQualityTier.High, AudioQualityTier.Standard)),
+        )
+    }
+
     @Test fun credentialsDoNotLeakIntoCacheIdentities() {
         val one = settings(ResolverKind.Chksz)
         assertFalse(one.cacheIdentity().contains("secret"))

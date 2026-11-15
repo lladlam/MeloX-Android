@@ -165,6 +165,21 @@ class CrossProviderPlaybackFallbackResolverTest {
     }
 
     @Test
+    fun fallsBackToALowerQualityWhenTheRequestedTierIsUnavailable() {
+        val standardOnly = FakeProvider(
+            source = MusicSource.QQMusic,
+            tracks = listOf(track(MusicSource.QQMusic)),
+            playable = true,
+            maxPlayableQuality = AudioQualityTier.Standard,
+        )
+
+        val result = resolver(standardOnly).resolve(request())
+
+        assertEquals(MusicSource.QQMusic, result?.source)
+        assertEquals(AudioQualityTier.Standard, result?.actualQuality)
+    }
+
+    @Test
     fun slowProviderCannotConsumeTheWholeFallbackBudget() {
         val slow = FakeProvider(
             source = MusicSource.Bilibili,
@@ -228,6 +243,7 @@ class CrossProviderPlaybackFallbackResolverTest {
         private val tracks: List<MusicTrack>,
         private val playable: Boolean,
         private val searchDelayMs: Long = 0L,
+        private val maxPlayableQuality: AudioQualityTier = AudioQualityTier.Master,
     ) : MusicProvider, SearchCapability, PlaybackCapability {
         override val displayName = source.displayName
         override val capabilities = setOf(MusicCapability.Search, MusicCapability.Playback)
@@ -244,15 +260,16 @@ class CrossProviderPlaybackFallbackResolverTest {
         override suspend fun resolvePlayback(
             track: MusicTrack,
             quality: AudioQualityTier,
-        ): PlaybackResolution = if (playable) {
-            PlaybackResolution.Playable(
+        ): PlaybackResolution = when {
+            !playable -> PlaybackResolution.Preview("https://preview.example/${track.id.value}")
+            quality.ordinal > maxPlayableQuality.ordinal ->
+                PlaybackResolution.Unavailable("quality unavailable")
+            else -> PlaybackResolution.Playable(
                 url = "https://audio.example/${track.id.value}",
                 requestHeaders = mapOf("Referer" to "https://example.com/"),
                 requestedQuality = quality,
-                actualQuality = AudioQualityTier.Lossless,
+                actualQuality = quality,
             )
-        } else {
-            PlaybackResolution.Preview("https://preview.example/${track.id.value}")
         }
     }
 }

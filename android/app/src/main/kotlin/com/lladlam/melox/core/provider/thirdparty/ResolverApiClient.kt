@@ -95,7 +95,16 @@ internal class ResolverApiClient(
                 http.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
                         if (response.code in setOf(401, 403, 429) || response.code >= 500) block(identity)
-                        report("${settings.kind.label}: HTTP ${response.code}")
+                        val detail = runCatching {
+                            response.peekBody(512).string()
+                                .replace(Regex("\\s+"), " ")
+                                .trim()
+                                .take(160)
+                        }.getOrNull()?.let { redactResolverCredential(it, settings.credential) }
+                        report(
+                            "${settings.kind.label}: HTTP ${response.code}" +
+                                (detail?.takeIf(String::isNotBlank)?.let { ": $it" } ?: ""),
+                        )
                         null
                     } else readResolverResponse(response)
                 }

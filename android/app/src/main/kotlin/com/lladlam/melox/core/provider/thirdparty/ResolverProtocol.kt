@@ -10,6 +10,27 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
 
+/** Descending quality fallbacks for the optional third-party APIs. */
+internal fun resolverQualityFallbacks(requested: AudioQualityTier): List<AudioQualityTier> =
+    when (requested) {
+        AudioQualityTier.Standard -> listOf(AudioQualityTier.Standard)
+        AudioQualityTier.High -> listOf(AudioQualityTier.High, AudioQualityTier.Standard)
+        AudioQualityTier.Lossless -> listOf(
+            AudioQualityTier.Lossless,
+            AudioQualityTier.High,
+            AudioQualityTier.Standard,
+        )
+        AudioQualityTier.HiResolution,
+        AudioQualityTier.Immersive,
+        AudioQualityTier.Master,
+        -> listOf(
+            requested,
+            AudioQualityTier.Lossless,
+            AudioQualityTier.High,
+            AudioQualityTier.Standard,
+        )
+    }.distinct()
+
 internal fun resolverRequestUrl(settings: ResolverSettings, track: MusicTrack, quality: AudioQualityTier): HttpUrl? {
     if (!settings.configured) return null
     val source = track.id.sourceId.builtIn ?: return null

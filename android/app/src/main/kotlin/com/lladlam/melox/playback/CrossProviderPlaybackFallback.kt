@@ -169,9 +169,24 @@ class CrossProviderPlaybackFallbackResolver(
                     eventLogger("strict matches ${provider.source.storageValue} song=${request.songId}: ${ranked.size}")
                     for (match in ranked) {
                         val playback = provider as PlaybackCapability
+                        val qualities = playbackQualityCandidates(request.quality)
+                        var lastQuality: AudioQualityTier? = null
+                        var lastResolution: PlaybackResolution? = null
                         val resolution = try {
-                            withTimeoutOrNull(providerTimeout) {
-                                playback.resolvePlayback(match.candidate, request.quality)
+                            // A provider may have no full URL at the requested
+                            // lossless/master tier but still have a complete
+                            // standard track. Try lower tiers before declaring
+                            // the match unusable; previews are never accepted.
+                            withTimeoutOrNull(providerTimeout * 2) {
+                                for (candidateQuality in qualities) {
+                                    lastQuality = candidateQuality
+                                    val attempt = playback.resolvePlayback(match.candidate, candidateQuality)
+                                    if (attempt is PlaybackResolution.Playable) {
+                                        return@withTimeoutOrNull attempt
+                                    }
+                                    lastResolution = attempt
+                                }
+                                lastResolution
                             }
                         } catch (error: CancellationException) {
                             throw error
@@ -183,7 +198,7 @@ class CrossProviderPlaybackFallbackResolver(
                         }
                         if (resolution == null) {
                             eventLogger(
-                                "playback ${provider.source.storageValue} timed out after ${providerTimeout}ms",
+                                "playback ${provider.source.storageValue} timed out after ${providerTimeout * 2}ms",
                             )
                             continue
                         }
@@ -200,7 +215,8 @@ class CrossProviderPlaybackFallbackResolver(
                         }
                         eventLogger(
                             "playback ${provider.source.storageValue} rejected: " +
-                                resolution.javaClass.simpleName,
+                                resolution.javaClass.simpleName +
+                                (lastQuality?.let { " at ${it.name}" } ?: ""),
                         )
                     }
                 }
@@ -210,6 +226,21 @@ class CrossProviderPlaybackFallbackResolver(
             resolved
         }
     }
+
+    private fun playbackQualityCandidates(requested: AudioQualityTier): List<AudioQualityTier> =
+        when (requested) {
+            AudioQualityTier.Standard -> listOf(AudioQualityTier.Standard)
+            AudioQualityTier.High -> listOf(AudioQualityTier.High, AudioQualityTier.Standard)
+            AudioQualityTier.Lossless -> listOf(
+                AudioQualityTier.Lossless,
+                AudioQualityTier.High,
+                AudioQualityTier.Standard,
+            )
+            AudioQualityTier.HiResolution,
+            AudioQualityTier.Immersive,
+            AudioQualityTier.Master,
+            -> listOf(requested, AudioQualityTier.High, AudioQualityTier.Standard)
+        }.distinct()
 
     private fun errorLabel(error: Throwable): String {
         val detail = error.message
