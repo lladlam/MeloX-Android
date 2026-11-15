@@ -80,6 +80,27 @@ class MeloXUpdateClientTest {
         }
     }
 
+
+    @Test
+    fun securitySuffixIsParsedByBaseVersionAndCanBeDetected() {
+        // The suffix is accepted by VERSION_PATTERN and stripped for comparison.
+        assertTrue(client.isNewer("0.7.4-security", "0.7.3"))
+        // A security rebuild of the same version is not a new version.
+        assertFalse(client.isNewer("0.7.3-security", "0.7.3"))
+        // The installed security build (0.7.4) must not update in a loop.
+        assertFalse(client.isNewer("0.7.4-security", "0.7.4"))
+    }
+
+    @Test
+    fun releasesSelectTheSecurityTagAsARelease() {
+        val release = client.parseReleases(
+            """[{"tag_name":"0.7.4-security","draft":false,"html_url":"https://github.com/lladlam/MeloX-Android/releases/tag/0.7.4-security","assets":[{"name":"MeloX-Android-0.7.4-security-arm64-v8a.apk","browser_download_url":"https://github.com/lladlam/MeloX-Android/releases/download/0.7.4-security/MeloX-Android-0.7.4-security-arm64-v8a.apk"}]}]""",
+        )
+        requireNotNull(release)
+        assertEquals("0.7.4-security", release.version)
+        assertEquals("MeloX-Android-0.7.4-security-arm64-v8a.apk", release.apkName)
+    }
+
     @Test
     fun staticManifestReplacesRateLimitedGitHubApi() {
         val release = client.parseManifest(
