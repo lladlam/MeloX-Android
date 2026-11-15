@@ -223,7 +223,16 @@ class BilibiliProvider(
             apiCache?.invalidateMixin(sessionScope())
             response = wbiGet("/x/player/wbi/playurl", params, retry403 = false)
         }
-        val data = response.data()
+        val responseCode = response.optInt("code")
+        if (responseCode != 0) {
+            return when (responseCode) {
+                -101, -403 -> PlaybackResolution.LoginRequired
+                else -> PlaybackResolution.Unavailable(
+                    response.optString("message").ifBlank { "Bilibili API $responseCode" },
+                )
+            }
+        }
+        val data = response.optJSONObject("data") ?: JSONObject()
         val directedTrafficActive = directedTrafficProvider()
         val candidates = buildList {
             addAudio(data.optJSONObject("dash")?.optJSONArray("audio"))
@@ -243,9 +252,9 @@ class BilibiliProvider(
                 }
             }
             ?: candidates.firstOrNull()
-            ?: return PlaybackResolution.Unavailable("Bilibili 没有返回 DASH 音频")
+            ?: return PlaybackResolution.LoginRequired
         val mediaUrl = BilibiliDirectedTrafficPolicy.selectMediaUrl(selected.urls, directedTrafficActive)
-            ?: return PlaybackResolution.Unavailable("Bilibili 没有返回 DASH 音频")
+            ?: return PlaybackResolution.LoginRequired
         android.util.Log.i(
             "MeloXBilibiliPlayback",
             "selected bvid=$physicalBvid cid=$physicalCid requested=$quality " +
@@ -253,14 +262,14 @@ class BilibiliProvider(
                 "directedTraffic=$directedTrafficActive",
         )
         val cookie = sessionProvider().cookie
-        if (cookie.isBlank()) return PlaybackResolution.LoginRequired
+        val requestHeaders = buildMap {
+            put("Referer", "https://www.bilibili.com/video/$physicalBvid")
+            put("User-Agent", UserAgent)
+            if (cookie.isNotBlank()) put("Cookie", cookie)
+        }
         return PlaybackResolution.Playable(
             url = mediaUrl,
-            requestHeaders = mapOf(
-                "Referer" to "https://www.bilibili.com/video/$physicalBvid",
-                "User-Agent" to UserAgent,
-                "Cookie" to cookie,
-            ),
+            requestHeaders = requestHeaders,
             requestedQuality = quality,
             actualQuality = selected.id.bilibiliTier(),
             bitrate = selected.bandwidth,
@@ -330,10 +339,14 @@ class BilibiliProvider(
 
     private fun currentMixinKey(): String {
         val loader = {
-            cachedGet("nav", "/x/web-interface/nav", emptyMap(), BilibiliApiCache.Account)
-                .data().optJSONObject("wbi_img")?.let {
-                    BilibiliWbiSigner.mixinKey(it.optString("img_url"), it.optString("sub_url"))
-                }?.takeIf(String::isNotBlank) ?: throw IOException("无法获取 Bilibili WBI key")
+            // The anonymous nav response is `code=-101` (not logged in), but it
+            // still contains the public wbi_img keys. Do not run it through the
+            // success-only API cache or every anonymous Bilibili search fails
+            // before WBI signing.
+            val nav = request("/x/web-interface/nav", emptyMap())
+            nav.optJSONObject("data")?.optJSONObject("wbi_img")?.let {
+                BilibiliWbiSigner.mixinKey(it.optString("img_url"), it.optString("sub_url"))
+            }?.takeIf(String::isNotBlank) ?: throw IOException("无法获取 Bilibili WBI key")
         }
         return apiCache?.mixinKey(sessionScope(), loader) ?: loader()
     }

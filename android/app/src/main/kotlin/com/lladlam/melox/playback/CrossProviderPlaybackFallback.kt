@@ -22,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.abs
 
 object CrossProviderPlaybackPreferences {
     private const val PreferencesName = "melox_playback"
@@ -158,13 +159,21 @@ class CrossProviderPlaybackFallbackResolver(
                         continue
                     }
                     eventLogger("search ${provider.source.storageValue}: ${candidates.size} candidates")
-                    val ranked = SpotifyTrackMatcher.rank(sourceTrack, candidates).let { matches ->
-                        if (sourceTrack.durationMs != null) {
-                            matches
-                        } else {
-                            // 没有时长时不能靠时长消歧，只接受歌手名单完全一致的结果。
-                            matches.filter { artistSet(sourceTrack) == artistSet(it.candidate) }
-                        }
+                    val ranked: List<MusicTrack> = if (provider.source == MusicSource.Bilibili) {
+                        // Bilibili titles are often uploader-formatted
+                        // ("尽情享受吧！因为『今天不是明天』…"). Exact title
+                        // matching rejects the official video, so use a
+                        // contained-title plus uploader/duration gate.
+                        rankBilibiliMatches(sourceTrack, candidates)
+                    } else {
+                        SpotifyTrackMatcher.rank(sourceTrack, candidates).let { matches ->
+                            if (sourceTrack.durationMs != null) {
+                                matches
+                            } else {
+                                // 没有时长时不能靠时长消歧，只接受歌手名单完全一致的结果。
+                                matches.filter { artistSet(sourceTrack) == artistSet(it.candidate) }
+                            }
+                        }.map { it.candidate }
                     }
                     eventLogger("strict matches ${provider.source.storageValue} song=${request.songId}: ${ranked.size}")
                     for (match in ranked) {
@@ -180,7 +189,7 @@ class CrossProviderPlaybackFallbackResolver(
                             withTimeoutOrNull(providerTimeout * 2) {
                                 for (candidateQuality in qualities) {
                                     lastQuality = candidateQuality
-                                    val attempt = playback.resolvePlayback(match.candidate, candidateQuality)
+                                    val attempt = playback.resolvePlayback(match, candidateQuality)
                                     if (attempt is PlaybackResolution.Playable) {
                                         return@withTimeoutOrNull attempt
                                     }
@@ -206,7 +215,7 @@ class CrossProviderPlaybackFallbackResolver(
                             eventLogger("resolved song=${request.songId} via ${provider.source.storageValue}")
                             return@withTimeoutOrNull CrossProviderFallbackResult(
                                 source = provider.source,
-                                resourceId = match.candidate.id.value,
+                                resourceId = match.id.value,
                                 url = resolution.url,
                                 requestHeaders = resolution.requestHeaders,
                                 actualQuality = resolution.actualQuality ?: resolution.requestedQuality,
@@ -262,12 +271,54 @@ class CrossProviderPlaybackFallbackResolver(
         else -> ProviderTrackMetadata.Empty
     }
 
+    private fun rankBilibiliMatches(
+        source: MusicTrack,
+        candidates: List<MusicTrack>,
+    ): List<MusicTrack> {
+        val titleKeys = bilibiliTitleKeys(source.title)
+        if (titleKeys.isEmpty()) return emptyList()
+        val sourceArtists = source.artists
+            .map { TrackAggregation.normalizeArtist(it.name) }
+            .filter(String::isNotBlank)
+        return candidates.filter { candidate ->
+            val candidateTitle = TrackAggregation.normalize(candidate.title)
+            val titleMatches = titleKeys.any { key ->
+                key.length >= 3 && candidateTitle.contains(key)
+            }
+            if (!titleMatches) return@filter false
+            val candidateArtists = candidate.artists
+                .map { TrackAggregation.normalizeArtist(it.name) }
+                .filter(String::isNotBlank)
+            val artistMatches = sourceArtists.any { sourceArtist ->
+                candidateArtists.any { candidateArtist ->
+                    candidateArtist == sourceArtist ||
+                        candidateArtist.contains(sourceArtist) ||
+                        sourceArtist.contains(candidateArtist)
+                }
+            }
+            val durationMatches = source.durationMs != null && candidate.durationMs != null &&
+                abs(source.durationMs - candidate.durationMs) <= BilibiliDurationToleranceMs
+            artistMatches || durationMatches
+        }
+    }
+
+    private fun bilibiliTitleKeys(value: String): Set<String> = buildList {
+        add(value)
+        for (delimiter in listOf('(', '（', '[', '【', '『')) {
+            add(value.substringBefore(delimiter))
+        }
+    }.map(TrackAggregation::normalize)
+        .filter { it.length >= 3 }
+        .toSet()
+
     private fun artistSet(track: MusicTrack): Set<String> = track.artists
         .map { TrackAggregation.normalizeArtist(it.name) }
         .filter(String::isNotBlank)
         .toSet()
 
     companion object {
+        private const val BilibiliDurationToleranceMs = 10_000L
+
         /**
          * Sources that can return a complete, directly playable audio URL.
          *
