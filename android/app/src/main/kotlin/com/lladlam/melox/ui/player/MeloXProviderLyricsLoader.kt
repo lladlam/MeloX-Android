@@ -759,7 +759,7 @@ internal object MeloXProviderLyricsLoader {
                         if (source != selectedSource) job.cancel()
                     }
                 }
-                Log.d(
+                Log.i(
                     "MeloXLyricsAuto",
                     "selectedAutomatic source=${selected.document.source} " +
                         "lines=${selected.document.lines.size} " +
@@ -789,7 +789,7 @@ internal object MeloXProviderLyricsLoader {
                     }
                 },
         )
-        Log.d(
+        Log.i(
             "MeloXLyricsAuto",
             "selectedPriority=${selected?.priority} lines=${selected?.document?.lines?.size ?: 0} " +
                 "wordLines=${selected?.document?.lines?.count { it.syllables.isNotEmpty() } ?: 0}",
@@ -854,7 +854,7 @@ internal object MeloXProviderLyricsLoader {
             ) ?: return@launch
             if (!hasWordTiming(best.document) || best.document == selected) return@launch
             remember(snapshot.cacheKey(), best.document)
-            Log.d(
+            Log.i(
                 "MeloXLyricsAuto",
                 "lateWordTimingUpgrade source=${best.document.source} " +
                     "wordLines=${best.document.lines.count { it.syllables.isNotEmpty() }}",
@@ -897,8 +897,14 @@ internal object MeloXProviderLyricsLoader {
             merged = LyricTranslationPolicy.combineTranslations(selected, document) ?: merged
         }
         if (merged != null) {
-            Log.d("MeloXLyricsAuto", "combined translation lines=${merged!!.lines.count { !it.translation.isNullOrBlank() }}")
+            Log.i("MeloXLyricsAuto", "combined translation lines=${merged!!.lines.count { !it.translation.isNullOrBlank() }}")
             return merged!!
+        }
+        if (ordered.isNotEmpty()) {
+            Log.i(
+                "MeloXLyricsAuto",
+                "translation merge skipped selectedLines=${selected.lines.size} alternatives=${ordered.size}",
+            )
         }
         return selected
     }
@@ -961,7 +967,7 @@ internal object MeloXProviderLyricsLoader {
             withTimeoutOrNull(timeoutMs) { loadMatchedSource(appContext, snapshot, source) }
         }.getOrNull()?.let { it.copy(document = it.document.withoutPlaceholderLyrics()) }
             ?: ResolvedLyrics(LyricsDocument(emptyList()), null)
-        Log.d(
+        Log.i(
             "MeloXLyricsAuto",
             "track=${snapshot.resourceId.sourceId.value}:${snapshot.resourceId.value} " +
                 "source=$source elapsed=${SystemClock.elapsedRealtime() - startedAt}ms " +
