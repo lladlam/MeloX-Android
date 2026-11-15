@@ -100,11 +100,19 @@ data class MeloXRemoteConfig(
                 strategyJson.optString(name).takeIf { it in allowed } ?: default
             }
             val fallbackJson = root.getJSONObject("crossProviderFallback")
-            val order = fallbackJson.getJSONArray("order").strings()
+            // A control plane may only know a subset of the providers supported by
+            // an older/newer client. Keep the valid configured prefix and append
+            // every missing provider in the safe default order instead of throwing
+            // the whole custom order away.
+            val configuredOrder = fallbackJson.getJSONArray("order").strings()
                 .filter { it in MeloXRemoteConfigDefaults.AllowedProviders }
                 .distinct()
-                .takeIf { it.size == MeloXRemoteConfigDefaults.AllowedProviders.size }
-                ?: MeloXRemoteConfigDefaults.FallbackOrder
+            val order = if (configuredOrder.isEmpty()) {
+                MeloXRemoteConfigDefaults.FallbackOrder
+            } else {
+                configuredOrder + MeloXRemoteConfigDefaults.FallbackOrder
+                    .filterNot { it in configuredOrder }
+            }
             val disabledProviders = fallbackJson.getJSONArray("disabledProviders").strings()
                 .filterTo(linkedSetOf()) { it in MeloXRemoteConfigDefaults.AllowedProviders }
             val timeoutMs = fallbackJson.getInt("timeoutMs").coerceIn(3_000, 10_000)

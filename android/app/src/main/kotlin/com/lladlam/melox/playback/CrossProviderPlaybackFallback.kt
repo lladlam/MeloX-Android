@@ -17,6 +17,7 @@ import com.lladlam.melox.core.music.provider.TrackAggregation
 import com.lladlam.melox.core.provider.spotify.SpotifyTrackMatcher
 import com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigDefaults
 import com.lladlam.melox.core.remoteconfig.MeloXRemoteFallbackConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
@@ -81,6 +82,13 @@ class CrossProviderPlaybackFallbackResolver(
     private val fallbackConfigProvider: () -> MeloXRemoteFallbackConfig = {
         MeloXRemoteConfigDefaults.Config.fallback
     },
+    /**
+     * A single slow provider must not consume the whole fallback budget.
+     * YouTube Music, for example, can take almost the complete 6 s budget to
+     * fail; the next provider then resolves just as the outer timeout expires
+     * and the successful URL is discarded.
+     */
+    private val perProviderTimeoutMs: Long = 2_000L,
 ) {
     fun cacheIdentity(): String = if (enabledProvider()) {
         val fallback = fallbackConfigProvider()
@@ -128,12 +136,28 @@ class CrossProviderPlaybackFallbackResolver(
                 // Sequential by design: the configured order is the priority.
                 // Searching every provider in parallel would let a lower-priority
                 // source win on a tie and would waste mobile data.
+                val providerTimeout = perProviderTimeoutMs.coerceAtLeast(1L)
                 for (provider in providers) {
                     val search = provider as SearchCapability
-                    val candidates = runCatching { search.searchSongs(query, page = 1, pageSize = 10).items }
-                        .onSuccess { eventLogger("search ${provider.source.storageValue}: ${it.size} candidates") }
-                        .onFailure { eventLogger("search ${provider.source.storageValue} failed: ${it.javaClass.simpleName}") }
-                        .getOrDefault(emptyList())
+                    val candidates = try {
+                        withTimeoutOrNull(providerTimeout) {
+                            search.searchSongs(query, page = 1, pageSize = 10).items
+                        }
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Throwable) {
+                        eventLogger(
+                            "search ${provider.source.storageValue} failed: ${errorLabel(error)}",
+                        )
+                        continue
+                    }
+                    if (candidates == null) {
+                        eventLogger(
+                            "search ${provider.source.storageValue} timed out after ${providerTimeout}ms",
+                        )
+                        continue
+                    }
+                    eventLogger("search ${provider.source.storageValue}: ${candidates.size} candidates")
                     val ranked = SpotifyTrackMatcher.rank(sourceTrack, candidates).let { matches ->
                         if (sourceTrack.durationMs != null) {
                             matches
@@ -145,9 +169,24 @@ class CrossProviderPlaybackFallbackResolver(
                     eventLogger("strict matches ${provider.source.storageValue} song=${request.songId}: ${ranked.size}")
                     for (match in ranked) {
                         val playback = provider as PlaybackCapability
-                        val resolution = runCatching {
-                            playback.resolvePlayback(match.candidate, request.quality)
-                        }.getOrNull()
+                        val resolution = try {
+                            withTimeoutOrNull(providerTimeout) {
+                                playback.resolvePlayback(match.candidate, request.quality)
+                            }
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: Throwable) {
+                            eventLogger(
+                                "playback ${provider.source.storageValue} failed: ${errorLabel(error)}",
+                            )
+                            continue
+                        }
+                        if (resolution == null) {
+                            eventLogger(
+                                "playback ${provider.source.storageValue} timed out after ${providerTimeout}ms",
+                            )
+                            continue
+                        }
                         if (resolution is PlaybackResolution.Playable) {
                             eventLogger("resolved song=${request.songId} via ${provider.source.storageValue}")
                             return@withTimeoutOrNull CrossProviderFallbackResult(
@@ -161,7 +200,7 @@ class CrossProviderPlaybackFallbackResolver(
                         }
                         eventLogger(
                             "playback ${provider.source.storageValue} rejected: " +
-                                "${resolution?.javaClass?.simpleName ?: "error"}",
+                                resolution.javaClass.simpleName,
                         )
                     }
                 }
@@ -170,6 +209,15 @@ class CrossProviderPlaybackFallbackResolver(
             if (resolved == null) eventLogger("unresolved or timed out song=${request.songId}")
             resolved
         }
+    }
+
+    private fun errorLabel(error: Throwable): String {
+        val detail = error.message
+            ?.replace(Regex("\\s+"), " ")
+            ?.trim()
+            ?.take(160)
+            ?.takeIf(String::isNotBlank)
+        return error.javaClass.simpleName + (detail?.let { ": $it" } ?: "")
     }
 
     private fun isEligibleFallbackProvider(provider: MusicProvider): Boolean =

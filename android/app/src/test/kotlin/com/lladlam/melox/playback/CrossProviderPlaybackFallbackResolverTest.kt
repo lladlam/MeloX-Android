@@ -18,6 +18,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.coroutines.delay
 
 class CrossProviderPlaybackFallbackResolverTest {
     @Test
@@ -163,6 +164,38 @@ class CrossProviderPlaybackFallbackResolverTest {
         assertEquals(eligible.size, MeloXRemoteConfigDefaults.FallbackOrder.size)
     }
 
+    @Test
+    fun slowProviderCannotConsumeTheWholeFallbackBudget() {
+        val slow = FakeProvider(
+            source = MusicSource.Bilibili,
+            tracks = listOf(track(MusicSource.Bilibili)),
+            playable = true,
+            searchDelayMs = 10_000L,
+        )
+        val fast = FakeProvider(
+            source = MusicSource.QQMusic,
+            tracks = listOf(track(MusicSource.QQMusic)),
+            playable = true,
+        )
+        val resolver = CrossProviderPlaybackFallbackResolver(
+            enabledProvider = { true },
+            registryProvider = { MusicProviderRegistry(listOf(slow, fast)) },
+            fallbackConfigProvider = {
+                MeloXRemoteConfigDefaults.Config.fallback.copy(
+                    order = listOf("bilibili", "qq_music"),
+                    timeoutMs = 3_000,
+                )
+            },
+            perProviderTimeoutMs = 100L,
+        )
+
+        val startedAt = System.nanoTime()
+        val result = resolver.resolve(request())
+
+        assertEquals(MusicSource.QQMusic, result?.source)
+        assertTrue((System.nanoTime() - startedAt) / 1_000_000L < 2_000L)
+    }
+
     private fun resolver(vararg providers: MusicProvider) = CrossProviderPlaybackFallbackResolver(
         enabledProvider = { true },
         registryProvider = { MusicProviderRegistry(providers.asList()) },
@@ -194,6 +227,7 @@ class CrossProviderPlaybackFallbackResolverTest {
         override val source: MusicSource,
         private val tracks: List<MusicTrack>,
         private val playable: Boolean,
+        private val searchDelayMs: Long = 0L,
     ) : MusicProvider, SearchCapability, PlaybackCapability {
         override val displayName = source.displayName
         override val capabilities = setOf(MusicCapability.Search, MusicCapability.Playback)
@@ -202,6 +236,7 @@ class CrossProviderPlaybackFallbackResolverTest {
 
         override suspend fun searchSongs(query: String, page: Int, pageSize: Int): MusicPage<MusicTrack> {
             searchCount += 1
+            if (searchDelayMs > 0L) delay(searchDelayMs)
             assertTrue(query.contains("A Song"))
             return MusicPage(tracks, page, pageSize, tracks.size.toLong())
         }
