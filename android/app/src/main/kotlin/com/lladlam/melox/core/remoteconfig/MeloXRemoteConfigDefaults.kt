@@ -89,5 +89,6 @@ object MeloXRemoteConfigDefaults {
         colorOverrides = emptyMap(),
         rules = Rules,
         updatePatches = emptyList(),
+        securityUpdate = MeloXRemoteSecurityUpdate(enabled = false, message = null),
     )
 }

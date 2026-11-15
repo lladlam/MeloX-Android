@@ -16,6 +16,10 @@ internal object MeloXReleaseNotesCatalog {
     }
 
     private val chineseEntries = listOf(
+        "云控签名密钥已轮换；新增云控强制安全更新开关，开启后最新 *-security 版本必须安装完整 APK。",
+        "修复 Android 10 播放器流光背景的 RuntimeShader 崩溃。",
+        "修复下载任务 lateinit job 崩溃，并限制 Bilibili JSON 响应大小与嵌套深度。",
+        "新增 resolver 插件能力与新的插件设置/账号页；修复一起听单人模式开关被刷新重置。",
         "修复网易云歌曲库取数上限：歌曲详情每批最多 100 首，之前误设 250 会静默丢歌，导致歌单缺歌、收藏补漏变慢甚至超时。",
         "修复「添加到歌单」后歌曲消失：现在会校验服务端内层结果，写入失败会明确报错，不再静默丢弃。",
         "统一收藏开启时红心会同步写回网易云，避免刷新后被服务端真值覆盖。",
@@ -31,6 +35,10 @@ internal object MeloXReleaseNotesCatalog {
     )
 
     private val englishEntries = listOf(
+        "Rotated the cloud-control signing key and added the signed security-update gate; the latest *-security release forces a full-APK update when enabled.",
+        "Fixed the Android 10 RuntimeShader crash in the flowing-light player background.",
+        "Fixed the download lateinit job crash and bounded Bilibili JSON size/nesting.",
+        "Added the resolver plugin capability and the new plugin settings/account layout; fixed the Listen Together solo toggle reset.",
         "Fixed the NetEase song-detail fetch cap: at most 100 songs per request, so the previous 250-song batches no longer silently drop tracks (which made playlists incomplete and favorites slow or timed out).",
         "Fixed songs disappearing after adding them to a playlist: the nested server result is now validated and failures surface as errors instead of being silently ignored.",
         "With unified favorites enabled, the heart button also writes back to NetEase so a refresh cannot overwrite it.",

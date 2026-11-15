@@ -172,6 +172,21 @@ class MeloXRemoteConfigModelsTest {
         assertEquals("v1", bogus.strategies["netease_playback"])
     }
 
+
+    @Test
+    fun securityUpdateGateIsParsedAndDefaultsOff() {
+        val enabled = MeloXRemoteConfig.parse(
+            org.json.JSONObject(defaultPayload())
+                .put("securityUpdate", org.json.JSONObject().put("enabled", true).put("message", "critical"))
+                .toString().toByteArray(),
+        )
+        assertTrue(enabled.securityUpdate.enabled)
+        assertEquals("critical", enabled.securityUpdate.message)
+
+        val missing = MeloXRemoteConfig.parse(defaultPayload().toByteArray())
+        org.junit.Assert.assertFalse(missing.securityUpdate.enabled)
+    }
+
     private fun defaultPayload(): String = """
         {
           "schemaVersion": 1,

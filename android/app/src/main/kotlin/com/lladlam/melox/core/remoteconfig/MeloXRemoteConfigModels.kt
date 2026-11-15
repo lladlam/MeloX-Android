@@ -45,6 +45,12 @@ data class MeloXRemoteUpdatePatch(
     val patchBytes: Long,
 )
 
+/** Cloud-controlled gate for forced security releases. The release tag must end in `-security`. */
+data class MeloXRemoteSecurityUpdate(
+    val enabled: Boolean,
+    val message: String?,
+)
+
 data class MeloXRemoteScript(
     val name: String,
     val revision: Int,
@@ -72,6 +78,7 @@ data class MeloXRemoteConfig(
     val colorOverrides: Map<String, Int>,
     val rules: MeloXRemoteRules,
     val updatePatches: List<MeloXRemoteUpdatePatch>,
+    val securityUpdate: MeloXRemoteSecurityUpdate,
 ) {
     fun appliesTo(versionCode: Int): Boolean = versionCode in minVersionCode..maxVersionCode
 
@@ -101,6 +108,14 @@ data class MeloXRemoteConfig(
             val disabledProviders = fallbackJson.getJSONArray("disabledProviders").strings()
                 .filterTo(linkedSetOf()) { it in MeloXRemoteConfigDefaults.AllowedProviders }
             val timeoutMs = fallbackJson.getInt("timeoutMs").coerceIn(3_000, 10_000)
+            val securityJson = root.optJSONObject("securityUpdate")
+            val securityUpdate = MeloXRemoteSecurityUpdate(
+                enabled = securityJson?.optBoolean("enabled", false) == true,
+                message = securityJson?.optString("message")
+                    ?.trim()
+                    ?.take(300)
+                    ?.takeIf(String::isNotBlank),
+            )
             val noticeJson = root.optJSONObject("notice")
             val notice = noticeJson?.let {
                 MeloXRemoteNotice(
@@ -133,6 +148,7 @@ data class MeloXRemoteConfig(
                 colorOverrides = parseColorOverrides(root.optJSONObject("colorOverrides")),
                 rules = parseRules(root.optJSONObject("rules")),
                 updatePatches = parseUpdatePatches(root.optJSONArray("updatePatches")),
+                securityUpdate = securityUpdate,
             )
         }
     }

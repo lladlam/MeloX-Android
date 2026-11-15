@@ -29,9 +29,9 @@ The **Windows** and **Linux** editions are in their final verification stage. If
 
 > MeloX Android is an unofficial open-source project. It is not affiliated with, partnered with, or authorized by NetEase Cloud Music, Xiaomi, Apple, or their related companies.
 
-## Current version: 0.7.3
+## Current version: 0.7.4-security
 
-`0.7.3` (versionCode **28**, 2026-11-15) fixes the NetEase library fetch cap, playlist writes and favorites syncing, unifies lyric fetching with language-aware translation and cross-source merging, and moves the flowing-light player background onto the GPU.
+`0.7.4-security` (versionCode **29**, 2026-11-15) rotates the remote-config signing key, adds the forced security-update gate, and fixes the Android 10 RuntimeShader crash, download-job crash and Bilibili JSON OOM. It also includes the resolver plugin capability and plugin settings redesign.
 
 - NetEase: song detail now respects the server's 100-song cap instead of silently dropping tracks; playlist writes validate the nested result so failures are no longer silent (#119); unified favorites also write back to NetEase.
 - Lyrics: one pipeline for every source, translation decided by language (mismatches dropped), cross-source translation merge with word-timing priority, and late QQ QRC now upgrades a line-timed lyric in place.
@@ -45,9 +45,9 @@ The **Windows** and **Linux** editions are in their final verification stage. If
 - Listen Together gains a solo mode that keeps the room online without sending local commands. QQ Music bracket lines can become backing vocals of the previous line (off by default). Fixed the blank YouTube Music sign-in WebView, Qishui QR sign-in, and completed zh-Hans/zh-Hant/ja translations.
 - An optional experimental MeloX Rear companion entry appears under Settings → Experimental; the separate YTRear-derived app is not distributed with this release and its upstream license is still pending.
 
-- Download and full notes: [GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.7.3)
+- Download and full notes: [GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.7.4-security)
 - Version history: [CHANGELOG.md](CHANGELOG.md)
-- This release: [docs/releases/0.7.3.md](docs/releases/0.7.3.md)
+- This release: [docs/releases/0.7.4-security.md](docs/releases/0.7.4-security.md)
 
 > [!WARNING]
 > Third-party music sources are imported by the user and depend on external services. Sources used for testing before release have failed because of dead endpoints, rate limits, DNS or certificate errors, or unplayable URLs. MeloX cannot guarantee that any third-party source works. If you hit a problem, open Settings → About, scroll to the bottom, export all MeloX logs, and send them to `lladlam114@gmail.com`. Logs may contain account state, song metadata, request URLs, or other private data. Review them before sending.

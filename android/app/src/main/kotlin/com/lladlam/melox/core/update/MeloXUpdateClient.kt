@@ -19,6 +19,8 @@ data class MeloXRelease(
     val apkUrl: String?,
     val apkName: String?,
     val publishedAt: String,
+    /** Release tag explicitly marks a security fix (`*-security`). */
+    val securityCritical: Boolean = false,
 )
 
 /** Latest commit on the default branch, for development-build update checks. */
@@ -162,6 +164,7 @@ class MeloXUpdateClient(
             apkUrl = apkUrl,
             apkName = value.optString("apkName").trim().takeIf(String::isNotBlank),
             publishedAt = value.optString("publishedAt"),
+            securityCritical = value.optBoolean("securityCritical", false) || isSecurityTag(version),
         )
     }
 
@@ -192,6 +195,7 @@ class MeloXUpdateClient(
                     apkUrl = apkUrl,
                     apkName = asset?.optString("name")?.trim()?.takeIf(String::isNotBlank),
                     publishedAt = value.optString("published_at"),
+                    securityCritical = isSecurityTag(tag),
                 )
             }
             .maxWithOrNull(compareBy<Pair<List<Int>, MeloXRelease>>(
@@ -248,6 +252,9 @@ class MeloXUpdateClient(
         }
         throw IOException("获取最新 commit 失败：${lastError?.message ?: "所有源均不可用"}")
     }
+
+    private fun isSecurityTag(value: String): Boolean =
+        value.trim().substringAfterLast('-', "").equals("security", ignoreCase = true)
 
     private fun versionParts(value: String): List<Int>? {
         val match = VERSION_PATTERN.matchEntire(value.trim()) ?: return null

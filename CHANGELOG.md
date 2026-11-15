@@ -2,6 +2,17 @@
 
 [English](../README.md)
 
+## 0.7.4-security — 2026-11-15
+
+- 版本号升级为 `0.7.4`，`versionCode` 提升至 **29**；发布标签 `0.7.4-security`，产物为 `MeloX-Android-0.7.4-security-arm64-v8a.apk` 与 `MeloX-Android-0.7.4-security-armeabi-v7a.apk`。
+- 云控签名密钥轮换为 `melox-remote-config-2026-11`；旧 0.7.3 不再信任新云控，需要安装本版本。
+- 新增云控 `securityUpdate` 强制更新开关：开启后，最新 `*-security` Release 必须安装完整 APK，不提供增量补丁和“稍后”。
+- 旧 0.7.3 只能看到普通可选更新，无法被强制；旧私钥密码丢失且旧二进制没有强制更新逻辑。
+- 修复 Android 10 播放器流光背景的 `RuntimeShader` 崩溃。
+- 修复下载任务的 `lateinit property job` 崩溃。
+- 限制 Bilibili JSON 响应大小/嵌套深度，避免 OOM。
+- 新增 `resolver` 插件能力与插件设置/账号页布局；修复一起听单人模式开关被房间刷新重置。
+
 ## 0.7.3 — 2026-11-15
 
 - 版本号升级为 `0.7.3`，`versionCode` 提升至 **28**；发布标签 `0.7.3`，正式产物为 `MeloX-Android-0.7.3-arm64-v8a.apk` 与 `MeloX-Android-0.7.3-armeabi-v7a.apk`。

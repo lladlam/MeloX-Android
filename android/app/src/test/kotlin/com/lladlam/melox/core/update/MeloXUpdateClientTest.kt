@@ -99,6 +99,7 @@ class MeloXUpdateClientTest {
         requireNotNull(release)
         assertEquals("0.7.4-security", release.version)
         assertEquals("MeloX-Android-0.7.4-security-arm64-v8a.apk", release.apkName)
+        assertTrue(release.securityCritical)
     }
 
     @Test

@@ -129,6 +129,7 @@ import com.lladlam.melox.core.recommendation.LocalRecommendationEngine
 import com.lladlam.melox.core.recommendation.LocalRecommendationStore
 import com.lladlam.melox.core.recognition.SongRecognitionClient
 import com.lladlam.melox.core.recognition.SongRecognitionResult
+import com.lladlam.melox.core.update.MeloXForcedUpdate
 import com.lladlam.melox.core.update.MeloXRelease
 import com.lladlam.melox.core.update.MeloXDevCommit
 import com.lladlam.melox.core.update.MeloXUpdateClient
@@ -3753,6 +3754,10 @@ private fun formatRemoteConfigTime(value: Long): String = if (value <= 0L) {
 private fun AboutSettings(context: android.content.Context) {
     val githubRouting = remember { MeloXGitHubRouting(context) }
     val updateClient = remember { MeloXUpdateClient(context, routing = githubRouting) }
+    val remoteConfigStatus by MeloXRemoteConfigRuntime.status.collectAsState()
+    val forceSecurityUpdates = remoteConfigStatus.source == MeloXRemoteConfigSource.VerifiedRemote &&
+        MeloXRemoteConfigConsent.enabled(context) &&
+        remoteConfigStatus.config.securityUpdate.enabled
     val scope = rememberCoroutineScope()
     var checking by remember { mutableStateOf(false) }
     var exportingLogs by remember { mutableStateOf(false) }
@@ -3903,11 +3908,19 @@ private fun AboutSettings(context: android.content.Context) {
             checking = true
             runCatching { updateClient.latestStableRelease(forceSourceBenchmark = true) }
                 .onSuccess {
-                    release = it
-                    updateStatus = if (updateClient.isNewer(it.version, BuildConfig.VERSION_NAME)) {
-                        "发现新版本 ${it.version}：${it.name}"
+                    if (updateClient.isNewer(it.version, BuildConfig.VERSION_NAME) &&
+                        forceSecurityUpdates && it.securityCritical
+                    ) {
+                        release = null
+                        MeloXForcedUpdate.require(it)
+                        updateStatus = "发现安全更新 ${it.version}，必须安装完整 APK"
                     } else {
-                        "当前已是最新版本（${BuildConfig.VERSION_NAME}）"
+                        release = it
+                        updateStatus = if (updateClient.isNewer(it.version, BuildConfig.VERSION_NAME)) {
+                            "发现新版本 ${it.version}：${it.name}"
+                        } else {
+                            "当前已是最新版本（${BuildConfig.VERSION_NAME}）"
+                        }
                     }
                 }
                 .onFailure { updateStatus = it.message ?: "更新检查失败" }
@@ -3965,10 +3978,14 @@ private fun AboutSettings(context: android.content.Context) {
     }
     release?.takeIf { updateClient.isNewer(it.version, BuildConfig.VERSION_NAME) }?.let { available ->
         Spacer(Modifier.height(10.dp))
-        var deltaPatch by remember(available.version) {
+        var deltaPatch by remember(available.version, forceSecurityUpdates) {
             mutableStateOf<com.lladlam.melox.core.remoteconfig.MeloXRemoteUpdatePatch?>(null)
         }
-        LaunchedEffect(available.version) {
+        LaunchedEffect(available.version, forceSecurityUpdates) {
+            if (forceSecurityUpdates && available.securityCritical) {
+                deltaPatch = null
+                return@LaunchedEffect
+            }
             deltaPatch = withContext(Dispatchers.IO) {
                 val patch = com.lladlam.melox.core.remoteconfig.MeloXRemoteConfigRuntime.status.value
                     .config.updatePatches.firstOrNull { it.toVersion == available.version }
