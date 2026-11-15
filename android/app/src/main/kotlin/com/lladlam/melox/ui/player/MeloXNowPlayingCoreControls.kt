@@ -206,13 +206,11 @@ internal fun MeloXNowPlayingCoreControls(
     }
     val transportGap = when {
         tabletLandscape -> 8.dp
-        carHeadUnit -> 14.dp
         compact -> 14.dp
         else -> 19.dp
     }
     val volumeGap = when {
-        tabletLandscape -> 6.dp
-        carHeadUnit -> 0.dp
+        tabletLandscape -> 14.dp
         compact -> 22.dp
         else -> 31.dp
     }
