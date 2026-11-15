@@ -130,6 +130,39 @@ class CrossProviderPlaybackFallbackResolverTest {
         assertEquals(0, standard.searchCount)
     }
 
+    @Test
+    fun youtubeMusicIsEligibleWithoutAnyCredential() {
+        val youtube = track(MusicSource.YouTubeMusic)
+        val provider = FakeProvider(MusicSource.YouTubeMusic, listOf(youtube), playable = true)
+
+        val result = resolver(provider).resolve(request())
+
+        assertEquals(MusicSource.YouTubeMusic, result?.source)
+        assertEquals(1, provider.searchCount)
+    }
+
+    @Test
+    fun configuredJellyfinServerCanServeAsTheLastResort() {
+        val jellyfin = track(MusicSource.Jellyfin)
+        val provider = FakeProvider(MusicSource.Jellyfin, listOf(jellyfin), playable = true)
+
+        val result = resolver(provider).resolve(request())
+
+        assertEquals(MusicSource.Jellyfin, result?.source)
+        assertEquals(1, provider.searchCount)
+    }
+
+    @Test
+    fun defaultOrderAndRemoteAllowListCoverEveryEligibleSource() {
+        val eligible = CrossProviderPlaybackFallbackResolver.EligibleSources
+            .map(MusicSource::storageValue)
+            .toSet()
+
+        assertEquals(eligible, MeloXRemoteConfigDefaults.AllowedProviders)
+        assertEquals(eligible, MeloXRemoteConfigDefaults.FallbackOrder.toSet())
+        assertEquals(eligible.size, MeloXRemoteConfigDefaults.FallbackOrder.size)
+    }
+
     private fun resolver(vararg providers: MusicProvider) = CrossProviderPlaybackFallbackResolver(
         enabledProvider = { true },
         registryProvider = { MusicProviderRegistry(providers.asList()) },

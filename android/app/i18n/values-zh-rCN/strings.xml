@@ -1034,9 +1034,9 @@
     <string name="settings_content_hq_playlists">发现页显示精品歌单</string>
     <string name="settings_content_play_count">显示歌单播放量</string>
     <string name="settings_content_cross_provider">不可用资源从其他平台获取</string>
-    <string name="settings_content_cross_provider_active">仅当网易云明确未返回可播放音频时，才会严格匹配 QQ音乐、酷狗音乐或 Bilibili 的完整音源。</string>
+    <string name="settings_content_cross_provider_active">仅当网易云明确未返回可播放音频时，才会严格匹配 Bilibili、YouTube Music、QQ音乐、酷狗、酷我、汽水等平台以及已配置的 Jellyfin 自建服务器的完整音源；未登录时尝试各平台的匿名接口。</string>
     <string name="settings_content_cross_provider_title">启用跨平台资源匹配？</string>
-    <string name="settings_content_cross_provider_body">仅当网易云明确无法返回完整可播放音频时，MeloX 才会将当前曲目的标题、歌手和时长发送给 QQ音乐、酷狗音乐和 Bilibili 的搜索接口。</string>
+    <string name="settings_content_cross_provider_body">仅当网易云明确无法返回完整可播放音频时，MeloX 才会将当前曲目的标题、歌手和时长发送给 Bilibili、YouTube Music、QQ音乐、酷狗、酷我、汽水等平台的搜索接口；若已配置 Jellyfin，也会查询你的自建服务器。已登录的目标平台使用该平台自己的账号凭证，未登录的平台仅使用匿名接口。</string>
     <string name="settings_content_cross_provider_match">只有标题与主艺人一致、且时长在严格范围内的完整音源才会播放。MeloX 不使用试听片段，也不会绕过付费、地区、版权、DRM 或账号权限限制。实际平台、歌曲版本和音质可能与原条目不同；收藏、歌单身份和歌词仍保留原网易云条目。</string>
     <string name="settings_content_cross_provider_terms">播放行为同时受实际音源平台的服务条款和隐私政策约束，你可以随时关闭此功能。</string>
     <string name="settings_content_cross_provider_enable">了解并启用</string>

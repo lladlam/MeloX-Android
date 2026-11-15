@@ -189,6 +189,14 @@ class CrossProviderPlaybackFallbackResolver(
         .toSet()
 
     companion object {
+        /**
+         * Sources that can return a complete, directly playable audio URL.
+         *
+         * Public providers decide internally whether to use the signed-in session
+         * or the anonymous endpoint; inclusion here never requires the user to be
+         * logged in. Jellyfin is the exception: it only participates when the user
+         * has configured their own server, and is ordered last.
+         */
         val EligibleSources = setOf(
             MusicSource.Netease,
             MusicSource.QQMusic,
@@ -196,6 +204,8 @@ class CrossProviderPlaybackFallbackResolver(
             MusicSource.Qishui,
             MusicSource.Kuwo,
             MusicSource.Bilibili,
+            MusicSource.YouTubeMusic,
+            MusicSource.Jellyfin,
         )
 
         internal fun splitArtists(value: String): List<String> = value

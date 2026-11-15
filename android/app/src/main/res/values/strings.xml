@@ -1039,9 +1039,9 @@
     <string name="settings_content_hq_playlists">Show featured playlists on Discover</string>
     <string name="settings_content_play_count">Show playlist play counts</string>
     <string name="settings_content_cross_provider">Get unavailable tracks from other services</string>
-    <string name="settings_content_cross_provider_active">Only when NetEase explicitly returns no playable audio, MeloX looks for a full match on QQ Music, Kugou, or Bilibili.</string>
+    <string name="settings_content_cross_provider_active">Only when NetEase explicitly returns no playable audio does MeloX look for a full match on Bilibili, YouTube Music, QQ Music, Kugou, Kuwo, Qishui, other services, and a configured Jellyfin server. Signed-out services are tried anonymously.</string>
     <string name="settings_content_cross_provider_title">Turn on cross-service matching?</string>
-    <string name="settings_content_cross_provider_body">Only when NetEase explicitly can\'t return a full playable track, MeloX sends the current title, artist, and duration to the search APIs of QQ Music, Kugou, and Bilibili.</string>
+    <string name="settings_content_cross_provider_body">Only when NetEase explicitly can\'t return a full playable track does MeloX send the current title, artist, and duration to the search APIs of Bilibili, YouTube Music, QQ Music, Kugou, Kuwo, Qishui, and other services. If Jellyfin is configured, your own server is searched too. Signed-in services use their own account credentials; signed-out services use anonymous endpoints only.</string>
     <string name="settings_content_cross_provider_match">Only a full track whose title and main artist match, and whose duration is within a strict range, will play. MeloX does not use previews and does not bypass paid, region, copyright, DRM, or account limits. The service, version, and quality may differ from the original entry. Likes, playlist identity, and lyrics stay on the original NetEase item.</string>
     <string name="settings_content_cross_provider_terms">Playback is also covered by the source service\'s terms and privacy policy. You can turn this off at any time.</string>
     <string name="settings_content_cross_provider_enable">I understand, turn on</string>

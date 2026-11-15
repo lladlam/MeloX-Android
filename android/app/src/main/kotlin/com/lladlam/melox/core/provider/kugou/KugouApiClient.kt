@@ -29,6 +29,7 @@ class KugouApiClient(
     private val httpClient: OkHttpClient = com.lladlam.melox.core.network.MeloXHttpClient.shared,
 ) {
     private val requests = KugouRequestClient(sessionProvider, httpClient)
+    private val anonymousPlayback = KugouAnonymousPlaybackClient(httpClient)
 
     suspend fun searchSongs(
         query: String,
@@ -157,6 +158,34 @@ class KugouApiClient(
         val metadata = track.requireKugouMetadata()
         val session = sessionProvider()
         val hash = metadata.hash.lowercase()
+        // 未登录：先走无需账号的公共 tracker。免费曲目返回完整音频；会员/版权
+        // 曲目服务端会返回 status != 1，因此这条路径不会绕过任何限制。
+        if (!session.isLoggedIn) {
+            val anonymous = runCatching {
+                anonymousPlayback.resolve(hash, quality, track.durationMs)
+            }.onFailure {
+                Log.w(TAG, "Anonymous playback failed: hash=$hash", it)
+            }.getOrNull()
+            if (anonymous != null) {
+                Log.i(
+                    TAG,
+                    "Anonymous playback URL resolved: hash=$hash bitrate=${anonymous.bitRate} format=${anonymous.format}",
+                )
+                return PlaybackResolution.Playable(
+                    url = anonymous.url,
+                    requestedQuality = quality,
+                    actualQuality = kugouAnonymousActualTier(anonymous.bitRate, anonymous.format),
+                    bitrate = anonymous.bitRate,
+                    format = anonymous.format,
+                    requestHeaders = mapOf(
+                        "User-Agent" to KugouRequestClient.UserAgent,
+                        "Referer" to "https://www.kugou.com/",
+                        "Accept" to "*/*",
+                        "Accept-Encoding" to "identity",
+                    ),
+                )
+            }
+        }
         val key = md5Hex(
             hash + "57ae12eb6890223e355ccfcb74edf70d" +
                 KugouRequestClient.AppId + session.mid + session.userId,

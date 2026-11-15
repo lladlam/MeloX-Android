@@ -980,9 +980,9 @@
     <string name="settings_content_hq_playlists">探索におすすめプレイリストを表示</string>
     <string name="settings_content_play_count">プレイリストの再生回数を表示</string>
     <string name="settings_content_cross_provider">再生できない曲を他のサービスから取得</string>
-    <string name="settings_content_cross_provider_active">网易云が再生できる音声を明示的に返さないときだけ、QQ Music、Kugou、Bilibili で完全一致を探します。</string>
+    <string name="settings_content_cross_provider_active">网易云が再生できる音声を明示的に返さないときだけ、Bilibili、YouTube Music、QQ Music、Kugou、Kuwo、Qishui などのサービスと設定済みの Jellyfin サーバーで完全一致を探します。未ログイン時は各サービスの匿名 API を使います。</string>
     <string name="settings_content_cross_provider_title">サービス横断の照合をオンにしますか？</string>
-    <string name="settings_content_cross_provider_body">网易云が完全な再生可能な曲を明示的に返せないときだけ、MeloX は現在の曲名、アーティスト、長さを QQ Music、Kugou、Bilibili の検索 API に送ります。</string>
+    <string name="settings_content_cross_provider_body">网易云が完全な再生可能な曲を明示的に返せないときだけ、MeloX は現在の曲名、アーティスト、長さを Bilibili、YouTube Music、QQ Music、Kugou、Kuwo、Qishui などの検索 API に送ります。Jellyfin が設定されていれば、自分のサーバーも検索します。ログイン済みのサービスではそのアカウントの資格情報を使い、未ログインのサービスでは匿名 API のみを使います。</string>
     <string name="settings_content_cross_provider_match">曲名とメインアーティストが一致し、長さが厳密な範囲内の完全な音源だけを再生します。MeloX は試聴を使わず、有料、地域、著作権、DRM、アカウントの制限を回避しません。サービス、バージョン、音質は元の項目と異なることがあります。いいね、プレイリストの識別、歌詞は元の网易云項目のままです。</string>
     <string name="settings_content_cross_provider_terms">再生は、ソース側サービスの規約とプライバシーポリシーにも従います。いつでもオフにできます。</string>
     <string name="settings_content_cross_provider_enable">理解してオンにする</string>

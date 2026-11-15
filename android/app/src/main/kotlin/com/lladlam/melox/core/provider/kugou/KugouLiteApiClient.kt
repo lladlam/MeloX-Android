@@ -41,6 +41,7 @@ internal class KugouLiteApiClient(
     private val onAuthExpired: () -> Unit = {},
 ) {
     private val requests = KugouRequestClient(sessionProvider, httpClient)
+    private val anonymousPlayback = KugouAnonymousPlaybackClient(httpClient)
     private val catalog = KugouCatalogClient(sessionProvider, httpClient, MusicSource.KugouLite)
     private val lyrics = KugouLyricsClient(sessionProvider, httpClient, MusicSource.KugouLite)
     private val playlists = KugouPlaylistClient(sessionProvider, httpClient, MusicSource.KugouLite)
@@ -141,8 +142,30 @@ internal class KugouLiteApiClient(
         quality: AudioQualityTier,
     ): PlaybackResolution {
         val metadata = track.requireKugouLiteMetadata()
-        val dfidError = runCatching { ensureDfid() }.exceptionOrNull()
         val session = sessionProvider()
+        // 未登录：公共 tracker 无需 dfid/签名，免费曲目直接返回完整音频；
+        // 会员曲目 status != 1，不会绕过限制。失败再走下面的设备注册流程。
+        if (!session.isLoggedIn) {
+            val anonymous = runCatching {
+                anonymousPlayback.resolve(metadata.hash, quality, track.durationMs)
+            }.getOrNull()
+            if (anonymous != null) {
+                return PlaybackResolution.Playable(
+                    url = anonymous.url,
+                    requestedQuality = quality,
+                    actualQuality = kugouAnonymousActualTier(anonymous.bitRate, anonymous.format),
+                    bitrate = anonymous.bitRate,
+                    format = anonymous.format,
+                    requestHeaders = mapOf(
+                        "User-Agent" to KugouRequestClient.UserAgent,
+                        "Referer" to "https://www.kugou.com/",
+                        "Accept" to "*/*",
+                        "Accept-Encoding" to "identity",
+                    ),
+                )
+            }
+        }
+        val dfidError = runCatching { ensureDfid() }.exceptionOrNull()
         val privilege = runCatching { privilege(metadata) }.getOrNull()
         val vip = vipStatus()
         val specs = quality.liteQualityCandidates()

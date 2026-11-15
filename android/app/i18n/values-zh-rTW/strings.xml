@@ -975,9 +975,9 @@
     <string name="settings_content_hq_playlists">發現頁顯示精品歌單</string>
     <string name="settings_content_play_count">顯示歌單播放量</string>
     <string name="settings_content_cross_provider">不可用資源從其他平台取得</string>
-    <string name="settings_content_cross_provider_active">僅當網易雲明確未返回可播放音訊時，才會嚴格比對 QQ音樂、酷狗音樂或 Bilibili 的完整音源。</string>
+    <string name="settings_content_cross_provider_active">僅當網易雲明確未返回可播放音訊時，才會嚴格比對 Bilibili、YouTube Music、QQ音樂、酷狗、酷我、汽水等平台以及已設定的 Jellyfin 自建伺服器的完整音源；未登入時嘗試各平台的匿名介面。</string>
     <string name="settings_content_cross_provider_title">要啟用跨平台資源比對嗎？</string>
-    <string name="settings_content_cross_provider_body">僅當網易雲明確無法返回完整可播放音訊時，MeloX 才會將目前曲目的標題、歌手和時長傳給 QQ音樂、酷狗音樂和 Bilibili 的搜尋介面。</string>
+    <string name="settings_content_cross_provider_body">僅當網易雲明確無法返回完整可播放音訊時，MeloX 才會將目前曲目的標題、歌手和時長傳給 Bilibili、YouTube Music、QQ音樂、酷狗、酷我、汽水等平台的搜尋介面；若已設定 Jellyfin，也會查詢你的自建伺服器。已登入的目標平台使用該平台自己的帳號憑證，未登入的平台僅使用匿名介面。</string>
     <string name="settings_content_cross_provider_match">只有標題與主藝人一致、且時長在嚴格範圍內的完整音源才會播放。MeloX 不使用試聽片段，也不會繞過付費、地區、版權、DRM 或帳號權限限制。實際平台、歌曲版本和音質可能與原條目不同；收藏、歌單身份和歌詞仍保留原網易雲條目。</string>
     <string name="settings_content_cross_provider_terms">播放行為同時受實際音源平台的服務條款和隱私政策約束，你可以隨時關閉此功能。</string>
     <string name="settings_content_cross_provider_enable">瞭解並開啟</string>
