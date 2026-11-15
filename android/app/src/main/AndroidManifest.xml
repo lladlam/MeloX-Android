@@ -130,6 +130,7 @@
         <activity android:name=".ui.account.MeloXNeteaseLoginActivity" android:exported="false" android:theme="@style/Theme.MeloX.Page" android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density|fontScale" />
         <activity android:name=".ui.provider.MeloXProviderServicesActivity" android:exported="false" android:theme="@style/Theme.MeloX.Page" android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density|fontScale" />
         <activity android:name=".ui.settings.MeloXSettingsDetailActivity" android:exported="false" android:theme="@style/Theme.MeloX.Page" android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density|fontScale" />
+        <activity android:name=".ui.messages.MeloXMessagesActivity" android:exported="false" android:theme="@style/Theme.MeloX.Page" android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density|fontScale" />
         <!-- SpotifyCallbackActivity 已随上游 0.6.2 移除：登录改走 loopback
              （bed4a62 已删除 SpotifyCallbackActivity.kt，此处声明必须一并去掉）。 -->
         <activity android:name=".ui.collection.MeloXCollectionDetailActivity" android:exported="false" android:theme="@style/Theme.MeloX.Page" android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density|fontScale" />
