@@ -4,6 +4,19 @@
 # Device-driven generation is blocked on vivo; this covers the
 # animation + recomposition + semantics + glass material hot path.
 
+# Cold-start entry points. The animation profile below covers MeloXApp; without
+# these the Application/Activity bootstrap still runs interpreted on first launch.
+HSPLLcom/lladlam/melox/MeloXApplication;->onCreate()V
+HSPLLcom/lladlam/melox/MainActivity;->onCreate(Landroid/os/Bundle;)V
+HSPLLcom/lladlam/melox/MainActivity;->onResume()V
+HSPLLcom/lladlam/melox/MainActivity;->onNewIntent(Landroid/content/Intent;)V
+HSPLLcom/lladlam/melox/MainActivity;->onSaveInstanceState(Landroid/os/Bundle;)V
+HSPLLcom/lladlam/melox/MeloXAppVisibility;->onActivityCreated(Landroid/app/Activity;Landroid/os/Bundle;)V
+HSPLLcom/lladlam/melox/MeloXAppVisibility;->onActivityStarted(Landroid/app/Activity;)V
+HSPLLcom/lladlam/melox/ui/settings/MeloXSettingsRuntime;->initializeCritical(Landroid/content/Context;)V
+HSPLLcom/lladlam/melox/core/network/MeloXHttpClient;->initialize(Landroid/content/Context;)V
+HSPLLcom/lladlam/melox/core/plugin/MeloXPlugins;->start(Landroid/content/Context;)V
+
 # Landroidx/compose/animation/core/ActualJvm_jvmAndAndroidKt;
 HSPLLandroidx/compose/animation/core/ActualJvm_jvmAndAndroidKt;->getCurrentThread()Ljava/lang/Object;
 

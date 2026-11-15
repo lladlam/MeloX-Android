@@ -345,6 +345,10 @@ fun MeloXApp(
     }
     LaunchedEffect(Unit) {
         if (MeloXSettingsPreferences.boolean(context, "onboarding_completed", false)) {
+            // Daily reward/VIP refresh is not needed for the first frame. Move it
+            // past the cold-start window so it cannot compete with composition
+            // and the first network requests.
+            delay(1_500L)
             withContext(Dispatchers.IO) {
                 runCatching { KugouLiteDailyCheckIn.run(context) }
             }
