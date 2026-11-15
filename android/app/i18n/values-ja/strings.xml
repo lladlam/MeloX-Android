@@ -1494,11 +1494,13 @@
     <string name="settings_floating_requires_android_8">フローティング歌詞には Android 8.0 以降が必要です。この端末でも音楽の基本機能は利用できます。</string>
 
     <!-- 0.6.3+ 新增（贡献者分支与 AutoSync） -->
-    <string name="settings_lyrics_language">歌詞の翻訳言語</string>
+    <string name="settings_lyrics_language">歌詞の言語</string>
     <string name="settings_lyrics_language_system">システムに従う</string>
     <string name="settings_lyrics_language_zh_hans">簡体字中国語</string>
     <string name="settings_lyrics_language_zh_hant">繁体字中国語</string>
     <string name="settings_lyrics_language_en">English</string>
+    <string name="settings_lyrics_language_ja">日本語</string>
+    <string name="settings_lyrics_language_ko">한국어</string>
     <string name="settings_lyrics_language_tr">Türkçe</string>
     <string name="autosync_model_update">更新</string>
     <string name="autosync_model_update_available">更新があります · %1$s</string>

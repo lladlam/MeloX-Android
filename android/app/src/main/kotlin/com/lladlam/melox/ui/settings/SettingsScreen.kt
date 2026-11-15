@@ -238,7 +238,7 @@ private data class SettingsSection(val title: String, val items: List<SettingsIt
 
 private val SettingsSections = listOf(
     SettingsSection("应用", listOf(
-        SettingsItem(SettingsRoute.General, "语言、主题、启动行为与链接处理", "⚙", "语言 language 简体 繁體 English 日本語 Türkçe 主题 浅色 深色 跟随系统 默认页面 剪贴板 分屏 split screen 双栏 底部栏 导航栏 迷你播放器 miniplayer 左下 右下 左边 右边 左上 右上"),
+        SettingsItem(SettingsRoute.General, "语言、主题、启动行为与链接处理", "⚙", "语言 language 歌词语言 lyrics language 简体 繁體 English 日本語 한국어 Türkçe 主题 浅色 深色 跟随系统 默认页面 剪贴板 分屏 split screen 双栏 底部栏 导航栏 迷你播放器 miniplayer 左下 右下 左边 右边 左上 右上"),
         SettingsItem(SettingsRoute.PlayerAppearance, "背景、封面动画与屏幕常亮", "✦", "模糊 色彩 饱和度 封面 自动锁屏"),
         SettingsItem(SettingsRoute.Content, "地区、歌单信息和发现内容", "▦", "华语 欧美 韩国 日本 播放量 内容"),
         SettingsItem(SettingsRoute.Playback, "音质、播放行为与自动混音", "♫", "高品质 无损 上一首 页面记忆 心动模式 交叉淡化 播放"),
@@ -2133,23 +2133,6 @@ private fun LyricsSettings(context: android.content.Context) {
             onSelected = { MeloXSettingsPreferences.setString(context, "lyrics_rendering_quality", it.name) },
             grouped = true,
         )
-        var lyricLanguage by remember { mutableStateOf(MeloXSettingsRuntime.lyricLanguage) }
-        MeloXSettingsDropdown(
-            title = stringResource(R.string.settings_lyrics_language),
-            selected = lyricLanguage,
-            items = listOf(
-                "system" to stringResource(R.string.settings_lyrics_language_system),
-                "zh-Hans" to stringResource(R.string.settings_lyrics_language_zh_hans),
-                "zh-Hant" to stringResource(R.string.settings_lyrics_language_zh_hant),
-                "en" to stringResource(R.string.settings_lyrics_language_en),
-                "tr" to stringResource(R.string.settings_lyrics_language_tr),
-            ),
-            onSelected = {
-                lyricLanguage = it
-                MeloXSettingsPreferences.setString(context, "lyric_language", it)
-            },
-            grouped = true,
-        )
         SettingsToggleRow(context, stringResource(R.string.settings_lyrics_auto_select), "lyrics_auto_select", true, grouped = true)
         SettingsToggleRow(context, stringResource(R.string.settings_lyrics_word_by_word), "lyrics_word_by_word", true, grouped = true)
         SettingsToggleRow(context, stringResource(R.string.settings_lyrics_pseudo_timing), "lyrics_pseudo_timing", false, stringResource(R.string.settings_lyrics_pseudo_timing_note), grouped = true)
@@ -3327,6 +3310,7 @@ private fun GeneralSettings(context: android.content.Context) {
     var theme by remember { mutableStateOf(MeloXSettingsRuntime.themeMode) }
     var swipeFullAction by remember { mutableStateOf(MeloXSettingsRuntime.swipeFullAction) }
     var fontScope by remember { mutableStateOf(MeloXSettingsRuntime.systemFontScope) }
+    var lyricLanguage by remember { mutableStateOf(MeloXSettingsRuntime.lyricLanguage) }
     var miSansInstalled by remember { mutableStateOf(MeloXOnDemandFont.fontFile(context) != null) }
     var miSansDownloading by remember { mutableStateOf(false) }
     var miSansError by remember { mutableStateOf<String?>(null) }
@@ -3374,6 +3358,24 @@ private fun GeneralSettings(context: android.content.Context) {
                 showTopSeparator = false,
             )
         }
+        MeloXSettingsDropdown(
+            title = stringResource(R.string.settings_lyrics_language),
+            selected = lyricLanguage,
+            items = listOf(
+                "system" to stringResource(R.string.settings_lyrics_language_system),
+                "zh-Hans" to stringResource(R.string.settings_lyrics_language_zh_hans),
+                "zh-Hant" to stringResource(R.string.settings_lyrics_language_zh_hant),
+                "en" to stringResource(R.string.settings_lyrics_language_en),
+                "ja" to stringResource(R.string.settings_lyrics_language_ja),
+                "ko" to stringResource(R.string.settings_lyrics_language_ko),
+                "tr" to stringResource(R.string.settings_lyrics_language_tr),
+            ),
+            onSelected = {
+                lyricLanguage = it
+                MeloXSettingsPreferences.setString(context, "lyric_language", it)
+            },
+            grouped = true,
+        )
         MeloXSettingsDropdown(
             title = stringResource(R.string.settings_general_theme),
             selected = theme,

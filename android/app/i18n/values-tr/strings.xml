@@ -55,11 +55,13 @@
     <string name="app_update_view">Sürümü görüntüle</string>
     <string name="app_confirm">Tamam</string>
     <string name="app_login_netease">NetEase Cloud Music\'e giriş yap</string>
-    <string name="settings_lyrics_language">Şarkı sözü çeviri dili</string>
+    <string name="settings_lyrics_language">Şarkı sözü dili</string>
     <string name="settings_lyrics_language_system">Sistemi izle</string>
     <string name="settings_lyrics_language_zh_hans">简体中文</string>
     <string name="settings_lyrics_language_zh_hant">繁體中文</string>
     <string name="settings_lyrics_language_en">English</string>
+    <string name="settings_lyrics_language_ja">日本語</string>
+    <string name="settings_lyrics_language_ko">한국어</string>
     <string name="settings_lyrics_language_tr">Türkçe</string>
     <string name="player_style_apple">Apple Music</string>
     <string name="player_style_classic">Klasik</string>

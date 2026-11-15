@@ -79,6 +79,27 @@ class LyricTranslationPolicyTest {
         )
     }
 
+    @Test
+    fun japaneseAndKoreanSettingsKeepTheirMainLyrics() {
+        val japanese = MeloXLyricPreference.fromSetting("ja")
+        assertEquals("ja", japanese.languageTag)
+        assertEquals(
+            LyricTranslationDecision.KeepMainOnly,
+            LyricTranslationPolicy.decide("ja", japanese),
+        )
+        assertEquals(
+            LyricTranslationDecision.NeedTranslation,
+            LyricTranslationPolicy.decide("zh", japanese),
+        )
+
+        val korean = MeloXLyricPreference.fromSetting("ko")
+        assertEquals("ko", korean.languageTag)
+        assertEquals(
+            LyricTranslationDecision.KeepMainOnly,
+            LyricTranslationPolicy.decide("ko", korean),
+        )
+    }
+
     // --------------------------------------------------------- translation match
 
     @Test
