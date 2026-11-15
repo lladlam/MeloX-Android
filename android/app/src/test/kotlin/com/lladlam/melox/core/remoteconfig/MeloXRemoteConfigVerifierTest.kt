@@ -2,7 +2,6 @@ package com.lladlam.melox.core.remoteconfig
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -12,9 +11,9 @@ class MeloXRemoteConfigVerifierTest {
         val verified = MeloXRemoteConfigVerifier().verify(fixture())
 
         assertEquals(MeloXRemoteConfigVerifier.KeyId, verified.keyId)
-        assertEquals(2, verified.config.configVersion)
+        assertEquals(7, verified.config.configVersion)
         assertTrue(verified.config.appliesTo(11))
-        assertFalse(verified.config.appliesTo(21))
+        assertTrue(verified.config.appliesTo(28))
         assertEquals(MeloXRemoteConfigDefaults.FallbackOrder, verified.config.fallback.order)
     }
 

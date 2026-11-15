@@ -46,10 +46,10 @@ class MeloXRemoteConfigVerifier(
     }
 
     companion object {
-        const val KeyId = "melox-remote-config-2026-01"
+        const val KeyId = "melox-remote-config-2026-11"
         const val Algorithm = "SHA256withECDSA"
         const val MaxEnvelopeBytes = 256 * 1024
         const val PinnedPublicKeyBase64 =
-            "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEyGw1cwv89ce4hf4u1P7u3GQ1ANzDw8yiCe5AZ6JpQsML1tcX7adS/L3ztpZMrk0OZ3tOh7QqTJixdTghGjo2YQ=="
+            "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEqMh15cLW/5OMmlGtkjTa/b5NZTUesqsjoYmDPIhbiVpnMszwAkQdZvVbebZQbYKjr9p7QIGVGtSkKldlqLBn8A=="
     }
 }
