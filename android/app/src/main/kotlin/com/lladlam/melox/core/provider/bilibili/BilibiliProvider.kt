@@ -2,6 +2,7 @@ package com.lladlam.melox.core.provider.bilibili
 
 import com.lladlam.melox.core.music.model.*
 import com.lladlam.melox.core.music.provider.*
+import com.lladlam.melox.core.network.readBoundedBytes
 import java.io.IOException
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -9,6 +10,9 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlinx.coroutines.CancellationException
+
+private const val MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+private const val MAX_JSON_DEPTH = 48
 
 class BilibiliProvider(
     private val sessionProvider: () -> BilibiliSession,
@@ -347,8 +351,35 @@ class BilibiliProvider(
         }.build()
         return httpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("Bilibili HTTP ${response.code}")
-            JSONObject(response.body?.string().orEmpty())
+            val body = response.body
+            if (body.contentLength() > MAX_RESPONSE_BYTES) {
+                throw IOException("Bilibili response is too large")
+            }
+            val text = body.byteStream()
+                .readBoundedBytes(MAX_RESPONSE_BYTES)
+                .toString(Charsets.UTF_8)
+            requireBoundedJsonDepth(text)
+            JSONObject(text)
         }
+    }
+
+    /** Reject hostile/deep JSON before org.json's recursive parser can exhaust the stack/heap. */
+    private fun requireBoundedJsonDepth(text: String) {
+        var depth = 0
+        var quoted = false
+        var escaped = false
+        for (character in text) {
+            if (quoted) {
+                if (escaped) escaped = false
+                else if (character == '\\') escaped = true
+                else if (character == '"') quoted = false
+            } else when (character) {
+                '"' -> quoted = true
+                '{', '[' -> if (++depth > MAX_JSON_DEPTH) throw IOException("Bilibili JSON is too deeply nested")
+                '}', ']' -> if (--depth < 0) throw IOException("Bilibili JSON is malformed")
+            }
+        }
+        if (quoted || depth != 0) throw IOException("Bilibili JSON is incomplete")
     }
 
     private fun JSONObject.data(): JSONObject {

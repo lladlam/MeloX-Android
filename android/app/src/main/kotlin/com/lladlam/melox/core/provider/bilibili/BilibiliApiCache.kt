@@ -64,7 +64,9 @@ class BilibiliApiCache private constructor(context: Context) {
     fun invalidateMixin(scope: String) { mixinKeys.remove(scope) }
 
     private fun readDisk(key: String, now: Long, ttlMs: Long): String? = runCatching {
-        val json = JSONObject(fileFor(key).readText())
+        val file = fileFor(key)
+        if (file.length() > MaxCachedPayloadBytes) return@runCatching null
+        val json = JSONObject(file.readText())
         val storedAt = json.getLong("storedAtMs")
         if (now - storedAt > ttlMs) return@runCatching null
         json.getJSONObject("payload").toString()
@@ -94,6 +96,7 @@ class BilibiliApiCache private constructor(context: Context) {
         val View = Policy(6 * 60 * 60_000L, 24 * 60 * 60_000L)
         val Search = Policy(3 * 60_000L)
         private const val MaxMemoryEntries = 128
+        private const val MaxCachedPayloadBytes = 4L * 1024 * 1024
         private const val MixinTtlMs = 6 * 60 * 60_000L
         @Volatile private var instance: BilibiliApiCache? = null
 
