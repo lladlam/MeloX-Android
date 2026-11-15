@@ -244,6 +244,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.roundToInt
@@ -1733,9 +1734,7 @@ fun MeloXApp(
                 onConfirm = {
                     availableUpdate = null
                     playerScope.launch {
-                        val target = runCatching { MeloXUpdateClient(context).downloadUrl(release) }.getOrNull()
-                            ?: release.pageUrl
-                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target))) }
+                        openUpdateTarget(context, release)
                     }
                 },
             )
@@ -1752,9 +1751,7 @@ fun MeloXApp(
                 onConfirm = {
                     playerScope.launch {
                         // Forced updates always use the complete APK, never a delta patch.
-                        val target = runCatching { MeloXUpdateClient(context).downloadUrl(release) }.getOrNull()
-                            ?: release.pageUrl
-                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target))) }
+                        openUpdateTarget(context, release)
                     }
                 },
             )
@@ -1838,6 +1835,31 @@ private fun MeloXAppDialog(
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
             ) { Text(confirmLabel, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
+    }
+}
+
+/**
+ * Resolve the preferred GitHub route, then open it with an explicit
+ * NEW_TASK. The old code swallowed ActivityNotFoundException, which looked
+ * exactly like "the button does nothing" on some OEM launchers.
+ */
+private suspend fun openUpdateTarget(context: android.content.Context, release: MeloXRelease) {
+    val target = withTimeoutOrNull(10_000) {
+        runCatching { MeloXUpdateClient(context).downloadUrl(release) }.getOrNull()
+    } ?: release.apkUrl ?: release.pageUrl
+    fun launch(url: String): Boolean = runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+        true
+    }.getOrDefault(false)
+    var launched = launch(target)
+    if (!launched && target != release.pageUrl) {
+        launched = launch(release.pageUrl)
+    }
+    if (!launched) {
+        Toast.makeText(context, "无法打开下载链接，请在浏览器访问 ${release.pageUrl}", Toast.LENGTH_LONG).show()
     }
 }
 
