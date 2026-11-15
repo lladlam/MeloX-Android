@@ -282,10 +282,13 @@ object MeloXListenTogetherCoordinator {
                         heartbeatTick = HEARTBEAT_EVERY_TICKS
                     }
                     connectController()
-                    mutableState.value = State(
+                    // Keep the solo flag: this status refresh runs periodically
+                    // and must not visually turn the Solo toggle back off.
+                    mutableState.value = mutableState.value.copy(
                         phase = if (failures > 0) Phase.Reconnecting else Phase.Connected,
                         room = latest,
                         consecutiveFailures = failures,
+                        lastError = if (failures > 0) mutableState.value.lastError else null,
                     )
                 }
                 .onFailure { if (room != null) recordFailure(it) }
