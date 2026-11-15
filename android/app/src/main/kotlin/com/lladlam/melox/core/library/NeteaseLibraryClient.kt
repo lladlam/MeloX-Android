@@ -47,6 +47,31 @@ internal fun isTruncatedSongDetailResponse(
 ): Boolean = requested > 1 && returned >= cap && returned < requested
 
 /**
+ * 「我喜欢的音乐」的 id 合并：以歌单自己的 `trackIds` 顺序为准（与官方客户端一致），
+ * 再补上 `song/like/get` 独有的 id（歌单 trackIds 被服务端截断时兜底）。
+ * 两侧都按首次出现去重。
+ */
+internal fun mergeLikedSongIds(likeIds: List<Long>, playlistIds: List<Long>): List<Long> {
+    if (playlistIds.isEmpty()) return likeIds
+    val known = playlistIds.toHashSet()
+    return playlistIds + likeIds.filterNot { it in known }
+}
+
+/**
+ * 收藏列表是否需要回读「我喜欢的音乐」歌单本体。
+ *
+ * 两种缺口都说明 `like/get + song/detail` 这一路不完整：
+ * ① `song/like/get` 比歌单 `trackCount` 少 —— 例如通过「添加到歌单」写进收藏歌单的歌，
+ *    服务端的 like 关系可能没同步（用户实测 660 vs 659，缺的正是这样加进去的一首）；
+ * ② id 数量对得上，但 `song/detail` 少解析了一条。
+ */
+internal fun needsLikedPlaylistBackfill(
+    likedTrackCount: Int,
+    likeIds: List<Long>,
+    resolvedDetails: Int,
+): Boolean = likedTrackCount > likeIds.size || resolvedDetails < likeIds.size
+
+/**
  * song/detail 补页的并发上限。
  *
  * ⚠ 只重叠等待、**不增加请求**：批数、每批内容、认证（门控）逐字不变，瞬时最多多占
@@ -74,11 +99,28 @@ class NeteaseLibraryClient(
         val allPlaylists = userPlaylistsBlocking(userId)
         // 「我喜欢的音乐」是 specialType == 5 的系统歌单。靠列表顺序取 firstOrNull() 是
         // 隐患：顺序一变就取错歌单，reconcileLikedSongs 的 trackCount 判据随之全错。
-        val likedPlaylistId = allPlaylists.firstOrNull { it.specialType == 5 }?.id
-            ?: allPlaylists.firstOrNull()?.id
+        val likedPlaylist = allPlaylists.firstOrNull { it.specialType == 5 }
+        val likedPlaylistId = likedPlaylist?.id ?: allPlaylists.firstOrNull()?.id
         val playlists = allPlaylists
-        val likedIds = likedSongIdsBlocking(userId)
+        var likedIds = likedSongIdsBlocking(userId)
         var likedById = songDetailsPaged(likedIds).associateBy(SearchSong::id)
+        // ⚠ 2026-11-15 用户报「网易云 660 首，MeloX 659 首」，缺的那首是用 MeloX 「添加到歌单」
+        //   写进「我喜欢的音乐」的。like/get 与收藏歌单在服务端可能不同步，只读 like/get 会
+        //   永远少一首；song/detail 静默丢 id 也会造成同样的缺口。发现歌单自报的 trackCount
+        //   对不上（或详情少解析）时，直接回读歌单自身的 trackIds/tracks 补齐。
+        //   只有出现缺口才会多发这一次 playlist/detail，正常账号零额外请求。
+        if (likedPlaylist != null && needsLikedPlaylistBackfill(
+                likedTrackCount = likedPlaylist.trackCount,
+                likeIds = likedIds,
+                resolvedDetails = likedById.size,
+            )
+        ) {
+            val base = runCatching { fetchPlaylistBase(likedPlaylist.id) }.getOrNull()
+            if (base != null) {
+                likedIds = mergeLikedSongIds(likedIds, base.desiredIds)
+                likedById = likedById + base.byId
+            }
+        }
         // 任一 id 在 song/detail 里被静默丢掉都算「丢歌」。瞬态空响应可小批重试；
         // 使用与首轮相同的受控并发，避免收藏较多时补漏退化为几十次串行往返。
         val missingIds = likedIds.filterNot { it in likedById }
