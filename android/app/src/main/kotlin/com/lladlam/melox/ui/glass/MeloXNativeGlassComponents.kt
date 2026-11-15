@@ -56,6 +56,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.disabled
@@ -372,6 +373,7 @@ fun MeloXGlassTextField(
     enabled: Boolean = true,
     singleLine: Boolean = true,
     textStyle: TextStyle = TextStyle.Default,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     onFocusChanged: ((Boolean) -> Unit)? = null,
@@ -408,6 +410,7 @@ fun MeloXGlassTextField(
             enabled = enabled,
             singleLine = singleLine,
             textStyle = resolvedTextStyle,
+            visualTransformation = visualTransformation,
             cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
             keyboardOptions = keyboardOptions,
             keyboardActions = keyboardActions,
