@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<font-family xmlns:android="http://schemas.android.com/apk/res/android">
-    <font
-        android:font="@font/material_symbols_rounded_filled_static"
-        android:fontStyle="normal"
-        android:fontWeight="500" />
-</font-family>

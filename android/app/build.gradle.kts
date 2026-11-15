@@ -194,6 +194,13 @@ android {
         buildConfigField("boolean", "UNLOCK_ORIENTATION", "false")
     }
 
+    androidResources {
+        // Keep only the locales declared in res/xml/locales_config.xml. AndroidX
+        // and Material ship dozens of unused translations; filtering them trims
+        // resources.arsc and the per-locale configuration set.
+        localeFilters += listOf("en", "zh-rCN", "zh-rTW", "ja", "tr")
+    }
+
     // ── Release signing ─────────────────────────────────────────────────────
     // Resolution order (first hit wins) for each value:
     //   1. -PmeloxRelease*  or  $GRADLE_USER_HOME/gradle.properties
@@ -331,6 +338,10 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
         resources.excludes += "/google/protobuf/**"
+        // Build-time profile source. ART consumes the compiled
+        // assets/dexopt/baseline.prof; shipping the 1.3 MB text copy only
+        // bloats the APK.
+        resources.excludes += "/baseline-prof.txt"
     }
 
     testOptions {

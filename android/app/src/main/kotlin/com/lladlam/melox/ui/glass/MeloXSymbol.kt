@@ -1134,6 +1134,12 @@ internal object MeloSfTypefaceCache {
     private val lock = Any()
     private val cache = HashMap<Int, android.graphics.Typeface>()
 
+    // res/font/sf_pro_vf.ttf is a subset: only the PUA glyphs referenced by
+    // MeloXSymbol.kt (plus ss16 alternates) are kept, ~248 KB instead of
+    // ~6.1 MB. Metrics and the fvar wght axis are unchanged. When adding a new
+    // SF symbol, add its codepoint to MeloXSymbol.kt and regenerate the subset;
+    // the original full font is recoverable from git history.
+
     fun obtain(
         context: android.content.Context,
         weight: Int,
