@@ -2028,6 +2028,12 @@ private fun TabletLandscapePlayerColumn(
         //        （墨迹高 24dp），而竖屏档是 12dp / 15dp ⇒ 喇叭比同列其它字形（三键 22dp 档、
         //        这里本该 12dp）大出一倍，观感就是"音量按钮多出一层/被放大"。
         //   ⇒ 这一处同时决定了**列高是否贴合 279dp** 与**音量喇叭的尺寸档**，不能跟着横屏走。
+        //
+        // ★ 2026-11-14 平板双栏间距收紧（用户要求）：仍走竖屏档（compact = false），
+        //   改传 `tabletLandscape = true` ⇒ 间距 19→8 / 31→14（**音量条→底部三键的 3dp 不变**）；
+        //   总高保持 279 ⇒ [MeloXTabletLandscapeControlsBlock] 不动 ⇒ **封面尺寸公式不变、
+        //   封面自动保持原大小**；省下的 28dp 由控件 Column 内部垂直居中消化 ⇒ 控件整体
+        //   中心与原版一致，不偏上。
         MeloXNowPlayingCoreControls(
             state = state,
             page = page,
@@ -2035,6 +2041,7 @@ private fun TabletLandscapePlayerColumn(
             onPageSelected = onPageSelected,
             showPageSelector = showPageSelector,
             compact = false,
+            tabletLandscape = true,
             useVectorGlyphs = true,
             selectorModifier = selectorModifier,
         )
