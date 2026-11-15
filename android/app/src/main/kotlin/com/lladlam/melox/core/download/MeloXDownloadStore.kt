@@ -29,6 +29,7 @@ import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -257,12 +258,16 @@ class MeloXDownloadStore private constructor(private val context: Context) {
         pausedDownloads.remove(song.id)
         activeDownloads[song.id] = MeloXActiveDownload(song, quality)
         lateinit var job: Job
-        job = scope.launch {
+        // Main.immediate can execute the launched body before launch() returns,
+        // so a default-start coroutine would read the uninitialized `job`.
+        // Create the Job lazily, publish it, then start it.
+        job = scope.launch(start = CoroutineStart.LAZY) {
             transferSlots.withPermit {
                 download(song, quality, job)
             }
         }
         jobs[song.id] = job
+        job.start()
     }
 
     /**
