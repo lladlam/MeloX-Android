@@ -12,7 +12,8 @@ import org.json.JSONObject
 class PluginMusicProvider(val manifest: PluginManifest, private val runtime: PluginInvoker) :
     MusicProvider, SearchCapability, PlaybackCapability, LyricsCapability, CatalogSearchCapability,
     PlaylistCapability, AlbumCapability, ArtistCapability, RankingCatalogCapability, HomeFeedCapability,
-    UserLibraryCapability, LibraryCollectionCapability, FavoriteStateCapability, AuthenticationCapability, DownloadCapability {
+    UserLibraryCapability, LibraryCollectionCapability, FavoriteStateCapability, AuthenticationCapability, DownloadCapability,
+    FallbackPlaybackCapability {
     override val sourceId = manifest.sourceId
     override val displayName = manifest.name
     override val capabilities = manifest.capabilities.mapTo(mutableSetOf()) {
@@ -29,6 +30,7 @@ class PluginMusicProvider(val manifest: PluginManifest, private val runtime: Plu
             PluginCapability.Favorites -> MusicCapability.Favorites
             PluginCapability.Authentication -> MusicCapability.Authentication
             PluginCapability.Download -> MusicCapability.Download
+            PluginCapability.Resolver -> MusicCapability.Resolver
         }
     }
     private val codec = PluginCatalogCodec(manifest)
@@ -134,14 +136,31 @@ class PluginMusicProvider(val manifest: PluginManifest, private val runtime: Plu
     override suspend fun resolveDownload(track: MusicTrack, quality: AudioQualityTier): PlaybackResolution =
         resolveAudio(PluginCapability.Download, "resolveDownload", track, quality)
 
-    private suspend fun resolveAudio(capability: PluginCapability, method: String, track: MusicTrack, quality: AudioQualityTier): PlaybackResolution {
-        checkTrack(track)
+    /**
+     * Resolver plugins receive metadata from another source. Their audio URL is
+     * not restricted to [PluginManifest.networkDomains] because third-party
+     * resolvers commonly return short-lived HTTP CDN links; it must still be a
+     * progressive HTTP(S) URL with no DRM and no host credential injection.
+     */
+    override suspend fun resolveFallback(track: MusicTrack, quality: AudioQualityTier): PlaybackResolution =
+        resolveAudio(PluginCapability.Resolver, "resolveFallback", track, quality,
+            allowForeignTrack = true, allowExternalMedia = true)
+
+    private suspend fun resolveAudio(
+        capability: PluginCapability,
+        method: String,
+        track: MusicTrack,
+        quality: AudioQualityTier,
+        allowForeignTrack: Boolean = false,
+        allowExternalMedia: Boolean = false,
+    ): PlaybackResolution {
+        if (!allowForeignTrack) checkTrack(track)
         val result = JSONObject(call(capability, method, trackJson(track), wire(quality.name)))
         require(result.opt("type") is String) { "resolution type must be a string" }
         return when (result.getString("type")) {
             "playable" -> {
                 val url = result.getString("url")
-                validateMediaUrl(url)
+                validateMediaUrl(url, allowExternalMedia)
                 val rawHeaders = result.optJSONObject("headers")
                 require(!result.has("headers") || rawHeaders != null) { "media headers must be an object" }
                 require(rawHeaders == null || rawHeaders.length() <= 32) { "too many media headers" }
@@ -165,12 +184,13 @@ class PluginMusicProvider(val manifest: PluginManifest, private val runtime: Plu
                         AudioQualityTier.entries.firstOrNull { wire(it.name) == value } ?: error("invalid quality")
                     }, bitrate = optionalNumber(result, "bitrate", Int.MAX_VALUE.toLong())?.toInt(),
                     format = format, expiresAtEpochMs = expires, credentialReference = if (result.has("credential")) {
+                        require(!allowExternalMedia) { "resolver media cannot use host credentials" }
                         require(result.opt("credential") == "active" && manifest.authentication?.type in setOf("apiToken", "oauth2Pkce")) { "invalid media credential reference" }
                         "active"
                     } else null)
             }
             "preview" -> {
-                val url = result.getString("url"); validateMediaUrl(url)
+                val url = result.getString("url"); validateMediaUrl(url, allowExternalMedia)
                 PluginMediaFormats.check(url, drm = result.has("drm") || result.has("licenseUrl"))
                 PlaybackResolution.Preview(url, optionalNumber(result, "durationMs", 86_400_000))
             }
@@ -212,12 +232,17 @@ class PluginMusicProvider(val manifest: PluginManifest, private val runtime: Plu
     }
 
     private fun checkTrack(track: MusicTrack) { require(track.id.sourceId == sourceId) { "track belongs to another source" } }
-    private fun validateMediaUrl(url: String) {
+    private fun validateMediaUrl(url: String, allowExternalMedia: Boolean) {
         PluginResultValidator.validateUrlSyntax(url)
         val uri = java.net.URI(url)
-        require(uri.scheme == "https" && uri.host in manifest.networkDomains && uri.port in setOf(-1, 443)) { "media permission denied" }
+        if (allowExternalMedia) {
+            require(uri.scheme in setOf("http", "https") && uri.port in setOf(-1, 80, 443)) { "resolver media URL is not playable" }
+        } else {
+            require(uri.scheme == "https" && uri.host in manifest.networkDomains && uri.port in setOf(-1, 443)) { "media permission denied" }
+        }
     }
     private fun trackJson(track: MusicTrack) = JSONObject().put("id", track.id.value).put("title", track.title)
+        .put("source", track.id.sourceId.value)
         .put("artists", JSONArray(track.artists.map { artist -> JSONObject().put("name", artist.name).apply {
             artist.id?.takeIf { it.sourceId == sourceId }?.let { put("id", it.value) }
         } }))

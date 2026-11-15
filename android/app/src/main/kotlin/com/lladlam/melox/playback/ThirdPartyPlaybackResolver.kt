@@ -14,6 +14,8 @@ internal data class ThirdPartyTrack(
     val sourceQuality: String? = null,
     /** Best-effort actual tier; null when the source cannot report one. */
     val actualQuality: AudioQualityTier? = null,
+    /** Short-lived source URL; null uses the configured-resolver TTL. */
+    val expiresAtEpochMs: Long? = null,
 )
 
 /** One configured API resolver or an imported LX script source. */
@@ -30,9 +32,11 @@ internal fun interface ThirdPartySource {
  * 2. a strict full-audio match from another built-in source,
  * 3. user-configured third-party resolvers.
  *
- * Only sources that are actually configured participate; an unset CHKSZ key or
- * an empty LX list simply returns null. Imported LX scripts keep their own
- * source/quality selection inside [LxUserPlaybackResolver].
+ * Order: configured Meting → CHKSZ → UNM → resolver-capable plugins → LX scripts.
+ * Only sources that are actually configured participate; an unset CHKSZ key,
+ * no enabled resolver plugin or an empty LX list simply returns null. Imported
+ * LX scripts keep their own source/quality selection inside
+ * [LxUserPlaybackResolver].
  */
 class ThirdPartyPlaybackResolver private constructor(
     private val enabledProvider: () -> Boolean,
@@ -45,6 +49,12 @@ class ThirdPartyPlaybackResolver private constructor(
         context: Context,
         enabledProvider: () -> Boolean,
         membershipOnlyProvider: () -> Boolean = { false },
+        /**
+         * Enabled resolver-capable plugins, evaluated for each fallback attempt
+         * so installs/enables/disables and package updates are visible without
+         * rebuilding the playback service.
+         */
+        pluginResolvers: () -> List<com.lladlam.melox.core.plugin.PluginMusicProvider> = { emptyList() },
     ) : this(
         enabledProvider = enabledProvider,
         membershipOnlyProvider = membershipOnlyProvider,
@@ -53,6 +63,7 @@ class ThirdPartyPlaybackResolver private constructor(
                 ConfiguredResolverSource(context, ResolverKind.Meting),
                 ConfiguredResolverSource(context, ResolverKind.Chksz),
                 ConfiguredResolverSource(context, ResolverKind.Unm),
+                PluginResolverSource(pluginResolvers),
                 withInstalledLxGuard(LxThirdPartySource(LxUserPlaybackResolver(context))),
             )
         },

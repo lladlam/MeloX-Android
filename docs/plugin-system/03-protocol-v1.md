@@ -55,6 +55,7 @@ Windows/Web 实现独立的 Host Context。当前仓库不提供这两个平台�
 ```ts
 search(query, page, pageSize, host): Promise<MusicPage<MusicTrack>>
 resolvePlayback(track, quality, host): Promise<PlaybackResolution>
+resolveFallback(track, quality, host): Promise<PlaybackResolution>
 lyrics(track, host): Promise<LyricsResult>
 ```
 
@@ -73,8 +74,14 @@ lyrics(track, host): Promise<LyricsResult>
 
 `PlaybackResolution` 的 `type` 支持 playable、preview、loginRequired、subscriptionRequired、
 regionRestricted、copyrightRestricted、unavailable。playable 的 `headers` 映射到宿主
-`requestHeaders`；`quality` 请求参数和 `actualQuality` 返回值意义不同。URL 使用绝对 HTTPS，
-域名须在权限列表中；过期 URL 拒绝使用。不支持 DRM 或自定义 Media3 实现。
+`requestHeaders`；`quality` 请求参数和 `actualQuality` 返回值意义不同。普通 Provider 的 URL
+使用绝对 HTTPS，域名须在权限列表中；过期 URL 拒绝使用。不支持 DRM 或自定义 Media3 实现。
+
+`resolveFallback` 只由声明 `resolver` 能力的插件实现，输入是**另一个来源**的 track
+（`track.source` + `track.id`）。为避免第三方补源常见的 HTTP CDN 直链被错误拒绝，该方法的
+`playable.url` 允许 HTTP(S)、不要求在 `networkDomains` 内；但仍必须是渐进式音频、不能使用
+`credential: "active"`，且宿主不会向媒体 URL 注入插件账号凭据。普通 `resolvePlayback`
+仍保持 HTTPS + 域名白名单。
 
 歌词的 `timeMs` 是从歌曲开头计算的毫秒值，必须非递减；最多 2000 行。`text`、翻译和
 罗马音由插件转换。当前无逐字 transport，不能把行级歌词声称为精确逐字数据。

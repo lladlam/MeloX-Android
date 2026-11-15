@@ -25,10 +25,11 @@ internal fun PluginServiceSection() {
     var expanded by remember { mutableStateOf<String?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         MeloXIosGroupedList(surfaceColor = MaterialTheme.colorScheme.surface) {
-            if (selected.builtIn == null && selected !in plugins) {
-                MeloXIosListRow(title = "所选来源缺失", subtitle = selected.value, onClick = {})
+            if (selected.builtIn == null && (selected !in plugins || plugins[selected]?.manifest?.isMusicSource == false)) {
+                MeloXIosListRow(title = "所选来源不可用", subtitle = selected.value, onClick = {})
             }
-            plugins.values.sortedBy { it.manifest.name }.forEachIndexed { index, state ->
+            val sourcePlugins = plugins.values.filter { it.manifest.isMusicSource }.sortedBy { it.manifest.name }
+            sourcePlugins.forEachIndexed { index, state ->
                 val manifest = state.manifest
                 MeloXIosListRow(title = (if (selected == manifest.sourceId) "✓ " else "") + manifest.name,
                     subtitle = "${manifest.version} · ${state.status} · ${manifest.sourceId.value}",
@@ -37,8 +38,26 @@ internal fun PluginServiceSection() {
                         expanded = if (expanded == manifest.sourceId.value) null else manifest.sourceId.value
                     }, showTopSeparator = index > 0)
             }
+            val resolverPlugins = plugins.values.filter {
+                !it.manifest.isMusicSource && PluginCapability.Resolver in it.manifest.capabilities
+            }.sortedBy { it.manifest.name }
+            if (resolverPlugins.isNotEmpty()) {
+                MeloXIosListRow(
+                    title = "解析器插件",
+                    subtitle = resolverPlugins.joinToString { it.manifest.name } +
+                        " · 启用后在第三方音源回退阶段使用",
+                    onClick = {
+                        MeloXSettingsDetailActivity.launch(
+                            context, SettingsRoute.Plugins,
+                            MusicProviderSelectionStore.selectedSource(context),
+                        )
+                    },
+                    showTopSeparator = sourcePlugins.isNotEmpty(),
+                )
+            }
             MeloXIosListRow(title = "管理音乐源插件", subtitle = "安装、权限、更新、诊断与账号",
-                onClick = { MeloXSettingsDetailActivity.launch(context, SettingsRoute.Plugins, MusicProviderSelectionStore.selectedSource(context)) }, showTopSeparator = plugins.isNotEmpty())
+                onClick = { MeloXSettingsDetailActivity.launch(context, SettingsRoute.Plugins, MusicProviderSelectionStore.selectedSource(context)) },
+                showTopSeparator = sourcePlugins.isNotEmpty() || resolverPlugins.isNotEmpty())
         }
         plugins.values.firstOrNull { it.manifest.sourceId.value == expanded }?.let { PluginAccounts(it.manifest, manager) }
     }

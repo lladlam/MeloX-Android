@@ -16,7 +16,7 @@
     "searchArtists":"artistPage", "followedArtists":"artistPage", "rankings":"rankingPage",
     "playlistDetail":"playlistDetail", "albumDetail":"albumDetail", "artistDetail":"artistDetail",
     "homeFeed":"homeFeed", "accountSummary":"accountSummary", "authenticationStatus":"authenticationStatus",
-    "resolvePlayback":"playbackResolution", "resolveDownload":"playbackResolution", "lyrics":"lyrics",
+    "resolvePlayback":"playbackResolution", "resolveDownload":"playbackResolution", "resolveFallback":"playbackResolution", "lyrics":"lyrics",
     "isFavorite":"favoriteState", "setFavorite":"writeAcknowledgement"
   }
 }

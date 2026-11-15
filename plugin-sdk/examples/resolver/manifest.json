@@ -1,0 +1,11 @@
+{
+  "id": "org.melox.resolver-template",
+  "name": "Resolver Template",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "entry": "index.js",
+  "capabilities": ["resolver"],
+  "networkDomains": ["unm.example.com"],
+  "author": "MeloX SDK",
+  "homepage": "https://example.com/melox-resolver"
+}

@@ -6,6 +6,8 @@ export type Availability = "unknown" | "playable" | "previewOnly" | "loginRequir
 /** `id` is opaque within the declaring plugin; duration is in milliseconds. */
 export interface MusicTrack {
   id: string;
+  /** Present when a resolver plugin receives a track from another source. */
+  source?: string;
   title: string;
   artists: Array<{ id?: string; name: string }>;
   album?: { id?: string; name: string; artworkUrl?: string };
@@ -78,6 +80,8 @@ export interface MusicPlugin {
   search?(query: string, page: number, pageSize: number, context: HostContext): Promise<MusicPage<MusicTrack>>;
   resolvePlayback?(track: MusicTrack, quality: AudioQualityTier, context: HostContext): Promise<PlaybackResolution>;
   resolveDownload?(track: MusicTrack, quality: AudioQualityTier, context: HostContext): Promise<PlaybackResolution>;
+  /** Resolve a track owned by another source. Requires the `resolver` capability. */
+  resolveFallback?(track: MusicTrack, quality: AudioQualityTier, context: HostContext): Promise<PlaybackResolution>;
   lyrics?(track: MusicTrack, context: HostContext): Promise<LyricsResult>;
   playlists?(page: number, pageSize: number, context: HostContext): Promise<MusicPage<PlaylistSummary>>;
   searchPlaylists?(query: string, page: number, pageSize: number, context: HostContext): Promise<MusicPage<PlaylistSummary>>;

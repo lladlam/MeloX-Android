@@ -43,6 +43,8 @@ enum class MusicCapability {
     Recognition,
     Authentication,
     Download,
+    /** Resolves a track owned by another source; only granted to explicitly declared plugins. */
+    Resolver,
 }
 
 /**
@@ -104,6 +106,18 @@ interface PlaybackCapability {
 /** Provider-native download resolution. This is deliberately separate from playback fallback. */
 interface DownloadCapability {
     suspend fun resolveDownload(
+        track: MusicTrack,
+        quality: AudioQualityTier,
+    ): PlaybackResolution
+}
+
+/**
+ * Optional final-stage resolver that receives a track owned by another provider.
+ * The host calls this only after the current source and the built-in cross-provider
+ * match fail; the returned URL is still played by the normal Media3 pipeline.
+ */
+interface FallbackPlaybackCapability {
+    suspend fun resolveFallback(
         track: MusicTrack,
         quality: AudioQualityTier,
     ): PlaybackResolution
@@ -303,6 +317,7 @@ class DynamicMusicProviders {
         require(MusicCapability.Search !in provider.capabilities || provider is SearchCapability) { "missing search capability" }
         require(MusicCapability.Playback !in provider.capabilities || provider is PlaybackCapability) { "missing playback capability" }
         require(MusicCapability.Lyrics !in provider.capabilities || provider is LyricsCapability) { "missing lyrics capability" }
+        require(MusicCapability.Resolver !in provider.capabilities || provider is FallbackPlaybackCapability) { "missing resolver capability" }
     }
 
     /** Register only an unused plugin identity; replacement requires explicit unregister. */
@@ -313,6 +328,7 @@ class DynamicMusicProviders {
         require(MusicCapability.Search !in provider.capabilities || provider is SearchCapability) { "missing search capability" }
         require(MusicCapability.Playback !in provider.capabilities || provider is PlaybackCapability) { "missing playback capability" }
         require(MusicCapability.Lyrics !in provider.capabilities || provider is LyricsCapability) { "missing lyrics capability" }
+        require(MusicCapability.Resolver !in provider.capabilities || provider is FallbackPlaybackCapability) { "missing resolver capability" }
         require(id !in entries) { "duplicate dynamic provider source: ${id.value}" }
         entries = entries + (id to Entry(provider, enabled))
         generation++

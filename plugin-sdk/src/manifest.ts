@@ -1,6 +1,6 @@
 /** Manifest accepted by Android's PluginManifestParser (API version 1). */
 export type PluginCapability = "search" | "playback" | "lyrics" | "playlists" | "albums" | "artists" |
-  "rankings" | "homeFeed" | "userLibrary" | "favorites" | "authentication" | "download";
+  "rankings" | "homeFeed" | "userLibrary" | "favorites" | "authentication" | "download" | "resolver";
 
 export interface PluginManifest {
   /** Lowercase dotted identifier; the host prepends `plugin:`. */

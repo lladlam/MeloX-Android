@@ -18,16 +18,17 @@ works on a device**. See [verification](../docs/plugin-system/verification.md).
 ## Supported host surface
 
 The Android source implements `search`, `playback`, `lyrics`, `playlists`, `albums`,
-`artists`, `rankings`, `homeFeed`, `userLibrary`, `favorites`, `download`, and
-`authentication`. These paths are connected to the existing Search, song-action,
-download and plugin Settings UI. API 35 emulator checks now cover runtime/Keystore and a synthetic
+`artists`, `rankings`, `homeFeed`, `userLibrary`, `favorites`, `download`,
+`authentication`, and `resolver`. These paths are connected to the existing Search,
+song-action, download, third-party fallback and plugin Settings UI. API 35 emulator checks now cover runtime/Keystore and a synthetic
 Coil/Media3 path; **full capability UI, API 24, physical-device and OAuth acceptance remain incomplete**.
 The complete required-method table is `schema/manifest.schema.json` →
 `x-capability-methods`; Kotlin and SDK tests check this same contract.
 
 `examples/catalog` demonstrates every catalog capability using the CC0 test tone;
 `examples/api-token` demonstrates opaque credential requests using a **disposable**
-test token. See [catalog/authentication integration](../docs/plugin-system/05-capabilities-and-authentication.md)
+test token; `examples/resolver` demonstrates a resolver for a foreign NetEase track
+using a UNM-compatible `/match` service. See [catalog/authentication integration](../docs/plugin-system/05-capabilities-and-authentication.md)
 for method signatures, account management, OAuth2/PKCE setup and limits.
 
 ## Build a plugin
@@ -118,6 +119,13 @@ API. Return Promises; use the host context for asynchronous I/O.
   `master`. Report the actual resolved quality rather than echoing the request.
 - Playback uses `type` discriminants, `headers` and optional `expiresAtEpochMs`.
   Never return a DRM bypass or a platform raw URL object.
+- `resolver` is a separate capability for the final third-party fallback stage.
+  `resolveFallback` receives a track owned by another source (`track.source` is
+  set) and may return a short-lived HTTP(S) progressive media URL outside
+  `networkDomains`. It cannot use `credential: "active"`; HLS/DASH/DRM and
+  previews are not accepted as full-audio fallback. The plugin's own API calls
+  still use the HTTPS/public-domain broker.
+  See `examples/resolver`.
 - Lyrics are sorted `lines` with `timeMs` and `text`; optional duration,
   translation and romanization use the same line. Plain lyrics set
   `isUnsynchronized: true`.
@@ -136,6 +144,8 @@ Android Settings → Extensions → Music source plugins has Import/Update, Enab
 Disable and Uninstall actions. New installs are disabled. Enabling first loads the
 entry and checks declared methods in the worker, then registers the Provider.
 Select an enabled source in the service center, plugin Settings or existing Search screen.
+Resolver-only plugins are not offered as a main source; enable them and the third-party
+music-source switch, then they participate in the playback fallback chain.
 
 Updates require the same ID and strictly higher SemVer precedence. The new entry
 is prepared before the existing package is replaced using Android `AtomicFile`.

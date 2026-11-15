@@ -8,7 +8,8 @@
     "albums": ["searchAlbums", "albumDetail"], "artists": ["searchArtists", "artistDetail"],
     "rankings": ["rankings", "rankingTracks"], "homeFeed": ["homeFeed"],
     "userLibrary": ["accountSummary", "userPlaylists", "savedAlbums", "followedArtists"],
-    "favorites": ["isFavorite", "setFavorite"], "authentication": ["authenticationStatus"], "download": ["resolveDownload"]
+    "favorites": ["isFavorite", "setFavorite"], "authentication": ["authenticationStatus"], "download": ["resolveDownload"],
+    "resolver": ["resolveFallback"]
   },
   "type": "object",
   "required": ["id", "name", "version", "apiVersion", "entry", "capabilities"],
@@ -20,7 +21,7 @@
     "version": { "type": "string", "maxLength": 80, "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$" },
     "apiVersion": { "const": 1 },
     "entry": { "type": "string", "maxLength": 512, "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_-][A-Za-z0-9_.-]*)*\\.js$" },
-    "capabilities": { "type": "array", "uniqueItems": true, "items": { "enum": ["search", "playback", "lyrics", "playlists", "albums", "artists", "rankings", "homeFeed", "userLibrary", "favorites", "authentication", "download"] } },
+    "capabilities": { "type": "array", "uniqueItems": true, "items": { "enum": ["search", "playback", "lyrics", "playlists", "albums", "artists", "rankings", "homeFeed", "userLibrary", "favorites", "authentication", "download", "resolver"] } },
     "authentication": { "oneOf": [
       { "type": "object", "required": ["type"], "properties": { "type": { "const": "none" } } },
       { "type": "object", "required": ["type", "header", "prefix", "domains"], "properties": {

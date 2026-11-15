@@ -20,6 +20,7 @@
 | favorites | isFavorite(track), setFavorite(track, favorite) | 歌曲菜单 → 音源收藏状态（和本地统一收藏独立） |
 | download | resolveDownload(track, quality) | 歌曲滑动/菜单下载、现有下载列表 |
 | authentication | authenticationStatus() | 设置 → 音乐源插件 → 账号/检查会话 |
+| resolver | resolveFallback(track, quality) | 第三方音源回退阶段（官方源与内置跨平台匹配之后、LX 之前） |
 
 返回类型详见 `plugin-sdk/src/types.ts` 和 `schema/protocol-v1.schema.json`。目录列表返回
 `MusicPage<T>`；详情返回 `{summary, tracks: MusicPage<MusicTrack>}`，summary.id 必须等于
@@ -28,8 +29,14 @@
 Favorites 查询返回严格 boolean，写入成功 resolve void，失败 reject；不能以猜测状态代替查询。
 Download 使用和播放相同的标准 resolution，宿主只下载 playable，仍检查域名、DNS、配额及启停状态。
 
-`examples/catalog` 是覆盖目录、收藏和下载的 CC0 合成音乐库，没有第三方音乐内容。
-构建：
+`resolver` 与普通 Provider 能力不同：收到的 `track.source` 是 `netease` 等**内置来源**，
+`track.id` 是该来源的资源 ID；插件不能把输入 track 当成自己的目录资源。它返回的
+`playable.url` 可以是短时效的 HTTP(S) 音频 CDN 直链，不要求属于 `networkDomains`，
+但不接受 `credential: "active"`、HLS/DASH、DRM 或预览片段。解析器插件不出现在主音源和
+目录搜索中，只在第三方回退阶段运行；开启「遇到会员歌曲时再调用」时同样受该开关约束。
+
+`examples/catalog` 是覆盖目录、收藏和下载的 CC0 合成音乐库，没有第三方音乐内容；
+`examples/resolver` 是 UNM `/match` 兼容的解析器模板。构建：
 
 ```sh
 cd plugin-sdk

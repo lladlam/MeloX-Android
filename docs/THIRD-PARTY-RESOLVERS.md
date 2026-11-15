@@ -34,7 +34,8 @@ they do not interrupt or replace an already playing track.
 
 1. Official current source.
 2. Strict built-in cross-provider fallback, when enabled.
-3. Configured Meting → CHKSZ → UNM → installed LX scripts.
+3. Configured Meting → CHKSZ → UNM → enabled resolver-capable plugins (sorted by plugin
+   source ID) → installed LX scripts.
 
 The existing membership-only setting still applies to step 3. Terminal
 no-source exceptions from built-in providers enter the same fallback stage when

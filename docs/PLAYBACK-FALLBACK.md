@@ -41,11 +41,13 @@ Bilibili → YouTube Music → 网易云 → QQ音乐 → 酷狗概念版 → �
 仅在「第三方音乐源」开关和协议确认都开启时执行：
 
 1. 依次尝试已配置的 Meting / CHKSZ / UNM 解析器（Meting 使用用户填写的完整 API 路径；UNM 仅接受实现 `/match` 合约的服务）。
-2. 再尝试已导入的 LX Music 脚本；LX 保留自身按音源、音质和脚本顺序的选择逻辑。
+2. 再尝试已启用、声明 `resolver` 能力的插件（按插件来源 ID 排序）；插件收到的是当前内置源的 track 元数据，返回的 HTTP(S) 完整音频 URL 仍走同一播放管线。
+3. 再尝试已导入的 LX Music 脚本；LX 保留自身按音源、音质和脚本顺序的选择逻辑。
 
-- 未配置地址/Key 或没有导入脚本时，对应来源直接跳过。
+- 未配置地址/Key、没有启用的解析器插件或没有导入脚本时，对应来源直接跳过。
 - 开启「遇到会员歌曲时再调用」后，只有会员／版权／地区受限才会进入此阶段；普通的“暂时没有音源”不会请求第三方。
 - 第三方返回的链接仍必须是 HTTP(S) 完整音频。
+- 插件自带的音源（Provider）不会进入内置/LX 解析器；只有声明 `resolver` 能力的插件会在本阶段接收**内置源**的 track。解析器插件不提供目录，也不会被设为主音乐源。
 
 ## 调试日志
 
@@ -53,4 +55,4 @@ Bilibili → YouTube Music → 网易云 → QQ音乐 → 酷狗概念版 → �
 adb logcat -s MeloXPlayback MeloXThirdParty MeloXNeteaseResolver
 ```
 
-关键字段：`Cross-provider fallback: search <source>`、`resolved … via <source>`、`Resolved via Meting/CHKSZ/UNM`、`Resolved via lx:<scriptId>`。
+关键字段：`Cross-provider fallback: search <source>`、`resolved … via <source>`、`Resolved via Meting/CHKSZ/UNM`、`Resolved via plugin:<pluginId>`、`Resolved via lx:<scriptId>`。

@@ -37,7 +37,7 @@ internal object PluginWireContract {
                 "expired" -> optional(value, "accountId") { id(value, it) }
                 else -> error("invalid authentication state")
             }
-            "resolvePlayback", "resolveDownload" -> resolution(value)
+            "resolvePlayback", "resolveDownload", "resolveFallback" -> resolution(value)
             "lyrics" -> {
                 optional(value, "isUnsynchronized") { boolean(value, it) }
                 var previous = -1L

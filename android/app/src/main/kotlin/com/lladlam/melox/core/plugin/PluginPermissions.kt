@@ -11,6 +11,9 @@ object PluginPermissions {
         append("API ").append(manifest.apiVersion)
         append("\n能力：").append(manifest.capabilities.joinToString { it.wireName }.ifEmpty { "无" })
         append("\n网络域名：").append(manifest.networkDomains.sorted().joinToString().ifEmpty { "无网络权限" })
+        if (PluginCapability.Resolver in manifest.capabilities) {
+            append("\n解析器：可返回任意 HTTP(S) 渐进式音频 URL（不要求域名白名单）")
+        }
         manifest.authentication?.let {
             append("\n认证：").append(it.type)
             append("\n凭据域名：").append(it.domains.sorted().joinToString().ifEmpty { "无" })

@@ -138,7 +138,7 @@ internal fun PluginSettings() {
     }
     Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("音乐源插件（开发中）", style = MaterialTheme.typography.titleLarge)
-        Text("插件负责音乐源 API 适配。可按声明提供搜索、目录、音乐库、收藏、下载和宿主认证。RC 验收中，尚未完成全部应用和设备兼容验证。")
+        Text("插件负责音乐源 API 适配。可按声明提供搜索、目录、音乐库、收藏、下载、宿主认证和第三方解析。RC 验收中，尚未完成全部应用和设备兼容验证。")
         Button(onClick = { importer.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }, enabled = !busy) {
             Text("导入 / 更新插件包")
         }
@@ -164,9 +164,16 @@ internal fun PluginSettings() {
             Text("发布者公钥：${plugin.publisher?.fingerprint ?: "无签名（未验证发布者）"}\n完整性清单：${plugin.integrityChecked}\nSHA-256：${plugin.archiveSha256}", style = MaterialTheme.typography.bodySmall)
             Text("作者：${plugin.manifest.author ?: "未声明"} · 来源：${plugin.manifest.homepage ?: "本地导入"}")
             Text(com.lladlam.melox.core.plugin.PluginPermissions.describe(plugin.manifest), style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(enabled = plugin.status == PluginManager.Status.Enabled, onClick = {
-                com.lladlam.melox.core.music.provider.MusicProviderSelectionStore.setSelectedSourceId(context, id)
-            }) { Text(if (selectedSource == id) "✓ 当前主音乐源" else "设为主音乐源") }
+            if (plugin.manifest.isMusicSource) {
+                OutlinedButton(enabled = plugin.status == PluginManager.Status.Enabled, onClick = {
+                    com.lladlam.melox.core.music.provider.MusicProviderSelectionStore.setSelectedSourceId(context, id)
+                }) { Text(if (selectedSource == id) "✓ 当前主音乐源" else "设为主音乐源") }
+            } else {
+                Text(
+                    "解析器插件：不参与主音源和目录选择，仅在官方音源及内置跨平台匹配失败后参与第三方回退。",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             plugin.error?.let { Text(PluginErrors.message(it), color = MaterialTheme.colorScheme.error) }
             TextButton(enabled = !busy, onClick = { perform {
                 val lines = manager.diagnostics(id)

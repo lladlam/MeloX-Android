@@ -670,6 +670,13 @@ class MeloXPlaybackService : MediaSessionService(), MeloXLanHost {
             membershipOnlyProvider = {
                 ThirdPartyMusicSourceConsentStore.membershipFallbackOnly(this@MeloXPlaybackService)
             },
+            pluginResolvers = {
+                ProviderPlaybackRuntime.registryOrNull()
+                    ?.enabledDynamicProviders()
+                    ?.filterIsInstance<com.lladlam.melox.core.plugin.PluginMusicProvider>()
+                    ?.filter { it.supports(com.lladlam.melox.core.music.provider.MusicCapability.Resolver) }
+                    .orEmpty()
+            },
         )
         playbackResolver = NeteasePlaybackResolver(
             cookieProvider = cookieProvider,

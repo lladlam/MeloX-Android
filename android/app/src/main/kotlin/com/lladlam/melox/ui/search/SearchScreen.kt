@@ -321,7 +321,11 @@ fun SearchScreen(
     val pluginGeneration by providerRegistry.changes.collectAsState()
     // Capture the generation-dependent list outside LazyRow's skippable content lambda.
     // Otherwise a cold-start restore can leave its source chips at the initial empty list.
-    val enabledPluginProviders = remember(providerRegistry, pluginGeneration) { providerRegistry.enabledDynamicProviders() }
+    val enabledPluginProviders = remember(providerRegistry, pluginGeneration) {
+        providerRegistry.enabledDynamicProviders().filter {
+            it.supports(com.lladlam.melox.core.music.provider.MusicCapability.Search)
+        }
+    }
     var searchTrigger by rememberSaveable(source.name) { mutableIntStateOf(0) }
     var skipSearchDebounce by rememberSaveable(source.name) { mutableStateOf(false) }
     var kind by rememberSaveable(source.name) { mutableStateOf(MeloXSearchKind.Songs) }

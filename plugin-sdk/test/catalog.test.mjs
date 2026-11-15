@@ -75,6 +75,25 @@ test("catalog favorites are scoped through host storage and writes persist", asy
   assert.equal(await plugin.isFavorite(track, host), false);
 });
 
+test("resolver template handles a foreign track through the UNM /match contract", async () => {
+  const plugin = await load("resolver");
+  const requests = [];
+  const host = { http: { request: async request => {
+    requests.push(request);
+    return { status: 200, body: JSON.stringify({ code: 200, url: "http://cdn.example/audio.mp3" }) };
+  } } };
+  const result = await plugin.resolveFallback(
+    { id: "22676167", source: "netease", title: "Flower Dance", artists: [{ name: "DJ OKAWARI" }] },
+    "high", host,
+  );
+  assert.equal(result.type, "playable");
+  assert.equal(result.url, "http://cdn.example/audio.mp3");
+  assert.match(requests[0].url, /^https:\/\/unm\.example\.com\/match\?id=22676167&server=/);
+  await assert.rejects(() => plugin.resolveFallback(
+    { id: "x", source: "qq_music", title: "Other", artists: [{ name: "Artist" }] }, "high", host,
+  ));
+});
+
 test("token adapter requests a credential reference, not raw credentials, and reports expiry", async () => {
   const plugin = await load("api-token");
   assert.equal((await plugin.authenticationStatus({account:null})).type, "signedOut");

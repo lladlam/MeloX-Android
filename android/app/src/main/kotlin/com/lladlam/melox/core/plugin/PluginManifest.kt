@@ -17,7 +17,21 @@ data class PluginManifest(
     val authentication: PluginAuthentication? = null,
     val author: String? = null,
     val homepage: String? = null,
-)
+) {
+    /**
+     * Resolver-only plugins participate in the third-party playback stage and
+     * must not be offered as a catalog or main-source provider.
+     */
+    val isMusicSource: Boolean
+        get() = capabilities.any {
+            it in setOf(
+                PluginCapability.Search, PluginCapability.Playback, PluginCapability.Lyrics,
+                PluginCapability.Playlists, PluginCapability.Albums, PluginCapability.Artists,
+                PluginCapability.Rankings, PluginCapability.HomeFeed, PluginCapability.UserLibrary,
+                PluginCapability.Favorites,
+            )
+        }
+}
 
 data class PluginAuthentication(val type: String, val header: String = "Authorization", val prefix: String = "Bearer ", val domains: Set<String> = emptySet(), val oauth: PluginOAuthConfiguration? = null)
 
@@ -33,7 +47,12 @@ enum class PluginCapability(val wireName: String, val methods: Set<String>) {
     UserLibrary("userLibrary", setOf("accountSummary", "userPlaylists", "savedAlbums", "followedArtists")),
     Favorites("favorites", setOf("isFavorite", "setFavorite")),
     Authentication("authentication", setOf("authenticationStatus")),
-    Download("download", setOf("resolveDownload"));
+    Download("download", setOf("resolveDownload")),
+    /**
+     * Resolves a track owned by another source. Unlike [Playback], the input
+     * track is foreign and the result may use a public HTTP(S) audio URL.
+     */
+    Resolver("resolver", setOf("resolveFallback"));
 }
 
 object PluginManifestParser {

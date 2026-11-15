@@ -12,9 +12,9 @@
 6. [未完成与尚未验证事项](remaining-work.md)
 7. [全部已接线 Capability、API Token 与 OAuth2/PKCE](05-capabilities-and-authentication.md)
 8. [完整设备验收清单](device-acceptance.md)
-9. [交付文件、核心链路及 12 项能力证据表](delivery.md)
+9. [交付文件、核心链路及能力证据表](delivery.md)
 10. [RC 安全审查、签名包、数据策略与设备自动化](rc-acceptance.md)
-11. [12 项能力 SDK／宿主协议一致性核对](sdk-consistency.md)
+11. [能力 SDK／宿主协议一致性核对](sdk-consistency.md)
 
 ## 工程背景
 
