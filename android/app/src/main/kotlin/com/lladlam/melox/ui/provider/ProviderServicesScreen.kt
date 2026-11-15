@@ -50,7 +50,6 @@ import com.lladlam.melox.core.music.provider.MusicProviderSelectionStore
 import com.lladlam.melox.core.music.provider.ProviderAccountManager
 import com.lladlam.melox.core.music.provider.ThirdPartyMusicSourceConsentStore
 import com.lladlam.melox.core.provider.lxuser.LxUserSourceStore
-import com.lladlam.melox.core.provider.lxuser.ChkszApiKeyStore
 import com.lladlam.melox.core.provider.jellyfin.JellyfinApiClient
 import com.lladlam.melox.core.provider.jellyfin.JellyfinSessionStore
 import com.lladlam.melox.core.provider.local.LocalMediaScanner
@@ -118,8 +117,6 @@ fun ProviderServicesScreen(
     var showLxImportDialog by remember { mutableStateOf(false) }
     var lxImportUrl by remember { mutableStateOf("") }
     var lxImportError by remember { mutableStateOf<String?>(null) }
-    var chkszApiKey by remember { mutableStateOf(ChkszApiKeyStore.read(context)) }
-    var showChkszKeyDialog by remember { mutableStateOf(false) }
     var showJellyfinDialog by remember { mutableStateOf(false) }
     var jellyfinServerUrl by remember { mutableStateOf(JellyfinSessionStore.read(context).serverUrl) }
     var jellyfinUsername by remember { mutableStateOf(JellyfinSessionStore.read(context).userName) }
@@ -455,12 +452,7 @@ fun ProviderServicesScreen(
                     },
                     showTopSeparator = false,
                 )
-                MeloXIosListRow(
-                    title = stringResource(R.string.provider_chksz),
-                    subtitle = if (chkszApiKey.isBlank()) stringResource(R.string.provider_chksz_missing) else stringResource(R.string.provider_chksz_configured),
-                    leading = { Spacer(Modifier.width(25.dp)) },
-                    onClick = { showChkszKeyDialog = true },
-                )
+                ResolverSettingsRows()
                 MeloXIosListRow(
                     title = stringResource(R.string.provider_view_third_party_terms),
                     subtitle = stringResource(R.string.provider_third_party_terms_subtitle),
@@ -716,44 +708,6 @@ fun ProviderServicesScreen(
                     },
                     modifier = Modifier.weight(1f), style = MeloXGlassButtonStyle.BorderedProminent,
                 ) { Text(if (jellyfinBusy) stringResource(R.string.provider_connecting) else stringResource(R.string.provider_connect)) }
-            }
-        }
-    }
-    if (showChkszKeyDialog) {
-        MeloXGlassDialog(visible = true, onDismiss = { showChkszKeyDialog = false }) {
-            Text(stringResource(R.string.provider_chksz_title), style = MaterialTheme.typography.titleLarge)
-            Text(
-                stringResource(R.string.provider_chksz_body),
-                modifier = Modifier.padding(top = 8.dp),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f),
-                fontSize = 13.sp,
-                lineHeight = 19.sp,
-            )
-            MeloXGlassTextField(
-                value = chkszApiKey,
-                onValueChange = { chkszApiKey = it },
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                placeholder = { Text(stringResource(R.string.provider_api_key_placeholder)) },
-            )
-            Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MeloXGlassButton(
-                    onClick = {
-                        ChkszApiKeyStore.clear(context)
-                        chkszApiKey = ""
-                        showChkszKeyDialog = false
-                    },
-                    modifier = Modifier.weight(1f),
-                    style = MeloXGlassButtonStyle.Plain,
-                ) { Text(stringResource(R.string.provider_clear)) }
-                MeloXGlassButton(
-                    onClick = {
-                        ChkszApiKeyStore.write(context, chkszApiKey)
-                        chkszApiKey = ChkszApiKeyStore.read(context)
-                        showChkszKeyDialog = false
-                    },
-                    modifier = Modifier.weight(1f),
-                    style = MeloXGlassButtonStyle.BorderedProminent,
-                ) { Text(stringResource(R.string.provider_save)) }
             }
         }
     }

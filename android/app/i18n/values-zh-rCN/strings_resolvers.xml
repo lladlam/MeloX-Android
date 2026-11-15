@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="provider_resolver_configured">已启用并配置 · 点击编辑或测试</string>
+    <string name="provider_resolver_unconfigured">未启用或配置不完整 · 点击配置</string>
+    <string name="provider_resolver_enabled">启用此解析服务</string>
+    <string name="provider_resolver_endpoint">服务地址（HTTP 或 HTTPS）</string>
+    <string name="provider_resolver_order">官方音源 → 内置跨平台回退 → Meting → CHKSZ → UNM → 已安装的 LX 脚本。只有启用第三方音源并配置服务后才会发起请求。</string>
+    <string name="provider_resolver_meting_help">填写完整的 Meting API 地址，例如 /api.php 或 /meting/。按填写的路径请求，不会自动追加 /api。Auth 可选，支持网易云、QQ 音乐、酷狗。</string>
+    <string name="provider_resolver_chksz_help">填写兼容 CHKSZ 的服务根地址或 /api 地址，以及个人 API Key。支持网易云、QQ 音乐、酷狗。凭据只保存在本机。</string>
+    <string name="provider_resolver_unm_help">填写兼容 UNM-Server 的 HTTP /match 接口服务。原版 UNM 的 HTTP 代理端口不是 /match 接口。本解析器只接收网易云歌曲 ID。</string>
+    <string name="provider_resolver_servers">UNM 音源顺序（英文逗号分隔）</string>
+    <string name="provider_resolver_test_help">已预填 DJ OKAWARI《Flower Dance》（网易云 ID %1$s），可直接测试或改为其他歌曲。只发送该 ID 和服务凭据，不发送官方音乐账号的 Cookie。</string>
+    <string name="provider_resolver_song_id">网易云歌曲 ID</string>
+    <string name="provider_resolver_invalid">请检查服务地址、必填 API Key 及歌曲 ID。</string>
+    <string name="provider_resolver_test">测试解析</string>
+    <string name="provider_resolver_testing">测试中…</string>
+    <string name="provider_resolver_test_ok">服务已返回音频地址，尚未验证实际播放。</string>
+    <string name="provider_resolver_test_failed">未返回音频地址，请检查地址、凭据、服务协议及歌曲可用性。</string>
+    <string name="provider_resolver_response_title">服务返回内容（凭据已隐藏）</string>
+    <string name="provider_resolver_response_empty">返回内容为空或仅包含空白字符。</string>
+    <string name="provider_resolver_response_non_text">服务返回了非文本内容（%1$s），不展示二进制数据。</string>
+    <string name="provider_resolver_response_truncated">返回内容过长，最多显示 4096 个字符。</string>
+</resources>

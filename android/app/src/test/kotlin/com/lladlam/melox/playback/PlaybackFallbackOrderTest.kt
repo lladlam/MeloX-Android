@@ -172,6 +172,38 @@ class PlaybackFallbackOrderTest {
         assertEquals("https://third.example/song", result?.url)
     }
 
+    @Test
+    fun idBasedResolversDoNotRequireTitleMetadata() {
+        val calls = mutableListOf<String>()
+        val result = thirdParty(calls).resolve(
+            track(MusicSource.Netease).copy(title = "", artists = emptyList()),
+            AudioQualityTier.High, membershipFailure = true,
+        )
+        assertEquals("https://third.example/song", result?.url)
+        assertEquals(listOf("third"), calls)
+    }
+
+    @Test
+    fun pluginTracksNeverEnterBuiltInThirdPartySources() {
+        val calls = mutableListOf<String>()
+        val plugin = track(MusicSource.Netease).copy(id = MusicResourceId(
+            com.lladlam.melox.core.music.model.SourceId.parse("plugin:org.example.test")!!, "1",
+        ))
+        assertNull(thirdParty(calls).resolve(plugin, AudioQualityTier.High, true))
+        assertTrue(calls.isEmpty())
+    }
+
+    @Test
+    fun apiUrlExpirySurvivesTheFallbackChain() {
+        val chain = PlaybackFallbackChain(null, ThirdPartyPlaybackResolver({ true }, { false }, listOf(
+            ThirdPartySource { _, _ -> ThirdPartyTrack("https://third.example/audio", sourceLabel = "Meting") },
+        )))
+        val before = System.currentTimeMillis()
+        val expires = chain.resolve(track(MusicSource.Netease), AudioQualityTier.High, false)?.expiresAtEpochMs
+        val after = System.currentTimeMillis()
+        assertTrue(expires != null && expires in (before + 120_000L)..(after + 120_000L))
+    }
+
     private fun thirdParty(calls: MutableList<String>) = ThirdPartyPlaybackResolver(
         enabledProvider = { true },
         membershipOnlyProvider = { false },

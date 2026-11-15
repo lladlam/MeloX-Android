@@ -192,7 +192,7 @@ class ProviderPlaybackResolver(
                 ?: throw IOException("${provider.displayName} 当前没有实现播放能力")
             val resolution = runBlocking(Dispatchers.IO) {
                 kotlinx.coroutines.withTimeout(PROVIDER_RESOLVE_TIMEOUT_MS) {
-                    playback.resolvePlayback(track, quality)
+                    builtInPlaybackResult(thirdPartySourcesEnabled()) { playback.resolvePlayback(track, quality) }
                 }
             }
 

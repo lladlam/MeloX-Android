@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="provider_resolver_configured">Enabled and configured · tap to edit or test</string>
+    <string name="provider_resolver_unconfigured">Disabled or incomplete · tap to configure</string>
+    <string name="provider_resolver_enabled">Enable this resolver</string>
+    <string name="provider_resolver_endpoint">Service endpoint (HTTP or HTTPS)</string>
+    <string name="provider_resolver_order">Official source → built-in cross-provider fallback → Meting → CHKSZ → UNM → installed LX scripts. No requests are made until you enable third-party sources and configure a service.</string>
+    <string name="provider_resolver_meting_help">Enter the complete Meting API endpoint, such as /api.php or /meting/. Its path is used as entered; /api is not appended. Auth is optional. Supports NetEase, QQ Music and Kugou.</string>
+    <string name="provider_resolver_chksz_help">Enter a CHKSZ-compatible server root or /api endpoint and your personal API Key. Supports NetEase, QQ Music and Kugou. Credentials stay on this device.</string>
+    <string name="provider_resolver_unm_help">Enter an HTTP /match API server compatible with UNM-Server. The original UNM HTTP proxy port is not a /match API. This resolver accepts NetEase song IDs only.</string>
+    <string name="provider_resolver_servers">UNM source order (comma-separated)</string>
+    <string name="provider_resolver_test_help">Preset: Flower Dance — DJ OKAWARI (NetEase ID %1$s). You can enter another song ID. Sends only that ID and the configured service credential, never your official music account cookies.</string>
+    <string name="provider_resolver_song_id">NetEase song ID</string>
+    <string name="provider_resolver_invalid">Check the service endpoint, required API Key and song ID.</string>
+    <string name="provider_resolver_test">Test resolver</string>
+    <string name="provider_resolver_testing">Testing…</string>
+    <string name="provider_resolver_test_ok">The service returned an audio URL. Actual playback has not been tested.</string>
+    <string name="provider_resolver_test_failed">No audio URL returned. Check the endpoint, credential, service protocol and song availability.</string>
+    <string name="provider_resolver_response_title">Service response (credentials redacted)</string>
+    <string name="provider_resolver_response_empty">The response is empty or contains only whitespace.</string>
+    <string name="provider_resolver_response_non_text">The service returned non-text content (%1$s); binary data is not displayed.</string>
+    <string name="provider_resolver_response_truncated">Response truncated; at most 4,096 characters are displayed.</string>
+</resources>

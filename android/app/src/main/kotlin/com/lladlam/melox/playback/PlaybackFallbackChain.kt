@@ -62,7 +62,7 @@ internal class PlaybackFallbackChain(
         return PlaybackFallbackResolution(
             url = third.url,
             requestHeaders = third.requestHeaders,
-            expiresAtEpochMs = null,
+            expiresAtEpochMs = third.configuredResolverExpiry(),
             cacheIdentity = "third:${third.sourceLabel}",
             crossProvider = null,
             thirdParty = third,
