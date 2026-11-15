@@ -23,8 +23,9 @@ internal class PluginResolverSource(
     private val timeoutMs: Long = 9_000L,
 ) : ThirdPartySource {
     override fun resolve(track: MusicTrack, quality: AudioQualityTier): ThirdPartyTrack? {
-        for (plugin in plugins()) {
-            if (!plugin.supports(MusicCapability.Resolver)) continue
+        for (plugin in plugins()
+            .filter { it.supports(MusicCapability.Resolver) }
+            .sortedBy { it.sourceId.value }) {
             val resolution = runCatching {
                 runBlocking(Dispatchers.IO) {
                     withTimeout(timeoutMs) { plugin.resolveFallback(track, quality) }
@@ -59,6 +60,7 @@ internal class PluginResolverSource(
     override fun cacheIdentity(): String =
         plugins()
             .filter { it.supports(MusicCapability.Resolver) }
+            .sortedBy { it.sourceId.value }
             .joinToString("|") { "${it.sourceId.value}@${it.manifest.version}" }
             .ifEmpty { "none" }
 
