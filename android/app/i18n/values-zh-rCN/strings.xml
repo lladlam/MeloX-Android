@@ -1252,9 +1252,11 @@
     <string name="settings_about_sponsor_bai">Bai</string>
     <string name="settings_about_sponsor_361ef">爱发电用户_361ef</string>
     <string name="settings_about_sponsor_f8b67">爱发电用户_f8b67</string>
+    <string name="settings_about_sponsor_qingfeng">清风与黑糖C</string>
     <string name="settings_about_sponsor_amount_50">CNY 50</string>
     <string name="settings_about_sponsor_amount_6">CNY 6</string>
     <string name="settings_about_sponsor_amount_5">CNY 5</string>
+    <string name="settings_about_sponsor_amount_18">CNY 18</string>
     <string name="settings_about_sponsors_note">感谢每一位支持弥乐的朋友。</string>
     <string name="settings_about_exporting">正在导出日志…</string>
     <string name="settings_about_export">导出 MeloX 全部日志</string>

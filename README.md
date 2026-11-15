@@ -29,9 +29,15 @@ The **Windows** and **Linux** editions are in their final verification stage. If
 
 > MeloX Android is an unofficial open-source project. It is not affiliated with, partnered with, or authorized by NetEase Cloud Music, Xiaomi, Apple, or their related companies.
 
-## Current version: 0.7.2
+## Current version: 0.7.3
 
-`0.7.2` (versionCode **27**, 2026-11-06) adds the experimental Plugin API v1 music-source system and an optional MeloX Rear companion entry, while completing background page restoration, the reworked home quick actions, Listen Together solo mode and QQ bracket backing vocals.
+`0.7.3` (versionCode **28**, 2026-11-15) fixes the NetEase library fetch cap, playlist writes and favorites syncing, unifies lyric fetching with language-aware translation and cross-source merging, and moves the flowing-light player background onto the GPU.
+
+- NetEase: song detail now respects the server's 100-song cap instead of silently dropping tracks; playlist writes validate the nested result so failures are no longer silent (#119); unified favorites also write back to NetEase.
+- Lyrics: one pipeline for every source, translation decided by language (mismatches dropped), cross-source translation merge with word-timing priority, and late QQ QRC now upgrades a line-timed lyric in place.
+- Player: GPU (AGSL) flowing-light background with retained and prewarmed frames, palette reused from the Coil cache, and an optional AutoMix saturation/speed boost.
+- Network, accounts and stability: safer retries, per-source cookie isolation, LAN PIN on every reconnect, plugin and download cleanup, and several playback/notification fixes.
+- New sponsor: 清风与黑糖C (CNY 18).
 
 - Experimental dynamic plugin sources: bounded package and signature validation, explicit permission confirmation, an isolated QuickJS runtime and account-scoped storage, wired through 12 capabilities from search and playback to lyrics, favorites, downloads and authentication. This is an RC engineering preview; API 24, complete UI/OAuth/background flows and physical-device acceptance are still pending. See [the plugin docs](docs/plugin-system/README.md).
 - Background restoration now keeps the active page and loaded data across stopped-Activity destruction for home/explore collections and charts, search results and details, library subpages, podcasts, downloads, cloud drive, messages and the full-screen player. Daily recommendations and charts also stop coming back blank on the second open.
@@ -39,9 +45,9 @@ The **Windows** and **Linux** editions are in their final verification stage. If
 - Listen Together gains a solo mode that keeps the room online without sending local commands. QQ Music bracket lines can become backing vocals of the previous line (off by default). Fixed the blank YouTube Music sign-in WebView, Qishui QR sign-in, and completed zh-Hans/zh-Hant/ja translations.
 - An optional experimental MeloX Rear companion entry appears under Settings → Experimental; the separate YTRear-derived app is not distributed with this release and its upstream license is still pending.
 
-- Download and full notes: [GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.7.2)
+- Download and full notes: [GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.7.3)
 - Version history: [CHANGELOG.md](CHANGELOG.md)
-- This release: [docs/releases/0.7.2.md](docs/releases/0.7.2.md)
+- This release: [docs/releases/0.7.3.md](docs/releases/0.7.3.md)
 
 > [!WARNING]
 > Third-party music sources are imported by the user and depend on external services. Sources used for testing before release have failed because of dead endpoints, rate limits, DNS or certificate errors, or unplayable URLs. MeloX cannot guarantee that any third-party source works. If you hit a problem, open Settings → About, scroll to the bottom, export all MeloX logs, and send them to `lladlam114@gmail.com`. Logs may contain account state, song metadata, request URLs, or other private data. Review them before sending.
@@ -396,6 +402,7 @@ Thank you to the following sponsors for supporting MeloX Android!
 | 中末 | CNY 8.88 |
 | Afdian user\_361ef | CNY 20 |
 | Afdian user\_f8b67 | CNY 12.24 |
+| 清风与黑糖C | CNY 18 |
 
 ## Links
 

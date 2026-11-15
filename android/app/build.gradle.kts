@@ -167,8 +167,8 @@ android {
         applicationId = "com.lladlam.melox.android"
         minSdk = 24
         targetSdk = 37
-        versionCode = 27
-        versionName = "0.7.2"
+        versionCode = 28
+        versionName = "0.7.3"
         testInstrumentationRunner = providers.gradleProperty("meloxTestInstrumentationRunner")
             .getOrElse("com.lladlam.melox.core.autosync.AutoSyncDeviceRunner")
         externalNativeBuild {

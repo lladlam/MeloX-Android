@@ -1258,12 +1258,14 @@
     <string name="settings_about_sponsor_zhongmo">中末</string>
     <string name="settings_about_sponsor_361ef">Afdian user_361ef</string>
     <string name="settings_about_sponsor_f8b67">Afdian user_f8b67</string>
+    <string name="settings_about_sponsor_qingfeng">清风与黑糖C</string>
     <string name="settings_about_sponsor_amount_20">CNY 20</string>
     <string name="settings_about_sponsor_amount_12_24">CNY 12.24</string>
     <string name="settings_about_sponsor_amount_8_88">CNY 8.88</string>
     <string name="settings_about_sponsor_amount_50">CNY 50</string>
     <string name="settings_about_sponsor_amount_6">CNY 6</string>
     <string name="settings_about_sponsor_amount_5">CNY 5</string>
+    <string name="settings_about_sponsor_amount_18">CNY 18</string>
     <string name="settings_about_sponsors_note">Thank you to everyone supporting MeloX Android.</string>
     <string name="settings_about_exporting">Exporting logs…</string>
     <string name="settings_about_export">Export all MeloX logs</string>

@@ -3836,6 +3836,7 @@ private fun AboutSettings(context: android.content.Context) {
                 stringResource(R.string.settings_about_sponsor_zhongmo) to stringResource(R.string.settings_about_sponsor_amount_8_88),
                 stringResource(R.string.settings_about_sponsor_361ef) to stringResource(R.string.settings_about_sponsor_amount_20),
                 stringResource(R.string.settings_about_sponsor_f8b67) to stringResource(R.string.settings_about_sponsor_amount_12_24),
+                stringResource(R.string.settings_about_sponsor_qingfeng) to stringResource(R.string.settings_about_sponsor_amount_18),
             ).forEach { (name, amount) ->
                 Row(
                     Modifier.fillMaxWidth().padding(top = 9.dp),

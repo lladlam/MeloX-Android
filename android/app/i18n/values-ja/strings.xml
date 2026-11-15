@@ -1199,6 +1199,7 @@
     <string name="settings_about_sponsor_amount_50">CNY 50</string>
     <string name="settings_about_sponsor_amount_6">CNY 6</string>
     <string name="settings_about_sponsor_amount_5">CNY 5</string>
+    <string name="settings_about_sponsor_amount_18">CNY 18</string>
     <string name="settings_about_sponsors_note">MeloX Android を支援してくださる皆様に感謝します。</string>
     <string name="settings_about_exporting">ログを書き出し中…</string>
     <string name="settings_about_export">MeloX のログをすべて書き出す</string>
@@ -1578,6 +1579,7 @@
     <string name="settings_about_sponsor_amount_20">20 元</string>
     <string name="settings_about_sponsor_amount_8_88">8.88 元</string>
     <string name="settings_about_sponsor_f8b67">Afdian ユーザー_f8b67</string>
+    <string name="settings_about_sponsor_qingfeng">清风与黑糖C</string>
     <string name="settings_about_sponsor_zhongmo">中末</string>
     <string name="settings_artwork_swipe_tracks">アートワークを左右にスワイプして曲を切り替え</string>
     <string name="settings_artwork_tap_lyrics">アートワークをタップして歌詞に切り替え</string>
