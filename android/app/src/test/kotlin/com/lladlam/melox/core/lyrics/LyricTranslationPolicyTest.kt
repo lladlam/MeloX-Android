@@ -129,14 +129,56 @@ class LyricTranslationPolicyTest {
     }
 
     @Test
-    fun combineRejectsTimelinesThatDisagreeOnLineCount() {
+    fun wordTimedMainBorrowsTranslationsFromALongerLineTimedTrack() {
+        // Mirrors the real AMLL/Netease case: 48 word-timed main lines vs a
+        // 62-line translation track, with a constant ~150–230 ms lead-in.
+        val main = doc(
+            Triple("僕らを包んで", 500L, null),
+            Triple("粉々になる前に", 3_410L, null),
+            Triple("頼りなくてもいい", 6_220L, null),
+            Triple("その手を", 8_130L, null),
+            Triple("この手は", 10_920L, null),
+            Triple("自分自身のものさ", 19_310L, null),
+        )
+        val other = doc(
+            Triple("x0", 278L, "残存的心跳"),
+            Triple("x1", 3_233L, "它在彻底粉碎前"),
+            Triple("x2", 6_074L, "这只手 哪怕不可靠也没关系"),
+            Triple("x3", 7_973L, "这双手就属于自己"),
+            Triple("x4", 10_692L, "一切并非无法改变"),
+            Triple("x5", 19_000L, "伸出手吧"),
+            Triple("x6", 22_000L, "额外的翻译行"),
+            Triple("x7", 25_000L, "额外的翻译行"),
+        )
+
+        val merged = LyricTranslationPolicy.combineTranslations(main, other)
+
+        // The median offset aligns most lines; one late line may stay outside
+        // the ±120 ms window, which the 60% ratio permits.
+        assertTrue((merged?.lines?.count { !it.translation.isNullOrBlank() } ?: 0) >= 5)
+        assertEquals("这只手 哪怕不可靠也没关系", merged?.lines?.get(2)?.translation)
+    }
+
+    @Test
+    fun constantLeadInOffsetIsEstimatedBeforeMatching() {
         val main = doc(
             Triple("a", 1_000L, null),
-            Triple("b", 2_000L, null),
-            Triple("c", 3_000L, null),
+            Triple("b", 3_000L, null),
+            Triple("c", 5_000L, null),
+            Triple("d", 7_000L, null),
+            Triple("e", 9_000L, null),
         )
-        val other = doc(Triple("x", 1_000L, "译"))
-        assertNull(LyricTranslationPolicy.combineTranslations(main, other))
+        val other = doc(
+            Triple("x", 820L, "译1"),
+            Triple("y", 2_820L, "译2"),
+            Triple("z", 4_820L, "译3"),
+            Triple("w", 6_820L, "译4"),
+            Triple("v", 8_820L, "译5"),
+        )
+
+        val merged = LyricTranslationPolicy.combineTranslations(main, other)
+
+        assertEquals(listOf("译1", "译2", "译3", "译4", "译5"), merged?.lines?.map { it.translation })
     }
 
     @Test
@@ -145,19 +187,58 @@ class LyricTranslationPolicyTest {
             Triple("a", 1_000L, null),
             Triple("b", 5_000L, null),
             Triple("c", 9_000L, null),
+            Triple("d", 13_000L, null),
+            Triple("e", 17_000L, null),
         )
         val other = doc(
             Triple("x", 1_000L, "译"),
-            Triple("y", 5_000L, "译"),
-            Triple("z", 9_000L, "译"),
+            Triple("y", 7_000L, "译"),
+            Triple("z", 11_000L, "译"),
+            Triple("w", 15_000L, "译"),
+            Triple("v", 19_000L, "译"),
         )
-        // Only one of three lines is inside the ±120ms tolerance.
-        val shifted = other.copy(
-            lines = other.lines.mapIndexed { index, line ->
-                if (index == 0) line else line.copy(timeMs = line.timeMs + 2_000L)
-            },
+        // Only one of five lines is inside the ±120ms tolerance.
+        assertNull(LyricTranslationPolicy.combineTranslations(main, other))
+    }
+
+    @Test
+    fun exactTextFillsLinesEvenWhenTimingIsFarApart() {
+        val main = doc(
+            Triple("頼りなくてもいい その手を", 6_220L, null),
+            Triple("この手は 自分自身のものさ", 8_130L, null),
+            Triple("変わらないはずはないよ 手を伸ばして", 10_920L, null),
+            Triple("雑踏の中で 声無き声で泣いている", 19_310L, null),
         )
-        assertNull(LyricTranslationPolicy.combineTranslations(main, shifted))
+        val other = doc(
+            Triple("頼りなくてもいい その手を", 60_074L, "这只手 哪怕不可靠也没关系"),
+            Triple("この手は 自分自身のものさ", 60_973L, "这双手就属于自己"),
+            Triple("変わらないはずはないよ 手を伸ばして", 62_000L, "一切并非无法改变 伸出手吧"),
+            Triple("雑踏の中で 声無き声で泣いている", 63_000L, "我在拥挤的人群中无声地哭泣着"),
+        )
+
+        val merged = LyricTranslationPolicy.combineTranslations(main, other)
+
+        assertEquals("这只手 哪怕不可靠也没关系", merged?.lines?.get(0)?.translation)
+        assertEquals(4, merged?.lines?.count { !it.translation.isNullOrBlank() })
+    }
+
+    @Test
+    fun combineRejectsUnrelatedTimelinesEvenWithoutLineCountGuard() {
+        val main = doc(
+            Triple("a", 1_000L, null),
+            Triple("b", 3_000L, null),
+            Triple("c", 5_000L, null),
+            Triple("d", 7_000L, null),
+            Triple("e", 9_000L, null),
+        )
+        val other = doc(
+            Triple("x", 101_000L, "译"),
+            Triple("y", 103_000L, "译"),
+            Triple("z", 105_000L, "译"),
+            Triple("w", 107_000L, "译"),
+            Triple("v", 109_000L, "译"),
+        )
+        assertNull(LyricTranslationPolicy.combineTranslations(main, other))
     }
 
     // ------------------------------------------------- unified post-processing
