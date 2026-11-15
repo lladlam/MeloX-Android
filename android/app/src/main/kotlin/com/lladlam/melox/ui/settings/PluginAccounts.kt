@@ -139,7 +139,6 @@ private fun PluginAccountContent(manifest: PluginManifest, manager: PluginManage
                 "删除 ${account.displayName} 的本地凭据。收藏、历史和下载保留。",
                 Modifier.padding(top = 12.dp),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f),
             )
             Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("同时清除此账号的插件普通存储", Modifier.weight(1f),
@@ -177,8 +176,11 @@ private fun PluginAccountContent(manifest: PluginManifest, manager: PluginManage
         }
     }
 
-    Spacer(Modifier.height(10.dp))
-    PluginSectionLabel("插件账号")
+    Text(
+        "插件账号",
+        Modifier.padding(start = 8.dp, top = 12.dp, bottom = 8.dp),
+        style = MaterialTheme.typography.titleSmall,
+    )
     MeloXIosGroupedList(surfaceColor = MaterialTheme.colorScheme.surface) {
         MeloXIosListRow(
             title = "当前账号",
@@ -228,11 +230,6 @@ private fun PluginAccountContent(manifest: PluginManifest, manager: PluginManage
                     style = MeloXGlassButtonStyle.BorderedProminent,
                 ) { Text("导入并使用凭据") }
             } else {
-                Text(
-                    "通过系统浏览器进行 OAuth2 / PKCE 授权，回调：${PluginOAuth.REDIRECT_URI}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f),
-                )
                 MeloXGlassButton(
                     onClick = { authorize(replace = false) },
                     enabled = !busy && label.isNotBlank() && registry[manifest.sourceId] != null,
@@ -245,11 +242,6 @@ private fun PluginAccountContent(manifest: PluginManifest, manager: PluginManage
                     modifier = Modifier.fillMaxWidth(),
                     style = MeloXGlassButtonStyle.Plain,
                 ) { Text("重新授权当前账号（保留账号数据）") }
-                Text(
-                    "重新授权会替换当前本地账号的凭据，保留其插件存储；请在浏览器选择对应账号。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .52f),
-                )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     MeloXGlassButton(
                         onClick = {
@@ -271,8 +263,7 @@ private fun PluginAccountContent(manifest: PluginManifest, manager: PluginManage
                     ) { Text("取消登录") }
                 }
                 oauthStatus[manifest.sourceId]?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f))
+                    Text(it, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -345,8 +336,7 @@ private fun PluginAccountContent(manifest: PluginManifest, manager: PluginManage
                 style = MeloXGlassButtonStyle.Bordered,
             ) { Text("检查会话状态") }
             status?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f))
+                Text(it, style = MaterialTheme.typography.bodySmall)
             }
             error?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)

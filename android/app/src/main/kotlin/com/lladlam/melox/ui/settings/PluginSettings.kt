@@ -28,7 +28,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.lladlam.melox.core.music.model.SourceId
 import com.lladlam.melox.core.music.provider.MusicProviderSelectionStore
 import com.lladlam.melox.core.plugin.MeloXPlugins
@@ -70,6 +69,7 @@ internal fun PluginSettings() {
     var pendingRemoval by remember { mutableStateOf<SourceId?>(null) }
     var diagnostics by remember { mutableStateOf<List<String>?>(null) }
     var diagnosticSource by remember { mutableStateOf<SourceId?>(null) }
+    var selectedPluginId by remember { mutableStateOf<SourceId?>(null) }
 
     fun perform(block: suspend () -> Unit) {
         if (busy) return
@@ -148,12 +148,10 @@ internal fun PluginSettings() {
                 Text(
                     "作者：${manifest.author ?: "未声明"}\n来源：${manifest.homepage ?: "本地导入，发布者身份未验证"}",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f),
                 )
                 Text(
                     "包 SHA-256：${pendingPackage?.archiveSha256}",
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f),
                 )
                 Text(
                     if (newPublisher != "unsigned") {
@@ -163,7 +161,7 @@ internal fun PluginSettings() {
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = if (newPublisher == "unsigned") MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurface.copy(alpha = .62f),
+                    else MaterialTheme.colorScheme.onSurface,
                 )
                 if (changedPublisher) {
                     Text(
@@ -189,11 +187,9 @@ internal fun PluginSettings() {
                     Text(
                         "原权限\n${PluginPermissions.describe(previous)}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f),
                     )
                 }
-                Text("本次权限", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f))
+                Text("本次权限", style = MaterialTheme.typography.bodySmall)
                 Text(PluginPermissions.describe(manifest), style = MaterialTheme.typography.bodySmall)
             }
             Row(
@@ -246,12 +242,10 @@ internal fun PluginSettings() {
                 Text(
                     "将停用并删除插件包。收藏、历史、下载与发布者信任记录保留；插件媒体和图片没有共享缓存。",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f),
                 )
                 Text(
                     "可清除新版中该插件的全部普通存储，以及旧版当前可识别账号的存储。旧版已删除账号留下的无归属哈希文件无法可靠识别，会保留以免误删其他来源。",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .52f),
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("同时清除插件凭据与普通存储", Modifier.weight(1f),
@@ -341,18 +335,25 @@ internal fun PluginSettings() {
     Column(Modifier.fillMaxWidth()) {
         MeloXIosGroupedList(surfaceColor = MaterialTheme.colorScheme.surface) {
             MeloXIosListRow(
-                title = "音乐源插件",
-                subtitle = "API v1 · 搜索、播放、目录、账号与第三方解析",
-                detail = if (plugins.isEmpty()) "未安装" else "${plugins.size} 个",
-                showTopSeparator = false,
-            )
-            MeloXIosListRow(
                 title = "导入 / 更新插件包",
-                subtitle = "选择 .melox-plugin 或 ZIP；新安装默认禁用",
                 detail = if (busy) "处理中…" else "选择文件",
                 onClick = if (busy) null else ({ importer.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }),
-                showTopSeparator = true,
+                showTopSeparator = false,
             )
+            if (plugins.isEmpty()) {
+                MeloXIosListRow(
+                    title = "还没有安装插件",
+                    showTopSeparator = true,
+                )
+            } else {
+                plugins.values.sortedBy { it.manifest.sourceId.value }.forEach { plugin ->
+                    MeloXIosListRow(
+                        title = plugin.manifest.name,
+                        onClick = { selectedPluginId = plugin.manifest.sourceId },
+                        showTopSeparator = true,
+                    )
+                }
+            }
         }
         if (busy) {
             LinearProgressIndicator(
@@ -368,16 +369,15 @@ internal fun PluginSettings() {
             )
         }
         recoveryError?.let { message ->
-            Spacer(Modifier.height(18.dp))
-            PluginSectionLabel("插件状态")
+            Spacer(Modifier.height(12.dp))
             MeloXIosGroupedList(surfaceColor = MaterialTheme.colorScheme.surface) {
                 MeloXIosListRow(
                     title = "启用状态恢复失败",
-                    subtitle = message,
-                    subtitleMaxLines = 5,
                     showTopSeparator = false,
                 )
-                Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(message, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error)
                     MeloXGlassButton(
                         onClick = { perform { manager.resetEnabledState() } },
                         enabled = !busy,
@@ -387,101 +387,82 @@ internal fun PluginSettings() {
                 }
             }
         }
-        if (damaged.isNotEmpty()) {
-            Spacer(Modifier.height(18.dp))
-            PluginSectionLabel("需要处理")
-            damaged.forEachIndexed { index, item ->
-                MeloXIosGroupedList(
-                    modifier = Modifier.padding(bottom = 10.dp),
-                    surfaceColor = MaterialTheme.colorScheme.surface,
-                ) {
-                    MeloXIosListRow(
-                        title = if (item.storageKey?.endsWith(".transaction") == true) {
-                            "插件更新恢复失败"
-                        } else "已隔离损坏包",
-                        subtitle = "${item.storageKey}\n${item.error}",
-                        subtitleMaxLines = 5,
-                        showTopSeparator = false,
+        damaged.forEach { item ->
+            Spacer(Modifier.height(12.dp))
+            MeloXIosGroupedList(surfaceColor = MaterialTheme.colorScheme.surface) {
+                MeloXIosListRow(
+                    title = if (item.storageKey?.endsWith(".transaction") == true) {
+                        "插件更新恢复失败"
+                    } else "已隔离损坏包",
+                    showTopSeparator = false,
+                )
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "${item.storageKey}\n${item.error}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                     if (item.storageKey?.endsWith(".transaction") != true) {
-                        Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                            MeloXGlassButton(
-                                onClick = {
-                                    item.storageKey?.let { key -> perform { manager.dismissDamaged(key) } }
-                                },
-                                enabled = !busy,
-                                modifier = Modifier.fillMaxWidth(),
-                                style = MeloXGlassButtonStyle.Plain,
-                            ) { Text("删除隔离副本") }
-                        }
+                        MeloXGlassButton(
+                            onClick = {
+                                item.storageKey?.let { key -> perform { manager.dismissDamaged(key) } }
+                            },
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth(),
+                            style = MeloXGlassButtonStyle.Plain,
+                        ) { Text("删除隔离副本") }
                     }
                 }
             }
         }
-
-        Spacer(Modifier.height(18.dp))
-        PluginSectionLabel("已安装插件")
-        if (plugins.isEmpty()) {
-            MeloXIosGroupedList(surfaceColor = MaterialTheme.colorScheme.surface) {
-                MeloXIosListRow(
-                    title = "还没有安装插件",
-                    subtitle = "从上面的入口导入 .melox-plugin；安装后默认为禁用，确认权限后再启用。",
-                    subtitleMaxLines = 3,
-                    showTopSeparator = false,
-                )
-            }
-        } else {
-            plugins.values.sortedBy { it.manifest.sourceId.value }.forEachIndexed { index, plugin ->
-                if (index > 0) Spacer(Modifier.height(18.dp))
-                PluginGroup(
-                    plugin = plugin,
-                    selectedSource = selectedSource,
-                    busy = busy,
-                    onSetMainSource = {
-                        MusicProviderSelectionStore.setSelectedSourceId(context, plugin.manifest.sourceId)
-                    },
-                    onToggleEnabled = {
-                        perform {
-                            if (plugin.status == PluginManager.Status.Enabled) manager.disable(plugin.manifest.sourceId)
-                            else manager.enable(plugin.manifest.sourceId)
-                        }
-                    },
-                    onDiagnostics = {
-                        perform {
-                            val lines = manager.diagnostics(plugin.manifest.sourceId)
-                            withContext(Dispatchers.Main.immediate) {
-                                diagnosticSource = plugin.manifest.sourceId
-                                diagnostics = lines
-                            }
-                        }
-                    },
-                    onUninstall = {
-                        cleanPrivateData = false
-                        pendingRemoval = plugin.manifest.sourceId
-                    },
-                )
-                PluginAccounts(plugin.manifest, manager)
-            }
-        }
         Spacer(Modifier.height(8.dp))
+    }
+
+    val selectedPlugin = selectedPluginId?.let { plugins[it] }
+    if (selectedPlugin != null) {
+        PluginDetailDialog(
+            plugin = selectedPlugin,
+            manager = manager,
+            selectedSource = selectedSource,
+            busy = busy,
+            onDismiss = { selectedPluginId = null },
+            onSetMainSource = {
+                MusicProviderSelectionStore.setSelectedSourceId(context, selectedPlugin.manifest.sourceId)
+            },
+            onToggleEnabled = {
+                perform {
+                    if (selectedPlugin.status == PluginManager.Status.Enabled) {
+                        manager.disable(selectedPlugin.manifest.sourceId)
+                    } else {
+                        manager.enable(selectedPlugin.manifest.sourceId)
+                    }
+                }
+            },
+            onDiagnostics = {
+                perform {
+                    val lines = manager.diagnostics(selectedPlugin.manifest.sourceId)
+                    withContext(Dispatchers.Main.immediate) {
+                        diagnosticSource = selectedPlugin.manifest.sourceId
+                        diagnostics = lines
+                    }
+                }
+            },
+            onUninstall = {
+                selectedPluginId = null
+                cleanPrivateData = false
+                pendingRemoval = selectedPlugin.manifest.sourceId
+            },
+        )
     }
 }
 
 @Composable
-internal fun PluginSectionLabel(text: String) {
-    Text(
-        text,
-        Modifier.padding(start = 8.dp, bottom = 8.dp),
-        fontSize = 13.sp,
-        color = MaterialTheme.colorScheme.onBackground.copy(alpha = .48f),
-    )
-}
-
-@Composable
-private fun PluginGroup(
+private fun PluginDetailDialog(
     plugin: PluginManager.State,
+    manager: PluginManager,
     selectedSource: SourceId,
     busy: Boolean,
+    onDismiss: () -> Unit,
     onSetMainSource: () -> Unit,
     onToggleEnabled: () -> Unit,
     onDiagnostics: () -> Unit,
@@ -494,120 +475,135 @@ private fun PluginGroup(
         PluginManager.Status.Disabled -> "已禁用"
         PluginManager.Status.Failed -> "启用失败"
     }
-    val aggregate = remember(manifest.sourceId) {
+    var aggregate by remember(manifest.sourceId) {
         mutableStateOf(manifest.sourceId in MusicProviderSelectionStore.unifiedSourceIds(context))
     }
-    MeloXIosGroupedList(surfaceColor = MaterialTheme.colorScheme.surface) {
-        MeloXIosListRow(
-            title = manifest.name,
-            subtitle = "${manifest.version} · ${manifest.sourceId.value}",
-            detail = statusText,
-            subtitleMaxLines = 3,
-            showTopSeparator = false,
-        )
-        MeloXIosListRow(
-            title = "用途",
-            subtitle = if (manifest.isMusicSource) {
-                "可在来源选择中浏览和播放；按需提供搜索、目录与账号能力"
-            } else {
-                "解析器插件：在官方音源及内置跨平台匹配失败后参与第三方回退"
-            },
-            detail = if (manifest.isMusicSource) "音乐源" else "解析器",
-            subtitleMaxLines = 3,
-            showTopSeparator = true,
-        )
-        MeloXIosListRow(
-            title = "作者与来源",
-            subtitle = "${manifest.author ?: "未声明"} · ${manifest.homepage ?: "本地导入"}",
-            subtitleMaxLines = 3,
-            showTopSeparator = true,
-        )
-        MeloXIosListRow(
-            title = "发布者",
-            subtitle = plugin.publisher?.fingerprint ?: "无签名（未验证发布者）",
-            detail = if (plugin.publisher != null) "已签名" else "未签名",
-            subtitleMaxLines = 3,
-            showTopSeparator = true,
-        )
-        MeloXIosListRow(
-            title = "包完整性",
-            subtitle = "SHA-256 ${plugin.archiveSha256}",
-            detail = if (plugin.integrityChecked) "已验证" else "未验证",
-            subtitleMaxLines = 3,
-            showTopSeparator = true,
-        )
-        MeloXIosListRow(
-            title = "权限",
-            subtitle = PluginPermissions.describe(manifest),
-            subtitleMaxLines = 12,
-            showTopSeparator = true,
-        )
-        MeloXIosListRow(
-            title = "主音乐源",
-            subtitle = if (manifest.isMusicSource) {
-                "在来源选择中使用此插件"
-            } else {
-                "解析器插件不参与主音源和目录选择"
-            },
-            detail = when {
-                !manifest.isMusicSource -> "第三方回退"
-                selectedSource == manifest.sourceId -> "当前"
-                else -> "设为"
-            },
-            onClick = if (manifest.isMusicSource && !busy) onSetMainSource else null,
-            subtitleMaxLines = 2,
-            showTopSeparator = true,
-        )
-        if (PluginCapability.Search in manifest.capabilities) {
-            MeloXIosListRow(
-                title = "跨来源搜索",
-                subtitle = "加入统一搜索和推荐（还需启用统一搜索）",
-                trailing = {
-                    MeloXGlassToggle(
-                        checked = aggregate.value,
-                        onCheckedChange = { enabled ->
-                            MusicProviderSelectionStore.setUnifiedPluginEnabled(context, manifest.sourceId, enabled)
-                            aggregate.value = enabled
-                        },
-                        enabled = !busy,
-                    )
-                },
-                showTopSeparator = true,
-            )
-        }
-        plugin.error?.let { error ->
-            MeloXIosListRow(
-                title = "运行状态",
-                subtitle = PluginErrors.message(error),
-                detail = "异常",
-                subtitleMaxLines = 4,
-                showTopSeparator = true,
-            )
-        }
+    MeloXGlassDialog(
+        visible = true,
+        onDismiss = { if (!busy) onDismiss() },
+        maxHeightFraction = .92f,
+    ) {
+        Text(manifest.name, style = MaterialTheme.typography.titleLarge)
         Column(
-            Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            Modifier
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState()),
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MeloXGlassButton(
-                    onClick = onDiagnostics,
-                    enabled = !busy,
-                    modifier = Modifier.weight(1f),
-                    style = MeloXGlassButtonStyle.Plain,
-                ) { Text("诊断") }
-                MeloXGlassButton(
-                    onClick = onToggleEnabled,
-                    enabled = !busy,
-                    modifier = Modifier.weight(1f),
-                    style = MeloXGlassButtonStyle.Bordered,
-                ) { Text(if (plugin.status == PluginManager.Status.Enabled) "禁用" else "启用") }
+            MeloXIosListRow(
+                title = "状态",
+                detail = statusText,
+                showTopSeparator = false,
+            )
+            MeloXIosListRow(
+                title = "版本",
+                detail = manifest.version,
+                showTopSeparator = true,
+            )
+            MeloXIosListRow(
+                title = "用途",
+                detail = if (manifest.isMusicSource) "音乐源" else "第三方回退",
+                showTopSeparator = true,
+            )
+            MeloXIosListRow(
+                title = "主音乐源",
+                detail = when {
+                    !manifest.isMusicSource -> "第三方回退"
+                    selectedSource == manifest.sourceId -> "当前"
+                    else -> "设为"
+                },
+                onClick = if (manifest.isMusicSource && !busy) onSetMainSource else null,
+                showTopSeparator = true,
+            )
+            if (PluginCapability.Search in manifest.capabilities) {
+                MeloXIosListRow(
+                    title = "跨来源搜索",
+                    trailing = {
+                        MeloXGlassToggle(
+                            checked = aggregate,
+                            onCheckedChange = { enabled ->
+                                MusicProviderSelectionStore.setUnifiedPluginEnabled(context, manifest.sourceId, enabled)
+                                aggregate = enabled
+                            },
+                            enabled = !busy,
+                        )
+                    },
+                    showTopSeparator = true,
+                )
             }
+            plugin.error?.let { error ->
+                MeloXIosListRow(
+                    title = "运行状态",
+                    detail = PluginErrors.message(error),
+                    showTopSeparator = true,
+                )
+            }
+            PluginDetailSection("插件 ID", manifest.sourceId.value)
+            PluginDetailSection("作者", manifest.author ?: "未声明")
+            PluginDetailSection("来源", manifest.homepage ?: "本地导入")
+            PluginDetailSection("发布者", if (plugin.publisher != null) "已签名" else "未签名")
+            plugin.publisher?.let { publisher ->
+                PluginDetailSection("发布者指纹", publisher.fingerprint)
+            }
+            PluginDetailSection("包完整性", if (plugin.integrityChecked) "已验证" else "未验证")
+            PluginDetailSection("SHA-256", plugin.archiveSha256, monospace = true)
+            PluginDetailSection("权限", PluginPermissions.describe(manifest))
+            Column(
+                Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    MeloXGlassButton(
+                        onClick = onDiagnostics,
+                        enabled = !busy,
+                        modifier = Modifier.weight(1f),
+                        style = MeloXGlassButtonStyle.Plain,
+                    ) { Text("诊断") }
+                    MeloXGlassButton(
+                        onClick = onToggleEnabled,
+                        enabled = !busy,
+                        modifier = Modifier.weight(1f),
+                        style = MeloXGlassButtonStyle.Bordered,
+                    ) { Text(if (plugin.status == PluginManager.Status.Enabled) "禁用" else "启用") }
+                }
+                MeloXGlassButton(
+                    onClick = onUninstall,
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MeloXGlassButtonStyle.Destructive,
+                ) { Text("卸载插件") }
+            }
+            PluginAccounts(manifest, manager)
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(top = 12.dp),
+        ) {
             MeloXGlassButton(
-                onClick = onUninstall,
+                onClick = onDismiss,
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth(),
-                style = MeloXGlassButtonStyle.Destructive,
-            ) { Text("卸载插件") }
+                style = MeloXGlassButtonStyle.Bordered,
+            ) { Text("关闭") }
         }
+    }
+}
+
+@Composable
+private fun PluginDetailSection(
+    title: String,
+    value: String,
+    monospace: Boolean = false,
+) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onBackground)
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontFamily = if (monospace) FontFamily.Monospace else FontFamily.Default,
+            ),
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
