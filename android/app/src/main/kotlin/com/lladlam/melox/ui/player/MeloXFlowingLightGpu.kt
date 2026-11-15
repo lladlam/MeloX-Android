@@ -3,6 +3,7 @@ package com.lladlam.melox.ui.player
 import android.graphics.RuntimeShader
 import android.os.Build
 import android.util.Log
+import androidx.annotation.Keep
 import androidx.annotation.RequiresApi
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ShaderBrush
@@ -10,26 +11,24 @@ import androidx.compose.ui.graphics.ShaderBrush
 /**
  * AGSL shader that reproduces `fillFlowingMeshPixels` entirely on the GPU.
  *
- * The nine artwork colors are passed as packed ARGB ints and unpacked in the
- * shader. Everything is unrolled (constant loop bounds, no array uniforms)
- * because AGSL is a restricted SkSL dialect and those constructs are not
- * portable across GPU drivers.
+ * This class is referenced only through [Class.forName] from the common UI
+ * code. R8 keeps it as-is, and API < 33 devices never load it, so the missing
+ * `android.graphics.RuntimeShader` class cannot crash them during draw.
  *
  * The shader object is created once per composition and only its uniforms are
- * updated per frame; if any device rejects the program, callers fall back to the
- * CPU bitmap path instead of crashing.
+ * updated per frame; if any device rejects the program, callers fall back to
+ * the CPU bitmap path instead of crashing.
  */
+@Keep
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-internal object MeloXFlowingLightGpu {
-    private const val TAG = "MeloXFlowLightGpu"
+internal class MeloXFlowingLightGpu private constructor(
+    private val shader: RuntimeShader,
+) : MeloXFlowingLightShader {
+    override fun brush(): ShaderBrush = object : ShaderBrush() {
+        override fun createShader(size: androidx.compose.ui.geometry.Size): android.graphics.Shader = shader
+    }
 
-    fun createShader(): RuntimeShader? = runCatching { RuntimeShader(AGSL) }
-        .onSuccess { Log.i(TAG, "AGSL flowing-light shader ready") }
-        .onFailure { Log.w(TAG, "AGSL flowing-light shader rejected; using CPU mesh", it) }
-        .getOrNull()
-
-    fun update(
-        shader: RuntimeShader,
+    override fun update(
         canvasWidth: Float,
         canvasHeight: Float,
         colors: List<Color>,
@@ -59,11 +58,21 @@ internal object MeloXFlowingLightGpu {
         shader.setFloatUniform("uAverage", average.red, average.green, average.blue)
     }
 
-    fun brush(shader: RuntimeShader): ShaderBrush = object : ShaderBrush() {
-        override fun createShader(size: androidx.compose.ui.geometry.Size): android.graphics.Shader = shader
-    }
+    companion object {
+        private const val TAG = "MeloXFlowLightGpu"
 
-    private const val AGSL = """
+        /** Public to reflection; kept by [Keep] and never referenced directly. */
+        @Keep
+        @JvmStatic
+        fun create(): MeloXFlowingLightShader? = runCatching {
+            MeloXFlowingLightGpu(RuntimeShader(AGSL))
+        }.onSuccess {
+            Log.i(TAG, "AGSL flowing-light shader ready")
+        }.onFailure {
+            Log.w(TAG, "AGSL flowing-light shader rejected; using CPU mesh", it)
+        }.getOrNull()
+
+        private const val AGSL = """
 uniform vec2 uResolution;
 uniform vec2 uAspect;
 uniform float uPhase;
@@ -151,4 +160,5 @@ half4 main(vec2 fragCoord) {
     return half4(half3(flowingLight(fragCoord)), 1.0);
 }
 """
+    }
 }

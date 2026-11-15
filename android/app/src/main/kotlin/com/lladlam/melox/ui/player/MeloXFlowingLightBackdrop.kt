@@ -2,6 +2,7 @@ package com.lladlam.melox.ui.player
 
 import android.graphics.Bitmap
 import android.os.Build
+import android.util.Log
 import android.os.SystemClock
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
@@ -336,14 +337,23 @@ internal fun MeloXFlowingLightBackdrop(
         MeloXLyricsRenderingQuality.High -> 48
     }
     val meshHeight = meshWidth * 23 / 10
-    val gpuShader = remember {
+    val gpuShader: MeloXFlowingLightShader? = remember {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            MeloXFlowingLightGpu.createShader()
+            // Keep this class out of the API < 33 verifier path. The AGSL class
+            // directly references android.graphics.RuntimeShader (API 33), and
+            // R8 inlining it here used to crash Android 10 during draw.
+            runCatching {
+                Class.forName("com.lladlam.melox.ui.player.MeloXFlowingLightGpu")
+                    .getMethod("create")
+                    .invoke(null) as? MeloXFlowingLightShader
+            }.onFailure {
+                Log.w("MeloXFlowLightGpu", "Unable to load AGSL shader; using CPU mesh", it)
+            }.getOrNull()
         } else {
             null
         }
     }
-    val gpuBrush = remember(gpuShader) { gpuShader?.let(MeloXFlowingLightGpu::brush) }
+    val gpuBrush = remember(gpuShader) { gpuShader?.brush() }
     val meshBitmaps = remember(meshWidth, meshHeight) {
         List(2) { Bitmap.createBitmap(meshWidth, meshHeight, Bitmap.Config.ARGB_8888) }
     }
@@ -664,8 +674,7 @@ internal fun MeloXFlowingLightBackdrop(
             // GPU path: the same math as fillFlowingMeshPixels, evaluated per-pixel
             // by an AGSL shader. No CPU pixel loop, no Bitmap.setPixels upload,
             // no double-buffer swap on the UI thread.
-            MeloXFlowingLightGpu.update(
-                shader = shader,
+            shader.update(
                 canvasWidth = size.width,
                 canvasHeight = size.height,
                 colors = currentColors,
