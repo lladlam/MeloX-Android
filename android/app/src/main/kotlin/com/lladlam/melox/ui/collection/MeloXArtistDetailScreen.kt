@@ -87,6 +87,7 @@ import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
 import com.lladlam.melox.ui.settings.MeloXPageAppearance
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
+import com.lladlam.melox.ui.sonify.SonifyArtistPage
 import com.lladlam.melox.ui.search.MeloXSearchLaunchBus
 import kotlinx.coroutines.launch
 
@@ -94,6 +95,7 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
     val context = LocalContext.current
+    val sonifyAppearance = MeloXSettingsRuntime.pageAppearance == MeloXPageAppearance.Sonify
     val app = context.applicationContext
     val client = remember(app) { NeteaseCollectionDetailsClient(cookieProvider = { NeteaseSessionStore.readCookie(app) }) }
     val scope = rememberCoroutineScope()
@@ -195,10 +197,43 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
             }
         }
 
-        LazyColumn(
-            Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = MeloXBottomContentClearance + 80.dp), // Extra padding for mini player
-        ) {
+        if (sonifyAppearance && detail != null) {
+            SonifyArtistPage(
+                artist = detail!!,
+                allSongs = allSongs,
+                followed = followed,
+                onPlaySong = { song ->
+                    val loaded = allSongs.ifEmpty { detail?.hotSongs.orEmpty() }
+                    PlaybackCommands.playQueue(
+                        context = context,
+                        songs = loaded.ifEmpty { listOf(song) },
+                        selectedSongId = song.id,
+                    )
+                },
+                onPlayHot = {
+                    detail?.hotSongs?.firstOrNull()?.let { song ->
+                        PlaybackCommands.playQueue(context, detail!!.hotSongs, song.id)
+                    }
+                },
+                onMoreSong = { selectedSong = it },
+                onOpenAlbum = { selectedAlbumId = it.id },
+                onToggleFollow = {
+                    val target = followed != true
+                    followBusy = true
+                    scope.launch {
+                        runCatching { client.setArtistFollowed(id, target) }
+                            .onSuccess { followed = target }
+                            .onFailure { error = it.message ?: "关注操作失败" }
+                        followBusy = false
+                    }
+                },
+                onInfo = { showInfoSheet = true },
+            )
+        } else {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = MeloXBottomContentClearance + 80.dp), // Extra padding for mini player
+            ) {
             detail?.let { artist ->
                 item(key = "artist-hero") {
                     ArtistHero(artist = artist)
@@ -316,6 +351,7 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
                 item(key = "error") {
                     Text(message, modifier = Modifier.fillMaxWidth().padding(20.dp), color = MaterialTheme.colorScheme.error)
                 }
+            }
             }
         }
 

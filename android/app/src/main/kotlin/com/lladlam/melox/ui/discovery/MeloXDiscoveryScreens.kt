@@ -164,6 +164,7 @@ import com.lladlam.melox.ui.library.MeloXUnifiedPlaylistDetailScreen
 import com.lladlam.melox.ui.library.MeloXUnifiedSongListDetailScreen
 import com.lladlam.melox.ui.settings.MeloXPageAppearance
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
+import com.lladlam.melox.ui.sonify.SonifyHomePage
 import com.lladlam.melox.ui.meloXEdgeOverscrollHaptic
 import com.lladlam.melox.ui.meloXPageRecede
 import com.lladlam.melox.ui.layout.rememberMeloXStableStatusBarHeight
@@ -207,7 +208,7 @@ private object HomeNoIndication : IndicationNodeFactory {
     override fun equals(other: Any?): Boolean = other === this
 }
 
-private sealed interface DiscoveryTrack {
+internal sealed interface DiscoveryTrack {
     val key: String
     val title: String
     val artist: String
@@ -228,7 +229,7 @@ private sealed interface DiscoveryTrack {
     }
 }
 
-private sealed interface DiscoveryCollection {
+internal sealed interface DiscoveryCollection {
     val key: String
     val title: String
     val artworkUrl: String?
@@ -330,14 +331,14 @@ private fun restoreLastCollection(context: android.content.Context): DiscoveryCo
     return decodeDiscoveryCollection(prefs.getString(LastCollectionKey, null))
 }
 
-private data class HomeAccountUi(
+internal data class HomeAccountUi(
     val name: String,
     val avatarUrl: String?,
     val subtitle: String,
     val onClick: (() -> Unit)? = null,
 )
 
-private sealed interface HomeBlock {
+internal sealed interface HomeBlock {
     data object QuickActions : HomeBlock
     data class Collections(
         val title: String,
@@ -1126,6 +1127,21 @@ private fun MeloXHomeLayout(
 ) {
     val context = LocalContext.current
     val sonifyAppearance = MeloXSettingsRuntime.pageAppearance == MeloXPageAppearance.Sonify
+    if (sonifyAppearance) {
+        SonifyHomePage(
+            source = source,
+            account = account,
+            blocks = blocks,
+            refreshing = refreshing,
+            error = error,
+            onRefresh = onRefresh,
+            activeAction = activeAction,
+            onQuickAction = onQuickAction,
+            onCollection = onCollection,
+            onTrack = { values, track -> playDiscoveryQueue(context, values, track) },
+        )
+        return
+    }
     val exploreListState = rememberLazyListState()
     // ⚠ 2026-09-29：状态栏避让从「容器 `statusBarsPadding()`」改成「滚动容器的顶部
     //   contentPadding」。原来 padding 打在 LazyColumn 的 modifier 上 ⇒ 列表视口
@@ -1291,7 +1307,7 @@ private data class HomeQuickAction(
 )
 
 @Composable
-private fun HomeQuickActions(source: MusicSource, active: String?, perform: (String) -> Unit) {
+internal fun HomeQuickActions(source: MusicSource, active: String?, perform: (String) -> Unit) {
     val actions = buildList {
         if (source == MusicSource.Netease) {
             add(HomeQuickAction("每日推荐", stringResource(R.string.home_action_daily), stringResource(R.string.home_eyebrow_daily), stringResource(R.string.home_subtitle_daily), MeloXSymbol.Calendar, listOf(Color(0xFFFF5B8A), Color(0xFFFF3147))))
