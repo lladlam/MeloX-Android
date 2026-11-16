@@ -1401,6 +1401,12 @@
     <string name="settings_awake_hidden_lyrics">After the lyrics UI is hidden</string>
     <string name="settings_immersive_playback">Immersive playback</string>
     <string name="settings_immersive_playback_note">Hide the system status bar while the player is fullscreen.</string>
+    <string name="settings_page_appearance">页面外观</string>
+    <string name="settings_page_appearance_melox">弥乐外观</string>
+    <string name="settings_page_appearance_sonify">Sonify 外观</string>
+    <string name="settings_lyrics_appearance">歌词外观</string>
+    <string name="settings_lyrics_appearance_melox">弥乐外观</string>
+    <string name="settings_lyrics_appearance_apple_music">Apple Music 外观</string>
     <string name="settings_lyrics_style">Lyrics style</string>
     <string name="settings_lyrics_style_eva">EVA kinetic type</string>
     <string name="settings_eva_translation_eyebrow">TRANSLATION</string>

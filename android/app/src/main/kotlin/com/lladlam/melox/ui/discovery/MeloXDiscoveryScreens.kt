@@ -162,6 +162,7 @@ import com.lladlam.melox.ui.player.MeloXFlowingLightBackdrop
 import com.lladlam.melox.ui.podcast.MeloXPodcastScreen
 import com.lladlam.melox.ui.library.MeloXUnifiedPlaylistDetailScreen
 import com.lladlam.melox.ui.library.MeloXUnifiedSongListDetailScreen
+import com.lladlam.melox.ui.settings.MeloXPageAppearance
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.meloXEdgeOverscrollHaptic
 import com.lladlam.melox.ui.meloXPageRecede
@@ -1124,6 +1125,7 @@ private fun MeloXHomeLayout(
     sharedTransitionScope: SharedTransitionScope? = null,
 ) {
     val context = LocalContext.current
+    val sonifyAppearance = MeloXSettingsRuntime.pageAppearance == MeloXPageAppearance.Sonify
     val exploreListState = rememberLazyListState()
     // ⚠ 2026-09-29：状态栏避让从「容器 `statusBarsPadding()`」改成「滚动容器的顶部
     //   contentPadding」。原来 padding 打在 LazyColumn 的 modifier 上 ⇒ 列表视口
@@ -1140,42 +1142,66 @@ private fun MeloXHomeLayout(
                 modifier = Modifier
                     .fillMaxSize()
                     .meloXEdgeOverscrollHaptic(exploreListState),
-                contentPadding = PaddingValues(top = 18.dp + statusBarTop, bottom = 146.dp),
-                verticalArrangement = Arrangement.spacedBy(22.dp),
+                contentPadding = PaddingValues(
+                    top = if (sonifyAppearance) 10.dp + statusBarTop else 18.dp + statusBarTop,
+                    bottom = 146.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(if (sonifyAppearance) 26.dp else 22.dp),
             ) {
                 item {
-                    MeloXIosTopBar(
-                        title = stringResource(R.string.tab_home),
-                        contentPadding = PaddingValues(horizontal = 20.dp),
-                        actions = {
+                    if (sonifyAppearance) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.tab_home),
+                                fontSize = 40.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = (-1.2).sp,
+                            )
+                            Spacer(Modifier.weight(1f))
                             account?.let { HomeAccountButton(it) }
-                        },
-                    )
+                        }
+                    } else {
+                        MeloXIosTopBar(
+                            title = stringResource(R.string.tab_home),
+                            contentPadding = PaddingValues(horizontal = 20.dp),
+                            actions = {
+                                account?.let { HomeAccountButton(it) }
+                            },
+                        )
+                    }
                 }
-                item {
-                    Text(
-                        text = stringResource(R.string.home_greeting),
-                        modifier = Modifier.padding(horizontal = 20.dp),
-                        style = MeloXTypography.headline,
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.58f),
-                    )
+                if (!sonifyAppearance) {
+                    item {
+                        Text(
+                            text = stringResource(R.string.home_greeting),
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                            style = MeloXTypography.headline,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.58f),
+                        )
+                    }
                 }
                 blocks.forEach { block ->
                     when (block) {
                         HomeBlock.QuickActions -> item { HomeQuickActions(source, activeAction, onQuickAction) }
                         is HomeBlock.Collections -> {
-                            item { SectionTitle(block.title, block.trailing, Modifier.padding(horizontal = 20.dp)) }
+                            item { SectionTitle(block.title, block.trailing, Modifier.padding(horizontal = if (sonifyAppearance) 24.dp else 20.dp), large = sonifyAppearance) }
                             item {
                                 CollectionRow(
                                     values = block.values,
                                     onSelect = onCollection,
                                     selectedCollectionKey = selectedCollectionKey,
                                     sharedTransitionScope = sharedTransitionScope,
+                                    large = sonifyAppearance,
                                 )
                             }
                         }
                         is HomeBlock.Tracks -> {
-                            item { SectionTitle(block.title, block.trailing, Modifier.padding(horizontal = 20.dp)) }
+                            item { SectionTitle(block.title, block.trailing, Modifier.padding(horizontal = if (sonifyAppearance) 24.dp else 20.dp), large = sonifyAppearance) }
                             item { ThreeLineSongCarousel(block.values) { track -> playDiscoveryQueue(context, block.values, track) } }
                         }
                         is HomeBlock.Podcasts -> item {
@@ -1782,11 +1808,22 @@ private fun LargeTitle(text: String, modifier: Modifier = Modifier) = Text(
 )
 
 @Composable
-private fun SectionTitle(title: String, trailing: String, modifier: Modifier = Modifier) = Row(
+private fun SectionTitle(
+    title: String,
+    trailing: String,
+    modifier: Modifier = Modifier,
+    large: Boolean = false,
+) = Row(
     modifier.fillMaxWidth(),
     horizontalArrangement = Arrangement.SpaceBetween,
+    verticalAlignment = Alignment.CenterVertically,
 ) {
-    Text(title, style = MeloXTypography.title2)
+    Text(
+        title,
+        style = MeloXTypography.title2,
+        fontSize = if (large) 23.sp else 20.sp,
+        fontWeight = if (large) FontWeight.Bold else FontWeight.SemiBold,
+    )
     Text(trailing, color = MaterialTheme.colorScheme.onBackground.copy(alpha = .42f), fontSize = 13.sp)
 }
 
@@ -1859,10 +1896,11 @@ private fun CollectionRow(
     onSelect: (DiscoveryCollection) -> Unit,
     selectedCollectionKey: String? = null,
     sharedTransitionScope: SharedTransitionScope? = null,
+    large: Boolean = false,
 ) {
     LazyRow(
-        contentPadding = PaddingValues(horizontal = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(horizontal = if (large) 24.dp else 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (large) 16.dp else 14.dp),
     ) {
             itemsIndexed(values, key = { _, value -> value.key }) { index, collection ->
                 // ⚠⚠⚠ 占位尺寸（宽 + 高）必须打在 `AnimatedVisibility` **外面这一层**（空的 `Box`），
@@ -1874,22 +1912,29 @@ private fun CollectionRow(
             //   + 8 内边距，即两行标题时也够、播放量不再溢出；详见 `CollectionCard`）。⚠ 宽按首卡 246
             //   / 其余 174 区分（与旧布局一致）；高用固定 254 占位，不**硬填** `CollectionCard` 的
             //   内容高度（标题 `maxLines=2` 行数不固定，硬填会裁字）。
+            val cardWidth = when {
+                large -> 278.dp
+                index == 0 -> 246.dp
+                else -> 174.dp
+            }
+            val cardHeight = if (large) 320.dp else 254.dp
             Box(
                 Modifier
                     .animateItem()
-                    .size(if (index == 0) 246.dp else 174.dp, 254.dp),
+                    .size(cardWidth, cardHeight),
             ) {
                 DiscoveryCardVisibility(
                     collection = collection,
                     selectedCollectionKey = selectedCollectionKey,
-                    modifier = Modifier.size(if (index == 0) 246.dp else 174.dp, 254.dp),
+                    modifier = Modifier.size(cardWidth, cardHeight),
                 ) {
-                        CollectionCard(
-                            value = collection,
-                            modifier = Modifier,
-                            onClick = { onSelect(collection) },
+                    CollectionCard(
+                        value = collection,
+                        modifier = Modifier,
+                        onClick = { onSelect(collection) },
                         sharedTransitionScope = sharedTransitionScope,
                         animatedVisibilityScope = this,
+                        large = large,
                     )
                 }
             }
@@ -2019,6 +2064,7 @@ private fun CollectionCard(
     onClick: () -> Unit,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
+    large: Boolean = false,
 ) {
     Column(
         modifier
@@ -2027,7 +2073,7 @@ private fun CollectionCard(
             .fillMaxHeight()
             .padding(8.dp),
     ) {
-        val artworkShape = RoundedCornerShape(14.dp)
+        val artworkShape = RoundedCornerShape(if (large) 20.dp else 14.dp)
         // Keep the card visually complete while remote artwork is loading.
         // Without a stable surface, the fixed image slot becomes a blank hole
         // and the title appears detached from its card on slower networks.
@@ -2039,7 +2085,7 @@ private fun CollectionCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(174.dp),
+                .height(if (large) 228.dp else 174.dp),
         ) {
             AsyncImage(
                 value.artworkUrl,
@@ -2065,8 +2111,8 @@ private fun CollectionCard(
                 modifier = Modifier.padding(top = 7.dp),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                fontSize = 15.sp,
-                lineHeight = 19.sp,
+                fontSize = if (large) 17.sp else 15.sp,
+                lineHeight = if (large) 22.sp else 19.sp,
                 fontWeight = FontWeight.SemiBold,
             )
             Spacer(Modifier.weight(1f))

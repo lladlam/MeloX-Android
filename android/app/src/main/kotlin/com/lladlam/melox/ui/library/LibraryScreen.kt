@@ -183,6 +183,7 @@ import com.lladlam.melox.ui.glass.meloXIconDrawingScale
 import com.lladlam.melox.ui.player.MeloXFlowingLightBackdrop
 import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
 import com.lladlam.melox.ui.sharing.MeloXNeteaseResourceShareActivity
+import com.lladlam.melox.ui.settings.MeloXPageAppearance
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.meloXEdgeOverscrollHaptic
 import com.lladlam.melox.ui.settings.MeloXSwipeFullAction
@@ -290,6 +291,7 @@ fun LibraryScreen(
     onModalVisibilityChanged: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val sonifyAppearance = MeloXSettingsRuntime.pageAppearance == MeloXPageAppearance.Sonify
     val window = rememberMeloXWindowInfo()
     val appContext = context.applicationContext
     val scope = rememberCoroutineScope()
@@ -599,9 +601,25 @@ fun LibraryScreen(
                         .padding(top = rememberMeloXStableStatusBarHeight())
                         .padding(horizontal = if (window.supportsTwoPane) window.gutter else 0.dp),
                 ) {
-                    MeloXIosTopBar(
-                        title = stringResource(R.string.tab_library),
-                    )
+                    if (sonifyAppearance) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.tab_library),
+                                fontSize = 40.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = (-1.2).sp,
+                            )
+                        }
+                    } else {
+                        MeloXIosTopBar(
+                            title = stringResource(R.string.tab_library),
+                        )
+                    }
 
                     MeloXLibrarySegmentedPicker(
                         selected = selectedPage,

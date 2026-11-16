@@ -513,6 +513,25 @@ fun MeloXIOSLyricsPanel(
             scrubPositionMs,
             shellTransitioning,
         )
+        MeloXLyricsStyle.SonifyAppleMusic -> MeloXAppleMusicLyricsPanel(
+            state,
+            lyricsModifier,
+            isInterfaceHidden,
+            onInterfaceInteraction,
+            onInterfaceVisibilityChange,
+            active,
+            fontScaleMultiplier = fontScaleMultiplier * 1.1f,
+            edgeFadeTop = if (edgeFadeTop > 0.dp) edgeFadeTop else 32.dp,
+            edgeFadeBottom = edgeFadeBottom,
+            focusPositionOverride = focusPositionOverride ?: 0.16f,
+            edgeFadeBottomTerminal = edgeFadeBottomTerminal,
+            edgeBlurMax = 0.dp,
+            scrubPositionMs = scrubPositionMs,
+            shellTransitioning = shellTransitioning,
+            lineSpacingScale = .82f,
+            rowBlurEnabled = false,
+            focusScaleOverride = 1f,
+        )
         MeloXLyricsStyle.Eva -> MeloXEvaLyricsPanel(state, lyricsModifier, onInterfaceInteraction, active)
         MeloXLyricsStyle.TextPV -> MeloXTextPVLyricsPanel(state, lyricsModifier, onInterfaceInteraction, active)
     }
@@ -580,6 +599,10 @@ private fun MeloXAppleMusicLyricsPanel(
     scrubPositionMs: Long? = null,
     // ★ 开 / 闭播放页的 morph 是否进行中。见 `MeloXIOSLyricsPanel` 同名参数的完整说明。
     shellTransitioning: State<Boolean> = MeloXLyricsNeverTransitioning,
+    /** Apple Music preset from Sonify: tighter rows and no depth blur. */
+    lineSpacingScale: Float = 1f,
+    rowBlurEnabled: Boolean = true,
+    focusScaleOverride: Float? = null,
 ) {
     // 在循环里读取最新值（LaunchedEffect 不会因它变化而重起），用 state holder 承载。
     val scrubPositionMsState = rememberUpdatedState(scrubPositionMs)
@@ -1016,7 +1039,7 @@ private fun MeloXAppleMusicLyricsPanel(
     // ★ 横屏系数只乘在这一处：下面所有字号 / 行高 / 注释尺寸都以这个局部变量为基准，
     //   所以一处即可整体等比缩小（竖屏 multiplier = 1f ⇒ 行为完全不变）。
     val lyricFontScale = MeloXSettingsRuntime.lyricFontScale * fontScaleMultiplier
-    val lyricSpacingScale = MeloXSettingsRuntime.lyricSpacingScale
+    val lyricSpacingScale = MeloXSettingsRuntime.lyricSpacingScale * lineSpacingScale
     val lineSpacingPx = with(density) { (UpstreamLyrics.LINE_SPACING_DP * lyricSpacingScale).dp.toPx() }
     val primaryHeightPx = with(density) { (UpstreamLyrics.LINE_HEIGHT_SP * lyricFontScale).sp.toPx() }
     val annotationFontPx = with(density) {
@@ -1648,7 +1671,7 @@ private fun MeloXAppleMusicLyricsPanel(
                         //   切换」变连续；这里再把从输入到半径的最后一段也做低通 —— 目标突变时
                         //   半径滑过去而不是跳过去，稳态到达后无逐帧开销。
                         //   ⚠ 只平滑「半径随时间的变化率」，不改任何稳态强度、不降模糊档。
-                        val rawBlurDp = max(distanceBlur, focusBlur)
+                        val rawBlurDp = if (rowBlurEnabled) max(distanceBlur, focusBlur) else 0f
                         val smoothBlurDp = animateFloatAsState(
                             targetValue = rawBlurDp,
                             animationSpec = tween(
@@ -1659,7 +1682,7 @@ private fun MeloXAppleMusicLyricsPanel(
                         ).value
                         // 横屏渐隐带内的边缘邻近模糊：行越贴近视口上/下边缘越糊。
                         // 竖屏 edgeFadeTop/Bottom 均为 0 ⇒ 恒 0，行为完全不变。
-                        val edgeBlur = (if (hasEdgeFade && edgeBlurMax > 0.dp) {
+                        val edgeBlur = (if (rowBlurEnabled && hasEdgeFade && edgeBlurMax > 0.dp) {
                             sourceEdgeProximityBlur(
                                 rowMidYpx = visualMidY,
                                 viewportHeightPx = viewportHeightPx,
@@ -1694,8 +1717,10 @@ private fun MeloXAppleMusicLyricsPanel(
                         //   再乘相对比值会 clamp 到 1 ⇒ 整行全白，"逐字亮到哪"就看不出来了。
                         val timedUnplayedAlpha = timedUnplayedRaw +
                             (followingLineAlpha - timedUnplayedRaw) * scrubFlat
-                        val scaleRaw = 1f + (MeloXSettingsRuntime.lyricFocusScale - 1f) *
-                            max(scaleProgress[index].value, fp)
+                        val scaleRaw = focusScaleOverride ?: (
+                            1f + (MeloXSettingsRuntime.lyricFocusScale - 1f) *
+                                max(scaleProgress[index].value, fp)
+                            )
                         // 拖动预览时取消聚焦放大 ⇒ 所有行同尺寸（用户在意的「大小层级」）。
                         val scale = scaleRaw + (1f - scaleRaw) * scrubFlat
                         // 逐行图层属性量化（性能，非观感）：近焦/稳态行 alpha≈0.95–1.0、

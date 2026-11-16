@@ -1874,6 +1874,27 @@ private fun PlayerAppearanceSettings(context: android.content.Context) {
             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
         )
     }
+    Text(
+        stringResource(R.string.settings_page_appearance),
+        fontSize = 13.sp,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f),
+        modifier = Modifier.padding(start = 8.dp, bottom = 8.dp),
+    )
+    SettingsGlassGroup {
+        MeloXSettingsDropdown(
+            title = stringResource(R.string.settings_page_appearance),
+            selected = MeloXSettingsRuntime.pageAppearance,
+            items = listOf(
+                MeloXPageAppearance.MeloX to stringResource(R.string.settings_page_appearance_melox),
+                MeloXPageAppearance.Sonify to stringResource(R.string.settings_page_appearance_sonify),
+            ),
+            onSelected = {
+                MeloXSettingsPreferences.setString(context, "page_appearance", it.name)
+            },
+            grouped = true,
+        )
+    }
+    Spacer(Modifier.height(18.dp))
     LyricsStringChoiceSetting(
         context,
         stringResource(R.string.settings_player_shell),
@@ -2103,11 +2124,10 @@ private fun PlayerAppearanceSettings(context: android.content.Context) {
 @Composable
 private fun LyricsSettings(context: android.content.Context) {
     var lyricsStyle by remember { mutableStateOf(MeloXSettingsRuntime.lyricsStyle) }
-    // Only the Apple Music style is offered for now. Other renderers stay in the
-    // codebase; if one was selected before, move the stored preference back so
-    // the visible selector matches what is actually rendered.
+    // Eva/TextPV are kept in the codebase for compatibility, but the visible
+    // appearance picker exposes the MeloX and Sonify Apple Music renderers.
     LaunchedEffect(Unit) {
-        if (lyricsStyle != MeloXLyricsStyle.AppleMusic) {
+        if (lyricsStyle !in setOf(MeloXLyricsStyle.AppleMusic, MeloXLyricsStyle.SonifyAppleMusic)) {
             lyricsStyle = MeloXLyricsStyle.AppleMusic
             MeloXSettingsPreferences.setString(context, "lyrics_style", MeloXLyricsStyle.AppleMusic.name)
         }
@@ -2115,10 +2135,11 @@ private fun LyricsSettings(context: android.content.Context) {
     // Group 1: 歌词样式-歌词渲染质量-逐字歌词-普通LRC-点击跳转-长按分享-间奏倒计时-自动跟随-手动滚动恢复-减弱动画
     SettingsGlassGroup {
         MeloXSettingsDropdown(
-            title = stringResource(R.string.settings_lyrics_style),
+            title = stringResource(R.string.settings_lyrics_appearance),
             selected = lyricsStyle,
             items = listOf(
-                MeloXLyricsStyle.AppleMusic to stringResource(R.string.settings_apple_music),
+                MeloXLyricsStyle.AppleMusic to stringResource(R.string.settings_lyrics_appearance_melox),
+                MeloXLyricsStyle.SonifyAppleMusic to stringResource(R.string.settings_lyrics_appearance_apple_music),
             ),
             onSelected = { lyricsStyle = it; MeloXSettingsPreferences.setString(context, "lyrics_style", it.name) },
             grouped = true,

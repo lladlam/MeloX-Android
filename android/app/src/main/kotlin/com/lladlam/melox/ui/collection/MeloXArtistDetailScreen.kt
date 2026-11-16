@@ -85,6 +85,8 @@ import com.lladlam.melox.ui.glass.MeloXShapes
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
+import com.lladlam.melox.ui.settings.MeloXPageAppearance
+import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.search.MeloXSearchLaunchBus
 import kotlinx.coroutines.launch
 
@@ -461,8 +463,9 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
 @Composable
 private fun ArtistHero(artist: MeloXArtistDetail) {
     val background = MaterialTheme.colorScheme.background
+    val sonifyAppearance = MeloXSettingsRuntime.pageAppearance == MeloXPageAppearance.Sonify
     Column(Modifier.fillMaxWidth()) {
-        Box(Modifier.fillMaxWidth().height(320.dp)) {
+        Box(Modifier.fillMaxWidth().height(if (sonifyAppearance) 420.dp else 320.dp)) {
             AsyncImage(
                 model = artist.coverUrl ?: artist.artworkUrl,
                 contentDescription = null,
@@ -480,19 +483,47 @@ private fun ArtistHero(artist: MeloXArtistDetail) {
                 ),
             )
             Column(
-                Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 20.dp, vertical = 20.dp),
+                Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(
+                    horizontal = if (sonifyAppearance) 24.dp else 20.dp,
+                    vertical = if (sonifyAppearance) 26.dp else 20.dp,
+                ),
             ) {
-                Row(verticalAlignment = Alignment.Bottom) {
-                    AsyncImage(
-                        model = optimized500Artwork(artist.artworkUrl),
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp).clip(CircleShape),
-                        contentScale = ContentScale.Crop,
+                if (sonifyAppearance) {
+                    Text(
+                        artist.name,
+                        fontSize = 36.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                    Column(Modifier.weight(1f).padding(start = 14.dp)) {
-                        Text(artist.name, fontSize = 27.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (artist.aliases.isNotEmpty()) {
-                            Text(artist.aliases.joinToString(" · "), color = MaterialTheme.colorScheme.onBackground.copy(alpha = .54f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (artist.aliases.isNotEmpty()) {
+                        Text(
+                            artist.aliases.joinToString(" · "),
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = .62f),
+                            fontSize = 15.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                } else {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        AsyncImage(
+                            model = optimized500Artwork(artist.artworkUrl),
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp).clip(CircleShape),
+                            contentScale = ContentScale.Crop,
+                        )
+                        Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                            Text(
+                                artist.name,
+                                fontSize = 27.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (artist.aliases.isNotEmpty()) {
+                                Text(artist.aliases.joinToString(" · "), color = MaterialTheme.colorScheme.onBackground.copy(alpha = .54f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
                         }
                     }
                 }

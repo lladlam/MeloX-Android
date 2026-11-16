@@ -11,9 +11,11 @@ import com.lladlam.melox.playback.MeloXPlaybackModePreferences
 import com.lladlam.melox.ui.theme.MeloXFontPolicy
 
 enum class MeloXThemeMode { System, Light, Dark }
+/** Presentation style for the main Home, Library and Artist pages. */
+enum class MeloXPageAppearance { MeloX, Sonify }
 enum class MeloXSwipeFullAction { PlayNext, AddToQueue }
 enum class MeloXLyricAnnotationDisplayMode { FocusedLine, AllLines }
-enum class MeloXLyricsStyle { AppleMusic, Eva, TextPV }
+enum class MeloXLyricsStyle { AppleMusic, SonifyAppleMusic, Eva, TextPV }
 enum class MeloXLyricsRenderingQuality { Low, Balanced, High }
 enum class MeloXPlayerBackgroundMode { FlowingLight, AppleLyrics, BlurredArtwork, CustomImage }
 
@@ -123,6 +125,8 @@ object MeloXSettingsRuntime {
     var performanceOverlayEnabled by mutableStateOf(false)
         internal set
     var themeMode by mutableStateOf(MeloXThemeMode.System)
+        internal set
+    var pageAppearance by mutableStateOf(MeloXPageAppearance.MeloX)
         internal set
     var podcastsEnabled by mutableStateOf(true)
         internal set
@@ -516,6 +520,9 @@ object MeloXSettingsRuntime {
         themeMode = runCatching {
             MeloXThemeMode.valueOf(MeloXSettingsPreferences.string(app, "theme_mode", MeloXThemeMode.System.name))
         }.getOrDefault(MeloXThemeMode.System)
+        pageAppearance = runCatching {
+            MeloXPageAppearance.valueOf(MeloXSettingsPreferences.string(app, "page_appearance", MeloXPageAppearance.MeloX.name))
+        }.getOrDefault(MeloXPageAppearance.MeloX)
         podcastsEnabled = MeloXSettingsPreferences.boolean(app, "feature_podcasts", true)
         listeningHistoryEnabled = MeloXSettingsPreferences.boolean(app, "feature_history", true)
         downloadsEnabled = MeloXSettingsPreferences.boolean(app, "feature_downloads", true)
@@ -1057,6 +1064,9 @@ object MeloXSettingsPreferences {
             "theme_mode" -> MeloXSettingsRuntime.themeMode = runCatching {
                 MeloXThemeMode.valueOf(value)
             }.getOrDefault(MeloXThemeMode.System)
+            "page_appearance" -> MeloXSettingsRuntime.pageAppearance = runCatching {
+                MeloXPageAppearance.valueOf(value)
+            }.getOrDefault(MeloXPageAppearance.MeloX)
             "music_area" -> MeloXSettingsRuntime.musicArea = value
             "tab_order" -> MeloXSettingsRuntime.tabOrder = value.split(',')
                 .filter { it in setOf("Home", "Explore", "Library", "Podcasts", "Downloads", "Cloud", "Settings") }.distinct()
@@ -1147,6 +1157,7 @@ object MeloXSettingsPreferences {
             //   ⚠ 当前生效的是 **v3** 标记（档位表重划 270/360/460/600/780，
             //     默认 460）；v2 标记已废弃，一并清掉以免残留。
             .remove(KEY_PLAYER_TRANSITION_DURATION_MIGRATED_V3)
+            .remove("page_appearance")
             .remove("lyrics_style")
             .remove("lyrics_rendering_quality")
             .remove("lyrics_text_pv_style")
