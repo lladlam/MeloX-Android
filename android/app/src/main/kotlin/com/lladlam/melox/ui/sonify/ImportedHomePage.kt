@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.pager.HorizontalPager
@@ -47,8 +48,8 @@ internal fun ImportedHomePage(
     onOpenSettings: () -> Unit,
 ) {
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(top = 16.dp, bottom = MeloXBottomContentClearance + 90.dp),
+        modifier = Modifier.fillMaxSize().statusBarsPadding(),
+        contentPadding = PaddingValues(top = 44.dp, bottom = MeloXBottomContentClearance + 90.dp),
     ) {
         item("title") {
             Row(
@@ -85,18 +86,16 @@ private fun RecommendCard(tracks: List<MusicTrack>, onPlay: (MusicTrack) -> Unit
             key = { items[it].id.value },
             beyondViewportPageCount = 1,
         ) { page ->
-            RecommendCardItem("为你推荐", items[page]) { onPlay(items[page]) }
+            RecommendCardItem(items[page]) { onPlay(items[page]) }
         }
     }
 }
 
 @Composable
-private fun RecommendCardItem(subTitle: String, music: MusicTrack, onClick: () -> Unit) {
+private fun RecommendCardItem(music: MusicTrack, onClick: () -> Unit) {
     Column(Modifier.width(268.dp)) {
-        Text(subTitle, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .60f))
         Column(
             Modifier
-                .padding(top = 14.dp)
                 .height(354.dp)
                 .clip(RoundedCornerShape(14.dp))
                 .clickable(onClick = onClick),

@@ -620,10 +620,10 @@ fun LibraryScreen(
                                         add(ImportedLibraryItem("歌单", "${data?.playlists?.size ?: 0} 个") {
                                             selectedPage = MeloXLibraryPage.Playlists; sonifyHubVisible = false
                                         })
-                                        if (savedAlbums.isNotEmpty()) add(ImportedLibraryItem("专辑", "${savedAlbums.size} 张") {
+                                        add(ImportedLibraryItem("专辑", "${savedAlbums.size} 张") {
                                             selectedPage = MeloXLibraryPage.Albums; sonifyHubVisible = false
                                         })
-                                        if (followedArtists.isNotEmpty()) add(ImportedLibraryItem("歌手", "${followedArtists.size} 位") {
+                                        add(ImportedLibraryItem("歌手", "${followedArtists.size} 位") {
                                             selectedPage = MeloXLibraryPage.Artists; sonifyHubVisible = false
                                         })
                                         add(ImportedLibraryItem("最近播放", "${data?.recentSongs?.size ?: 0} 首") {

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -37,7 +38,7 @@ internal fun ImportedLibraryPage(
     onOpenSettings: () -> Unit,
 ) {
     LazyColumn(
-        Modifier.fillMaxSize(),
+        Modifier.fillMaxSize().statusBarsPadding(),
         contentPadding = PaddingValues(bottom = MeloXBottomContentClearance + 90.dp),
     ) {
         item("title") {
@@ -67,9 +68,14 @@ internal fun ImportedLibraryPage(
                             .clickable(onClick = item.onClick)
                             .padding(horizontal = 24.dp, vertical = 12.dp),
                     ) {
-                        Text(item.label, fontSize = 20.sp)
-                        item.subtitle?.let {
-                            Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(item.label, fontSize = 20.sp)
+                                item.subtitle?.let {
+                                    Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .48f))
+                                }
+                            }
+                            Text("›", fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .40f))
                         }
                     }
                 }
