@@ -520,17 +520,18 @@ fun MeloXIOSLyricsPanel(
             onInterfaceInteraction,
             onInterfaceVisibilityChange,
             active,
-            fontScaleMultiplier = fontScaleMultiplier * 1.1f,
+            fontScaleMultiplier = fontScaleMultiplier * 1.12f,
             edgeFadeTop = if (edgeFadeTop > 0.dp) edgeFadeTop else 32.dp,
             edgeFadeBottom = edgeFadeBottom,
-            focusPositionOverride = focusPositionOverride ?: 0.16f,
+            focusPositionOverride = focusPositionOverride ?: 0.12f,
             edgeFadeBottomTerminal = edgeFadeBottomTerminal,
             edgeBlurMax = 0.dp,
             scrubPositionMs = scrubPositionMs,
             shellTransitioning = shellTransitioning,
-            lineSpacingScale = .82f,
+            lineSpacingScale = 1f,
             rowBlurEnabled = false,
             focusScaleOverride = 1f,
+            plainHighlight = true,
         )
         MeloXLyricsStyle.Eva -> MeloXEvaLyricsPanel(state, lyricsModifier, onInterfaceInteraction, active)
         MeloXLyricsStyle.TextPV -> MeloXTextPVLyricsPanel(state, lyricsModifier, onInterfaceInteraction, active)
@@ -603,6 +604,7 @@ private fun MeloXAppleMusicLyricsPanel(
     lineSpacingScale: Float = 1f,
     rowBlurEnabled: Boolean = true,
     focusScaleOverride: Float? = null,
+    plainHighlight: Boolean = false,
 ) {
     // 在循环里读取最新值（LaunchedEffect 不会因它变化而重起），用 state holder 承载。
     val scrubPositionMsState = rememberUpdatedState(scrubPositionMs)
@@ -1749,13 +1751,13 @@ private fun MeloXAppleMusicLyricsPanel(
                             // needs the playback clock. Subscribing every visible
                             // syllable row made the complete LazyColumn redraw at
                             // the lyric refresh rate on low-end devices.
-                            supportsTimedLyrics = line.syllables.isNotEmpty() &&
+                            supportsTimedLyrics = !plainHighlight && line.syllables.isNotEmpty() &&
                                 MeloXSettingsRuntime.lyricWordByWordEnabled &&
                                 (effectiveFocus > 0.001f || isActiveLine),
                             fontScale = lyricFontScale,
                             reduceMotion = MeloXSettingsRuntime.lyricReduceMotion,
                             focusProgress = effectiveFocus,
-                            timingEffectsStrength = if (isActiveLine) 1f else effectiveFocus,
+                            timingEffectsStrength = if (plainHighlight) 0f else if (isActiveLine) 1f else effectiveFocus,
                             timedUnplayedAlpha = timedUnplayedAlpha,
                             visualScale = quantizedScale,
                             visualOffsetPx = visualOffset,

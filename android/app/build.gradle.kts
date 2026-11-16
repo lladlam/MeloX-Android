@@ -247,15 +247,21 @@ android {
 
     buildTypes {
         getByName("debug") {
-            // 本地调试包必须能与「官方 MeloX 安卓版」同时安装。
-            // 官方占 com.lladlam.melox.android（release key 签名），本工作区的
-            // debug key 包因此落到 com.lladlam.melox.android.dev。
-            // ⚠ 不要删这个后缀：同名不同签名会直接
-            //   INSTALL_FAILED_UPDATE_INCOMPATIBLE，两个包只能留一个。
-            // Manifest 的 authorities 全是 ${applicationId}.xxx 模板（.androidx-startup
-            // / .fileprovider / .shizuku），换 id 自动错开，无需额外改动。
-            // Override for same-phone LAN regression with a second debug install.
-            applicationIdSuffix = providers.gradleProperty("meloxDebugApplicationIdSuffix").getOrElse(".dev")
+            // 默认使用 .dev 包名，保证调试包能与商店版共存。
+            // 真机覆盖测试需要同一包名时，用
+            //   ./gradlew :app:assembleDebug -PmeloxDebugSamePackage=true
+            // 让 debug 变体复用 release 包名与 release 签名，可直接覆盖安装，
+            // 数据不会丢；不要把它用于日常开发（会替换官方安装）。
+            val samePackageAsRelease = providers.gradleProperty("meloxDebugSamePackage")
+                .orNull?.toBoolean() == true
+            if (samePackageAsRelease) {
+                applicationIdSuffix = ""
+                meloxReleaseSigning?.let { signingConfig = it }
+            } else {
+                // Manifest 的 authorities 全是 ${applicationId}.xxx 模板（.androidx-startup
+                // / .fileprovider / .shizuku），换 id 自动错开，无需额外改动。
+                applicationIdSuffix = providers.gradleProperty("meloxDebugApplicationIdSuffix").getOrElse(".dev")
+            }
         }
 
         // ── debugPerf：不卡的 debug ──────────────────────────────────────────

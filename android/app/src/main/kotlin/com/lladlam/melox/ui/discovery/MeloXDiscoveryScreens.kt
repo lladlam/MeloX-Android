@@ -1818,12 +1818,11 @@ private fun SectionTitle(
     horizontalArrangement = Arrangement.SpaceBetween,
     verticalAlignment = Alignment.CenterVertically,
 ) {
-    Text(
-        title,
-        style = MeloXTypography.title2,
-        fontSize = if (large) 23.sp else 20.sp,
-        fontWeight = if (large) FontWeight.Bold else FontWeight.SemiBold,
-    )
+    if (large) {
+        Text(title, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+    } else {
+        Text(title, style = MeloXTypography.title2)
+    }
     Text(trailing, color = MaterialTheme.colorScheme.onBackground.copy(alpha = .42f), fontSize = 13.sp)
 }
 
