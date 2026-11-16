@@ -187,9 +187,8 @@ import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
 import com.lladlam.melox.ui.sharing.MeloXNeteaseResourceShareActivity
 import com.lladlam.melox.ui.settings.MeloXPageAppearance
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
-import com.lladlam.melox.ui.sonify.ImportedLibraryGroup
-import com.lladlam.melox.ui.sonify.ImportedLibraryItem
-import com.lladlam.melox.ui.sonify.ImportedLibraryPage
+import com.lladlam.melox.ui.sonify.SonifyLibraryEntry
+import com.lladlam.melox.ui.sonify.SonifyLibraryPage
 import com.lladlam.melox.ui.meloXEdgeOverscrollHaptic
 import com.lladlam.melox.ui.settings.MeloXSwipeFullAction
 import com.lladlam.melox.ui.layout.rememberMeloXWindowInfo
@@ -294,6 +293,7 @@ fun LibraryScreen(
     forcedPageName: String? = null,
     playlistBackEnabled: Boolean = true,
     onModalVisibilityChanged: (Boolean) -> Unit = {},
+    onOpenSettings: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val sonifyAppearance = MeloXSettingsRuntime.pageAppearance == MeloXPageAppearance.Sonify
@@ -604,38 +604,106 @@ fun LibraryScreen(
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.background)
                         // ⚠ 稳定值：可见式 `statusBarsPadding()` 在沉浸切换时会 0↔真实高度跳。
-                        .padding(top = rememberMeloXStableStatusBarHeight())
+                        // Sonify 的 Title 自己消费状态栏（大标题 spacer），这里不能再叠一层。
+                        .padding(top = if (sonifyAppearance) 0.dp else rememberMeloXStableStatusBarHeight())
                         .padding(horizontal = if (window.supportsTwoPane) window.gutter else 0.dp),
                 ) {
                     if (sonifyAppearance) {
                         if (sonifyHubVisible) {
                             val data = snapshot
-                            val groups = listOf(
-                                ImportedLibraryGroup(
-                                    "音乐库",
-                                    buildList {
-                                        add(ImportedLibraryItem("我喜欢的音乐", "${data?.likedSongs?.size ?: 0} 首") {
-                                            selectedPage = MeloXLibraryPage.Songs; sonifyHubVisible = false
-                                        })
-                                        add(ImportedLibraryItem("歌单", "${data?.playlists?.size ?: 0} 个") {
-                                            selectedPage = MeloXLibraryPage.Playlists; sonifyHubVisible = false
-                                        })
-                                        add(ImportedLibraryItem("专辑", "${savedAlbums.size} 张") {
-                                            selectedPage = MeloXLibraryPage.Albums; sonifyHubVisible = false
-                                        })
-                                        add(ImportedLibraryItem("歌手", "${followedArtists.size} 位") {
-                                            selectedPage = MeloXLibraryPage.Artists; sonifyHubVisible = false
-                                        })
-                                        add(ImportedLibraryItem("最近播放", "${data?.recentSongs?.size ?: 0} 首") {
-                                            selectedPage = MeloXLibraryPage.History; sonifyHubVisible = false
-                                        })
+                            val localEntries = buildList {
+                                add(
+                                    SonifyLibraryEntry(
+                                        label = "我喜欢的音乐",
+                                        subtitle = "${data?.likedSongs?.size ?: 0} 首",
+                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.Heart,
+                                    ) {
+                                        selectedPage = MeloXLibraryPage.Songs
+                                        sonifyHubVisible = false
                                     },
-                                ),
-                            )
-                            ImportedLibraryPage(
-                                title = "资料库",
-                                groups = groups,
-                                onOpenSettings = {},
+                                )
+                                add(
+                                    SonifyLibraryEntry(
+                                        label = "歌单",
+                                        subtitle = "${data?.playlists?.size ?: 0} 个",
+                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.List,
+                                    ) {
+                                        selectedPage = MeloXLibraryPage.Playlists
+                                        sonifyHubVisible = false
+                                    },
+                                )
+                                add(
+                                    SonifyLibraryEntry(
+                                        label = "专辑",
+                                        subtitle = "${savedAlbums.size} 张",
+                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.MusicNote,
+                                    ) {
+                                        selectedPage = MeloXLibraryPage.Albums
+                                        sonifyHubVisible = false
+                                    },
+                                )
+                                add(
+                                    SonifyLibraryEntry(
+                                        label = "歌手",
+                                        subtitle = "${followedArtists.size} 位",
+                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.Person,
+                                    ) {
+                                        selectedPage = MeloXLibraryPage.Artists
+                                        sonifyHubVisible = false
+                                    },
+                                )
+                                add(
+                                    SonifyLibraryEntry(
+                                        label = "最近播放",
+                                        subtitle = "${data?.recentSongs?.size ?: 0} 首",
+                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.Clock,
+                                    ) {
+                                        selectedPage = MeloXLibraryPage.History
+                                        sonifyHubVisible = false
+                                    },
+                                )
+                            }
+                            // Sonify's online section. "Everyday Recommendations" and
+                            // "Music Gallery" have no MeloX library destination yet;
+                            // their routes live in Home / the player, so those two rows
+                            // are omitted instead of shipping dead buttons.
+                            val onlineEntries = buildList {
+                                add(
+                                    SonifyLibraryEntry(
+                                        label = "在线艺人",
+                                        subtitle = null,
+                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.Person,
+                                    ) {
+                                        selectedPage = MeloXLibraryPage.Artists
+                                        sonifyHubVisible = false
+                                    },
+                                )
+                                add(
+                                    SonifyLibraryEntry(
+                                        label = "我的在线歌单",
+                                        subtitle = null,
+                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.List,
+                                    ) {
+                                        selectedPage = MeloXLibraryPage.Playlists
+                                        sonifyHubVisible = false
+                                    },
+                                )
+                                add(
+                                    SonifyLibraryEntry(
+                                        label = "收藏的专辑",
+                                        subtitle = null,
+                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.MusicNote,
+                                    ) {
+                                        selectedPage = MeloXLibraryPage.Albums
+                                        sonifyHubVisible = false
+                                    },
+                                )
+                            }
+                            SonifyLibraryPage(
+                                localEntries = localEntries,
+                                onlineEntries = onlineEntries,
+                                showLocal = source == MusicSource.Netease || source == MusicSource.Local,
+                                onOpenSettings = onOpenSettings ?: {},
                             )
                             return@Column
                         }

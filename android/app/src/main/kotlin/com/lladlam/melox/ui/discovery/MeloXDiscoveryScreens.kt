@@ -164,7 +164,7 @@ import com.lladlam.melox.ui.library.MeloXUnifiedPlaylistDetailScreen
 import com.lladlam.melox.ui.library.MeloXUnifiedSongListDetailScreen
 import com.lladlam.melox.ui.settings.MeloXPageAppearance
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
-import com.lladlam.melox.ui.sonify.ImportedHomePage
+import com.lladlam.melox.ui.sonify.SonifyHomePage
 import com.lladlam.melox.ui.sonify.toMusicTrack
 import com.lladlam.melox.ui.meloXEdgeOverscrollHaptic
 import com.lladlam.melox.ui.meloXPageRecede
@@ -358,16 +358,20 @@ internal sealed interface HomeBlock {
 fun MeloXHomeScreen(
     source: MusicSource = MusicSource.Netease,
     onOpenTool: (String) -> Unit = {},
+    onOpenSettings: () -> Unit = {},
 ) {
     if (source == MusicSource.Netease) {
-        NeteaseHomeDataScreen(onOpenTool)
+        NeteaseHomeDataScreen(onOpenTool, onOpenSettings)
     } else {
-        ProviderHomeDataScreen(source, onOpenTool)
+        ProviderHomeDataScreen(source, onOpenTool, onOpenSettings)
     }
 }
 
 @Composable
-private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
+private fun NeteaseHomeDataScreen(
+    onOpenTool: (String) -> Unit,
+    onOpenSettings: () -> Unit,
+) {
     val onDetailSelected = rememberMeloXDetailSelection()
     val hostContext = LocalContext.current
     val context = LocalContext.current.applicationContext
@@ -571,6 +575,7 @@ private fun NeteaseHomeDataScreen(onOpenTool: (String) -> Unit) {
             refreshing = refreshing,
             error = error,
             onRefresh = { refresh(true) },
+            onOpenSettings = onOpenSettings,
             activeAction = activeAction,
             onQuickAction = quickAction@ { action ->
                 when (action) {
@@ -974,7 +979,11 @@ private fun HomeSongListDetail(
 }
 
 @Composable
-private fun ProviderHomeDataScreen(source: MusicSource, onOpenTool: (String) -> Unit) {
+private fun ProviderHomeDataScreen(
+    source: MusicSource,
+    onOpenTool: (String) -> Unit,
+    onOpenSettings: () -> Unit,
+) {
     val onDetailSelected = rememberMeloXDetailSelection()
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
@@ -1071,6 +1080,7 @@ private fun ProviderHomeDataScreen(source: MusicSource, onOpenTool: (String) -> 
                 refreshing = refreshing,
                 error = if (home == null) "${source.displayName} 暂未提供首页数据" else error,
                 onRefresh = ::refresh,
+                onOpenSettings = onOpenSettings,
                 activeAction = null,
                 onQuickAction = { action ->
                     when (action) {
@@ -1125,6 +1135,7 @@ private fun MeloXHomeLayout(
     selectedCollectionKey: String? = null,
     // 由 host 顶层 SharedTransitionLayout 传入；为空时卡片不做共享元素。
     sharedTransitionScope: SharedTransitionScope? = null,
+    onOpenSettings: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val sonifyAppearance = MeloXSettingsRuntime.pageAppearance == MeloXPageAppearance.Sonify
@@ -1132,28 +1143,34 @@ private fun MeloXHomeLayout(
         val importedTracks = blocks.orEmpty()
             .filterIsInstance<HomeBlock.Tracks>()
             .flatMap { block -> block.values.mapNotNull { it.toMusicTrack() } }
-        val importedSongs = importedTracks.map { track ->
-            com.lladlam.melox.core.model.SearchSong(
-                id = track.id.value.toLongOrNull() ?: 0L,
-                name = track.title,
-                artists = track.artistText,
-                album = track.album?.name.orEmpty(),
-                artworkUrl = track.artworkUrl,
-                durationMs = track.durationMs ?: 0L,
-                providerTrack = track,
-            )
-        }
-        ImportedHomePage(
+            .distinctBy { it.id }
+        SonifyHomePage(
             tracks = importedTracks,
-            onPlay = { track ->
-                val selected = track.id.value.toLongOrNull() ?: 0L
+            onPlay = { clicked, queue ->
+                val importedSongs = queue.mapIndexed { index, track ->
+                    com.lladlam.melox.core.model.SearchSong(
+                        // Provider ids such as YouTube video ids are not numeric;
+                        // give them a stable queue-local id so PlaybackCommands can
+                        // still find the selected providerTrack.
+                        id = track.id.value.toLongOrNull() ?: (index + 1).toLong(),
+                        name = track.title,
+                        artists = track.artistText,
+                        album = track.album?.name.orEmpty(),
+                        artworkUrl = track.artworkUrl,
+                        durationMs = track.durationMs ?: 0L,
+                        providerTrack = track,
+                    )
+                }
+                val clickedIndex = queue.indexOfFirst { it.id == clicked.id }.coerceAtLeast(0)
+                val selected = importedSongs.getOrNull(clickedIndex)?.id
+                    ?: importedSongs.firstOrNull()?.id ?: 0L
                 com.lladlam.melox.playback.PlaybackCommands.playQueue(
                     context,
                     importedSongs,
                     selected,
                 )
             },
-            onOpenSettings = {},
+            onOpenSettings = onOpenSettings,
         )
         return
     }

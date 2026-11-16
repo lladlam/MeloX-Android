@@ -87,8 +87,7 @@ import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
 import com.lladlam.melox.ui.settings.MeloXPageAppearance
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
-import com.lladlam.melox.ui.sonify.ImportedArtistPage
-import com.lladlam.melox.ui.sonify.toSonifyUi
+import com.lladlam.melox.ui.sonify.SonifyArtistDetailPage
 import com.lladlam.melox.ui.search.MeloXSearchLaunchBus
 import kotlinx.coroutines.launch
 
@@ -198,35 +197,22 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
             }
         }
 
-        if (sonifyAppearance && detail != null) {
-            val uiArtist = remember(detail, followed, allSongs) {
-                detail!!.toSonifyUi(followed, allSongs, detail!!.albums)
-            }
-            val originById = remember(allSongs, detail) {
-                allSongs.ifEmpty { detail?.hotSongs.orEmpty() }.associateBy { it.id.toString() }
-            }
-            ImportedArtistPage(
-                artist = uiArtist,
-                allSongs = uiArtist.hotSongs,
+        if (sonifyAppearance) {
+            SonifyArtistDetailPage(
+                artist = detail,
                 followed = followed,
-                onPlaySong = { uiSong ->
-                    val song = originById[uiSong.hash] ?: allSongs.firstOrNull { it.name == uiSong.name }
-                    if (song != null) {
-                        val loaded = allSongs.ifEmpty { detail?.hotSongs.orEmpty() }
-                        PlaybackCommands.playQueue(context, loaded.ifEmpty { listOf(song) }, song.id)
-                    }
+                allSongs = allSongs,
+                loading = loading,
+                error = error,
+                onBack = onBack,
+                onPlay = { queue, index ->
+                    val song = queue.getOrNull(index) ?: return@SonifyArtistDetailPage
+                    PlaybackCommands.playQueue(context, queue, song.id)
                 },
-                onPlayHot = {
-                    detail?.hotSongs?.firstOrNull()?.let { song ->
-                        PlaybackCommands.playQueue(context, detail!!.hotSongs, song.id)
-                    }
-                },
-                onMoreSong = { uiSong ->
-                    selectedSong = originById[uiSong.hash]
-                        ?: allSongs.firstOrNull { it.name == uiSong.name }
-                },
-                onOpenAlbum = { uiAlbum -> uiAlbum.albumId.toLongOrNull()?.let { selectedAlbumId = it } },
+                onMoreSong = { selectedSong = it },
+                onOpenAlbum = { selectedAlbumId = it.id },
                 onToggleFollow = {
+                    if (followBusy) return@SonifyArtistDetailPage
                     val target = followed != true
                     followBusy = true
                     scope.launch {
@@ -236,7 +222,16 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
                         followBusy = false
                     }
                 },
-                onInfo = { showInfoSheet = true },
+                onRetry = {
+                    scope.launch {
+                        loading = true
+                        error = null
+                        runCatching { client.artistDetail(id) }
+                            .onSuccess { detail = it; followed = it.followed }
+                            .onFailure { error = it.message ?: "歌手加载失败" }
+                        loading = false
+                    }
+                },
             )
         } else {
             LazyColumn(
@@ -364,7 +359,7 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
             }
         }
 
-        Row(
+        if (!sonifyAppearance) Row(
             Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()

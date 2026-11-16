@@ -441,6 +441,7 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
@@ -453,6 +454,9 @@ dependencies {
     implementation("io.github.kyant0:backdrop:2.0.0")
     implementation("io.github.kyant0:shapes:1.2.0")
     implementation("io.github.kyant0:capsule:2.1.3")
+    // Sonify PageGradient / TrackBackdropGradient quantizer (material-color-utilities
+    // Java port used by the upstream Sonify project). GPL-3.0-compatible dependency.
+    implementation("me.tatarka.google.material:material-color-utilities:0.1.2")
 
     implementation("androidx.media3:media3-common:1.10.1")
     implementation("androidx.media3:media3-datasource:1.10.1")

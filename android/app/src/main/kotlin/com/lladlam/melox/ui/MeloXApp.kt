@@ -1213,6 +1213,7 @@ fun MeloXApp(
                                      }
                                  }
                             },
+                            onOpenSettings = { selectedTab = AppTab.Settings },
                         )
                          AppTab.Explore -> if (selectedSourceId.builtIn == null) com.lladlam.melox.ui.provider.PluginSourcePage(selectedSourceId, "rankings") else if (selectedSource == MusicSource.Netease) MeloXExploreScreen() else ProviderExploreScreen(selectedSource)
                          AppTab.Library -> if (selectedSourceId.builtIn == null) com.lladlam.melox.ui.provider.PluginSourcePage(selectedSourceId, "library") else if (selectedSource == MusicSource.Netease) {
@@ -1221,6 +1222,7 @@ fun MeloXApp(
                                 playlistBackEnabled = !fullPlayerVisible && !libraryModalVisible,
                                 onModalVisibilityChanged = { libraryModalVisible = it },
                             onLogin = { launchNeteaseLogin(AppTab.Library) },
+                            onOpenSettings = { selectedTab = AppTab.Settings },
                             )
                         } else {
                             ProviderLibraryScreen(selectedSource)
