@@ -87,7 +87,8 @@ import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
 import com.lladlam.melox.ui.settings.MeloXPageAppearance
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
-import com.lladlam.melox.ui.sonify.SonifyArtistPage
+import com.lladlam.melox.ui.sonify.ImportedArtistPage
+import com.lladlam.melox.ui.sonify.toSonifyUi
 import com.lladlam.melox.ui.search.MeloXSearchLaunchBus
 import kotlinx.coroutines.launch
 
@@ -198,25 +199,33 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
         }
 
         if (sonifyAppearance && detail != null) {
-            SonifyArtistPage(
-                artist = detail!!,
-                allSongs = allSongs,
+            val uiArtist = remember(detail, followed, allSongs) {
+                detail!!.toSonifyUi(followed, allSongs, detail!!.albums)
+            }
+            val originById = remember(allSongs, detail) {
+                allSongs.ifEmpty { detail?.hotSongs.orEmpty() }.associateBy { it.id.toString() }
+            }
+            ImportedArtistPage(
+                artist = uiArtist,
+                allSongs = uiArtist.hotSongs,
                 followed = followed,
-                onPlaySong = { song ->
-                    val loaded = allSongs.ifEmpty { detail?.hotSongs.orEmpty() }
-                    PlaybackCommands.playQueue(
-                        context = context,
-                        songs = loaded.ifEmpty { listOf(song) },
-                        selectedSongId = song.id,
-                    )
+                onPlaySong = { uiSong ->
+                    val song = originById[uiSong.hash] ?: allSongs.firstOrNull { it.name == uiSong.name }
+                    if (song != null) {
+                        val loaded = allSongs.ifEmpty { detail?.hotSongs.orEmpty() }
+                        PlaybackCommands.playQueue(context, loaded.ifEmpty { listOf(song) }, song.id)
+                    }
                 },
                 onPlayHot = {
                     detail?.hotSongs?.firstOrNull()?.let { song ->
                         PlaybackCommands.playQueue(context, detail!!.hotSongs, song.id)
                     }
                 },
-                onMoreSong = { selectedSong = it },
-                onOpenAlbum = { selectedAlbumId = it.id },
+                onMoreSong = { uiSong ->
+                    selectedSong = originById[uiSong.hash]
+                        ?: allSongs.firstOrNull { it.name == uiSong.name }
+                },
+                onOpenAlbum = { uiAlbum -> uiAlbum.albumId.toLongOrNull()?.let { selectedAlbumId = it } },
                 onToggleFollow = {
                     val target = followed != true
                     followBusy = true

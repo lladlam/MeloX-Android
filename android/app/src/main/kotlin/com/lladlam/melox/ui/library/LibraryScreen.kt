@@ -187,7 +187,9 @@ import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
 import com.lladlam.melox.ui.sharing.MeloXNeteaseResourceShareActivity
 import com.lladlam.melox.ui.settings.MeloXPageAppearance
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
-import com.lladlam.melox.ui.sonify.SonifyLibraryPage
+import com.lladlam.melox.ui.sonify.ImportedLibraryGroup
+import com.lladlam.melox.ui.sonify.ImportedLibraryItem
+import com.lladlam.melox.ui.sonify.ImportedLibraryPage
 import com.lladlam.melox.ui.meloXEdgeOverscrollHaptic
 import com.lladlam.melox.ui.settings.MeloXSwipeFullAction
 import com.lladlam.melox.ui.layout.rememberMeloXWindowInfo
@@ -295,6 +297,7 @@ fun LibraryScreen(
 ) {
     val context = LocalContext.current
     val sonifyAppearance = MeloXSettingsRuntime.pageAppearance == MeloXPageAppearance.Sonify
+    var sonifyHubVisible by rememberSaveable { mutableStateOf(true) }
     val window = rememberMeloXWindowInfo()
     val appContext = context.applicationContext
     val scope = rememberCoroutineScope()
@@ -605,23 +608,43 @@ fun LibraryScreen(
                         .padding(horizontal = if (window.supportsTwoPane) window.gutter else 0.dp),
                 ) {
                     if (sonifyAppearance) {
-                        SonifyLibraryPage(
-                            snapshot = snapshot,
-                            savedAlbums = savedAlbums,
-                            followedArtists = followedArtists,
-                            loading = loading,
-                            error = errorMessage,
-                            onPlaySong = { song ->
-                                val queue = snapshot?.likedSongs.orEmpty()
-                                    .ifEmpty { snapshot?.recentSongs.orEmpty() }
-                                    .ifEmpty { listOf(song) }
-                                PlaybackCommands.playQueue(context, queue, song.id)
-                            },
-                            onOpenPlaylist = { selectedPlaylist = it },
-                            onOpenAlbum = { selectedAlbum = it },
-                            onOpenArtist = { selectedArtist = it },
-                        )
-                        return@Column
+                        if (sonifyHubVisible) {
+                            val data = snapshot
+                            val groups = listOf(
+                                ImportedLibraryGroup(
+                                    "音乐库",
+                                    buildList {
+                                        add(ImportedLibraryItem("我喜欢的音乐", "${data?.likedSongs?.size ?: 0} 首") {
+                                            selectedPage = MeloXLibraryPage.Songs; sonifyHubVisible = false
+                                        })
+                                        add(ImportedLibraryItem("歌单", "${data?.playlists?.size ?: 0} 个") {
+                                            selectedPage = MeloXLibraryPage.Playlists; sonifyHubVisible = false
+                                        })
+                                        if (savedAlbums.isNotEmpty()) add(ImportedLibraryItem("专辑", "${savedAlbums.size} 张") {
+                                            selectedPage = MeloXLibraryPage.Albums; sonifyHubVisible = false
+                                        })
+                                        if (followedArtists.isNotEmpty()) add(ImportedLibraryItem("歌手", "${followedArtists.size} 位") {
+                                            selectedPage = MeloXLibraryPage.Artists; sonifyHubVisible = false
+                                        })
+                                        add(ImportedLibraryItem("最近播放", "${data?.recentSongs?.size ?: 0} 首") {
+                                            selectedPage = MeloXLibraryPage.History; sonifyHubVisible = false
+                                        })
+                                    },
+                                ),
+                            )
+                            ImportedLibraryPage(
+                                title = "资料库",
+                                groups = groups,
+                                onOpenSettings = {},
+                            )
+                            return@Column
+                        }
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("‹ 资料库", Modifier.clickable { sonifyHubVisible = true }, fontSize = 16.sp)
+                        }
                     }
                     MeloXIosTopBar(
                         title = stringResource(R.string.tab_library),

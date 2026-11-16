@@ -164,7 +164,8 @@ import com.lladlam.melox.ui.library.MeloXUnifiedPlaylistDetailScreen
 import com.lladlam.melox.ui.library.MeloXUnifiedSongListDetailScreen
 import com.lladlam.melox.ui.settings.MeloXPageAppearance
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
-import com.lladlam.melox.ui.sonify.SonifyHomePage
+import com.lladlam.melox.ui.sonify.ImportedHomePage
+import com.lladlam.melox.ui.sonify.toMusicTrack
 import com.lladlam.melox.ui.meloXEdgeOverscrollHaptic
 import com.lladlam.melox.ui.meloXPageRecede
 import com.lladlam.melox.ui.layout.rememberMeloXStableStatusBarHeight
@@ -1128,17 +1129,31 @@ private fun MeloXHomeLayout(
     val context = LocalContext.current
     val sonifyAppearance = MeloXSettingsRuntime.pageAppearance == MeloXPageAppearance.Sonify
     if (sonifyAppearance) {
-        SonifyHomePage(
-            source = source,
-            account = account,
-            blocks = blocks,
-            refreshing = refreshing,
-            error = error,
-            onRefresh = onRefresh,
-            activeAction = activeAction,
-            onQuickAction = onQuickAction,
-            onCollection = onCollection,
-            onTrack = { values, track -> playDiscoveryQueue(context, values, track) },
+        val importedTracks = blocks.orEmpty()
+            .filterIsInstance<HomeBlock.Tracks>()
+            .flatMap { block -> block.values.mapNotNull { it.toMusicTrack() } }
+        val importedSongs = importedTracks.map { track ->
+            com.lladlam.melox.core.model.SearchSong(
+                id = track.id.value.toLongOrNull() ?: 0L,
+                name = track.title,
+                artists = track.artistText,
+                album = track.album?.name.orEmpty(),
+                artworkUrl = track.artworkUrl,
+                durationMs = track.durationMs ?: 0L,
+                providerTrack = track,
+            )
+        }
+        ImportedHomePage(
+            tracks = importedTracks,
+            onPlay = { track ->
+                val selected = track.id.value.toLongOrNull() ?: 0L
+                com.lladlam.melox.playback.PlaybackCommands.playQueue(
+                    context,
+                    importedSongs,
+                    selected,
+                )
+            },
+            onOpenSettings = {},
         )
         return
     }
