@@ -187,8 +187,7 @@ import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
 import com.lladlam.melox.ui.sharing.MeloXNeteaseResourceShareActivity
 import com.lladlam.melox.ui.settings.MeloXPageAppearance
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
-import com.lladlam.melox.ui.sonify.SonifyLibraryEntry
-import com.lladlam.melox.ui.sonify.SonifyLibraryPage
+import com.lladlam.melox.ui.sonify.library.SonifyLibraryHost
 import com.lladlam.melox.ui.meloXEdgeOverscrollHaptic
 import com.lladlam.melox.ui.settings.MeloXSwipeFullAction
 import com.lladlam.melox.ui.layout.rememberMeloXWindowInfo
@@ -298,11 +297,6 @@ fun LibraryScreen(
 ) {
     val context = LocalContext.current
     val sonifyAppearance = MeloXSettingsRuntime.pageAppearance == MeloXPageAppearance.Sonify
-    var sonifyHubVisible by rememberSaveable { mutableStateOf(true) }
-    var sonifyDailyVisible by rememberSaveable { mutableStateOf(false) }
-    var sonifyDailySongs by remember { mutableStateOf<List<SearchSong>>(emptyList()) }
-    var sonifyDailyLoading by remember { mutableStateOf(false) }
-    var sonifyDailyError by remember { mutableStateOf<String?>(null) }
     val window = rememberMeloXWindowInfo()
     val appContext = context.applicationContext
     val scope = rememberCoroutineScope()
@@ -316,30 +310,6 @@ fun LibraryScreen(
         NeteaseMusicOperationsClient(
             cookieProvider = { NeteaseSessionStore.readCookie(appContext) },
         )
-    }
-    LaunchedEffect(sonifyDailyVisible) {
-        if (!sonifyDailyVisible || sonifyDailySongs.isNotEmpty() || sonifyDailyLoading) return@LaunchedEffect
-        sonifyDailyLoading = true
-        runCatching { client.dailyRecommendedSongs() }
-            .onSuccess { sonifyDailySongs = it; sonifyDailyError = null }
-            .onFailure { sonifyDailyError = it.message ?: "每日推荐加载失败" }
-        sonifyDailyLoading = false
-    }
-    if (sonifyDailyVisible) {
-        val dailyPlaylist = NeteasePlaylistSummary(
-            id = -1L,
-            name = "每日推荐",
-            coverUrl = sonifyDailySongs.firstOrNull()?.artworkUrl,
-            trackCount = sonifyDailySongs.size,
-            creatorName = "网易云音乐",
-        )
-        MeloXUnifiedSongListDetailScreen(
-            playlist = dailyPlaylist,
-            songs = sonifyDailySongs,
-            onBack = { sonifyDailyVisible = false },
-            source = source,
-        )
-        return
     }
     val provider = remember(source, appContext) {
         if (source == MusicSource.Netease) null else MeloXMusicProviders.create(appContext).require(source)
@@ -638,109 +608,18 @@ fun LibraryScreen(
                         .padding(horizontal = if (window.supportsTwoPane) window.gutter else 0.dp),
                 ) {
                     if (sonifyAppearance) {
-                        if (sonifyHubVisible) {
-                            val data = snapshot
-                            val localEntries = buildList {
-                                add(
-                                    SonifyLibraryEntry(
-                                        label = "歌曲",
-                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.MusicNote,
-                                    ) {
-                                        selectedPage = MeloXLibraryPage.Songs
-                                        sonifyHubVisible = false
-                                    },
-                                )
-                                add(
-                                    SonifyLibraryEntry(
-                                        label = "专辑",
-                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.MusicNote,
-                                    ) {
-                                        selectedPage = MeloXLibraryPage.Albums
-                                        sonifyHubVisible = false
-                                    },
-                                )
-                                add(
-                                    SonifyLibraryEntry(
-                                        label = "艺人",
-                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.Person,
-                                    ) {
-                                        selectedPage = MeloXLibraryPage.Artists
-                                        sonifyHubVisible = false
-                                    },
-                                )
-                                add(
-                                    SonifyLibraryEntry(
-                                        label = "播放列表",
-                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.List,
-                                    ) {
-                                        selectedPage = MeloXLibraryPage.Playlists
-                                        sonifyHubVisible = false
-                                    },
-                                )
-                            }
-                            // Sonify's online section. "Everyday Recommendations" and
-                            // "Music Gallery" have no MeloX library destination yet;
-                            // their routes live in Home / the player, so those two rows
-                            // are omitted instead of shipping dead buttons.
-                            val onlineEntries = buildList {
-                                add(
-                                    SonifyLibraryEntry(
-                                        label = "在线艺人",
-                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.Person,
-                                    ) {
-                                        selectedPage = MeloXLibraryPage.Artists
-                                        sonifyHubVisible = false
-                                    },
-                                )
-                                add(
-                                    SonifyLibraryEntry(
-                                        label = "我的在线歌单",
-                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.List,
-                                    ) {
-                                        selectedPage = MeloXLibraryPage.Playlists
-                                        sonifyHubVisible = false
-                                    },
-                                )
-                                add(
-                                    SonifyLibraryEntry(
-                                        label = "每日推荐",
-                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.Calendar,
-                                    ) {
-                                        sonifyDailyVisible = true
-                                    },
-                                )
-                                add(
-                                    SonifyLibraryEntry(
-                                        label = "专辑",
-                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.MusicNote,
-                                    ) {
-                                        selectedPage = MeloXLibraryPage.Albums
-                                        sonifyHubVisible = false
-                                    },
-                                )
-                                add(
-                                    SonifyLibraryEntry(
-                                        label = "音乐画廊",
-                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.Sparkles,
-                                    ) {
-                                        onOpenPlayer?.invoke()
-                                    },
-                                )
-                            }
-                            SonifyLibraryPage(
-                                localEntries = localEntries,
-                                onlineEntries = onlineEntries,
-                                showLocal = source == MusicSource.Netease || source == MusicSource.Local,
-                                onOpenSettings = onOpenSettings ?: {},
-                            )
-                            return@Column
-                        }
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text("‹ 资料库", Modifier.clickable { sonifyHubVisible = true }, fontSize = 16.sp)
-                        }
+                        SonifyLibraryHost(
+                            source = source,
+                            session = session,
+                            snapshot = snapshot,
+                            providerAlbums = savedAlbums,
+                            providerArtists = followedArtists,
+                            loading = loading,
+                            errorMessage = errorMessage,
+                            onRefresh = { scope.launch { refreshLibrary() } },
+                            onOpenSettings = onOpenSettings,
+                        )
+                        return@Column
                     }
                     MeloXIosTopBar(
                         title = stringResource(R.string.tab_library),

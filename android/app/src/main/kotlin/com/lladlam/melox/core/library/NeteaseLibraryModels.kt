@@ -14,6 +14,8 @@ data class NeteasePlaylistSummary(
     val creatorUserId: Long? = null,
     val playCount: Long = 0L,
     val description: String? = null,
+    /** Whether the signed-in user subscribes to this playlist (detail response only). */
+    val subscribed: Boolean? = null,
     /**
      * Optional provider-neutral backing playlist. Keeping this on the legacy UI
      * model lets the existing MeloX playlist list/detail animation renderer stay

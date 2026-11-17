@@ -2,6 +2,9 @@ package com.lladlam.melox.core.network
 
 import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.model.SearchSong
+import com.lladlam.melox.core.music.model.MusicArtistSummary
+import com.lladlam.melox.core.music.model.MusicResourceId
+import com.lladlam.melox.core.music.model.MusicSource
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -146,6 +149,81 @@ class NeteaseCollectionDetailsClient(
         )
         Unit
     }
+
+    /**
+     * 收藏专辑（/api/album/sublist）。
+     *
+     * The Sonify CollectedAlbums page needs the user's saved-album list. MeloX's
+     * provider-neutral LibraryCollectionCapability currently has no NetEase
+     * implementation, so this reads the real NetEase endpoint through the same
+     * authenticated eapi client used by albumDetail() and maps it into
+     * MeloXAlbumSummary.
+     */
+    suspend fun savedAlbums(limit: Int = 100, offset: Int = 0): List<MeloXAlbumSummary> =
+        withContext(Dispatchers.IO) {
+            val logged = NeteaseSessionStore.containsMusicU(cookieProvider())
+            val data = JSONObject().put("limit", limit).put("offset", offset).put("total", true)
+            val response = try {
+                eapi.post("/api/album/sublist", data, logged)
+            } catch (error: IOException) {
+                weapi.post("/api/album/sublist", data)
+            }
+            val values = response.optJSONArray("data")
+                ?: response.optJSONArray("albums")
+                ?: JSONArray()
+            buildList {
+                for (index in 0 until values.length()) {
+                    val album = parseAlbum(values.optJSONObject(index)) ?: continue
+                    if (none { it.id == album.id }) add(album)
+                }
+            }
+        }
+
+    /**
+     * 关注歌手（/api/artist/sublist）。
+     *
+     * Used only by the Sonify OnlineArtists page. Other providers expose
+     * followedArtists through LibraryCollectionCapability; NetEase does not yet,
+     * so this real endpoint is kept next to the existing follow/unfollow calls.
+     */
+    suspend fun followedArtists(limit: Int = 100, offset: Int = 0): List<MusicArtistSummary> =
+        withContext(Dispatchers.IO) {
+            val logged = NeteaseSessionStore.containsMusicU(cookieProvider())
+            val data = JSONObject().put("limit", limit).put("offset", offset).put("total", true)
+            val response = try {
+                eapi.post("/api/artist/sublist", data, logged)
+            } catch (error: IOException) {
+                weapi.post("/api/artist/sublist", data)
+            }
+            val values = response.optJSONArray("data")
+                ?: response.optJSONArray("artists")
+                ?: JSONArray()
+            buildList {
+                for (index in 0 until values.length()) {
+                    val value = values.optJSONObject(index) ?: continue
+                    val id = value.optLong("id", -1L)
+                    if (id <= 0L) continue
+                    val name = value.optString("name").takeIf(String::isNotBlank) ?: continue
+                    val aliases = value.optJSONArray("alias") ?: JSONArray()
+                    val aliasText = buildList {
+                        for (aliasIndex in 0 until aliases.length()) {
+                            aliases.optString(aliasIndex).takeIf(String::isNotBlank)?.let(::add)
+                        }
+                    }.joinToString(" / ")
+                    add(
+                        MusicArtistSummary(
+                            id = MusicResourceId(MusicSource.Netease, id.toString()),
+                            name = name,
+                            artworkUrl = secure(
+                                value.optString("picUrl").takeIf(String::isNotBlank)
+                                    ?: value.optString("img1v1Url").takeIf(String::isNotBlank),
+                            ),
+                            description = aliasText.takeIf(String::isNotBlank),
+                        ),
+                    )
+                }
+            }
+        }
 
     suspend fun artistSongs(id: Long, limit: Int, offset: Int): List<SearchSong> = withContext(Dispatchers.IO) {
         val logged = NeteaseSessionStore.containsMusicU(cookieProvider())

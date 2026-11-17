@@ -145,6 +145,7 @@ fun SonifyArtistDetailPage(
     onOpenAlbum: (MeloXAlbumSummary) -> Unit,
     onToggleFollow: () -> Unit,
     onRetry: () -> Unit,
+    canFollow: Boolean = true,
 ) {
     val context = LocalContext.current
     val app = context.applicationContext
@@ -443,21 +444,23 @@ fun SonifyArtistDetailPage(
                                         if (songs.isNotEmpty()) onPlay(songs, 0)
                                     },
                                 )
-                                Spacer(Modifier.width(26.dp))
-                                SonifyRoundActionButton(
-                                    symbol = if (followed == true) MeloXSymbol.Star else MeloXSymbol.Star,
-                                    contentDescription = stringResource(
-                                        id = if (followed == true) R.string.sonify_artist_following
-                                        else R.string.sonify_artist_follow,
-                                    ),
-                                    iconTint = if (followed == true) {
-                                        if (isDark) Color(0xFFFF453A) else Color(0xFFE53935)
-                                    } else contentColor,
-                                    variant = if (followed == true) MeloXSymbolVariant.Fill else MeloXSymbolVariant.Regular,
-                                    containerColor = roundContainer,
-                                    enabled = !loading,
-                                    onClick = onToggleFollow,
-                                )
+                                if (canFollow) {
+                                    Spacer(Modifier.width(26.dp))
+                                    SonifyRoundActionButton(
+                                        symbol = MeloXSymbol.Star,
+                                        contentDescription = stringResource(
+                                            id = if (followed == true) R.string.sonify_artist_following
+                                            else R.string.sonify_artist_follow,
+                                        ),
+                                        iconTint = if (followed == true) {
+                                            if (isDark) Color(0xFFFF453A) else Color(0xFFE53935)
+                                        } else contentColor,
+                                        variant = if (followed == true) MeloXSymbolVariant.Fill else MeloXSymbolVariant.Regular,
+                                        containerColor = roundContainer,
+                                        enabled = !loading,
+                                        onClick = onToggleFollow,
+                                    )
+                                }
                             }
                         }
 

@@ -655,6 +655,7 @@ class NeteaseLibraryClient(
                 ?.takeIf { it > 0L },
             playCount = value.optLong("playCount", 0L).coerceAtLeast(0L),
             description = description,
+            subscribed = value.takeIf { it.has("subscribed") }?.optBoolean("subscribed"),
         )
     }
 
