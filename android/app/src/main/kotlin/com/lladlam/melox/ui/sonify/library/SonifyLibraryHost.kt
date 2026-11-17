@@ -59,6 +59,7 @@ import com.lladlam.melox.ui.animation.meloXPageExit
 import com.lladlam.melox.ui.glass.LocalMeloXIconScale
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.library.MeloXUnifiedPlaylistDetailScreen
+import com.lladlam.melox.ui.library.MeloXUnifiedSongListDetailScreen
 import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
 import com.lladlam.melox.ui.sonify.SonifyLibraryEntry
 import com.lladlam.melox.ui.sonify.SonifyLibraryPage
@@ -514,15 +515,7 @@ internal fun SonifyLibraryHost(
         SonifyLibraryRoute.LocalPlaylists -> SonifyPlaylistsPage(
             playlists = localPlaylistTargets,
             onBack = { pop() },
-            onOpenPlaylist = { target ->
-                push(
-                    SonifyLibraryRoute.Songs(
-                        title = target.summary.name,
-                        songs = target.providedSongs.orEmpty(),
-                        emptyText = "这个下载歌单还没有歌曲",
-                    ),
-                )
-            },
+            onOpenPlaylist = { target -> push(SonifyLibraryRoute.Playlist(target)) },
         )
 
         SonifyLibraryRoute.Playlists -> SonifyPlaylistsPage(
@@ -600,10 +593,22 @@ internal fun SonifyLibraryHost(
             },
         )
 
-        is SonifyLibraryRoute.Playlist -> MeloXUnifiedPlaylistDetailScreen(
-            playlist = route.target.summary,
-            onBack = { pop() },
-        )
+        is SonifyLibraryRoute.Playlist -> {
+            val provided = route.target.providedSongs
+            if (provided != null) {
+                MeloXUnifiedSongListDetailScreen(
+                    playlist = route.target.summary,
+                    songs = provided,
+                    onBack = { pop() },
+                    source = MusicSource.Local,
+                )
+            } else {
+                MeloXUnifiedPlaylistDetailScreen(
+                    playlist = route.target.summary,
+                    onBack = { pop() },
+                )
+            }
+        }
 
         SonifyLibraryRoute.FavoriteSongs -> SonifyFavoriteSongsPage(
             songs = likedSongs,
