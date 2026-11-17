@@ -688,7 +688,9 @@ private fun MeloXAppleMusicLyricsPanel(
                 val livePositionMs = anchorPositionMs +
                     (SystemClock.elapsedRealtime() - anchorRealtimeMs)
                 if (state.mediaId == mediaId && currentLyricRequestKey.value == lyricRequestKey &&
-                    (upgraded.autoSyncModelKey != null || livePositionMs <= MeloXProviderLyricsLoader.AmllUpgradeWindowMs)
+                    (upgraded.autoSyncModelKey != null ||
+                        upgraded.recognitionFallback ||
+                        livePositionMs <= MeloXProviderLyricsLoader.AmllUpgradeWindowMs)
                 ) {
                     lyrics = upgraded
                     if (upgraded.autoSyncModelKey != null) {

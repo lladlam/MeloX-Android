@@ -83,6 +83,8 @@ data class LyricsDocument(
     val pseudoTimingAllowed: Boolean = true,
     /** Local model provenance; generated upgrades may finish after the AMLL early-update window. */
     val autoSyncModelKey: String? = null,
+    /** Lyrics resolved by the audio-fingerprint fallback; may arrive at any playback position. */
+    val recognitionFallback: Boolean = false,
     /** Plain lyric text has no playback clock; render it as a manually scrollable document. */
     val isUnsynchronized: Boolean = false,
 ) {
