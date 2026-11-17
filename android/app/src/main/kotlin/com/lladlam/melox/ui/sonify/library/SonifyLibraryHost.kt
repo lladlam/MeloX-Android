@@ -57,6 +57,7 @@ import com.lladlam.melox.ui.animation.meloXPageEnter
 import com.lladlam.melox.ui.animation.meloXPageExit
 import com.lladlam.melox.ui.glass.LocalMeloXIconScale
 import com.lladlam.melox.ui.glass.MeloXSymbol
+import com.lladlam.melox.ui.library.MeloXUnifiedPlaylistDetailScreen
 import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
 import com.lladlam.melox.ui.sonify.SonifyLibraryEntry
 import com.lladlam.melox.ui.sonify.SonifyLibraryPage
@@ -482,10 +483,7 @@ internal fun SonifyLibraryHost(
         SonifyLibraryRoute.Playlists -> SonifyPlaylistsPage(
             playlists = playlistTargets,
             onBack = { pop() },
-            onOpenPlaylist = { target ->
-                if (target.isLikedSongs) push(SonifyLibraryRoute.FavoriteSongs)
-                else push(SonifyLibraryRoute.Playlist(target))
-            },
+            onOpenPlaylist = { target -> push(SonifyLibraryRoute.Playlist(target)) },
             onRefresh = onRefresh,
             refreshing = loading,
             loading = loading && snapshot == null,
@@ -495,10 +493,7 @@ internal fun SonifyLibraryHost(
         SonifyLibraryRoute.OnlinePlaylists -> SonifyOnlinePlaylistsPage(
             playlists = playlistTargets,
             onBack = { pop() },
-            onOpenPlaylist = { target ->
-                if (target.isLikedSongs) push(SonifyLibraryRoute.FavoriteSongs)
-                else push(SonifyLibraryRoute.Playlist(target))
-            },
+            onOpenPlaylist = { target -> push(SonifyLibraryRoute.Playlist(target)) },
             onRefresh = onRefresh,
             refreshing = loading,
             loading = loading && snapshot == null,
@@ -560,49 +555,9 @@ internal fun SonifyLibraryHost(
             },
         )
 
-        is SonifyLibraryRoute.Playlist -> SonifyOnlinePlaylistDetailPage(
-            target = route.target,
+        is SonifyLibraryRoute.Playlist -> MeloXUnifiedPlaylistDetailScreen(
+            playlist = route.target.summary,
             onBack = { pop() },
-            onPlay = { queue, index ->
-                val song = queue.getOrNull(index) ?: return@SonifyOnlinePlaylistDetailPage
-                PlaybackCommands.playQueue(
-                    context = context,
-                    songs = queue,
-                    selectedSongId = song.id,
-                    playlistId = route.target.summary.id.takeIf {
-                        !route.target.summary.isMeloXLocal && it > 0 && source == MusicSource.Netease
-                    },
-                )
-            },
-            onMore = { song, queue ->
-                selectedSong = song
-                selectedQueue = queue
-            },
-            loadPlaylist = {
-                loadSonifyPlaylist(
-                    target = route.target,
-                    libraryClient = libraryClient,
-                    playlistCapability = playlistCapability,
-                    likedSongs = likedSongs,
-                    context = appContext,
-                )
-            },
-            setSubscribed = if (
-                source == MusicSource.Netease &&
-                !route.target.isLikedSongs &&
-                !route.target.summary.isMeloXLocal &&
-                route.target.summary.id > 0 &&
-                route.target.summary.creatorUserId != session.profile?.userId
-            ) {
-                { subscribed ->
-                    runCatching {
-                        operationsClient.setPlaylistSubscribed(route.target.summary.id, subscribed)
-                        onRefresh()
-                    }
-                }
-            } else {
-                null
-            },
         )
 
         SonifyLibraryRoute.FavoriteSongs -> SonifyFavoriteSongsPage(
