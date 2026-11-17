@@ -1,6 +1,8 @@
 package com.lladlam.melox.ui.player
 
 import android.content.Context
+import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
 import com.lladlam.melox.core.account.NeteaseSessionStore
@@ -57,6 +59,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.abs
 import kotlin.random.Random
 import okhttp3.Request
 import java.io.File
@@ -368,12 +371,18 @@ internal object MeloXProviderLyricsLoader {
             var tempFile: File? = null
             try {
                 val stored = LyricRecognitionStore.read(appContext, snapshot.resourceId)
+                val storedDurationMismatch = stored != null &&
+                    stored.durationMs > 0L &&
+                    snapshot.durationMs > 0L &&
+                    abs(stored.durationMs - snapshot.durationMs) >
+                        maxOf(30_000L, snapshot.durationMs / 5L)
                 if (stored != null && autoSyncIsCurrent(trackKey)) {
                     Log.i(
                         "MeloXLyricsRecognition",
-                        "persisted id=${stored.neteaseId} name=${stored.title} artist=${stored.artists}",
+                        "persisted id=${stored.neteaseId} name=${stored.title} artist=${stored.artists} " +
+                            "duration=${stored.durationMs} audio=${snapshot.durationMs} mismatch=$storedDurationMismatch",
                     )
-                    val storedDocument = resolveRecognizedLyrics(
+                    val storedDocument = if (storedDurationMismatch) null else resolveRecognizedLyrics(
                         appContext,
                         stored.toSearchSong(),
                         snapshot,
@@ -382,7 +391,7 @@ internal object MeloXProviderLyricsLoader {
                         val processed = LyricTimelineProcessor.process(storedDocument)
                             .withoutPlaceholderLyrics()
                             .copy(recognitionFallback = true)
-                        if (processed.lines.isNotEmpty()) {
+                        if (processed.lines.size > 2) {
                             remember(cacheKey, processed)
                             Log.i(
                                 "MeloXLyricsRecognition",
@@ -395,8 +404,10 @@ internal object MeloXProviderLyricsLoader {
                 }
                 val prepared = prepareRecognitionAudio(appContext, snapshot)
                     ?: return@launch
-                val uri = prepared.first
-                tempFile = prepared.second
+                val uri = prepared.uri
+                tempFile = prepared.file
+                val audioDurationMs = prepared.durationMs.coerceAtLeast(snapshot.durationMs)
+                Log.i("MeloXLyricsRecognition", "decoded audio duration=${audioDurationMs}ms")
                 val client = SongRecognitionClient(appContext)
                 val recognized = mutableListOf<SearchSong>()
                 try {
@@ -404,14 +415,14 @@ internal object MeloXProviderLyricsLoader {
                     // audio file. Nothing is recorded through the microphone.
                     repeat(2) { attempt ->
                         if (autoSyncIsCurrent(trackKey).not()) return@launch
-                        val maxStart = (snapshot.durationMs - 3_000L).coerceAtLeast(0L)
+                        val maxStart = (audioDurationMs - 3_000L).coerceAtLeast(0L)
                         val start = if (maxStart > 0L) Random.nextLong(0L, maxStart + 1L) else 0L
                         Log.i(
                             "MeloXLyricsRecognition",
                             "segment ${attempt + 1} start=${start}ms duration=3000ms",
                         )
                         val threeSecond = runCatching {
-                            client.recognizeLocalAt(uri, snapshot.durationMs, start, seconds = 3)
+                            client.recognizeLocalAt(uri, audioDurationMs, start, seconds = 3)
                         }
                             .onFailure { Log.w("MeloXLyricsRecognition", "segment ${attempt + 1} 3s failed: ${it.message}") }
                             .getOrDefault(emptyList())
@@ -493,13 +504,24 @@ internal object MeloXProviderLyricsLoader {
      * active provider and downloaded once to a temporary cache file so both
      * random segments come from the exact same audio.
      */
+    private data class PreparedRecognitionAudio(
+        val uri: Uri,
+        val file: File?,
+        val durationMs: Long,
+    )
+
     private suspend fun prepareRecognitionAudio(
         appContext: Context,
         snapshot: LyricTrackSnapshot,
-    ): Pair<android.net.Uri, File?>? {
+    ): PreparedRecognitionAudio? {
         if (snapshot.resourceId.sourceId.builtIn == MusicSource.Local) {
             val record = LocalMusicRepository(appContext).track(snapshot.resourceId.value) ?: return null
-            return android.net.Uri.parse(record.contentUri) to null
+            val uri = Uri.parse(record.contentUri)
+            return PreparedRecognitionAudio(
+                uri = uri,
+                file = null,
+                durationMs = mediaDurationMs(appContext, uri).takeIf { it > 0L } ?: record.durationMs,
+            )
         }
         val provider = runCatching {
             MeloXMusicProviders.create(appContext).require(
@@ -539,8 +561,28 @@ internal object MeloXProviderLyricsLoader {
             file.delete()
             Log.w("MeloXLyricsRecognition", "audio download failed: ${it.message}")
         }.getOrNull() ?: return null
+        val uri = Uri.fromFile(downloaded)
         Log.i("MeloXLyricsRecognition", "audio file=${downloaded.length()} bytes")
-        return android.net.Uri.fromFile(downloaded) to downloaded
+        return PreparedRecognitionAudio(
+            uri = uri,
+            file = downloaded,
+            durationMs = mediaDurationMs(appContext, uri).takeIf { it > 0L } ?: snapshot.durationMs,
+        )
+    }
+
+    private fun mediaDurationMs(context: Context, uri: Uri): Long {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(context, uri)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull()
+                ?.takeIf { it > 0L }
+                ?: 0L
+        } catch (_: Throwable) {
+            0L
+        } finally {
+            runCatching { retriever.release() }
+        }
     }
 
     private suspend fun resolveRecognizedLyrics(
