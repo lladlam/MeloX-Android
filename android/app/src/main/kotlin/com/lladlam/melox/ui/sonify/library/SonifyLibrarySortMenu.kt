@@ -34,9 +34,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lladlam.melox.ui.glass.MeloXGlassSelectionItem
+import com.lladlam.melox.ui.glass.MeloXGlassSelectionPopup
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import com.lladlam.melox.ui.sonify.AlphabetIndex
@@ -70,10 +76,20 @@ internal fun SonifyLibrarySortMenuButton(
     leadingAction: SonifyMenuAction? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var anchorBounds by remember { mutableStateOf<IntRect?>(null) }
     Box(modifier.padding(end = 10.dp)) {
         Box(
             Modifier
                 .size(38.dp)
+                .onGloballyPositioned {
+                    val bounds = it.boundsInWindow()
+                    anchorBounds = IntRect(
+                        left = bounds.left.toInt(),
+                        top = bounds.top.toInt(),
+                        right = bounds.right.toInt(),
+                        bottom = bounds.bottom.toInt(),
+                    )
+                }
                 .background(
                     (Color.White withNight Color(0xFF1C1C1E)).copy(alpha = 0.28f),
                     CircleShape,
@@ -90,39 +106,30 @@ internal fun SonifyLibrarySortMenuButton(
                 color = LocalContentColor.current,
             )
         }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.background(
-                (Color.White withNight Color(0xFF1C1C1E)),
-                RoundedCornerShape(14.dp),
-            ),
-        ) {
-            if (leadingAction != null) {
-                SonifyDropdownItem(leadingAction.text) {
-                    expanded = false
-                    leadingAction.onClick()
-                }
-                SonifySortMenuDivider()
-            }
-            SonifyDropdownItem("默认排序", selectedSort() == SonifyLibrarySort.Default.ordinal) {
-                onSelectSort(SonifyLibrarySort.Default.ordinal)
-            }
-            SonifyDropdownItem("按名称排序", selectedSort() == SonifyLibrarySort.Name.ordinal) {
-                onSelectSort(SonifyLibrarySort.Name.ordinal)
-            }
-            if (supportsSongCount) {
-                SonifyDropdownItem("按歌曲数量排序", selectedSort() == SonifyLibrarySort.SongCount.ordinal) {
-                    onSelectSort(SonifyLibrarySort.SongCount.ordinal)
-                }
-            }
-            SonifySortMenuDivider()
-            SonifyDropdownItem("升序", selected = !descending()) {
-                onSelectDescending(false)
-            }
-            SonifyDropdownItem("降序", selected = descending()) {
-                onSelectDescending(true)
-            }
+        anchorBounds?.let { anchor ->
+            MeloXGlassSelectionPopup(
+                expanded = expanded,
+                anchorBounds = anchor,
+                items = buildList {
+                    leadingAction?.let {
+                        add(MeloXGlassSelectionItem(it.text, onClick = it.onClick))
+                    }
+                    add(MeloXGlassSelectionItem("默认排序", selectedSort() == SonifyLibrarySort.Default.ordinal) {
+                        onSelectSort(SonifyLibrarySort.Default.ordinal)
+                    })
+                    add(MeloXGlassSelectionItem("按名称排序", selectedSort() == SonifyLibrarySort.Name.ordinal) {
+                        onSelectSort(SonifyLibrarySort.Name.ordinal)
+                    })
+                    if (supportsSongCount) {
+                        add(MeloXGlassSelectionItem("按歌曲数量排序", selectedSort() == SonifyLibrarySort.SongCount.ordinal) {
+                            onSelectSort(SonifyLibrarySort.SongCount.ordinal)
+                        })
+                    }
+                    add(MeloXGlassSelectionItem("升序", checked = !descending()) { onSelectDescending(false) })
+                    add(MeloXGlassSelectionItem("降序", checked = descending()) { onSelectDescending(true) })
+                },
+                onDismiss = { expanded = false },
+            )
         }
     }
 }
@@ -188,13 +195,24 @@ internal fun SonifyDetailSortMenuButton(
     descending: Boolean,
     onSelectDescending: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
-    leadingContent: (@Composable () -> Unit)? = null,
+    leadingActionText: String? = null,
+    onLeadingAction: (() -> Unit)? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var anchorBounds by remember { mutableStateOf<IntRect?>(null) }
     Box(modifier.padding(end = 10.dp)) {
         Box(
             Modifier
                 .size(38.dp)
+                .onGloballyPositioned {
+                    val bounds = it.boundsInWindow()
+                    anchorBounds = IntRect(
+                        left = bounds.left.toInt(),
+                        top = bounds.top.toInt(),
+                        right = bounds.right.toInt(),
+                        bottom = bounds.bottom.toInt(),
+                    )
+                }
                 .background(
                     (Color.White withNight Color(0xFF1C1C1E)).copy(alpha = 0.28f),
                     CircleShape,
@@ -211,21 +229,23 @@ internal fun SonifyDetailSortMenuButton(
                 color = LocalContentColor.current,
             )
         }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.background(
-                (Color.White withNight Color(0xFF1C1C1E)),
-                RoundedCornerShape(14.dp),
-            ),
-        ) {
-            leadingContent?.invoke()
-            SonifyDetailSortMenuItems(
-                sortOptions = sortOptions,
-                selectedSort = selectedSort,
-                onSelectSort = onSelectSort,
-                descending = descending,
-                onSelectDescending = onSelectDescending,
+        anchorBounds?.let { anchor ->
+            MeloXGlassSelectionPopup(
+                expanded = expanded,
+                anchorBounds = anchor,
+                items = buildList {
+                    if (leadingActionText != null && onLeadingAction != null) {
+                        add(MeloXGlassSelectionItem(leadingActionText, onClick = onLeadingAction))
+                    }
+                    sortOptions.forEach { (ordinal, label) ->
+                        add(MeloXGlassSelectionItem(label, checked = selectedSort == ordinal) {
+                            onSelectSort(ordinal)
+                        })
+                    }
+                    add(MeloXGlassSelectionItem("升序", checked = !descending) { onSelectDescending(false) })
+                    add(MeloXGlassSelectionItem("降序", checked = descending) { onSelectDescending(true) })
+                },
+                onDismiss = { expanded = false },
             )
         }
     }

@@ -58,6 +58,8 @@ import com.lladlam.melox.playback.PlaybackTrackIdentity
 import com.lladlam.melox.ui.collection.MeloXCollectionDetailActivity
 import com.lladlam.melox.ui.glass.MeloXGlassCard
 import com.lladlam.melox.ui.glass.MeloXGlassMaterial
+import com.lladlam.melox.ui.glass.MeloXGlassSelectionItem
+import com.lladlam.melox.ui.glass.MeloXGlassSelectionPopup
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import kotlinx.coroutines.delay
@@ -186,96 +188,82 @@ internal fun MeloXPlaybackTitleMenu(
             )
         }
 
-        if (expanded && anchor != null) {
-            Popup(
-                popupPositionProvider = remember(anchor) {
-                    MeloXTitleMenuPositionProvider(with(density) { 10.dp.roundToPx() })
-                },
-                onDismissRequest = { expanded = false },
-                properties = PopupProperties(
-                    focusable = true,
-                    dismissOnBackPress = true,
-                    dismissOnClickOutside = true,
-                ),
-            ) {
-                MeloXGlassCard(
-                    modifier = Modifier
-                        .width(300.dp)
-                        .graphicsLayer {
-                            alpha = menuAlpha
-                            scaleX = .94f + .06f * menuAlpha
-                            scaleY = .94f + .06f * menuAlpha
+        anchor?.let { anchorBounds ->
+            MeloXGlassSelectionPopup(
+                expanded = expanded,
+                anchorBounds = anchorBounds,
+                items = buildList {
+                    add(
+                        MeloXGlassSelectionItem(
+                            title = stringResource(R.string.player_go_artist_short) +
+                                detail?.artists?.takeIf(String::isNotBlank)?.let { " · $it" }
+                                    .orEmpty(),
+                            enabled = neteaseId != null,
+                        ) {
+                            scope.launch {
+                                val target = resolvedDetail() ?: return@launch
+                                val artistId = target.artistId ?: return@launch
+                                expanded = false
+                                collapsePlayer?.invoke()
+                                delay(320)
+                                MeloXCollectionDetailActivity.launch(
+                                    context,
+                                    MeloXSearchMediaItem(
+                                        id = artistId,
+                                        kind = MeloXSearchKind.Artists,
+                                        title = target.artists,
+                                        artworkUrl = target.artworkUrl,
+                                    ),
+                                )
+                            }
                         },
-                    shape = RoundedCornerShape(28.dp),
-                    material = MeloXGlassMaterial.Clear,
-                    surfaceColor = Color.Black.copy(alpha = .22f),
-                ) {
-                    TitleMenuRow(
-                        symbol = MeloXSymbol.Microphone,
-                        title = stringResource(R.string.player_go_artist_short),
-                        subtitle = detail?.artists?.takeIf(String::isNotBlank) ?: state.artist,
-                        enabled = neteaseId != null,
-                    ) {
-                        scope.launch {
-                            val target = resolvedDetail() ?: return@launch
-                            val artistId = target.artistId ?: return@launch
+                    )
+                    add(
+                        MeloXGlassSelectionItem(
+                            title = stringResource(R.string.player_go_album_short) +
+                                (detail?.album ?: state.album).takeIf(String::isNotBlank)?.let { " · $it" }
+                                    .orEmpty(),
+                            enabled = neteaseId != null,
+                        ) {
+                            scope.launch {
+                                val target = resolvedDetail() ?: return@launch
+                                val albumId = target.albumId ?: return@launch
+                                expanded = false
+                                collapsePlayer?.invoke()
+                                delay(320)
+                                MeloXCollectionDetailActivity.launch(
+                                    context,
+                                    MeloXSearchMediaItem(
+                                        id = albumId,
+                                        kind = MeloXSearchKind.Albums,
+                                        title = target.album,
+                                        subtitle = target.artists,
+                                        artworkUrl = target.artworkUrl,
+                                    ),
+                                )
+                            }
+                        },
+                    )
+                    add(
+                        MeloXGlassSelectionItem(
+                            title = stringResource(R.string.player_go_playlist_short),
+                        ) {
                             expanded = false
-                            collapsePlayer?.invoke()
-                            delay(320)
-                            MeloXCollectionDetailActivity.launch(
-                                context,
-                                MeloXSearchMediaItem(
-                                    id = artistId,
-                                    kind = MeloXSearchKind.Artists,
-                                    title = target.artists,
-                                    artworkUrl = target.artworkUrl,
-                                ),
-                            )
-                        }
-                    }
-                    TitleMenuRow(
-                        symbol = MeloXSymbol.List,
-                        title = stringResource(R.string.player_go_album_short),
-                        subtitle = detail?.album?.takeIf(String::isNotBlank) ?: state.album,
-                        enabled = neteaseId != null,
-                    ) {
-                        scope.launch {
-                            val target = resolvedDetail() ?: return@launch
-                            val albumId = target.albumId ?: return@launch
-                            expanded = false
-                            collapsePlayer?.invoke()
-                            delay(320)
-                            MeloXCollectionDetailActivity.launch(
-                                context,
-                                MeloXSearchMediaItem(
-                                    id = albumId,
-                                    kind = MeloXSearchKind.Albums,
-                                    title = target.album,
-                                    subtitle = target.artists,
-                                    artworkUrl = target.artworkUrl,
-                                ),
-                            )
-                        }
-                    }
-                    TitleMenuRow(
-                        symbol = MeloXSymbol.Queue,
-                        title = stringResource(R.string.player_go_playlist_short),
-                        subtitle = stringResource(R.string.player_queue_count, state.queue.size),
-                        enabled = true,
-                    ) {
-                        expanded = false
-                        onOpenQueue()
-                    }
+                            onOpenQueue()
+                        },
+                    )
                     if (failed && !resolving) {
-                        Text(
-                            stringResource(R.string.player_title_menu_failed),
-                            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                            color = Color.White.copy(alpha = .48f),
-                            fontSize = 11.sp,
+                        add(
+                            MeloXGlassSelectionItem(
+                                title = stringResource(R.string.player_title_menu_failed),
+                                enabled = false,
+                                onClick = {},
+                            ),
                         )
                     }
-                }
-            }
+                },
+                onDismiss = { expanded = false },
+            )
         }
     }
 }

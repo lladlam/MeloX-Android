@@ -16,8 +16,6 @@ package com.lladlam.melox.ui.sonify
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -42,9 +40,7 @@ fun SonifyLibraryPage(
 ) {
     Column(Modifier.fillMaxSize()) {
         Title(
-            title = "资料库",
-            topRightIcon = Icons.Filled.MoreVert,
-            onTopRightIcon = onOpenSettings,
+            title = "音乐库",
             extraTopPadding = 57.dp,
         ) {
             item("Library") {

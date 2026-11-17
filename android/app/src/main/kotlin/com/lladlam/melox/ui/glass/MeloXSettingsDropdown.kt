@@ -377,3 +377,118 @@ fun MeloXSettingsDropdown(
     var selected by remember { mutableStateOf(MeloXSettingsPreferences.string(context, prefKey, default)) }
     MeloXSettingsDropdown(title, selected, items, { selected = it; MeloXSettingsPreferences.setString(context, prefKey, it) }, grouped = grouped, showTopSeparator = showTopSeparator)
 }
+
+/** One row in the reusable liquid-glass selection dropdown. */
+data class MeloXGlassSelectionItem(
+    val title: String,
+    val checked: Boolean = false,
+    val enabled: Boolean = true,
+    val onClick: () -> Unit,
+)
+
+/**
+ * Reusable version of the settings detail dropdown's liquid-glass menu.
+ * Used by the player title menu and the Sonify library secondary-page sort
+ * menus so they share the exact same morph/material instead of Material's
+ * DropdownMenu.
+ */
+@Composable
+fun MeloXGlassSelectionPopup(
+    expanded: Boolean,
+    anchorBounds: IntRect,
+    items: List<MeloXGlassSelectionItem>,
+    onDismiss: () -> Unit,
+) {
+    var popupAlive by remember { mutableStateOf(false) }
+    var opensAbove by remember { mutableStateOf(false) }
+    val progress = remember { Animatable(0f) }
+    val targetHeightPx = with(androidx.compose.ui.platform.LocalDensity.current) {
+        meloXSettingsMenuHeight(items.size).roundToPx()
+    }
+    LaunchedEffect(expanded) {
+        if (expanded) {
+            popupAlive = true
+            progress.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = .82f,
+                    stiffness = MeloXMotion.DropdownStiffness,
+                    visibilityThreshold = .001f,
+                ),
+            )
+        } else {
+            progress.animateTo(
+                targetValue = 0f,
+                animationSpec = spring(
+                    dampingRatio = .82f,
+                    stiffness = MeloXMotion.DropdownStiffness,
+                    visibilityThreshold = .001f,
+                ),
+            )
+            popupAlive = false
+        }
+    }
+    if (popupAlive && anchorBounds.width > 0 && anchorBounds.height > 0) {
+        val provider = remember(anchorBounds, targetHeightPx) {
+            MeloXAnchoredPopupPositionProvider(anchorBounds, targetHeightPx) { opensAbove = it }
+        }
+        Popup(
+            popupPositionProvider = provider,
+            onDismissRequest = onDismiss,
+            properties = PopupProperties(
+                focusable = expanded,
+                dismissOnBackPress = expanded,
+                dismissOnClickOutside = expanded,
+            ),
+        ) {
+            MeloXPopupGlassMenu(
+                backdrop = meloXGlassBackdrop(),
+                progress = progress.value,
+                velocity = progress.velocity,
+                interactive = expanded,
+                opensAbove = opensAbove,
+                collapsedSize = IntSize(anchorBounds.width, anchorBounds.height),
+                itemCount = items.size,
+            ) {
+                items.forEach { item ->
+                    MeloXPopupMenuItem(
+                        title = item.title,
+                        checked = item.checked,
+                        enabled = item.enabled,
+                    ) {
+                        item.onClick()
+                        onDismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+private class MeloXAnchoredPopupPositionProvider(
+    private val anchor: IntRect,
+    private val targetMenuHeightPx: Int,
+    private val onDirectionResolved: (Boolean) -> Unit,
+) : PopupPositionProvider {
+    private var opensAbove: Boolean? = null
+
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val above = opensAbove ?: run {
+            val roomBelow = windowSize.height - anchor.bottom
+            val roomAbove = anchor.top
+            (roomBelow < targetMenuHeightPx && roomAbove > roomBelow).also {
+                opensAbove = it
+                onDirectionResolved(it)
+            }
+        }
+        val x = (anchor.right - popupContentSize.width)
+            .coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0))
+        val y = if (above) anchor.bottom - popupContentSize.height else anchor.top
+        return IntOffset(x, y.coerceIn(0, (windowSize.height - popupContentSize.height).coerceAtLeast(0)))
+    }
+}

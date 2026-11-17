@@ -137,30 +137,26 @@ internal fun SonifyAlbumDetailPage(
             ?.filter(String::isNotBlank)
             .orEmpty()
     }
-    val subscribeAction: (@Composable () -> Unit)? =
-        if (setSubscribed != null && data?.subscribed != null) {
-            {
-                val subscribed = data?.subscribed == true
-                SonifyDropdownMenuAction(
-                    text = if (subscribed) "取消收藏专辑" else "收藏专辑",
-                ) {
-                    if (!subscribeBusy) {
-                        subscribeBusy = true
-                        scope.launch {
-                            setSubscribed(!subscribed)
-                                .onSuccess {
-                                    data = data?.copy(subscribed = !subscribed)
-                                    subscribeError = null
-                                }
-                                .onFailure { subscribeError = it.message ?: "操作失败" }
-                            subscribeBusy = false
+    val subscribed = data?.subscribed == true
+    val subscribeActionText = if (setSubscribed != null && data?.subscribed != null) {
+        if (subscribed) "取消收藏专辑" else "收藏专辑"
+    } else null
+    val onSubscribeAction: (() -> Unit)? = if (subscribeActionText != null) {
+        {
+            if (!subscribeBusy) {
+                subscribeBusy = true
+                scope.launch {
+                    setSubscribed?.invoke(!subscribed)
+                        ?.onSuccess {
+                            data = data?.copy(subscribed = !subscribed)
+                            subscribeError = null
                         }
-                    }
+                        ?.onFailure { subscribeError = it.message ?: "操作失败" }
+                    subscribeBusy = false
                 }
             }
-        } else {
-            null
         }
+    } else null
     val isWide = LocalConfiguration.current.screenWidthDp >= 600
     val state = rememberLazyListState()
     val titleBackdrop = rememberTitleBackdrop()
@@ -330,7 +326,8 @@ internal fun SonifyAlbumDetailPage(
                         onSelectSort = { sortOrdinal = it },
                         descending = descending,
                         onSelectDescending = { descending = it },
-                        leadingContent = subscribeAction,
+                        leadingActionText = subscribeActionText,
+                        onLeadingAction = onSubscribeAction,
                     )
                 },
             )

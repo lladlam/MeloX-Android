@@ -150,28 +150,26 @@ internal fun SonifyOnlinePlaylistDetailPage(
         )
     }
     val visibleSongs = remember(visible) { visible.map { it.second } }
-    val subscribeAction: (@Composable () -> Unit)? =
-        if (setSubscribed != null && data?.subscribed != null) {
-            {
-                val subscribed = data?.subscribed == true
-                SonifyDropdownMenuAction(if (subscribed) "取消收藏歌单" else "收藏歌单") {
-                    if (!subscribeBusy) {
-                        subscribeBusy = true
-                        scope.launch {
-                            setSubscribed(!subscribed)
-                                .onSuccess {
-                                    data = data?.copy(subscribed = !subscribed)
-                                    actionMessage = null
-                                }
-                                .onFailure { actionMessage = it.message ?: "操作失败" }
-                            subscribeBusy = false
+    val subscribed = data?.subscribed == true
+    val subscribeActionText = if (setSubscribed != null && data?.subscribed != null) {
+        if (subscribed) "取消收藏歌单" else "收藏歌单"
+    } else null
+    val onSubscribeAction: (() -> Unit)? = if (subscribeActionText != null) {
+        {
+            if (!subscribeBusy) {
+                subscribeBusy = true
+                scope.launch {
+                    setSubscribed?.invoke(!subscribed)
+                        ?.onSuccess {
+                            data = data?.copy(subscribed = !subscribed)
+                            actionMessage = null
                         }
-                    }
+                        ?.onFailure { actionMessage = it.message ?: "操作失败" }
+                    subscribeBusy = false
                 }
             }
-        } else {
-            null
         }
+    } else null
     val tracksStartIndex = 3 + (if (search.expanded) 1 else 0)
 
     CompositionLocalProvider(LocalTitlePageBackdrop provides titleBackdrop) {
@@ -336,7 +334,8 @@ internal fun SonifyOnlinePlaylistDetailPage(
                         onSelectSort = { sortOrdinal = it },
                         descending = descending,
                         onSelectDescending = { descending = it },
-                        leadingContent = subscribeAction,
+                        leadingActionText = subscribeActionText,
+                        onLeadingAction = onSubscribeAction,
                     )
                 },
             )
