@@ -24,10 +24,13 @@ import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.core.music.model.MusicAlbumRef
 import com.lladlam.melox.core.music.model.MusicArtistRef
 import com.lladlam.melox.core.music.model.MusicResourceId
+import com.lladlam.melox.core.music.model.AudioQualityTier
 import com.lladlam.melox.core.music.model.MusicSource
+import com.lladlam.melox.core.music.model.PlaybackResolution
 import com.lladlam.melox.core.music.model.MusicTrack
 import com.lladlam.melox.core.music.provider.LyricsCapability
 import com.lladlam.melox.core.music.provider.MeloXMusicProviders
+import com.lladlam.melox.core.music.provider.PlaybackCapability
 import com.lladlam.melox.core.music.provider.SearchCapability
 import com.lladlam.melox.core.provider.bilibili.BilibiliLyricAlignment
 import com.lladlam.melox.core.provider.bilibili.BilibiliLyricSourceResult
@@ -48,12 +51,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.random.Random
+import okhttp3.Request
+import java.io.File
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
 
@@ -348,7 +352,7 @@ internal object MeloXProviderLyricsLoader {
      * fetch lyrics. This is intentionally asynchronous: the empty lyric page
      * is shown immediately, and [onUpgrade] supplies the result when ready.
      */
-    private fun scheduleRecognitionFallback(
+    private suspend fun scheduleRecognitionFallback(
         appContext: Context,
         cacheKey: String,
         snapshot: LyricTrackSnapshot,
@@ -359,20 +363,28 @@ internal object MeloXProviderLyricsLoader {
             if (!recognitionInFlight.add(trackKey)) return
         }
         workerScope.launch {
+            var tempFile: File? = null
             try {
+                val prepared = prepareRecognitionAudio(appContext, snapshot)
+                    ?: return@launch
+                val uri = prepared.first
+                tempFile = prepared.second
                 val client = SongRecognitionClient(appContext)
                 val recognized = mutableListOf<SearchSong>()
                 try {
+                    // Two independent random 3-second windows from the actual
+                    // audio file. Nothing is recorded through the microphone.
                     repeat(2) { attempt ->
-                        if (com.lladlam.melox.core.autosync.AutoSyncPlaybackBridge.isCurrentTrack?.invoke(trackKey) == false) {
-                            return@launch
+                        if (autoSyncIsCurrent(trackKey).not()) return@launch
+                        val maxStart = (snapshot.durationMs - 3_000L).coerceAtLeast(0L)
+                        val start = if (maxStart > 0L) Random.nextLong(0L, maxStart + 1L) else 0L
+                        Log.i(
+                            "MeloXLyricsRecognition",
+                            "segment ${attempt + 1} start=${start}ms duration=3000ms",
+                        )
+                        runCatching {
+                            client.recognizeLocalAt(uri, snapshot.durationMs, start, seconds = 3)
                         }
-                        val maxDelay = minOf(30_000L, maxOf(1_500L, snapshot.durationMs / 2L))
-                        delay(Random.nextLong(1_000L, maxDelay.coerceAtLeast(1_500L)))
-                        if (com.lladlam.melox.core.autosync.AutoSyncPlaybackBridge.isCurrentTrack?.invoke(trackKey) == false) {
-                            return@launch
-                        }
-                        runCatching { client.recognize(3) }
                             .onFailure { Log.w("MeloXLyricsRecognition", "segment ${attempt + 1} failed: ${it.message}") }
                             .getOrNull()
                             ?.mapTo(recognized) { it.song }
@@ -401,9 +413,7 @@ internal object MeloXProviderLyricsLoader {
                     ?: return@launch
                 val processed = LyricTimelineProcessor.process(document).withoutPlaceholderLyrics()
                 if (processed.lines.isEmpty()) return@launch
-                if (com.lladlam.melox.core.autosync.AutoSyncPlaybackBridge.isCurrentTrack?.invoke(trackKey) == false) {
-                    return@launch
-                }
+                if (autoSyncIsCurrent(trackKey).not()) return@launch
                 remember(cacheKey, processed)
                 Log.i(
                     "MeloXLyricsRecognition",
@@ -411,9 +421,67 @@ internal object MeloXProviderLyricsLoader {
                 )
                 withContext(Dispatchers.Main.immediate) { onUpgrade(scripted(processed)) }
             } finally {
+                tempFile?.delete()
                 synchronized(lock) { recognitionInFlight.remove(trackKey) }
             }
         }
+    }
+
+    private suspend fun autoSyncIsCurrent(trackKey: String): Boolean =
+        com.lladlam.melox.core.autosync.AutoSyncPlaybackBridge.isCurrentTrack?.invoke(trackKey) != false
+
+    /**
+     * Local tracks are already files. Streaming tracks are resolved through the
+     * active provider and downloaded once to a temporary cache file so both
+     * random segments come from the exact same audio.
+     */
+    private suspend fun prepareRecognitionAudio(
+        appContext: Context,
+        snapshot: LyricTrackSnapshot,
+    ): Pair<android.net.Uri, File?>? {
+        if (snapshot.resourceId.sourceId.builtIn == MusicSource.Local) {
+            val record = LocalMusicRepository(appContext).track(snapshot.resourceId.value) ?: return null
+            return android.net.Uri.parse(record.contentUri) to null
+        }
+        val provider = runCatching {
+            MeloXMusicProviders.create(appContext).require(
+                snapshot.resourceId.sourceId.builtIn ?: return null,
+            )
+        }.getOrNull() as? PlaybackCapability ?: return null
+        val track = MusicTrack(
+            id = snapshot.resourceId,
+            title = snapshot.title,
+            artists = listOf(MusicArtistRef(name = snapshot.artist.ifBlank { "未知歌手" })),
+            album = snapshot.album.takeIf(String::isNotBlank)?.let { MusicAlbumRef(name = it, artworkUrl = snapshot.artworkUrl) },
+            artworkUrl = snapshot.artworkUrl,
+            durationMs = snapshot.durationMs.takeIf { it > 0L },
+        )
+        val resolution = runCatching {
+            provider.resolvePlayback(track, AudioQualityTier.Standard)
+        }.getOrNull() ?: return null
+        val url = when (resolution) {
+            is PlaybackResolution.Playable -> resolution.url to resolution.requestHeaders
+            is PlaybackResolution.Preview -> resolution.url to emptyMap()
+            else -> return null
+        }
+        val file = File.createTempFile("melox-lyric-recognition-", ".audio", appContext.cacheDir)
+        val request = Request.Builder().url(url.first).apply {
+            url.second.forEach { (name, value) -> header(name, value) }
+        }.get().build()
+        val downloaded = runCatching {
+            com.lladlam.melox.core.network.MeloXHttpClient.shared.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) error("audio HTTP ${response.code}")
+                val body = response.body ?: error("audio response body empty")
+                body.byteStream().use { input ->
+                    file.outputStream().use { output -> input.copyTo(output, bufferSize = 64 * 1024) }
+                }
+            }
+            file
+        }.onFailure {
+            file.delete()
+            Log.w("MeloXLyricsRecognition", "audio download failed: ${it.message}")
+        }.getOrNull() ?: return null
+        return android.net.Uri.fromFile(downloaded) to downloaded
     }
 
     private fun SearchSong.asNeteaseTrack(): MusicTrack = MusicTrack(

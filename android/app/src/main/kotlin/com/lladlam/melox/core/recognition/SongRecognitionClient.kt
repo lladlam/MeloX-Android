@@ -51,12 +51,28 @@ class SongRecognitionClient(
         return match(fingerprint, durationSeconds)
     }
 
-    suspend fun recognizeLocal(uri: Uri, durationMs: Long, segmentStartMs: Long? = null): List<SongRecognitionResult> {
-        // Keep local requests the same size as the reliable microphone flow. A
-        // 15-second fingerprint makes the GET query unnecessarily large and is
-        // commonly reset by the HTTP/2 endpoint.
-        val seconds = 9
-        val samples = LocalAudioSegmentExtractor.extract(context, uri, durationMs, seconds * 1_000L, segmentStartMs)
+    suspend fun recognizeLocal(uri: Uri, durationMs: Long, segmentStartMs: Long? = null): List<SongRecognitionResult> =
+        recognizeLocalAt(uri, durationMs, segmentStartMs, seconds = 9)
+
+    /**
+     * Extract an arbitrary random segment from the actual audio file and send
+     * that fragment's fingerprint to the recognizer. Used by the two-segment
+     * lyric fallback so it never records through the microphone.
+     */
+    suspend fun recognizeLocalAt(
+        uri: Uri,
+        durationMs: Long,
+        segmentStartMs: Long?,
+        seconds: Int = 3,
+    ): List<SongRecognitionResult> {
+        require(seconds in 3..15)
+        val samples = LocalAudioSegmentExtractor.extract(
+            context,
+            uri,
+            durationMs,
+            seconds * 1_000L,
+            segmentStartMs,
+        )
         val fingerprint = fingerprintRuntime.generate(samples)
         return match(fingerprint, seconds)
     }

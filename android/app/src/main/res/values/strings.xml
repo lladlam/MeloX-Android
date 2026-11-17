@@ -1447,7 +1447,7 @@
     <string name="settings_lyrics_pseudo_timing">Generate word timing from plain LRC</string>
     <string name="settings_lyrics_pseudo_timing_note">Splits each line by Unicode grapheme. Real YRC timing is left unchanged.</string>
     <string name="settings_lyrics_recognition_fallback">使用听歌识曲识别歌词</string>
-    <string name="settings_lyrics_recognition_fallback_note">所有歌词源都失败时，从正在播放的歌曲中随机截取两段 3 秒音频进行听歌识曲，再用识别结果查找歌词。需要录音权限。</string>
+    <string name="settings_lyrics_recognition_fallback_note">所有歌词源都失败时，从当前音源解析音频文件，随机截取两段 3 秒音频发送到听歌识曲，再用识别结果查找歌词。</string>
     <string name="settings_lyrics_tap_seek">Tap a line to seek</string>
     <string name="settings_lyrics_long_press_share">Long-press a line to share</string>
     <string name="settings_lyrics_interlude">Interlude countdown</string>
