@@ -1,5 +1,8 @@
 package com.lladlam.melox.ui.discovery
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -50,6 +53,8 @@ import coil3.compose.AsyncImage
 import com.lladlam.melox.R
 import com.lladlam.melox.core.library.NeteasePlaylistSummary
 import com.lladlam.melox.ui.MeloXBottomContentClearance
+import com.lladlam.melox.ui.animation.meloXPageEnter
+import com.lladlam.melox.ui.animation.meloXPageExit
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import com.lladlam.melox.ui.glass.MeloXTypography
@@ -70,59 +75,74 @@ internal fun SonifyExploreFeed(
     val errors = remember { mutableStateMapOf<String, String?>() }
     var moreCategory by rememberSaveable { mutableStateOf<String?>(null) }
 
-    if (moreCategory != null) {
-        val category = moreCategory!!
-        SonifyExploreCategoryPage(
-            category = category,
-            items = data[category].orEmpty(),
-            loading = loading[category] == true,
-            error = errors[category],
-            onBack = { moreCategory = null },
-            onCollection = onCollection,
-            load = load,
-            onLoaded = { data[category] = it },
-        )
-        return
-    }
-
-    LazyColumn(
-        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding(),
-        contentPadding = PaddingValues(bottom = MeloXBottomContentClearance + 90.dp),
-        verticalArrangement = Arrangement.spacedBy(26.dp),
-    ) {
-        item("ExploreTitle") {
-            Text(
-                "新发现",
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-                fontSize = 40.sp,
-                lineHeight = 44.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-1.2).sp,
+    BackHandler(enabled = moreCategory != null) { moreCategory = null }
+    val pageBackground = MaterialTheme.colorScheme.background
+    AnimatedContent(
+        targetState = moreCategory,
+        transitionSpec = {
+            if (targetState != null) {
+                (meloXPageEnter(veilColor = pageBackground) togetherWith
+                    meloXPageExit(toRight = false)).using(null)
+            } else {
+                (meloXPageEnter(fromRight = false, veilColor = pageBackground) togetherWith
+                    meloXPageExit(toRight = true)).using(null)
+            }
+        },
+        label = "SonifyExplorePage",
+    ) { selectedCategory ->
+        if (selectedCategory != null) {
+            SonifyExploreCategoryPage(
+                category = selectedCategory,
+                items = data[selectedCategory].orEmpty(),
+                loading = loading[selectedCategory] == true,
+                error = errors[selectedCategory],
+                onBack = { moreCategory = null },
+                onCollection = onCollection,
+                load = load,
+                onLoaded = { data[selectedCategory] = it },
             )
-        }
-        categories.forEach { category ->
-            item("section-$category") {
-                ExploreCategorySection(
-                    category = category,
-                    items = data[category],
-                    loading = loading[category] == true,
-                    error = errors[category],
-                    onCollection = onCollection,
-                    onMore = { moreCategory = category },
-                    onLoad = {
-                        if (data.containsKey(category) || loading[category] == true) return@ExploreCategorySection
-                        loading[category] = true
-                        errors.remove(category)
-                        runCatching { load(category) }
-                            .onSuccess { data[category] = it }
-                            .onFailure { errors[category] = it.message ?: "加载失败" }
-                        loading[category] = false
-                    },
-                )
+        } else {
+                LazyColumn(
+                    Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding(),
+                    contentPadding = PaddingValues(bottom = MeloXBottomContentClearance + 90.dp),
+                    verticalArrangement = Arrangement.spacedBy(26.dp),
+                ) {
+                    item("ExploreTitle") {
+                        Text(
+                            "新发现",
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                            fontSize = 40.sp,
+                            lineHeight = 44.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = (-1.2).sp,
+                        )
+                    }
+                    categories.forEach { category ->
+                        item("section-$category") {
+                            ExploreCategorySection(
+                                category = category,
+                                items = data[category],
+                                loading = loading[category] == true,
+                                error = errors[category],
+                                onCollection = onCollection,
+                                onMore = { moreCategory = category },
+                                onLoad = {
+                                    if (data.containsKey(category) || loading[category] == true) return@ExploreCategorySection
+                                    loading[category] = true
+                                    errors.remove(category)
+                                    runCatching { load(category) }
+                                        .onSuccess { data[category] = it }
+                                        .onFailure { errors[category] = it.message ?: "加载失败" }
+                                    loading[category] = false
+                                },
+                            )
+                        }
+                    }
+                }
             }
         }
     }
-}
+
 
 @Composable
 private fun ExploreCategorySection(
@@ -157,7 +177,7 @@ private fun ExploreCategorySection(
         !items.isNullOrEmpty() -> {
             val pager = rememberPagerState(pageCount = { items.size })
             val screenWidth = LocalConfiguration.current.screenWidthDp.dp
-            val factor = if (category == "推荐歌单") .90f else .25f
+            val factor = if (category == "推荐歌单") .90f else (1f / 3f)
             val cardWidth = ((screenWidth - 40.dp) * factor).coerceAtLeast(60.dp)
             val compact = factor < .5f
             HorizontalPager(

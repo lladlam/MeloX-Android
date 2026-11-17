@@ -58,6 +58,7 @@ import com.lladlam.melox.ui.animation.meloXPageEnter
 import com.lladlam.melox.ui.animation.meloXPageExit
 import com.lladlam.melox.ui.glass.LocalMeloXIconScale
 import com.lladlam.melox.ui.glass.MeloXSymbol
+import com.lladlam.melox.ui.library.MeloXUnifiedAlbumDetailScreen
 import com.lladlam.melox.ui.library.MeloXUnifiedPlaylistDetailScreen
 import com.lladlam.melox.ui.library.MeloXUnifiedSongListDetailScreen
 import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
@@ -448,30 +449,51 @@ internal fun SonifyLibraryHost(
             error = if (source == MusicSource.Netease) neteaseAlbumsError else errorMessage.takeIf { providerAlbums.isEmpty() },
         )
 
-        is SonifyLibraryRoute.Album -> SonifyAlbumDetailPage(
-            target = route.target,
-            onBack = { pop() },
-            onPlay = { queue, index ->
-                val song = queue.getOrNull(index) ?: return@SonifyAlbumDetailPage
-                PlaybackCommands.playQueue(context, queue, song.id)
-            },
-            onMore = { song, queue ->
-                selectedSong = song
-                selectedQueue = queue
-            },
-            loadAlbum = {
-                loadSonifyAlbum(
-                    target = route.target,
-                    detailsClient = detailsClient,
-                    albumCapability = albumCapability,
+        is SonifyLibraryRoute.Album -> {
+            val target = route.target
+            when {
+                target.neteaseAlbumId != null -> MeloXUnifiedAlbumDetailScreen(
+                    albumId = target.neteaseAlbumId,
+                    onBack = { pop() },
                 )
-            },
-            setSubscribed = if (source == MusicSource.Netease && route.target.neteaseAlbumId != null) {
-                { subscribed -> runCatching { detailsClient.setAlbumSubscribed(route.target.neteaseAlbumId, subscribed) } }
-            } else {
-                null
-            },
-        )
+                target.localSongs.isNotEmpty() -> MeloXUnifiedSongListDetailScreen(
+                    playlist = NeteasePlaylistSummary(
+                        id = -target.title.hashCode().toLong().let { if (it == 0L) -1L else it },
+                        name = target.title,
+                        coverUrl = target.artworkUrl,
+                        trackCount = target.localSongs.size,
+                        creatorName = target.artistText,
+                    ),
+                    songs = target.localSongs,
+                    onBack = { pop() },
+                    source = null,
+                )
+                else -> SonifyAlbumDetailPage(
+                    target = target,
+                    onBack = { pop() },
+                    onPlay = { queue, index ->
+                        val song = queue.getOrNull(index) ?: return@SonifyAlbumDetailPage
+                        PlaybackCommands.playQueue(context, queue, song.id)
+                    },
+                    onMore = { song, queue ->
+                        selectedSong = song
+                        selectedQueue = queue
+                    },
+                    loadAlbum = {
+                        loadSonifyAlbum(
+                            target = target,
+                            detailsClient = detailsClient,
+                            albumCapability = albumCapability,
+                        )
+                    },
+                    setSubscribed = if (source == MusicSource.Netease && target.neteaseAlbumId != null) {
+                        { subscribed -> runCatching { detailsClient.setAlbumSubscribed(target.neteaseAlbumId, subscribed) } }
+                    } else {
+                        null
+                    },
+                )
+            }
+        }
 
         SonifyLibraryRoute.LocalArtists -> SonifyLocalArtistsPage(
             artists = localArtists,
