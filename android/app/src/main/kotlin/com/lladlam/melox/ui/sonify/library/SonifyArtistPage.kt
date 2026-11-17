@@ -1,10 +1,10 @@
 /*
  * Sonify artist detail host (GPL-3.0), adapted for MeloX.
  *
- * The page body is the already-migrated ui/sonify/SonifyArtistDetailPage.kt
- * (upstream artists/ArtistDetail.kt + ArtistDetailParts.kt). This wrapper owns
- * MeloX data loading and follow state so the page never falls back to the
- * MeloX artist detail scaffold.
+ * The page body is ui/sonify/artist/ArtistDetail.kt (upstream artists/
+ * ArtistDetail.kt + ArtistDetailParts.kt + ArtistActionButtons.kt). This
+ * wrapper owns MeloX data loading, follow state and pull-to-refresh so the
+ * page never falls back to the MeloX artist detail scaffold.
  */
 package com.lladlam.melox.ui.sonify.library
 
@@ -17,7 +17,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.core.network.MeloXAlbumSummary
-import com.lladlam.melox.ui.sonify.SonifyArtistDetailPage
+import com.lladlam.melox.ui.sonify.artist.ArtistDetail
 import kotlinx.coroutines.launch
 
 @Composable
@@ -32,13 +32,14 @@ internal fun SonifyArtistPage(
 ) {
     var data by remember(target) { mutableStateOf<SonifyArtistData?>(null) }
     var loading by remember(target) { mutableStateOf(true) }
+    var refreshing by remember(target) { mutableStateOf(false) }
     var error by remember(target) { mutableStateOf<String?>(null) }
     var followed by remember(target) { mutableStateOf<Boolean?>(null) }
     var followBusy by remember(target) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    suspend fun load() {
-        if (data == null) loading = true
+    suspend fun load(isRefresh: Boolean = false) {
+        if (isRefresh) refreshing = true else if (data == null) loading = true
         loadArtist()
             .onSuccess {
                 data = it
@@ -47,12 +48,13 @@ internal fun SonifyArtistPage(
             }
             .onFailure { error = it.message ?: "歌手加载失败" }
         loading = false
+        refreshing = false
     }
 
     LaunchedEffect(target) { load() }
 
     val artist = data?.artist
-    SonifyArtistDetailPage(
+    ArtistDetail(
         artist = artist,
         followed = followed,
         allSongs = data?.allSongs.orEmpty(),
@@ -60,12 +62,10 @@ internal fun SonifyArtistPage(
         error = error,
         onBack = onBack,
         onPlay = { queue, index -> onPlay(queue, index) },
-        onMoreSong = { song ->
-            onMoreSong(song, data?.allSongs.orEmpty())
-        },
+        onMoreSong = { song, queue -> onMoreSong(song, queue) },
         onOpenAlbum = onOpenAlbum,
         onToggleFollow = {
-            if (followBusy || setFollowed == null || data?.canFollow != true) return@SonifyArtistDetailPage
+            if (followBusy || setFollowed == null || data?.canFollow != true) return@ArtistDetail
             val next = followed != true
             followBusy = true
             scope.launch {
@@ -79,6 +79,8 @@ internal fun SonifyArtistPage(
             }
         },
         onRetry = { scope.launch { load() } },
+        onRefresh = { scope.launch { load(isRefresh = true) } },
+        refreshing = refreshing,
         canFollow = data?.canFollow == true && setFollowed != null,
     )
 }

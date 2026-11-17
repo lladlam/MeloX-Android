@@ -87,7 +87,7 @@ import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
 import com.lladlam.melox.ui.settings.MeloXPageAppearance
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
-import com.lladlam.melox.ui.sonify.SonifyArtistDetailPage
+import com.lladlam.melox.ui.sonify.artist.ArtistDetail
 import com.lladlam.melox.ui.search.MeloXSearchLaunchBus
 import kotlinx.coroutines.launch
 
@@ -101,10 +101,12 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var detail by rememberRetainedPageState(id) { mutableStateOf<MeloXArtistDetail?>(null) }
     var loading by remember(id) { mutableStateOf(detail == null) }
+    var refreshing by remember(id) { mutableStateOf(false) }
     var error by remember(id) { mutableStateOf<String?>(null) }
     var followed by rememberSaveable(id) { mutableStateOf<Boolean?>(null) }
     var followBusy by remember(id) { mutableStateOf(false) }
     var selectedSong by remember(id) { mutableStateOf<SearchSong?>(null) }
+    var selectedQueue by remember(id) { mutableStateOf<List<SearchSong>>(emptyList()) }
     var allSongs by rememberRetainedPageState(id) { mutableStateOf<List<SearchSong>>(emptyList()) }
     var showInfoSheet by remember { mutableStateOf(false) }
     var expandedSection by rememberSaveable(id) { mutableStateOf<String?>(null) }
@@ -152,8 +154,7 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
         }
     }
 
-    LaunchedEffect(id, detail) {
-        if (detail == null || allSongs.isNotEmpty()) return@LaunchedEffect
+    suspend fun loadArtistSongs(): List<SearchSong> {
         val collected = mutableListOf<SearchSong>()
         var offset = 0
         while (offset < 500) {
@@ -163,19 +164,31 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
             if (page.size < 100) break
             offset += page.size
         }
-        allSongs = collected
+        return collected
     }
 
-    LaunchedEffect(id) {
-        if (detail != null) return@LaunchedEffect
-        loading = true
+    suspend fun reloadArtist(showRefresh: Boolean) {
+        if (showRefresh) refreshing = true else if (detail == null) loading = true
+        error = null
         runCatching { client.artistDetail(id) }
             .onSuccess {
                 detail = it
                 followed = it.followed
             }
             .onFailure { error = it.message ?: "歌手加载失败" }
+        if (allSongs.isEmpty() || showRefresh) {
+            allSongs = loadArtistSongs()
+        }
         loading = false
+        refreshing = false
+    }
+
+    LaunchedEffect(id) {
+        if (detail == null) {
+            reloadArtist(showRefresh = false)
+        } else if (allSongs.isEmpty()) {
+            allSongs = loadArtistSongs()
+        }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -198,21 +211,25 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
         }
 
         if (sonifyAppearance) {
-            SonifyArtistDetailPage(
+            ArtistDetail(
                 artist = detail,
                 followed = followed,
                 allSongs = allSongs,
                 loading = loading,
                 error = error,
+                canFollow = true,
                 onBack = onBack,
                 onPlay = { queue, index ->
-                    val song = queue.getOrNull(index) ?: return@SonifyArtistDetailPage
+                    val song = queue.getOrNull(index) ?: return@ArtistDetail
                     PlaybackCommands.playQueue(context, queue, song.id)
                 },
-                onMoreSong = { selectedSong = it },
+                onMoreSong = { song, queue ->
+                    selectedSong = song
+                    selectedQueue = queue
+                },
                 onOpenAlbum = { selectedAlbumId = it.id },
                 onToggleFollow = {
-                    if (followBusy) return@SonifyArtistDetailPage
+                    if (followBusy) return@ArtistDetail
                     val target = followed != true
                     followBusy = true
                     scope.launch {
@@ -222,16 +239,9 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
                         followBusy = false
                     }
                 },
-                onRetry = {
-                    scope.launch {
-                        loading = true
-                        error = null
-                        runCatching { client.artistDetail(id) }
-                            .onSuccess { detail = it; followed = it.followed }
-                            .onFailure { error = it.message ?: "歌手加载失败" }
-                        loading = false
-                    }
-                },
+                onRetry = { scope.launch { reloadArtist(showRefresh = false) } },
+                onRefresh = { scope.launch { reloadArtist(showRefresh = true) } },
+                refreshing = refreshing,
             )
         } else {
             LazyColumn(
@@ -473,7 +483,7 @@ internal fun MeloXArtistDetailScreen(id: Long, onBack: () -> Unit) {
         selectedSong?.let { song ->
             MeloXSongActionsOverlay(
                 song = song,
-                queue = allSongs.ifEmpty { detail?.hotSongs.orEmpty() },
+                queue = selectedQueue.ifEmpty { allSongs.ifEmpty { detail?.hotSongs.orEmpty() } },
                 visible = true,
                 onDismiss = { selectedSong = null },
             )

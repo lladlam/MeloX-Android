@@ -53,6 +53,7 @@
     <string name="sonify_artist_following">Following</string>
     <string name="sonify_artist_play_hot">Play top songs</string>
     <string name="sonify_artist_empty">No songs</string>
+    <string name="sonify_artist_no_albums">No albums</string>
     <string name="sonify_artist_retry">Retry</string>
     <string name="sonify_artist_load_failed">Couldn\'t load the artist</string>
     <string name="sonify_back">Back</string>

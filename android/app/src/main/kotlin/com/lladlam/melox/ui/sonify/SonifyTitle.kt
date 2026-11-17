@@ -86,10 +86,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawPlainBackdrop
 import com.kyant.backdrop.effects.blur
@@ -97,6 +99,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
+import com.lladlam.melox.ui.sonify.artist.LiquidTopBarButton
+import com.lladlam.melox.ui.sonify.artist.titleBarProgressiveBlur
 import kotlinx.coroutines.launch
 
 /**
@@ -180,6 +184,7 @@ fun Title(
     onTopRightIcon: (() -> Unit)? = null,
     titleHorizontalPadding: Dp = 20.dp,
     revealIndex: Int? = null,
+    liquidBackButton: Boolean = false,
     listState: LazyListState = rememberLazyListState(),
     onRefresh: (() -> Unit)? = null,
     refreshing: Boolean = false,
@@ -255,6 +260,7 @@ fun Title(
                 backdrop = titleBackdrop,
                 barBackgroundVisible = collapse.showBarBackground,
                 rightBarIcon = effectiveRightBarIcon,
+                liquidBackButton = liquidBackButton,
             )
 
             if (showIndexBar) {
@@ -288,6 +294,7 @@ fun TitleWithLazyVerticalGrid(
     topRightIcon: ImageVector? = null,
     onTopRightIcon: (() -> Unit)? = null,
     gridState: LazyGridState = rememberLazyGridState(),
+    liquidBackButton: Boolean = false,
     onRefresh: (() -> Unit)? = null,
     refreshing: Boolean = false,
     indexBarLabels: List<String> = emptyList(),
@@ -363,6 +370,7 @@ fun TitleWithLazyVerticalGrid(
                 backdrop = titleBackdrop,
                 barBackgroundVisible = collapse.showBarBackground,
                 rightBarIcon = effectiveRightBarIcon,
+                liquidBackButton = liquidBackButton,
             )
             if (showIndexBar) {
                 MochiIndexBar(
@@ -609,9 +617,12 @@ fun TitleBar(
     backdrop: LayerBackdrop,
     barBackgroundVisible: State<Boolean>? = null,
     backIconTint: Color? = null,
+    liquidBackButton: Boolean = false,
 ) {
     val barVisible = barBackgroundVisible ?: showSmallTitle
     val pageColor = titlePageColor()
+    val barSurfaceBackdrop = rememberLayerBackdrop()
+    val barGlassBackdrop = rememberCombinedBackdrop(backdrop, barSurfaceBackdrop)
     Box(Modifier.fillMaxWidth().clickable(enabled = false, onClick = {})) {
         AnimatedVisibility(
             visible = barVisible.value,
@@ -621,11 +632,21 @@ fun TitleBar(
         ) {
             Spacer(
                 Modifier
-                    .drawPlainBackdrop(
-                        backdrop = backdrop,
-                        shape = { RectangleShape },
-                        effects = { blur(14.dp.toPx()) },
-                        onDrawSurface = { drawRect(pageColor.copy(alpha = 0.7f)) },
+                    .then(
+                        if (liquidBackButton) {
+                            titleBarProgressiveBlur(
+                                backdrop = backdrop,
+                                tintColor = pageColor,
+                                exportedBackdrop = barSurfaceBackdrop,
+                            )
+                        } else {
+                            Modifier.drawPlainBackdrop(
+                                backdrop = backdrop,
+                                shape = { RectangleShape },
+                                effects = { blur(14.dp.toPx()) },
+                                onDrawSurface = { drawRect(pageColor.copy(alpha = 0.7f)) },
+                            )
+                        }
                     )
                     .fillMaxSize(),
             )
@@ -641,12 +662,27 @@ fun TitleBar(
                 Box(Modifier.height(48.dp), contentAlignment = Alignment.CenterStart) {
                     if (onBack != null) {
                         Box(Modifier.padding(start = 16.dp)) {
-                            SonifyGlassCircleButton(
-                                icon = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "返回",
-                                tint = backIconTint ?: MaterialTheme.colorScheme.onSurface,
-                                onClick = onBack,
-                            )
+                            if (liquidBackButton) {
+                                LiquidTopBarButton(
+                                    onClick = onBack,
+                                    backdrop = barGlassBackdrop,
+                                    icon = rememberVectorPainter(Icons.AutoMirrored.Filled.ArrowBack),
+                                    contentDescription = "返回",
+                                    iconSize = 18.dp,
+                                    iconOffset = DpOffset((-2).dp, 0.dp),
+                                    backdropAlpha = { if (barVisible.value) 1f else 0f },
+                                    shadowAlpha = { if (barVisible.value) 1f else 0f },
+                                    idleIconTint = backIconTint ?: MaterialTheme.colorScheme.onSurface,
+                                    draggable = true,
+                                )
+                            } else {
+                                SonifyGlassCircleButton(
+                                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "返回",
+                                    tint = backIconTint ?: MaterialTheme.colorScheme.onSurface,
+                                    onClick = onBack,
+                                )
+                            }
                         }
                     }
                     Column(
