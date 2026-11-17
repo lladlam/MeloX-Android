@@ -77,6 +77,21 @@ class SongRecognitionClient(
         return match(fingerprint, seconds)
     }
 
+    suspend fun recognizePcm(samples: FloatArray, durationSeconds: Int): List<SongRecognitionResult> {
+        require(durationSeconds in 3..15)
+        val fingerprint = fingerprintRuntime.generate(samples)
+        return match(fingerprint, durationSeconds)
+    }
+
+    suspend fun recognizePlayback(
+        resultCode: Int,
+        data: android.content.Intent,
+        durationSeconds: Int,
+    ): List<SongRecognitionResult> {
+        val samples = PlaybackAudioCapture.capture(context, resultCode, data, durationSeconds)
+        return recognizePcm(samples, durationSeconds)
+    }
+
     override fun close() {
         fingerprintRuntime.close()
     }

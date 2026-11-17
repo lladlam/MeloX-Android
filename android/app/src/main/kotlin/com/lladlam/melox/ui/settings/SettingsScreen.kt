@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Intent
 import android.app.Activity
+import android.media.projection.MediaProjectionManager
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -3622,10 +3623,57 @@ fun MeloXRecognitionPanel(context: android.content.Context) {
         }
     }
 
+    var pendingProjection by remember { mutableStateOf(false) }
+    fun startSystemCapture(resultCode: Int, data: android.content.Intent) {
+        recognitionJob?.cancel()
+        recognitionJob = scope.launch {
+            working = true
+            error = null
+            results = emptyList()
+            status = "正在捕获系统播放音频…"
+            try {
+                val found = client.recognizePlayback(resultCode, data, duration)
+                results = found
+                status = if (found.isEmpty()) "没有识别到歌曲，请重试" else "识别完成"
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                status = "已停止"
+            } catch (failure: Throwable) {
+                error = failure.message ?: "系统音频识别失败"
+                status = "无法完成识别"
+            } finally {
+                working = false
+            }
+        }
+    }
+    val projectionManager = remember(context) {
+        context.getSystemService(MediaProjectionManager::class.java)
+    }
+    val projectionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val data = result.data
+        if (result.resultCode == Activity.RESULT_OK && data != null) {
+            startSystemCapture(result.resultCode, data)
+        } else {
+            error = "没有获得屏幕录制授权"
+        }
+    }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        if (granted) startCapture() else error = "没有麦克风权限；请在系统设置中允许 MeloX 使用麦克风。"
+        if (!granted) {
+            error = "没有麦克风权限；请在系统设置中允许 MeloX 使用麦克风。"
+            pendingProjection = false
+        } else if (pendingProjection) {
+            pendingProjection = false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && projectionManager != null) {
+                projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+            } else {
+                error = "系统音频识别需要 Android 10 或更高版本"
+            }
+        } else {
+            startCapture()
+        }
     }
 
     Spacer(Modifier.height(14.dp))
@@ -3646,9 +3694,29 @@ fun MeloXRecognitionPanel(context: android.content.Context) {
         } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             startCapture()
         } else {
+            pendingProjection = false
             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
+    Spacer(Modifier.height(8.dp))
+    SettingsActionButton("使用系统音频识别（录屏）") {
+        if (working) {
+            recognitionJob?.cancel()
+        } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || projectionManager == null) {
+            error = "系统音频识别需要 Android 10 或更高版本"
+        } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            projectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+        } else {
+            pendingProjection = true
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+    Text(
+        "使用系统音频识别时会请求录屏授权，不会保存录屏内容。",
+        modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp),
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .46f),
+        fontSize = 12.sp,
+    )
     Row(Modifier.fillMaxWidth().padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
         if (working) {
             CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
