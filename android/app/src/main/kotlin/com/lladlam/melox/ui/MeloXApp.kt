@@ -266,6 +266,7 @@ enum class AppTab(@StringRes val titleRes: Int) {
 @Composable
 fun MeloXApp(
     openNowPlayingRequest: Int = 0,
+    openRecognitionRequest: Int = 0,
     clipboardLinkRequest: String? = null,
     onClipboardLinkConsumed: () -> Unit = {},
     playbackConnectionEnabled: Boolean = true,
@@ -308,6 +309,9 @@ fun MeloXApp(
     }
     var selectedTab by rememberSaveable { mutableStateOf(initialTab) }
     var recognitionVisible by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(openRecognitionRequest) {
+        if (openRecognitionRequest > 0) recognitionVisible = true
+    }
     fun launchNeteaseLogin(returnTab: AppTab) {
         detailPaneState.openLogin(hostContext) { selectedTab = returnTab }
     }

@@ -2568,7 +2568,10 @@ private fun MeloXPlaylistDetailScreen(
                             coverUrl = album.album.artworkUrl,
                             trackCount = album.songs.size,
                             creatorName = album.album.artistText,
-                            description = album.description,
+                            description = listOfNotNull(
+                                album.album.releaseDate?.let { "发行日期：$it" },
+                                album.description,
+                            ).joinToString("\n").takeIf(String::isNotBlank),
                         ),
                         songs = album.songs,
                     )

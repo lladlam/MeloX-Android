@@ -18,6 +18,7 @@ data class MeloXAlbumSummary(
     val artworkUrl: String?,
     val artistText: String,
     val type: String?,
+    val releaseDate: String? = null,
 )
 
 data class MeloXAlbumDetail(
@@ -263,6 +264,9 @@ class NeteaseCollectionDetailsClient(
                 value.optJSONObject("artist")?.optString("name").orEmpty().ifBlank { "未知歌手" }
             },
             type = value.optString("type").takeIf(String::isNotBlank),
+            releaseDate = value.optLong("publishTime", 0L).takeIf { it > 0L }?.let {
+                java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(it))
+            },
         )
     }
 

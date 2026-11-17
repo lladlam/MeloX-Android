@@ -52,6 +52,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity(), MeloXDetailPageOwner {
     override val detailPaneState = MeloXDetailPaneState()
     private var openNowPlayingRequest by mutableIntStateOf(0)
+    private var openRecognitionRequest by mutableIntStateOf(0)
     private var clipboardLinkRequest by mutableStateOf<String?>(null)
     private var playbackConnectionEnabled by mutableStateOf(false)
     private var lastClipboardText: String? = null
@@ -137,6 +138,7 @@ class MainActivity : ComponentActivity(), MeloXDetailPageOwner {
                         mainPageState.SaveableStateProvider("main") {
                          MeloXApp(
                             openNowPlayingRequest = openNowPlayingRequest,
+                            openRecognitionRequest = openRecognitionRequest,
                             clipboardLinkRequest = clipboardLinkRequest,
                             onClipboardLinkConsumed = { clipboardLinkRequest = null },
                             playbackConnectionEnabled = playbackConnectionEnabled,
@@ -307,14 +309,17 @@ class MainActivity : ComponentActivity(), MeloXDetailPageOwner {
     }
 
     private fun consumePlaybackIntent(intent: Intent?) {
-        if (intent?.action == ACTION_OPEN_NOW_PLAYING) {
-            openNowPlayingRequest += 1
+        when (intent?.action) {
+            ACTION_OPEN_NOW_PLAYING -> openNowPlayingRequest += 1
+            ACTION_OPEN_RECOGNITION -> openRecognitionRequest += 1
         }
     }
 
     companion object {
         const val ACTION_OPEN_NOW_PLAYING =
             "com.lladlam.melox.action.OPEN_NOW_PLAYING"
+        const val ACTION_OPEN_RECOGNITION =
+            "com.lladlam.melox.action.OPEN_RECOGNITION"
         /** Cold starts within this window of the last backgrounding are treated as returns, not fresh launches. */
         private const val RETURN_FROM_BACKGROUND_WINDOW_MS = 15L * 60L * 1000L
     }

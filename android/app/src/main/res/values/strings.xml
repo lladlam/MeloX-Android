@@ -937,6 +937,8 @@
     <string name="settings_route_floating">Floating lyrics</string>
     <string name="settings_route_features">Features</string>
     <string name="settings_route_recognition">Song recognition</string>
+    <string name="shortcut_recognition_short">听歌识曲</string>
+    <string name="shortcut_recognition_long">打开听歌识曲</string>
     <string name="settings_route_messages">Messages and in-app sharing</string>
     <string name="settings_route_listen_together">Listen Together</string>
     <string name="settings_route_content">Content</string>

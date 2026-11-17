@@ -97,6 +97,10 @@
             android:exported="true"
             android:permission="android.permission.DUMP" />
 
+        <meta-data
+            android:name="android.app.shortcuts"
+            android:resource="@xml/shortcuts" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

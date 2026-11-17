@@ -160,6 +160,9 @@ private fun AlbumScreen(id: Long, onBack: () -> Unit) {
                     AsyncImage(value.album.artworkUrl, value.album.name, contentScale = ContentScale.Crop, modifier = Modifier.size(210.dp).clip(RoundedCornerShape(16.dp)))
                     Text(value.album.name, Modifier.padding(top = 15.dp), fontSize = 23.sp, fontWeight = FontWeight.Bold, maxLines = 2)
                     Text(value.album.artistText, Modifier.padding(top = 5.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .55f))
+                    value.album.releaseDate?.let {
+                        Text("发行日期：$it", Modifier.padding(top = 3.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = .45f), fontSize = 12.sp)
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Action(stringResource(R.string.artist_play)) { songs.firstOrNull()?.let { PlaybackCommands.playQueue(context, songs, it.id) } }
                         Action(stringResource(R.string.artist_shuffle)) { songs.shuffled().let { queue -> queue.firstOrNull()?.let { PlaybackCommands.playQueue(context, queue, it.id) } } }

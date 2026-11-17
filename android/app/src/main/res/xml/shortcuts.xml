@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="recognition"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_recognition_short"
+        android:shortcutLongLabel="@string/shortcut_recognition_long">
+        <intent
+            android:action="com.lladlam.melox.action.OPEN_RECOGNITION"
+            android:targetPackage="com.lladlam.melox.android"
+            android:targetClass="com.lladlam.melox.MainActivity" />
+    </shortcut>
+</shortcuts>
