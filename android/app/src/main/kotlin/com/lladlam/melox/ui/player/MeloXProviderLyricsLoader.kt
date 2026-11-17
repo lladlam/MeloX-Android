@@ -20,6 +20,8 @@ import com.lladlam.melox.core.lyrics.AmlldbLyricsClient
 import com.lladlam.melox.core.lyrics.BoundLyricSource
 import com.lladlam.melox.core.lyrics.LyricBinding
 import com.lladlam.melox.core.lyrics.LyricBindingStore
+import com.lladlam.melox.core.lyrics.LyricRecognitionStore
+import com.lladlam.melox.core.lyrics.RecognizedLyricTrack
 import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.core.music.model.MusicAlbumRef
 import com.lladlam.melox.core.music.model.MusicArtistRef
@@ -365,6 +367,32 @@ internal object MeloXProviderLyricsLoader {
         workerScope.launch {
             var tempFile: File? = null
             try {
+                val stored = LyricRecognitionStore.read(appContext, snapshot.resourceId)
+                if (stored != null && autoSyncIsCurrent(trackKey)) {
+                    Log.i(
+                        "MeloXLyricsRecognition",
+                        "persisted id=${stored.neteaseId} name=${stored.title} artist=${stored.artists}",
+                    )
+                    val storedDocument = resolveRecognizedLyrics(
+                        appContext,
+                        stored.toSearchSong(),
+                        snapshot,
+                    )
+                    if (storedDocument != null) {
+                        val processed = LyricTimelineProcessor.process(storedDocument)
+                            .withoutPlaceholderLyrics()
+                            .copy(recognitionFallback = true)
+                        if (processed.lines.isNotEmpty()) {
+                            remember(cacheKey, processed)
+                            Log.i(
+                                "MeloXLyricsRecognition",
+                                "applied persisted lyrics lines=${processed.lines.size}",
+                            )
+                            withContext(Dispatchers.Main.immediate) { onUpgrade(scripted(processed)) }
+                            return@launch
+                        }
+                    }
+                }
                 val prepared = prepareRecognitionAudio(appContext, snapshot)
                     ?: return@launch
                 val uri = prepared.first
@@ -425,67 +453,20 @@ internal object MeloXProviderLyricsLoader {
                     "MeloXLyricsRecognition",
                     "recognized id=${song.id} name=${song.name} artist=${song.artists}",
                 )
-                val registry = MeloXMusicProviders.create(appContext)
-                // The recognized NetEase id is the canonical song identity.
-                // AMLL is queried by that id, then the recognized title/artist
-                // is used to locate the QQ catalog track and request QRC/YRC.
-                val amllDocument = runCatching {
-                    AmlldbLyricsClient().lyrics(song.id, snapshot.preference)
-                }.onFailure {
-                    Log.w("MeloXLyricsRecognition", "AMLL lookup failed: ${it.message}")
-                }.getOrNull()?.takeIf { it.lines.isNotEmpty() }
-                val qqDocument = runCatching {
-                    val qq = registry.require(MusicSource.QQMusic)
-                    val search = qq as? SearchCapability
-                    val lyrics = qq as? LyricsCapability
-                    if (search == null || lyrics == null) return@runCatching null
-                    val query = listOf(song.name, song.artists)
-                        .filter(String::isNotBlank)
-                        .joinToString(" ")
-                    val requestedTitle = BilibiliLyricAlignment.normalize(song.name)
-                    val requestedArtist = BilibiliLyricAlignment.normalize(song.artists)
-                    val matches = search.searchSongs(query, 1, 12).items
-                    val track = matches.firstOrNull { candidate ->
-                        val title = BilibiliLyricAlignment.normalize(candidate.title)
-                        val artist = BilibiliLyricAlignment.normalize(candidate.artistText)
-                        requestedTitle.isNotBlank() &&
-                            (title.contains(requestedTitle) || requestedTitle.contains(title)) &&
-                            (requestedArtist.isBlank() ||
-                                artist.contains(requestedArtist) ||
-                                requestedArtist.contains(artist))
-                    } ?: matches.firstOrNull { candidate ->
-                        BilibiliLyricAlignment.normalize(candidate.title)
-                            .contains(requestedTitle)
-                    }
-                    Log.i(
-                        "MeloXLyricsRecognition",
-                        "QQ query=$query matches=${matches.size} selected=${track?.title}",
-                    )
-                    track?.let { lyrics.lyrics(it).takeIf { doc -> doc.lines.isNotEmpty() } }
-                }.onFailure {
-                    Log.w("MeloXLyricsRecognition", "QQ lookup failed: ${it.message}")
-                }.getOrNull()
-                val neteaseDocument = runCatching {
-                    val provider = registry.require(MusicSource.Netease)
-                    (provider as? LyricsCapability)?.lyrics(song.asNeteaseTrack())
-                }.onFailure {
-                    Log.w("MeloXLyricsRecognition", "NetEase lookup failed: ${it.message}")
-                }.getOrNull()?.takeIf { it.lines.isNotEmpty() }
-                val selectedDocument = selectAutomaticLyrics(
-                    listOfNotNull(
-                        amllDocument?.let { AutoLyricCandidate(0, it) },
-                        qqDocument?.let { AutoLyricCandidate(1, it) },
-                        neteaseDocument?.let { AutoLyricCandidate(2, it) },
+                LyricRecognitionStore.write(
+                    appContext,
+                    snapshot.resourceId,
+                    RecognizedLyricTrack(
+                        neteaseId = song.id,
+                        title = song.name,
+                        artists = song.artists,
+                        album = song.album,
+                        artworkUrl = song.artworkUrl,
+                        durationMs = song.durationMs,
                     ),
-                ) ?: return@launch
-                Log.i(
-                    "MeloXLyricsRecognition",
-                    "sources amll=${amllDocument?.lines?.size ?: 0} " +
-                        "qq=${qqDocument?.lines?.size ?: 0} " +
-                        "netease=${neteaseDocument?.lines?.size ?: 0} " +
-                        "selected=${selectedDocument.source.name}",
                 )
-                val document = selectedDocument
+                val document = resolveRecognizedLyrics(appContext, song, snapshot)
+                    ?: return@launch
                 val processed = LyricTimelineProcessor.process(document)
                     .withoutPlaceholderLyrics()
                     .copy(recognitionFallback = true)
@@ -560,6 +541,70 @@ internal object MeloXProviderLyricsLoader {
         }.getOrNull() ?: return null
         Log.i("MeloXLyricsRecognition", "audio file=${downloaded.length()} bytes")
         return android.net.Uri.fromFile(downloaded) to downloaded
+    }
+
+    private suspend fun resolveRecognizedLyrics(
+        appContext: Context,
+        song: SearchSong,
+        snapshot: LyricTrackSnapshot,
+    ): LyricsDocument? {
+        val registry = MeloXMusicProviders.create(appContext)
+        val amllDocument = runCatching {
+            AmlldbLyricsClient().lyrics(song.id, snapshot.preference)
+        }.onFailure {
+            Log.w("MeloXLyricsRecognition", "AMLL lookup failed: ${it.message}")
+        }.getOrNull()?.takeIf { it.lines.isNotEmpty() }
+        val qqDocument = runCatching {
+            val qq = registry.require(MusicSource.QQMusic)
+            val search = qq as? SearchCapability
+            val lyrics = qq as? LyricsCapability
+            if (search == null || lyrics == null) return@runCatching null
+            val query = listOf(song.name, song.artists)
+                .filter(String::isNotBlank)
+                .joinToString(" ")
+            val requestedTitle = BilibiliLyricAlignment.normalize(song.name)
+            val requestedArtist = BilibiliLyricAlignment.normalize(song.artists)
+            val matches = search.searchSongs(query, 1, 12).items
+            val track = matches.firstOrNull { candidate ->
+                val title = BilibiliLyricAlignment.normalize(candidate.title)
+                val artist = BilibiliLyricAlignment.normalize(candidate.artistText)
+                requestedTitle.isNotBlank() &&
+                    (title.contains(requestedTitle) || requestedTitle.contains(title)) &&
+                    (requestedArtist.isBlank() ||
+                        artist.contains(requestedArtist) ||
+                        requestedArtist.contains(artist))
+            } ?: matches.firstOrNull { candidate ->
+                BilibiliLyricAlignment.normalize(candidate.title).contains(requestedTitle)
+            }
+            Log.i(
+                "MeloXLyricsRecognition",
+                "QQ query=$query matches=${matches.size} selected=${track?.title}",
+            )
+            track?.let { lyrics.lyrics(it).takeIf { doc -> doc.lines.isNotEmpty() } }
+        }.onFailure {
+            Log.w("MeloXLyricsRecognition", "QQ lookup failed: ${it.message}")
+        }.getOrNull()
+        val neteaseDocument = runCatching {
+            val provider = registry.require(MusicSource.Netease)
+            (provider as? LyricsCapability)?.lyrics(song.asNeteaseTrack())
+        }.onFailure {
+            Log.w("MeloXLyricsRecognition", "NetEase lookup failed: ${it.message}")
+        }.getOrNull()?.takeIf { it.lines.isNotEmpty() }
+        val selectedDocument = selectAutomaticLyrics(
+            listOfNotNull(
+                amllDocument?.let { AutoLyricCandidate(0, it) },
+                qqDocument?.let { AutoLyricCandidate(1, it) },
+                neteaseDocument?.let { AutoLyricCandidate(2, it) },
+            ),
+        ) ?: return null
+        Log.i(
+            "MeloXLyricsRecognition",
+            "sources amll=${amllDocument?.lines?.size ?: 0} " +
+                "qq=${qqDocument?.lines?.size ?: 0} " +
+                "netease=${neteaseDocument?.lines?.size ?: 0} " +
+                "selected=${selectedDocument.source.name}",
+        )
+        return selectedDocument
     }
 
     private fun SearchSong.asNeteaseTrack(): MusicTrack = MusicTrack(
