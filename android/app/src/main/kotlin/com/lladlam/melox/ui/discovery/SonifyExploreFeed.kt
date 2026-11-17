@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -155,14 +156,17 @@ private fun ExploreCategorySection(
     when {
         !items.isNullOrEmpty() -> {
             val pager = rememberPagerState(pageCount = { items.size })
+            val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+            val factor = if (category == "推荐歌单") .90f else .75f
+            val cardWidth = ((screenWidth - 40.dp) * factor).coerceAtLeast(120.dp)
             HorizontalPager(
                 state = pager,
-                pageSize = PageSize.Fill,
+                pageSize = PageSize.Fixed(cardWidth),
                 contentPadding = PaddingValues(horizontal = 20.dp),
                 pageSpacing = 12.dp,
                 key = { items[it].id },
             ) { page ->
-                ExploreHeroCard(items[page], category, onCollection)
+                ExploreHeroCard(items[page], category, cardWidth, onCollection)
             }
         }
         loading -> Box(
@@ -177,12 +181,13 @@ private fun ExploreCategorySection(
 private fun ExploreHeroCard(
     playlist: NeteasePlaylistSummary,
     category: String,
+    cardWidth: androidx.compose.ui.unit.Dp,
     onCollection: (DiscoveryCollection) -> Unit,
 ) {
     Box(
         Modifier
-            .fillMaxWidth()
-            .height(356.dp)
+            .width(cardWidth)
+            .aspectRatio(300f / 356f)
             .clip(RoundedCornerShape(16.dp))
             .clickable { onCollection(DiscoveryCollection.Netease(playlist)) },
     ) {
@@ -218,13 +223,6 @@ private fun ExploreHeroCard(
                 lineHeight = 25.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                playlist.creatorName.ifBlank { "Apple Music" },
-                color = Color.White.copy(alpha = .62f),
-                fontSize = 13.sp,
-                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
