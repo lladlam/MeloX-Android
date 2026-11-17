@@ -7,11 +7,9 @@
  */
 package com.lladlam.melox.ui.sonify
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.core.music.model.MusicTrack
+import com.lladlam.melox.core.recommendation.MeloXHomeRecommendationPool
 
 internal sealed interface SonifyHomeSection {
     data class Recommend(
@@ -59,18 +57,9 @@ internal data class SonifyHomePodcast(
  * this process-scoped store for the same behaviour.
  */
 internal object SonifyHomeRecommendationStore {
-    var tracks by mutableStateOf<List<MusicTrack>>(emptyList())
-        private set
-    private var sourceKey: String? = null
+    val tracks: List<MusicTrack> get() = MeloXHomeRecommendationPool.tracks
 
     fun ensure(source: String, candidates: List<MusicTrack>) {
-        val unique = candidates.distinctBy { it.id }
-        if (unique.isEmpty()) return
-        // Sonify keeps the five songs across tab switches. MeloX additionally
-        // re-rolls when the active music source changes, because the pool comes
-        // from that source's home/library data rather than a device-only scan.
-        if (sourceKey == source && tracks.isNotEmpty()) return
-        sourceKey = source
-        tracks = unique.shuffled().take(5)
+        MeloXHomeRecommendationPool.ensureSource(source, candidates)
     }
 }

@@ -21,6 +21,7 @@ import com.lladlam.melox.core.music.model.MusicTrack
 import com.lladlam.melox.core.music.model.ProviderTrackMetadata
 import com.lladlam.melox.core.network.MeloXNetworkAvailability
 import com.lladlam.melox.core.provider.applemusic.AppleMusicSdkBridge
+import com.lladlam.melox.core.recommendation.MeloXHomeRecommendationPool
 import com.lladlam.melox.core.provider.applemusic.AppleMusicSessionStore
 import java.util.concurrent.Executor
 
@@ -33,6 +34,7 @@ object ProviderPlaybackCommands {
         startPositionMs: Long = C.TIME_UNSET,
         onFailure: ((Throwable) -> Unit)? = null,
     ) {
+        MeloXHomeRecommendationPool.appendTracks(tracks)
         val appContext = context.applicationContext
         if (tracks.isEmpty()) {
             MeloXPlaybackNotice.show(appContext, MeloXPlaybackNotice.EMPTY_QUEUE)

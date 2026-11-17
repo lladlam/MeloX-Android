@@ -19,6 +19,7 @@ import com.lladlam.melox.core.audio.MusicQualityRuntime
 import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.core.network.MeloXNetworkAvailability
+import com.lladlam.melox.core.recommendation.MeloXHomeRecommendationPool
 import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
 import kotlinx.coroutines.launch
 import java.io.IOException
@@ -66,6 +67,10 @@ object PlaybackCommands {
         onFailure: ((Throwable) -> Unit)? = null,
         playlistId: Long? = null,
     ) {
+        // Every queue played from the app feeds the Sonify-style recommendation
+        // pool. A playlist/album play or shuffle therefore contributes all of
+        // its songs, not only the selected row.
+        MeloXHomeRecommendationPool.appendSongs(songs)
         val appContext = context.applicationContext
         val selectedProviderTrack = songs.firstOrNull { it.id == selectedSongId }?.providerTrack
         if (selectedProviderTrack != null) {
