@@ -1331,7 +1331,13 @@ fun MeloXApp(
                 val chromeSplit = meloXUsesListDetail(constraints, MeloXSettingsRuntime.splitScreenEnabled)
                 // ⚠ 闸门也必须用**同一个** `chromeSplit`（不是 `listDetailMode`）：否则转屏那
                 //   几帧里底栏会被整体卸载再重挂，等于凭空闪一下。
-                if (detailPaneState.pages.isEmpty() || chromeSplit) CompositionLocalProvider(
+                val pageKeepsChrome = detailPaneState.pages.isNotEmpty() &&
+                    detailPaneState.pages.all { page ->
+                        val name = page.intent.component?.className
+                        name == "com.lladlam.melox.ui.collection.MeloXCollectionDetailActivity" ||
+                            name == "com.lladlam.melox.ui.song.MeloXSongWikiActivity"
+                    }
+                if (detailPaneState.pages.isEmpty() || chromeSplit || pageKeepsChrome) CompositionLocalProvider(
                 // ⚠ 底栏玻璃**恒**采样 bottomChromeBackdrop（底栏 / 迷你栏 / 搜索键 / 水珠统一）。
                 //   它的录制节点在**外层 recede Box** 上（`graphicsLayer` 之外，唯一一处平行层）：
                 //   **恒定挂载 + 每帧跟着转场进度重录**
