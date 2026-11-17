@@ -20,6 +20,7 @@ import com.lladlam.melox.core.lyrics.AmlldbLyricsClient
 import com.lladlam.melox.core.lyrics.BoundLyricSource
 import com.lladlam.melox.core.lyrics.LyricBinding
 import com.lladlam.melox.core.lyrics.LyricBindingStore
+import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.core.music.model.MusicAlbumRef
 import com.lladlam.melox.core.music.model.MusicArtistRef
 import com.lladlam.melox.core.music.model.MusicResourceId
@@ -35,6 +36,7 @@ import com.lladlam.melox.core.provider.bilibili.BilibiliPlaybackAssociation
 import com.lladlam.melox.core.provider.bilibili.BilibiliPlaybackAssociationStore
 import com.lladlam.melox.core.provider.bilibili.BilibiliProvider
 import com.lladlam.melox.core.provider.local.LocalMusicRepository
+import com.lladlam.melox.core.recognition.SongRecognitionClient
 import com.lladlam.melox.playback.LxUserPlaybackResolver
 import com.lladlam.melox.core.network.NeteaseSearchClient
 import com.lladlam.melox.playback.PlaybackTrackIdentity
@@ -46,10 +48,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.random.Random
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
 import com.lladlam.melox.ui.settings.MeloXSettingsPreferences
 
@@ -108,6 +112,8 @@ internal object MeloXProviderLyricsLoader {
     private val lock = Any()
     private val inFlight = mutableMapOf<String, Deferred<LyricsDocument>>()
     private var preloadJob: Job? = null
+    private val recognitionInFlight = mutableSetOf<String>()
+
     private val cache = object : LinkedHashMap<String, LyricsDocument>(MaxCachedDocuments, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, LyricsDocument>?): Boolean =
             size > MaxCachedDocuments
@@ -303,6 +309,11 @@ internal object MeloXProviderLyricsLoader {
             Log.w("MeloXLyricsAuto", "Lyrics load timed out for $cacheKey")
             throw java.io.IOException("歌词加载超时")
         }
+        if (document.lines.isEmpty() && onUpgrade != null &&
+            MeloXSettingsPreferences.boolean(appContext, "lyrics_recognition_fallback", false)
+        ) {
+            scheduleRecognitionFallback(appContext, cacheKey, snapshot, onUpgrade)
+        }
         if (onUpgrade != null) {
             val trackKey = "${snapshot.resourceId.sourceId.value}:${snapshot.resourceId.value}"
             // A timeline generated on an earlier visit is reused with no model
@@ -330,6 +341,90 @@ internal object MeloXProviderLyricsLoader {
      * generation. Every failure (no model, no cached audio, infeasible
      * alignment) simply leaves the line-timed document on screen.
      */
+    /**
+     * Last-resort lyrics lookup: when every provider/search returned nothing,
+     * sample two random 3-second windows while the track is playing, run the
+     * NetEase fingerprint recognizer, then use the recognized NetEase id to
+     * fetch lyrics. This is intentionally asynchronous: the empty lyric page
+     * is shown immediately, and [onUpgrade] supplies the result when ready.
+     */
+    private fun scheduleRecognitionFallback(
+        appContext: Context,
+        cacheKey: String,
+        snapshot: LyricTrackSnapshot,
+        onUpgrade: (LyricsDocument) -> Unit,
+    ) {
+        val trackKey = "${snapshot.resourceId.sourceId.value}:${snapshot.resourceId.value}"
+        synchronized(lock) {
+            if (!recognitionInFlight.add(trackKey)) return
+        }
+        workerScope.launch {
+            try {
+                val client = SongRecognitionClient(appContext)
+                val recognized = mutableListOf<SearchSong>()
+                try {
+                    repeat(2) { attempt ->
+                        if (com.lladlam.melox.core.autosync.AutoSyncPlaybackBridge.isCurrentTrack?.invoke(trackKey) == false) {
+                            return@launch
+                        }
+                        val maxDelay = minOf(30_000L, maxOf(1_500L, snapshot.durationMs / 2L))
+                        delay(Random.nextLong(1_000L, maxDelay.coerceAtLeast(1_500L)))
+                        if (com.lladlam.melox.core.autosync.AutoSyncPlaybackBridge.isCurrentTrack?.invoke(trackKey) == false) {
+                            return@launch
+                        }
+                        runCatching { client.recognize(3) }
+                            .onFailure { Log.w("MeloXLyricsRecognition", "segment ${attempt + 1} failed: ${it.message}") }
+                            .getOrNull()
+                            ?.mapTo(recognized) { it.song }
+                    }
+                } finally {
+                    client.close()
+                }
+                val song = recognized
+                    .groupingBy { it.id }
+                    .eachCount()
+                    .maxByOrNull { it.value }
+                    ?.key
+                    ?.let { id -> recognized.firstOrNull { it.id == id } }
+                    ?: return@launch
+                Log.i(
+                    "MeloXLyricsRecognition",
+                    "recognized id=${song.id} name=${song.name} artist=${song.artists}",
+                )
+                val document = runCatching {
+                    AmlldbLyricsClient().lyrics(song.id, snapshot.preference)
+                }.getOrNull()?.takeIf { it.lines.isNotEmpty() }
+                    ?: runCatching {
+                        val provider = MeloXMusicProviders.create(appContext).require(MusicSource.Netease)
+                        (provider as? LyricsCapability)?.lyrics(song.asNeteaseTrack())
+                    }.getOrNull()?.takeIf { it.lines.isNotEmpty() }
+                    ?: return@launch
+                val processed = LyricTimelineProcessor.process(document).withoutPlaceholderLyrics()
+                if (processed.lines.isEmpty()) return@launch
+                if (com.lladlam.melox.core.autosync.AutoSyncPlaybackBridge.isCurrentTrack?.invoke(trackKey) == false) {
+                    return@launch
+                }
+                remember(cacheKey, processed)
+                Log.i(
+                    "MeloXLyricsRecognition",
+                    "applied recognized lyrics lines=${processed.lines.size}",
+                )
+                withContext(Dispatchers.Main.immediate) { onUpgrade(scripted(processed)) }
+            } finally {
+                synchronized(lock) { recognitionInFlight.remove(trackKey) }
+            }
+        }
+    }
+
+    private fun SearchSong.asNeteaseTrack(): MusicTrack = MusicTrack(
+        id = MusicResourceId(MusicSource.Netease, id.toString()),
+        title = name,
+        artists = listOf(MusicArtistRef(name = artists)),
+        album = album.takeIf(String::isNotBlank)?.let { MusicAlbumRef(name = it, artworkUrl = artworkUrl) },
+        artworkUrl = artworkUrl,
+        durationMs = durationMs.takeIf { it > 0L },
+    )
+
     private fun scheduleAutoSyncUpgrade(
         appContext: Context,
         cacheKey: String,
