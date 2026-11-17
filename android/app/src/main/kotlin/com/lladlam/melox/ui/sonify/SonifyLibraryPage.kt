@@ -35,6 +35,7 @@ data class SonifyLibraryEntry(
 fun SonifyLibraryPage(
     localEntries: List<SonifyLibraryEntry>,
     onlineEntries: List<SonifyLibraryEntry>,
+    meloxEntries: List<SonifyLibraryEntry> = emptyList(),
     onOpenSettings: () -> Unit = {},
     showLocal: Boolean = SonifySettings.ShowLocalLibrary,
 ) {
@@ -45,6 +46,23 @@ fun SonifyLibraryPage(
         ) {
             item("Library") {
                 Column(Modifier.fillMaxSize()) {
+                    if (meloxEntries.isNotEmpty()) {
+                        SonifyListHeader(
+                            content = "弥乐",
+                            horizontalPadding = 20.dp,
+                        )
+                        meloxEntries.forEachIndexed { index, entry ->
+                            SonifySmallLabelItem(
+                                icon = entry.icon,
+                                label = entry.label,
+                                subtitle = entry.subtitle,
+                                iconTint = Color(0xFFF54047),
+                                onClick = entry.onClick,
+                            )
+                            if (index != meloxEntries.lastIndex) SonifyLibraryDivider()
+                        }
+                        SonifyGroupSpacer()
+                    }
                     // Online music first; downloaded/local music is secondary.
                     SonifyListHeader(
                         content = stringResource(id = R.string.sonify_library_online),

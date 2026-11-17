@@ -2413,9 +2413,11 @@ private fun MeloXPlaylistDetailScreen(
         ?: providedSongs?.firstOrNull()?.providerTrack?.id?.sourceId
     val isProviderCollection = isProviderPlaylist || providerAlbum != null || collectionSource != null
     val canDownloadCollection = remember(collectionSourceId) {
-        collectionSourceId == null || MeloXMusicProviders.create(appContext)[collectionSourceId]?.let {
-            it is DownloadCapability && (collectionSourceId.builtIn != null || it.supports(com.lladlam.melox.core.music.provider.MusicCapability.Download))
-        } == true
+        collectionSourceId == null ||
+            collectionSourceId.builtIn == MusicSource.Netease ||
+            MeloXMusicProviders.create(appContext)[collectionSourceId]?.let {
+                it is DownloadCapability && (collectionSourceId.builtIn != null || it.supports(com.lladlam.melox.core.music.provider.MusicCapability.Download))
+            } == true
     }
     var detail by rememberRetainedPageState(initialPlaylist.id, collectionSourceId) { mutableStateOf<NeteasePlaylistDetail?>(null) }
     var detailLoaded by rememberRetainedPageState(initialPlaylist.id, collectionSourceId) { mutableStateOf(false) }

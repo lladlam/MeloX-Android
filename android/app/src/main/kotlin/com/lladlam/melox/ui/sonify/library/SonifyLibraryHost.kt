@@ -178,6 +178,11 @@ internal fun SonifyLibraryHost(
     val activeDownloadCount = downloadStore.activeDownloads.size + downloadStore.pausedDownloads.size
     val localAlbums = remember(downloadedSongs) { buildSonifyLocalAlbums(downloadedSongs) }
     val localArtists = remember(downloadedSongs) { buildSonifyLocalArtists(downloadedSongs) }
+    val unifiedFavoriteTracks = remember(MeloXUnifiedFavorites.revision, appContext) {
+        if (MeloXUnifiedFavorites.enabled(appContext)) {
+            MeloXUnifiedFavorites.tracks(appContext).map(MeloXLegacyUiBridge::track)
+        } else emptyList()
+    }
     val localPlaylistTargets: List<SonifyPlaylistTarget> = remember(downloadedPlaylists) {
         downloadedPlaylists.map { downloaded ->
             SonifyPlaylistTarget(
@@ -194,6 +199,7 @@ internal fun SonifyLibraryHost(
     }
     val playlistTargets = remember(snapshot, likedSongs) {
         buildSonifyPlaylistTargets(snapshot, likedSongs)
+            .filterNot { it.summary.isMeloXLocal }
     }
     val onlineArtistTargets: List<SonifyArtistTarget> = remember(source, providerArtists, neteaseArtists) {
         if (source == MusicSource.Netease) {
@@ -288,6 +294,31 @@ internal fun SonifyLibraryHost(
                     },
                 )
             }
+            val meloxEntries = buildList {
+                if (unifiedFavoriteTracks.isNotEmpty()) {
+                    val summary = MeloXUnifiedFavorites.playlistSummary(appContext)
+                    val target = SonifyPlaylistTarget(
+                        summary = NeteasePlaylistSummary(
+                            id = MeloXUnifiedFavorites.LegacyPlaylistId,
+                            name = "我喜欢",
+                            coverUrl = summary?.artworkUrl,
+                            trackCount = unifiedFavoriteTracks.size,
+                            creatorName = "弥乐",
+                            providerPlaylist = summary,
+                            isMeloXLocal = true,
+                        ),
+                        providedSongs = unifiedFavoriteTracks,
+                    )
+                    add(
+                        SonifyLibraryEntry(
+                            label = "我喜欢",
+                            icon = MeloXSymbol.Heart,
+                        ) {
+                            push(SonifyLibraryRoute.Playlist(target))
+                        },
+                    )
+                }
+            }
             val onlineEntries = buildList {
                 add(
                     SonifyLibraryEntry("在线艺人", icon = MeloXSymbol.Person) {
@@ -319,6 +350,7 @@ internal fun SonifyLibraryHost(
                 localEntries = localEntries,
                 onlineEntries = onlineEntries,
                 showLocal = downloadedSongs.isNotEmpty(),
+                meloxEntries = meloxEntries,
                 onOpenSettings = onOpenSettings ?: {},
             )
         }
@@ -600,7 +632,7 @@ internal fun SonifyLibraryHost(
                     playlist = route.target.summary,
                     songs = provided,
                     onBack = { pop() },
-                    source = MusicSource.Local,
+                    source = if (route.target.summary.isMeloXLocal) null else MusicSource.Local,
                 )
             } else {
                 MeloXUnifiedPlaylistDetailScreen(

@@ -64,7 +64,15 @@ fun MeloXBatchDownloadSheet(
     val providerStore = remember(context) { MeloXProviderDownloadStore.get(context) }
     val downloadableSongs = remember(songs) {
         val providers = MeloXMusicProviders.create(context)
-        songs.filter { song -> song.providerTrack?.let { track -> providers[track.id.sourceId]?.let { it is DownloadCapability && (it.sourceId.builtIn != null || it.supports(com.lladlam.melox.core.music.provider.MusicCapability.Download)) } == true } ?: true }
+        songs.filter { song ->
+            song.providerTrack?.let { track ->
+                track.id.sourceId.builtIn == com.lladlam.melox.core.music.model.MusicSource.Netease ||
+                    providers[track.id.sourceId]?.let {
+                        it is DownloadCapability &&
+                            (it.sourceId.builtIn != null || it.supports(com.lladlam.melox.core.music.provider.MusicCapability.Download))
+                    } == true
+            } ?: true
+        }
     }
     var selectedIds by remember(downloadableSongs) { mutableStateOf(downloadableSongs.map(SearchSong::id).toSet()) }
     var quality by remember { mutableStateOf(MusicQualityPreferences.read(context)) }
