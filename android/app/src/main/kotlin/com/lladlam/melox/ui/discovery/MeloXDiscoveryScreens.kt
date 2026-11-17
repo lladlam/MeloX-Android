@@ -1589,26 +1589,38 @@ private fun NeteaseExploreDataScreen() {
             if (exploreRecede.value == target) return@LaunchedEffect
             exploreRecede.animateTo(target, MeloXPageSpec)
         }
-        MeloXExploreLayout(
-            modifier = Modifier.fillMaxSize().meloXPageRecede { exploreRecede.value },
-            categories = visibleCategories,
-            category = category,
-            onCategory = { category = it },
-            collections = collections,
-            refreshing = refreshing,
-            error = error,
-            onRefresh = ::refresh,
-            showPodcast = category == "播客",
-            onCollection = {
-                onDetailSelected()
-                // 立即写入，不排队：退场途中再点卡时由 MeloXInterruptiblePage 的弹簧在途改向
-                // （继承当前位移与速度），点下去即响应 —— 这正是「退出后能立刻点击」。
-                selectedCollection = it
-                overlayCollection = it
-            },
-            selectedCollectionKey = selectedCollection?.key,
-            sharedTransitionScope = sharedScope,
-        )
+        if (MeloXSettingsRuntime.pageAppearance == MeloXPageAppearance.Sonify) {
+            SonifyExploreFeed(
+                categories = visibleCategories.filterNot { it == "播客" },
+                load = { client.explorePlaylists(it) },
+                onCollection = {
+                    onDetailSelected()
+                    selectedCollection = it
+                    overlayCollection = it
+                },
+            )
+        } else {
+            MeloXExploreLayout(
+                modifier = Modifier.fillMaxSize().meloXPageRecede { exploreRecede.value },
+                categories = visibleCategories,
+                category = category,
+                onCategory = { category = it },
+                collections = collections,
+                refreshing = refreshing,
+                error = error,
+                onRefresh = ::refresh,
+                showPodcast = category == "播客",
+                onCollection = {
+                    onDetailSelected()
+                    // 立即写入，不排队：退场途中再点卡时由 MeloXInterruptiblePage 的弹簧在途改向
+                    // （继承当前位移与速度），点下去即响应 —— 这正是「退出后能立刻点击」。
+                    selectedCollection = it
+                    overlayCollection = it
+                },
+                selectedCollectionKey = selectedCollection?.key,
+                sharedTransitionScope = sharedScope,
+            )
+        }
         HomeOverlayPage(
             shown = selectedCollection != null,
             // ⚠ 返回同步清空「隐藏集合」：卡片立即可见 ⇒ morph 落点有目标（不破坏一镜到底）。
