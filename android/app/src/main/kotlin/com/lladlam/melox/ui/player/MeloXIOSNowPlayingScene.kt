@@ -49,6 +49,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -216,6 +217,7 @@ internal fun MeloXIOSNowPlayingScene(
     closingPlayer: State<Boolean> = mutableStateOf(false),
     sharedTransitionScope: SharedTransitionScope,
 ) {
+    CompositionLocalProvider(LocalMeloXPlayerCollapse provides onDismiss) {
     val favorite = rememberTrackFavorite(state)
     // ★ 拖动进度条 → 歌词在对应进度跟随滚动（Apple Music 原版行为）。竖屏 scrubber 写入、
     //   竖屏歌词面板读取，二者同处本 composable 作用域。横屏走各自分支，按需另行接入。
@@ -930,6 +932,7 @@ internal fun MeloXIOSNowPlayingScene(
             sharedTransitionScope = sharedTransitionScope,
             animatedVisibilityScope = avScope,
         )
+    }
     }
 }
 

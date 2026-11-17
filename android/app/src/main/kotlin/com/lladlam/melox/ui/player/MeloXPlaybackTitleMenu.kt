@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,7 +60,11 @@ import com.lladlam.melox.ui.glass.MeloXGlassCard
 import com.lladlam.melox.ui.glass.MeloXGlassMaterial
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.glass.MeloXSymbolIcon
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+/** Player hosts provide this so a title-menu destination can collapse first. */
+internal val LocalMeloXPlayerCollapse = compositionLocalOf<(() -> Unit)?> { null }
 
 private class MeloXTitleMenuPositionProvider(
     private val gapPx: Int,
@@ -100,6 +105,7 @@ internal fun MeloXPlaybackTitleMenu(
 ) {
     val context = LocalContext.current
     val app = context.applicationContext
+    val collapsePlayer = LocalMeloXPlayerCollapse.current
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val client = remember(app) {
@@ -214,6 +220,8 @@ internal fun MeloXPlaybackTitleMenu(
                             val target = resolvedDetail() ?: return@launch
                             val artistId = target.artistId ?: return@launch
                             expanded = false
+                            collapsePlayer?.invoke()
+                            delay(320)
                             MeloXCollectionDetailActivity.launch(
                                 context,
                                 MeloXSearchMediaItem(
@@ -235,6 +243,8 @@ internal fun MeloXPlaybackTitleMenu(
                             val target = resolvedDetail() ?: return@launch
                             val albumId = target.albumId ?: return@launch
                             expanded = false
+                            collapsePlayer?.invoke()
+                            delay(320)
                             MeloXCollectionDetailActivity.launch(
                                 context,
                                 MeloXSearchMediaItem(
