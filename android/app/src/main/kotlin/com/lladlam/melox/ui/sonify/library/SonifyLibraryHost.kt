@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.platform.LocalContext
 import com.lladlam.melox.core.account.NeteaseSessionStore
+import com.lladlam.melox.core.download.MeloXDownloadStore
 import com.lladlam.melox.core.library.NeteaseLibraryClient
 import com.lladlam.melox.core.library.NeteaseLibrarySnapshot
 import com.lladlam.melox.core.library.NeteasePlaylistSummary
@@ -170,8 +171,25 @@ internal fun SonifyLibraryHost(
     }
 
     val likedSongs = snapshot?.likedSongs.orEmpty()
-    val localAlbums = remember(likedSongs) { buildSonifyLocalAlbums(likedSongs) }
-    val localArtists = remember(likedSongs) { buildSonifyLocalArtists(likedSongs) }
+    val downloadStore = remember(appContext) { MeloXDownloadStore.get(appContext) }
+    val downloadedSongs = downloadStore.downloads.map { it.song }
+    val downloadedPlaylists = downloadStore.downloadedPlaylists
+    val localAlbums = remember(downloadedSongs) { buildSonifyLocalAlbums(downloadedSongs) }
+    val localArtists = remember(downloadedSongs) { buildSonifyLocalArtists(downloadedSongs) }
+    val localPlaylistTargets: List<SonifyPlaylistTarget> = remember(downloadedPlaylists) {
+        downloadedPlaylists.map { downloaded ->
+            SonifyPlaylistTarget(
+                summary = NeteasePlaylistSummary(
+                    id = downloaded.playlist.id,
+                    name = downloaded.playlist.name,
+                    coverUrl = downloaded.playlist.artworkUrl,
+                    trackCount = downloaded.songs.size,
+                    creatorName = "本地下载",
+                ),
+                providedSongs = downloaded.songs.map { it.song },
+            )
+        }
+    }
     val playlistTargets = remember(snapshot, likedSongs) {
         buildSonifyPlaylistTargets(snapshot, likedSongs)
     }
@@ -232,30 +250,30 @@ internal fun SonifyLibraryHost(
             when (route) {
         SonifyLibraryRoute.Hub -> {
             val localEntries = buildList {
-                add(
+                if (downloadedSongs.isNotEmpty()) add(
                     SonifyLibraryEntry("歌曲", icon = MeloXSymbol.MusicNote) {
                         push(
                             SonifyLibraryRoute.Songs(
                                 title = "歌曲",
-                                songs = likedSongs,
-                                emptyText = "还没有收藏的歌曲",
+                                songs = downloadedSongs,
+                                emptyText = "还没有下载的歌曲",
                             ),
                         )
                     },
                 )
-                add(
+                if (localAlbums.isNotEmpty()) add(
                     SonifyLibraryEntry("专辑", icon = MeloXSymbol.MusicNote) {
                         push(SonifyLibraryRoute.LocalAlbums)
                     },
                 )
-                add(
+                if (localArtists.isNotEmpty()) add(
                     SonifyLibraryEntry("艺人", icon = MeloXSymbol.Person) {
                         push(SonifyLibraryRoute.LocalArtists)
                     },
                 )
-                add(
+                if (localPlaylistTargets.isNotEmpty()) add(
                     SonifyLibraryEntry("播放列表", icon = MeloXSymbol.List) {
-                        push(SonifyLibraryRoute.Playlists)
+                        push(SonifyLibraryRoute.LocalPlaylists)
                     },
                 )
             }
@@ -289,9 +307,7 @@ internal fun SonifyLibraryHost(
             SonifyLibraryPage(
                 localEntries = localEntries,
                 onlineEntries = onlineEntries,
-                showLocal = source == MusicSource.Netease ||
-                    source == MusicSource.Local ||
-                    likedSongs.isNotEmpty(),
+                showLocal = downloadedSongs.isNotEmpty(),
                 onOpenSettings = onOpenSettings ?: {},
             )
         }
@@ -477,6 +493,20 @@ internal fun SonifyLibraryHost(
                 { followed -> runCatching { detailsClient.setArtistFollowed(route.target.neteaseArtistId, followed) } }
             } else {
                 null
+            },
+        )
+
+        SonifyLibraryRoute.LocalPlaylists -> SonifyPlaylistsPage(
+            playlists = localPlaylistTargets,
+            onBack = { pop() },
+            onOpenPlaylist = { target ->
+                push(
+                    SonifyLibraryRoute.Songs(
+                        title = target.summary.name,
+                        songs = target.providedSongs.orEmpty(),
+                        emptyText = "这个下载歌单还没有歌曲",
+                    ),
+                )
             },
         )
 

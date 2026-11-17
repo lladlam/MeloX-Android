@@ -118,7 +118,6 @@ fun MochiIndexBar(
             Modifier
                 .fillMaxWidth()
                 .align(Alignment.Center)
-                .systemGestureExclusion()
                 .pointerInput(Unit) {
                     awaitEachGesture {
                         val down = awaitFirstDown()

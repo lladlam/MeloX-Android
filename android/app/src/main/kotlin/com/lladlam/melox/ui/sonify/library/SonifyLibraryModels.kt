@@ -102,6 +102,7 @@ internal sealed interface SonifyLibraryRoute {
     data object OnlineArtists : SonifyLibraryRoute
     data class Artist(val target: SonifyArtistTarget) : SonifyLibraryRoute
     data object Playlists : SonifyLibraryRoute
+    data object LocalPlaylists : SonifyLibraryRoute
     data object OnlinePlaylists : SonifyLibraryRoute
     data class Playlist(val target: SonifyPlaylistTarget) : SonifyLibraryRoute
     data object FavoriteSongs : SonifyLibraryRoute

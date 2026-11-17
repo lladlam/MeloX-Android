@@ -272,7 +272,7 @@ fun Title(
                         .align(Alignment.CenterEnd)
                         .sonifyStatusBarsPadding()
                         .sonifyNavigationBarsPadding()
-                        .padding(top = 54.dp, bottom = 110.dp, end = 2.dp),
+                        .padding(top = 54.dp, bottom = 110.dp, end = 20.dp),
                 )
             }
 
@@ -381,7 +381,7 @@ fun TitleWithLazyVerticalGrid(
                         .align(Alignment.CenterEnd)
                         .sonifyStatusBarsPadding()
                         .sonifyNavigationBarsPadding()
-                        .padding(top = 54.dp, bottom = 110.dp, end = 2.dp),
+                        .padding(top = 54.dp, bottom = 110.dp, end = 20.dp),
                 )
             }
             TitleOverlayHostSlot(overlayHost)

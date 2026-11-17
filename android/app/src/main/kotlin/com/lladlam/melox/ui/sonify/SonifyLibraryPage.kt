@@ -45,7 +45,24 @@ fun SonifyLibraryPage(
         ) {
             item("Library") {
                 Column(Modifier.fillMaxSize()) {
-                    if (showLocal) {
+                    // Online music first; downloaded/local music is secondary.
+                    SonifyListHeader(
+                        content = stringResource(id = R.string.sonify_library_online),
+                        horizontalPadding = 20.dp,
+                    )
+                    onlineEntries.forEachIndexed { index, entry ->
+                        SonifySmallLabelItem(
+                            icon = entry.icon,
+                            label = entry.label,
+                            subtitle = entry.subtitle,
+                            iconTint = Color(0xFFF54047),
+                            onClick = entry.onClick,
+                        )
+                        if (index != onlineEntries.lastIndex) SonifyLibraryDivider()
+                    }
+
+                    if (showLocal && localEntries.isNotEmpty()) {
+                        SonifyGroupSpacer()
                         SonifyListHeader(
                             content = stringResource(id = R.string.sonify_library_local),
                             horizontalPadding = 20.dp,
@@ -60,22 +77,6 @@ fun SonifyLibraryPage(
                             )
                             if (index != localEntries.lastIndex) SonifyLibraryDivider()
                         }
-                    }
-
-                    SonifyGroupSpacer()
-                    SonifyListHeader(
-                        content = stringResource(id = R.string.sonify_library_online),
-                        horizontalPadding = 20.dp,
-                    )
-                    onlineEntries.forEachIndexed { index, entry ->
-                        SonifySmallLabelItem(
-                            icon = entry.icon,
-                            label = entry.label,
-                            subtitle = entry.subtitle,
-                            iconTint = Color(0xFFF54047),
-                            onClick = entry.onClick,
-                        )
-                        if (index != onlineEntries.lastIndex) SonifyLibraryDivider()
                     }
                 }
             }
