@@ -29,25 +29,19 @@ The **Windows** and **Linux** editions are in their final verification stage. If
 
 > MeloX Android is an unofficial open-source project. It is not affiliated with, partnered with, or authorized by NetEase Cloud Music, Xiaomi, Apple, or their related companies.
 
-## Current version: 0.7.4-security
+## Current version: 0.7.5
 
-`0.7.4-security` (versionCode **29**, 2026-11-15) rotates the remote-config signing key, adds the forced security-update gate, and fixes the Android 10 RuntimeShader crash, download-job crash and Bilibili JSON OOM. It also includes the resolver plugin capability and plugin settings redesign.
+`0.7.5` (versionCode **30**, 2026-11-17) completes the Apple Music appearance migration, adds the first-run appearance picker, download progress and MeloX Favorites, improves lyric recognition and fixes several layout/navigation issues.
 
-- NetEase: song detail now respects the server's 100-song cap instead of silently dropping tracks; playlist writes validate the nested result so failures are no longer silent (#119); unified favorites also write back to NetEase.
-- Lyrics: one pipeline for every source, translation decided by language (mismatches dropped), cross-source translation merge with word-timing priority, and late QQ QRC now upgrades a line-timed lyric in place.
-- Player: GPU (AGSL) flowing-light background with retained and prewarmed frames, palette reused from the Coil cache, and an optional AutoMix saturation/speed boost.
-- Network, accounts and stability: safer retries, per-source cookie isolation, LAN PIN on every reconnect, plugin and download cleanup, and several playback/notification fixes.
-- New sponsor: 清风与黑糖C (CNY 18).
+- Apple Music UI: Home, Library, Explore, Artist and library secondary pages now use the migrated appearance, liquid glass, hero palette/reflection and page transitions. Dark page backgrounds are pure black.
+- Library: online section first; Local Music only contains downloads. Added download progress with Apple-style bars, saved albums, MeloX Favorites and batch downloads.
+- Player: artist/album/wiki pages animate like settings detail pages, keep the dock/mini player visible, and collapse the player before opening. Added a volume-slider toggle and album release dates.
+- Recognition and lyrics: Bilibili title cleanup, two random audio-file fingerprint segments with 9-second retry, persisted recognition IDs, optional MediaProjection system-audio recognition, and a launcher shortcut.
+- Fixes: predictive-back fullscreen flash, tab-order alignment, default launch page, Messages crash, and Japanese copy shortened using Gramophone terminology.
 
-- Experimental dynamic plugin sources: bounded package and signature validation, explicit permission confirmation, an isolated QuickJS runtime and account-scoped storage, wired through 13 capabilities from search and playback to lyrics, favorites, downloads, authentication and third-party resolvers. This is an RC engineering preview; API 24, complete UI/OAuth/background flows and physical-device acceptance are still pending. See [the plugin docs](docs/plugin-system/README.md).
-- Background restoration now keeps the active page and loaded data across stopped-Activity destruction for home/explore collections and charts, search results and details, library subpages, podcasts, downloads, cloud drive, messages and the full-screen player. Daily recommendations and charts also stop coming back blank on the second open.
-- Home quick actions use two half-width cards per snapped page with a left gutter and a 44dp right peek; card press ripples and rectangular shadows are gone. Added a configurable playback cache limit (256MB–2GB, LRU).
-- Listen Together gains a solo mode that keeps the room online without sending local commands. QQ Music bracket lines can become backing vocals of the previous line (off by default). Fixed the blank YouTube Music sign-in WebView, Qishui QR sign-in, and completed zh-Hans/zh-Hant/ja translations.
-- An optional experimental MeloX Rear companion entry appears under Settings → Experimental; the separate YTRear-derived app is not distributed with this release and its upstream license is still pending.
-
-- Download and full notes: [GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.7.4-security)
+- Download and full notes: [GitHub Releases](https://github.com/lladlam/MeloX-Android/releases/tag/0.7.5)
 - Version history: [CHANGELOG.md](CHANGELOG.md)
-- This release: [docs/releases/0.7.4-security.md](docs/releases/0.7.4-security.md)
+- This release: [docs/releases/0.7.5.md](docs/releases/0.7.5.md)
 
 > [!WARNING]
 > Third-party music sources are imported by the user and depend on external services. Sources used for testing before release have failed because of dead endpoints, rate limits, DNS or certificate errors, or unplayable URLs. MeloX cannot guarantee that any third-party source works. If you hit a problem, open Settings → About, scroll to the bottom, export all MeloX logs, and send them to `lladlam114@gmail.com`. Logs may contain account state, song metadata, request URLs, or other private data. Review them before sending.
