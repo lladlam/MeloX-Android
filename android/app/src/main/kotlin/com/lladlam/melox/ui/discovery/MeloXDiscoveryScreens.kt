@@ -164,8 +164,14 @@ import com.lladlam.melox.ui.library.MeloXUnifiedPlaylistDetailScreen
 import com.lladlam.melox.ui.library.MeloXUnifiedSongListDetailScreen
 import com.lladlam.melox.ui.settings.MeloXPageAppearance
 import com.lladlam.melox.ui.settings.MeloXSettingsRuntime
+import com.lladlam.melox.ui.sonify.SonifyHomeCollection
 import com.lladlam.melox.ui.sonify.SonifyHomePage
+import com.lladlam.melox.ui.sonify.SonifyHomePodcast
+import com.lladlam.melox.ui.sonify.SonifyHomeRecommendationStore
+import com.lladlam.melox.ui.sonify.SonifyHomeSection
 import com.lladlam.melox.ui.sonify.toMusicTrack
+import com.lladlam.melox.ui.sonify.toSearchSong
+import com.lladlam.melox.core.provider.local.LocalProvider
 import com.lladlam.melox.ui.meloXEdgeOverscrollHaptic
 import com.lladlam.melox.ui.meloXPageRecede
 import com.lladlam.melox.ui.layout.rememberMeloXStableStatusBarHeight
@@ -1140,37 +1146,98 @@ private fun MeloXHomeLayout(
     val context = LocalContext.current
     val sonifyAppearance = MeloXSettingsRuntime.pageAppearance == MeloXPageAppearance.Sonify
     if (sonifyAppearance) {
-        val importedTracks = blocks.orEmpty()
-            .filterIsInstance<HomeBlock.Tracks>()
-            .flatMap { block -> block.values.mapNotNull { it.toMusicTrack() } }
-            .distinctBy { it.id }
-        SonifyHomePage(
-            tracks = importedTracks,
-            onPlay = { clicked, queue ->
-                val importedSongs = queue.mapIndexed { index, track ->
-                    com.lladlam.melox.core.model.SearchSong(
-                        // Provider ids such as YouTube video ids are not numeric;
-                        // give them a stable queue-local id so PlaybackCommands can
-                        // still find the selected providerTrack.
-                        id = track.id.value.toLongOrNull() ?: (index + 1).toLong(),
-                        name = track.title,
-                        artists = track.artistText,
-                        album = track.album?.name.orEmpty(),
-                        artworkUrl = track.artworkUrl,
-                        durationMs = track.durationMs ?: 0L,
-                        providerTrack = track,
-                    )
+        val homeBlocks = blocks.orEmpty()
+        val localProvider = remember(context) { LocalProvider(context) }
+        var localLibraryTracks by remember { mutableStateOf(emptyList<com.lladlam.melox.core.music.model.MusicTrack>()) }
+        LaunchedEffect(localProvider) {
+            localLibraryTracks = runCatching {
+                withContext(Dispatchers.IO) {
+                    localProvider.aggregationTracks(page = 1, pageSize = 1000).items
                 }
-                val clickedIndex = queue.indexOfFirst { it.id == clicked.id }.coerceAtLeast(0)
-                val selected = importedSongs.getOrNull(clickedIndex)?.id
-                    ?: importedSongs.firstOrNull()?.id ?: 0L
-                com.lladlam.melox.playback.PlaybackCommands.playQueue(
-                    context,
-                    importedSongs,
-                    selected,
+            }.getOrDefault(emptyList())
+            SonifyHomeRecommendationStore.ensure(localLibraryTracks)
+        }
+        val recommendedTracks = SonifyHomeRecommendationStore.tracks
+        val sections = buildList {
+            if (recommendedTracks.isNotEmpty()) {
+                val queue = recommendedTracks.map { DiscoveryTrack.Provider(it) }
+                add(
+                    SonifyHomeSection.Recommend(
+                        title = "为你推荐",
+                        subtitle = "来自你的资料库",
+                        tracks = recommendedTracks,
+                        onPlay = { clicked, _ ->
+                            queue.firstOrNull { it.track.id == clicked.id }?.let { selected ->
+                                playDiscoveryQueue(context, queue, selected)
+                            }
+                        },
+                    ),
                 )
-            },
-            onOpenSettings = onOpenSettings,
+            }
+            homeBlocks.forEach { block ->
+                when (block) {
+                    is HomeBlock.Tracks -> if (block.values.isNotEmpty()) {
+                        add(
+                            SonifyHomeSection.Songs(
+                                title = block.title,
+                                songs = block.values.map { it.toSearchSong() },
+                                onPlay = { index ->
+                                    block.values.getOrNull(index)?.let { track ->
+                                        playDiscoveryQueue(context, block.values, track)
+                                    }
+                                },
+                            ),
+                        )
+                    }
+
+                    is HomeBlock.Collections -> if (block.values.isNotEmpty()) {
+                        add(
+                            SonifyHomeSection.Collections(
+                                title = block.title,
+                                items = block.values.map { collection ->
+                                    SonifyHomeCollection(
+                                        key = collection.key,
+                                        title = collection.title,
+                                        subtitle = collection.creatorName
+                                            .takeIf { it.isNotBlank() }
+                                            ?: collection.description.orEmpty(),
+                                        artworkUrl = collection.artworkUrl,
+                                        onClick = { onCollection(collection) },
+                                    )
+                                },
+                            ),
+                        )
+                    }
+
+                    is HomeBlock.Podcasts -> if (block.values.isNotEmpty()) {
+                        add(
+                            SonifyHomeSection.Podcasts(
+                                title = "播客",
+                                items = block.values.map { podcast ->
+                                    SonifyHomePodcast(
+                                        key = "podcast-${podcast.programId ?: podcast.id}",
+                                        title = podcast.name,
+                                        artworkUrl = podcast.artworkUrl,
+                                        onClick = {
+                                            podcast.programId?.let {
+                                                MeloXCollectionDetailActivity.launchPodcastProgram(context, it)
+                                            } ?: MeloXCollectionDetailActivity.launchPodcast(context, podcast.id)
+                                        },
+                                    )
+                                },
+                            ),
+                        )
+                    }
+
+                    HomeBlock.QuickActions -> Unit
+                }
+            }
+        }
+        SonifyHomePage(
+            sections = sections,
+            refreshing = refreshing,
+            onRefresh = onRefresh,
+            accountContent = { account?.let { HomeAccountButton(it) } },
         )
         return
     }

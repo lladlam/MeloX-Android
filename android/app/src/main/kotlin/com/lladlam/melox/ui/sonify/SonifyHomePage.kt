@@ -25,23 +25,38 @@ import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.PorterDuff
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.PagerSnapDistance
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,6 +67,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
@@ -77,7 +93,10 @@ import coil3.request.bitmapConfig
 import coil3.request.crossfade
 import coil3.toBitmap
 import com.lladlam.melox.R
+import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.core.music.model.MusicTrack
+import com.lladlam.melox.ui.glass.MeloXSymbol
+import com.lladlam.melox.ui.glass.MeloXSymbolIcon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -89,37 +108,207 @@ private val recommendMaskCache = ConcurrentHashMap<String, Bitmap>()
 /**
  * MeloX entry point for the Sonify Home appearance.
  *
- * @param tracks candidate recommendations. The first five unique tracks are
- * shown in the pager; MeloX's home data pipeline supplies them.
- * @param onPlay invoked with the selected track and the visible queue.
+ * This is the migrated Sonify Discovery.kt feed structure: a large title,
+ * a recommendation pager followed by every MeloX HomeBlock in its configured
+ * order, rendered as Sonify song columns, card rails and podcast rails.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SonifyHomePage(
-    tracks: List<MusicTrack>,
-    onPlay: (MusicTrack, List<MusicTrack>) -> Unit,
-    onOpenSettings: () -> Unit = {},
+internal fun SonifyHomePage(
+    sections: List<SonifyHomeSection>,
+    refreshing: Boolean = false,
+    onRefresh: (() -> Unit)? = null,
+    accountContent: @Composable () -> Unit = {},
 ) {
-    val recommended = remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
-    LaunchedEffect(tracks) {
-        if (tracks.isEmpty()) return@LaunchedEffect
-        val current = recommended.value
-        if (current.isNotEmpty() && current.all { candidate -> tracks.any { it.id == candidate.id } }) return@LaunchedEffect
-        recommended.value = tracks.distinctBy { it.id }.shuffled().take(5)
+    val listState = rememberLazyListState()
+    val content: @Composable () -> Unit = {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize().statusBarsPadding(),
+            contentPadding = PaddingValues(bottom = 146.dp),
+        ) {
+            item("HomeHeader") {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "主页",
+                        fontSize = 40.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-1.2).sp,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    accountContent()
+                }
+            }
+            sections.forEach { section ->
+                when (section) {
+                    is SonifyHomeSection.Recommend -> item("RecommendCard") {
+                        SonifyRecommendCard(
+                            title = section.title,
+                            subtitle = section.subtitle,
+                            musicList = section.tracks,
+                            onPlay = section.onPlay,
+                        )
+                    }
+
+                    is SonifyHomeSection.Songs -> item("Songs:${section.title}") {
+                        SonifyHomeSectionHeader(section.title)
+                        if (section.songs.isEmpty()) {
+                            Text(
+                                stringResource(R.string.melox_state_loading),
+                                Modifier.padding(horizontal = 20.dp),
+                                fontSize = 13.sp,
+                                color = LocalContentColor.current.copy(alpha = 0.45f),
+                            )
+                        } else {
+                            val pagerState = rememberPagerState(
+                                pageCount = { (section.songs.size + 3) / 4 },
+                            )
+                            SonifySongsPagerSection(
+                                songs = section.songs,
+                                pagerState = pagerState,
+                                onPlayAt = section.onPlay,
+                            )
+                        }
+                    }
+
+                    is SonifyHomeSection.Collections -> item("Collections:${section.title}") {
+                        SonifyHomeSectionHeader(section.title)
+                        SonifyCollectionRail(section.items)
+                    }
+
+                    is SonifyHomeSection.Podcasts -> item("Podcasts:${section.title}") {
+                        SonifyHomeSectionHeader(section.title)
+                        SonifyPodcastRail(section.items)
+                    }
+                }
+            }
+        }
     }
-    Title(
-        title = stringResource(id = R.string.tab_home),
-        topRightIcon = Icons.Filled.MoreVert,
-        onTopRightIcon = onOpenSettings,
-        extraTopPadding = 57.dp,
+    if (onRefresh != null) {
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = onRefresh,
+            modifier = Modifier.fillMaxSize(),
+        ) { content() }
+    } else {
+        content()
+    }
+}
+
+@Composable
+private fun SonifyHomeSectionHeader(title: String) {
+    Column(Modifier.fillMaxWidth().padding(top = 24.dp)) {
+        Text(
+            text = title,
+            fontWeight = FontWeight.Bold,
+            fontSize = 20.sp,
+            lineHeight = 20.sp,
+            modifier = Modifier.padding(horizontal = 20.dp),
+        )
+        Spacer(Modifier.height(10.dp))
+    }
+}
+
+@Composable
+private fun SonifyCollectionRail(items: List<SonifyHomeCollection>) {
+    if (items.isEmpty()) return
+    val pagerState = rememberPagerState(pageCount = { items.size })
+    HorizontalPager(
+        state = pagerState,
+        flingBehavior = PagerDefaults.flingBehavior(
+            state = pagerState,
+            pagerSnapDistance = PagerSnapDistance.atMost(Int.MAX_VALUE),
+        ),
+        pageSize = PageSize.Fixed(150.dp),
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp),
+        pageSpacing = 10.dp,
+        key = { items[it].key },
+        beyondViewportPageCount = 1,
+    ) { page ->
+        SonifyCollectionCard(items[page])
+    }
+}
+
+@Composable
+private fun SonifyCollectionCard(item: SonifyHomeCollection) {
+    Column(
+        Modifier
+            .width(150.dp)
+            .clickable(onClick = item.onClick),
     ) {
-        item("RecommendCard") {
-            SonifyRecommendCard(recommended.value, onPlay)
+        AsyncImage(
+            model = item.artworkUrl,
+            contentDescription = item.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(7.dp)),
+        )
+        Spacer(Modifier.height(5.dp))
+        Text(
+            text = item.title,
+            fontSize = 14.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.alpha(0.9f),
+        )
+        if (item.subtitle.isNotBlank()) {
+            Text(
+                text = item.subtitle,
+                fontSize = 13.sp,
+                lineHeight = 17.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.alpha(0.6f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SonifyPodcastRail(items: List<SonifyHomePodcast>) {
+    if (items.isEmpty()) return
+    LazyRow(
+        contentPadding = PaddingValues(start = 20.dp, end = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        items(items, key = { it.key }) { item ->
+            Column(
+                Modifier
+                    .width(150.dp)
+                    .clickable(onClick = item.onClick),
+            ) {
+                AsyncImage(
+                    model = item.artworkUrl,
+                    contentDescription = item.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(150.dp)
+                        .clip(RoundedCornerShape(7.dp)),
+                )
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    text = item.title,
+                    fontSize = 14.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.alpha(0.9f),
+                )
+            }
         }
     }
 }
 
 @Composable
 private fun SonifyRecommendCard(
+    title: String,
+    subtitle: String,
     musicList: List<MusicTrack>,
     onPlay: (MusicTrack, List<MusicTrack>) -> Unit,
 ) {
@@ -128,7 +317,7 @@ private fun SonifyRecommendCard(
     val scope = rememberCoroutineScope()
     Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
         Text(
-            text = stringResource(id = R.string.home_recommend_title_sonify),
+            text = title,
             fontWeight = FontWeight.Bold,
             fontSize = 20.sp,
             lineHeight = 20.sp,
@@ -143,7 +332,7 @@ private fun SonifyRecommendCard(
         ) { page ->
             val music = musicList[page]
             SonifyRecommendCardItem(
-                subTitle = stringResource(id = R.string.home_recommend_subtitle_sonify),
+                subTitle = subtitle,
                 music = music,
                 onClick = { scope.launch { onPlay(music, musicList) } },
             )
