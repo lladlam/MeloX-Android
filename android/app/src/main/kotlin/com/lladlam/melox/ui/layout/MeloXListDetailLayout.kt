@@ -415,10 +415,13 @@ private fun AdaptiveActivityPage(
             shown = false
         }
     }
+    // The content below owns predictive back; leaving onBack unset avoids the
+    // same back gesture being handled twice (which caused a full-screen flash
+    // after the page had already been dragged off-screen).
     MeloXInterruptiblePage(
         visible = shown,
         retreatProgress = { progress.value },
-        onBack = { close() },
+        onBack = null,
     ) {
         val settled = transition.currentState == transition.targetState
         LaunchedEffect(shown, settled) {
@@ -428,7 +431,9 @@ private fun AdaptiveActivityPage(
             try {
                 events.collect { progress.snapTo(it.progress) }
                 closing = true
-                progress.snapTo(0f)
+                // Do not reset progress here: the page is already following the
+                // finger. Resetting it to 0 before the exit transition was the
+                // cause of the page flashing back to fullscreen on release.
                 shown = false
             } catch (error: CancellationException) {
                 closing = false

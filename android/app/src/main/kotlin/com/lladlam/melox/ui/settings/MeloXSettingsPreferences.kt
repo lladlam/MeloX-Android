@@ -455,6 +455,8 @@ object MeloXSettingsRuntime {
         internal set
     var volumeControlMode by mutableStateOf(MeloXVolumeControlMode.System)
         internal set
+    var showVolumeSlider by mutableStateOf(true)
+        internal set
     var showPlayerQualityTip by mutableStateOf(true)
         internal set
     var systemFontScope by mutableStateOf(MeloXFontPolicy.DEFAULT_SCOPE)
@@ -760,6 +762,7 @@ object MeloXSettingsRuntime {
         volumeControlMode = runCatching {
             MeloXVolumeControlMode.valueOf(MeloXSettingsPreferences.string(app, "playback_volume_mode", MeloXVolumeControlMode.System.name))
         }.getOrDefault(MeloXVolumeControlMode.System)
+        showVolumeSlider = MeloXSettingsPreferences.boolean(app, "playback_show_volume_slider", true)
     }
 
     private fun annotationMode(
@@ -968,6 +971,7 @@ object MeloXSettingsPreferences {
             "playback_heart_mode_on_launch" -> MeloXSettingsRuntime.startsHeartModeOnLaunch = value
             "immersive_playback" -> MeloXSettingsRuntime.immersivePlaybackEnabled = value
             "player_show_quality_tip" -> MeloXSettingsRuntime.showPlayerQualityTip = value
+            "playback_show_volume_slider" -> MeloXSettingsRuntime.showVolumeSlider = value
             "library_playlist_search_hidden" -> MeloXSettingsRuntime.playlistSearchBarHidden = value
             "library_playlist_show_artwork" -> MeloXSettingsRuntime.playlistShowArtwork = value
 

@@ -1522,6 +1522,14 @@ private fun PlaybackSettings(context: android.content.Context) {
         )
         SettingsToggleRow(
             context,
+            stringResource(R.string.settings_show_volume_slider),
+            "playback_show_volume_slider",
+            true,
+            stringResource(R.string.settings_show_volume_slider_note),
+            grouped = true,
+        )
+        SettingsToggleRow(
+            context,
             stringResource(R.string.settings_allow_other_apps),
             "playback_allow_other_apps",
             false,

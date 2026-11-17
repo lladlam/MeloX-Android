@@ -1314,6 +1314,8 @@
     <string name="settings_dev_refresh">Refresh analysis status</string>
     <string name="settings_playback_quality">Playback quality</string>
     <string name="settings_volume_slider">Volume slider</string>
+    <string name="settings_show_volume_slider">Show volume slider</string>
+    <string name="settings_show_volume_slider_note">Turn off to hide the player volume bar.</string>
     <string name="settings_volume_system">System media volume</string>
     <string name="settings_volume_player">Player volume</string>
     <string name="settings_allow_other_apps">Play alongside other apps</string>

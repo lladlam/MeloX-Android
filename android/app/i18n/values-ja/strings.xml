@@ -1220,6 +1220,8 @@
     <string name="settings_dev_refresh">分析状態を更新</string>
     <string name="settings_playback_quality">再生音質</string>
     <string name="settings_volume_slider">音量スライダー</string>
+    <string name="settings_show_volume_slider">音量バーを表示</string>
+    <string name="settings_show_volume_slider_note">オフにするとプレーヤーの音量バーを隠します。</string>
     <string name="settings_volume_system">システムのメディア音量</string>
     <string name="settings_volume_player">プレーヤーの音量</string>
     <string name="settings_allow_other_apps">他のアプリと同時に再生</string>

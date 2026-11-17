@@ -1568,7 +1568,7 @@ private fun MeloXBottomControls(
         Spacer(Modifier.height(19.dp))
         MeloXTransportControls(state)
         Spacer(Modifier.height(31.dp))
-        MeloXVolumeControl(state)
+        if (MeloXSettingsRuntime.showVolumeSlider) MeloXVolumeControl(state)
         Spacer(Modifier.height(3.dp))
         MeloXPageSelector(
             state = state,
