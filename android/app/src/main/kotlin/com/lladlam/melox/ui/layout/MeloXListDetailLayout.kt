@@ -407,22 +407,29 @@ private fun AdaptiveActivityPage(
     val progress = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     var closing by remember { mutableStateOf(false) }
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { shown = true }
     val close: () -> Unit = {
         if (!closing) {
             closing = true
-            scope.launch {
-                progress.animateTo(1f, tween(160))
-                onBack()
-            }
+            shown = false
         }
     }
-    MeloXInterruptiblePage(visible = true, retreatProgress = { progress.value }) {
+    MeloXInterruptiblePage(
+        visible = shown,
+        retreatProgress = { progress.value },
+        onBack = { close() },
+    ) {
+        val settled = transition.currentState == transition.targetState
+        LaunchedEffect(shown, settled) {
+            if (!shown && settled) onBack()
+        }
         PredictiveBackHandler(enabled = isTopPage && !closing) { events ->
             try {
                 events.collect { progress.snapTo(it.progress) }
                 closing = true
-                progress.animateTo(1f, tween(160))
-                onBack()
+                progress.snapTo(0f)
+                shown = false
             } catch (error: CancellationException) {
                 closing = false
                 progress.animateTo(0f, tween(180))

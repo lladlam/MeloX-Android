@@ -1416,6 +1416,7 @@ fun MeloXIOSNowPlayingSharedHost(
                 visible = showActions,
                 onEffectiveVisibleChange = { actionsOverlayVisible = it },
                 onDismiss = { showActions = false },
+                onCollapsePlayer = onDismiss,
                 onNavigateSearch = onNavigateSearch,
                 onLocalMetadataChanged = onLocalMetadataChanged,
                 // ★ 只有**平板双栏**才把「天际歌词」挂进 ⋯ 更多：手机横屏的天际入口仍是右列

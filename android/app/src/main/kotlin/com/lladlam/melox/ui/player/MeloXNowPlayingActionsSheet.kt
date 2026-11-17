@@ -42,6 +42,7 @@ fun MeloXNowPlayingActionsSheet(
     //   右列曲名栏上那枚字形按钮，竖屏根本进不去天际）⇒ 默认 null 时两份操作浮层里
     //   这一行整个不渲染，手机 / 竖屏的 ⋯ 菜单逐像素不变。
     onShowSkyline: (() -> Unit)? = null,
+    onCollapsePlayer: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current.applicationContext
     val identity = state.mediaId?.let(PlaybackTrackIdentity::decode)
@@ -121,6 +122,7 @@ fun MeloXNowPlayingActionsSheet(
                 playbackState = state,
                 onNavigateSearch = onNavigateSearch,
                 onShowSkyline = onShowSkyline,
+                onCollapsePlayer = onCollapsePlayer,
             )
         } else if (identity != null) {
             MeloXProviderSongActionsOverlay(
