@@ -157,8 +157,9 @@ private fun ExploreCategorySection(
         !items.isNullOrEmpty() -> {
             val pager = rememberPagerState(pageCount = { items.size })
             val screenWidth = LocalConfiguration.current.screenWidthDp.dp
-            val factor = if (category == "推荐歌单") .90f else .75f
-            val cardWidth = ((screenWidth - 40.dp) * factor).coerceAtLeast(120.dp)
+            val factor = if (category == "推荐歌单") .90f else .25f
+            val cardWidth = ((screenWidth - 40.dp) * factor).coerceAtLeast(60.dp)
+            val compact = factor < .5f
             HorizontalPager(
                 state = pager,
                 pageSize = PageSize.Fixed(cardWidth),
@@ -166,7 +167,7 @@ private fun ExploreCategorySection(
                 pageSpacing = 12.dp,
                 key = { items[it].id },
             ) { page ->
-                ExploreHeroCard(items[page], category, cardWidth, onCollection)
+                ExploreHeroCard(items[page], category, cardWidth, compact, onCollection)
             }
         }
         loading -> Box(
@@ -182,6 +183,7 @@ private fun ExploreHeroCard(
     playlist: NeteasePlaylistSummary,
     category: String,
     cardWidth: androidx.compose.ui.unit.Dp,
+    compact: Boolean,
     onCollection: (DiscoveryCollection) -> Unit,
 ) {
     Box(
@@ -206,21 +208,21 @@ private fun ExploreHeroCard(
             ),
         )
         Column(
-            Modifier.align(Alignment.BottomStart).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            Modifier.align(Alignment.BottomStart).padding(if (compact) 8.dp else 16.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 1.dp else 4.dp),
         ) {
             Text(
                 category.removeSuffix("歌单").uppercase(),
                 color = Color.White.copy(alpha = .68f),
-                fontSize = 11.sp,
+                fontSize = if (compact) 7.sp else 11.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = .6.sp,
             )
             Text(
                 playlist.name,
                 color = Color.White,
-                fontSize = 21.sp,
-                lineHeight = 25.sp,
+                fontSize = if (compact) 12.sp else 21.sp,
+                lineHeight = if (compact) 14.sp else 25.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
