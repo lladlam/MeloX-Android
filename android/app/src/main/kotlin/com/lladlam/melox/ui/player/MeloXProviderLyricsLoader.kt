@@ -550,6 +550,17 @@ internal object MeloXProviderLyricsLoader {
         val neteaseTrackResult = async {
             findBilibiliLyricCatalogTrack(neteaseSearch, focusedCandidates)
         }
+        // QQ/AMLL can both miss a cover/remix (QRC errors, no AMLL record) even
+        // when a safe NetEase catalog identity was already found. Keep NetEase
+        // line-timed lyrics as a real primary fallback instead of returning
+        // "primary=none" and showing an empty lyric page.
+        val neteasePrimaryResult = async {
+            val track = neteaseTrackResult.await() ?: return@async null
+            runCatching { neteaseLyrics.lyrics(track) }
+                .onFailure { Log.w("MeloXBilibiliLyrics", "NetEase primary lyric failed: ${it.message}") }
+                .getOrNull()?.takeIf { it.lines.isNotEmpty() }
+                ?.let { BilibiliLyricSourceResult("netease", it, track) }
+        }
         val amllResult = async {
             val track = neteaseTrackResult.await() ?: return@async null
             val id = track.id.value.toLongOrNull() ?: return@async null
@@ -560,7 +571,8 @@ internal object MeloXProviderLyricsLoader {
         }
         val qq = qqResult.await()
         val amll = amllResult.await()
-        val primaryResults = listOfNotNull(amll, qq)
+        val neteasePrimary = neteasePrimaryResult.await()
+        val primaryResults = listOfNotNull(amll, qq, neteasePrimary)
         val primaryDocument = selectAutomaticLyrics(
             primaryResults.mapIndexed { priority, result -> AutoLyricCandidate(priority, result.document) },
         )

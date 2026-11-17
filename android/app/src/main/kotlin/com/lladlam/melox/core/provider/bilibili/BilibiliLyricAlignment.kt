@@ -40,9 +40,12 @@ object BilibiliLyricAlignment {
     fun extractTitleCandidates(rawTitle: String, uploader: String? = null): List<BilibiliTitleCandidate> {
         val decoded = BilibiliProvider.cleanTitle(rawTitle)
             .replace(Regex("[|｜]"), " ")
+            // Variation selectors / zero-width joiners are common in Bilibili
+            // emoji-decorated titles and must not become part of a search term.
+            .replace(Regex("[\uFE0F\u200D\u200B]"), "")
             .replace(WrapperNoise, " ")
             .replace(Regex("""\s+"""), " ")
-            .trim(' ', '-', '_', '·', ':', '：')
+            .trim(' ', '-', '_', '·', ':', '：', '!', '！', '?', '？')
         if (decoded.isBlank()) return emptyList()
         val versions = Version.findAll(decoded).map { it.value }.toList().distinct()
         fun retainVersion(value: String): String {
@@ -66,6 +69,29 @@ object BilibiliLyricAlignment {
                 ordered += BilibiliTitleCandidate(it)
                 ordered += BilibiliTitleCandidate(it, uploader?.takeIf(String::isNotBlank))
             }
+        }
+        // Bilibili cover titles frequently use "song / vocalist" or
+        // "song / vocalist / arranger". Search the leftmost segment as a plain
+        // song title; otherwise the whole slash-joined string can never pass
+        // the catalog matcher even when a perfect song result exists.
+        val slashParts = decoded.split(Regex("""\s*[/／\\]\s*"""))
+            .map { retainVersion(it) }
+            .filter(String::isNotBlank)
+        if (slashParts.size >= 2) {
+            val plainTitle = slashParts.first()
+            ordered += BilibiliTitleCandidate(plainTitle)
+            ordered += BilibiliTitleCandidate(
+                plainTitle,
+                slashParts.drop(1).joinToString(" ").takeIf(String::isNotBlank),
+            )
+        }
+        // "song feat. artist" and "song ft. artist" have the same problem.
+        val featParts = decoded.split(Regex("""(?i)\s+(?:feat\.?|ft\.?|with)\s+"""))
+            .map { retainVersion(it) }
+            .filter(String::isNotBlank)
+        if (featParts.size >= 2) {
+            ordered += BilibiliTitleCandidate(featParts.first())
+            ordered += BilibiliTitleCandidate(featParts.first(), featParts.drop(1).joinToString(" "))
         }
         val separators = listOf(" - ", " – ", " — ", "_", "－")
         separators.firstNotNullOfOrNull { separator ->
