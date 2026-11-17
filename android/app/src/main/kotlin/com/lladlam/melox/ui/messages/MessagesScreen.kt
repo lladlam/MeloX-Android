@@ -90,9 +90,10 @@ fun MessagesScreen(onBack: () -> Unit) {
         if (selectedContact != null) selectedContact = null else selectingContact = false
     }
 
-    if (selectedContact != null) {
+    val activeContact = selectedContact
+    if (activeContact != null) {
         MessagesDetailScreen(
-            contact = selectedContact!!,
+            contact = activeContact,
             onBack = { selectedContact = null },
         )
     } else if (selectingContact) {

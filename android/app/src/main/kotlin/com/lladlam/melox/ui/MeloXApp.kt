@@ -302,13 +302,9 @@ fun MeloXApp(
         selectedSourceId.builtIn?.let { selectedSource = it }
     }
     val initialTab = remember(context) {
-        runCatching {
-            AppTab.valueOf(
-                if (MeloXSettingsRuntime.rememberLastTab) {
-                    MeloXSettingsPreferences.string(context, "general_last_tab", MeloXSettingsRuntime.defaultTab)
-                } else MeloXSettingsRuntime.defaultTab,
-            )
-        }.getOrDefault(AppTab.Home)
+        // The explicitly selected launch page wins over the last-used tab.
+        runCatching { AppTab.valueOf(MeloXSettingsRuntime.defaultTab) }
+            .getOrDefault(AppTab.Home)
     }
     var selectedTab by rememberSaveable { mutableStateOf(initialTab) }
     var recognitionVisible by rememberSaveable { mutableStateOf(false) }

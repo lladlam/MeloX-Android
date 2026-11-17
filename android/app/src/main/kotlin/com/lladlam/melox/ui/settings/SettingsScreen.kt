@@ -3253,6 +3253,22 @@ private fun formatBytes(bytes: Long): String = when {
 }
 
 @Composable
+private fun SettingsOrderButton(text: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(40.dp)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        MeloXActionIcon(
+            text,
+            Modifier.size(18.dp),
+            MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else .25f),
+        )
+    }
+}
+
+@Composable
 private fun TabLayoutSettings(context: android.content.Context) {
     SettingsGlassGroup {
         SettingsToggleRow(context, stringResource(R.string.settings_tabs_home), "tab_home", true, grouped = true)
@@ -3279,14 +3295,14 @@ private fun TabLayoutSettings(context: android.content.Context) {
         order.forEachIndexed { index, page ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(when (page) { "Home" -> stringResource(R.string.settings_tabs_home); "Explore" -> stringResource(R.string.settings_tabs_explore); "Library" -> stringResource(R.string.settings_tabs_library); "Podcasts" -> stringResource(R.string.settings_tabs_podcasts); "Downloads" -> stringResource(R.string.settings_tabs_downloads); "Cloud" -> stringResource(R.string.settings_tabs_cloud); else -> stringResource(R.string.settings_tabs_settings) }, Modifier.weight(1f))
-                MeloXActionIcon("↑", Modifier.size(18.dp).clickable(enabled = index > 0) {
+                SettingsOrderButton("↑", index > 0) {
                     order = order.toMutableList().apply { add(index - 1, removeAt(index)) }
                     MeloXSettingsPreferences.setString(context, "tab_order", order.joinToString(","))
-                }.padding(10.dp), MaterialTheme.colorScheme.primary.copy(alpha = if (index > 0) 1f else .25f))
-                MeloXActionIcon("↓", Modifier.size(18.dp).clickable(enabled = index < order.lastIndex) {
+                }
+                SettingsOrderButton("↓", index < order.lastIndex) {
                     order = order.toMutableList().apply { add(index + 1, removeAt(index)) }
                     MeloXSettingsPreferences.setString(context, "tab_order", order.joinToString(","))
-                }.padding(10.dp), MaterialTheme.colorScheme.primary.copy(alpha = if (index < order.lastIndex) 1f else .25f))
+                }
             }
         }
     }
@@ -3301,14 +3317,14 @@ private fun TabLayoutSettings(context: android.content.Context) {
         homeOrder.forEachIndexed { index, section ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(when (section) { "QuickActions" -> stringResource(R.string.settings_tabs_shortcuts); "Playlists" -> stringResource(R.string.settings_tabs_playlists); else -> stringResource(R.string.settings_tabs_new_songs) }, Modifier.weight(1f))
-                MeloXActionIcon("↑", Modifier.size(18.dp).clickable(enabled = index > 0) {
+                SettingsOrderButton("↑", index > 0) {
                     homeOrder = homeOrder.toMutableList().apply { add(index - 1, removeAt(index)) }
                     MeloXSettingsPreferences.setString(context, "home_section_order", homeOrder.joinToString(","))
-                }.padding(10.dp), MaterialTheme.colorScheme.primary.copy(alpha = if (index > 0) 1f else .25f))
-                MeloXActionIcon("↓", Modifier.size(18.dp).clickable(enabled = index < homeOrder.lastIndex) {
+                }
+                SettingsOrderButton("↓", index < homeOrder.lastIndex) {
                     homeOrder = homeOrder.toMutableList().apply { add(index + 1, removeAt(index)) }
                     MeloXSettingsPreferences.setString(context, "home_section_order", homeOrder.joinToString(","))
-                }.padding(10.dp), MaterialTheme.colorScheme.primary.copy(alpha = if (index < homeOrder.lastIndex) 1f else .25f))
+                }
             }
         }
     }
@@ -3459,7 +3475,11 @@ private fun GeneralSettings(context: android.content.Context) {
                 "Library" to stringResource(R.string.settings_tabs_library),
                 "Settings" to stringResource(R.string.settings_tabs_settings),
             ),
-            onSelected = { defaultTab = it; MeloXSettingsPreferences.setString(context, "general_default_tab", it) },
+            onSelected = {
+                defaultTab = it
+                MeloXSettingsPreferences.setString(context, "general_default_tab", it)
+                MeloXSettingsPreferences.setString(context, "general_last_tab", it)
+            },
             grouped = true,
         )
         SettingsToggleRow(context, stringResource(R.string.settings_general_remember_tab), "general_remember_tab", true, grouped = true)

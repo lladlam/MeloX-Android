@@ -136,6 +136,8 @@ import com.lladlam.melox.playback.ProviderPlaybackCommands
 import com.lladlam.melox.core.model.SearchSong
 import com.lladlam.melox.core.music.model.MusicAccountSummary
 import com.lladlam.melox.core.music.model.MusicAlbumSummary
+import com.lladlam.melox.core.music.model.MusicArtistRef
+import com.lladlam.melox.core.music.model.MusicResourceId
 import com.lladlam.melox.core.music.model.MusicArtistSummary
 import com.lladlam.melox.core.music.model.MusicSource
 import com.lladlam.melox.core.music.provider.MeloXLegacyUiBridge
@@ -305,6 +307,11 @@ fun LibraryScreen(
             cookieProvider = { NeteaseSessionStore.readCookie(appContext) },
         )
     }
+    val collectionDetails = remember(appContext) {
+        NeteaseCollectionDetailsClient(
+            cookieProvider = { NeteaseSessionStore.readCookie(appContext) },
+        )
+    }
     // ★ 收藏列表左滑「取消收藏」用（2026-10-06）：真正写入网易云（t=2 取消订阅）。
     val playlistOperations = remember(appContext) {
         NeteaseMusicOperationsClient(
@@ -398,6 +405,18 @@ fun LibraryScreen(
                     val trusted = reconcileLikedSongs(fresh, cache.loadSnapshot(userId))
                     snapshot = trusted
                     cache.saveSnapshot(userId, trusted)
+                    runCatching { withContext(Dispatchers.IO) { collectionDetails.savedAlbums() } }
+                        .onSuccess { albums ->
+                            savedAlbums = albums.map { album ->
+                                MusicAlbumSummary(
+                                    id = MusicResourceId(MusicSource.Netease, album.id.toString()),
+                                    title = album.name,
+                                    artworkUrl = album.artworkUrl,
+                                    artists = listOf(MusicArtistRef(name = album.artistText)),
+                                )
+                            }
+                        }
+                        .onFailure { savedAlbums = emptyList() }
                 }
                 .onFailure { errorMessage = it.message ?: "音乐库加载失败" }
         } else {
