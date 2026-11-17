@@ -202,6 +202,7 @@ import com.lladlam.melox.ui.player.MeloXIOSMiniPlayer
 import com.lladlam.melox.ui.player.MeloXProviderLyricsLoader
 import com.lladlam.melox.ui.player.MeloXIOSNowPlayingSharedHost
 import com.lladlam.melox.ui.player.MeloXFlowingLightBackdropPrewarm
+import com.lladlam.melox.ui.settings.MeloXPageAppearance
 import com.lladlam.melox.ui.settings.MeloXPlayerBackgroundMode
 import com.lladlam.melox.ui.player.meloXPlayerRecedeSpec
 import com.lladlam.melox.ui.player.meloXPlayerTweenDurationMillis
@@ -330,6 +331,12 @@ fun MeloXApp(
     var onboardingLoginRequested by rememberSaveable { mutableStateOf(false) }
     var onboardingPage by rememberSaveable {
         mutableStateOf(if (MeloXSettingsPreferences.boolean(context, "onboarding_completed", false)) -1 else 0)
+    }
+    var appearancePickerVisible by rememberSaveable {
+        mutableStateOf(
+            MeloXSettingsPreferences.boolean(context, "onboarding_completed", false) &&
+                !MeloXSettingsPreferences.boolean(context, "appearance_picker_completed", false),
+        )
     }
     var availableUpdate by remember { mutableStateOf<MeloXRelease?>(null) }
     val forcedUpdate by MeloXForcedUpdate.release.collectAsState()
@@ -1651,6 +1658,9 @@ fun MeloXApp(
             fun finishOnboarding() {
                 MeloXSettingsPreferences.setBoolean(context, "onboarding_completed", true)
                 onboardingPage = -1
+                if (!MeloXSettingsPreferences.boolean(context, "appearance_picker_completed", false)) {
+                    appearancePickerVisible = true
+                }
                 if (onboardingLoginRequested) launchNeteaseLogin(AppTab.Settings)
             }
             when (onboardingPage) {
@@ -1711,6 +1721,18 @@ fun MeloXApp(
                 )
             }
         }
+        if (onboardingPage < 0 && !cloudControlChoicePending && forcedUpdate == null && appearancePickerVisible) {
+            fun selectAppearance(appearance: MeloXPageAppearance) {
+                MeloXSettingsPreferences.setString(context, "page_appearance", appearance.name)
+                MeloXSettingsRuntime.pageAppearance = appearance
+                MeloXSettingsPreferences.setBoolean(context, "appearance_picker_completed", true)
+                appearancePickerVisible = false
+            }
+            MeloXAppearancePickerPage(
+                onSelectMeloX = { selectAppearance(MeloXPageAppearance.MeloX) },
+                onSelectAppleMusic = { selectAppearance(MeloXPageAppearance.Sonify) },
+            )
+        }
         if (onboardingPage < 0 && cloudControlChoicePending) {
             MeloXOnboardingCloudPage(
                 onReject = {
@@ -1726,7 +1748,8 @@ fun MeloXApp(
             )
         }
         availableUpdate?.takeIf {
-            forcedUpdate == null && onboardingPage < 0 && !cloudControlChoicePending && pendingRemoteNotice == null
+            forcedUpdate == null && onboardingPage < 0 && !cloudControlChoicePending &&
+                !appearancePickerVisible && pendingRemoteNotice == null
         }?.let { release ->
             MeloXUpdateDialog(
                 release = release,
@@ -1743,7 +1766,8 @@ fun MeloXApp(
             )
         }
         forcedUpdate?.takeIf {
-            onboardingPage < 0 && !cloudControlChoicePending && pendingRemoteNotice == null
+            onboardingPage < 0 && !cloudControlChoicePending &&
+                !appearancePickerVisible && pendingRemoteNotice == null
         }?.let { release ->
             MeloXUpdateDialog(
                 release = release,
@@ -1760,7 +1784,7 @@ fun MeloXApp(
             )
         }
         pendingRemoteNotice?.takeIf {
-            onboardingPage < 0 && !cloudControlChoicePending
+            onboardingPage < 0 && !cloudControlChoicePending && !appearancePickerVisible
         }?.let { notice ->
             LaunchedEffect(notice.id, notice.frequency) {
                 MeloXRemoteNoticeStore.markShown(context, notice)

@@ -6,7 +6,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -285,6 +292,160 @@ internal fun MeloXOnboardingAccountPage(
                 ) {
                     Text(stringResource(R.string.onboarding_maybe_later), fontSize = 14.sp)
                 }
+            }
+        }
+    }
+}
+
+/** Post-onboarding appearance chooser. Can be reopened only by clearing prefs. */
+@Composable
+internal fun MeloXAppearancePickerPage(
+    onSelectMeloX: () -> Unit,
+    onSelectAppleMusic: () -> Unit,
+) {
+    BackHandler { }
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .safeDrawingPadding()
+            .padding(horizontal = 22.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            "选择你的外观",
+            color = MaterialTheme.colorScheme.onBackground,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            "之后可以在「设置 › 外观」中随时修改",
+            modifier = Modifier.padding(top = 8.dp, bottom = 22.dp),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = .56f),
+            fontSize = 14.sp,
+            textAlign = TextAlign.Center,
+        )
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            AppearanceChoiceCard(
+                label = "弥乐外观",
+                modifier = Modifier.weight(1f),
+                onClick = onSelectMeloX,
+            ) { MeloXHomePreview() }
+            AppearanceChoiceCard(
+                label = "Apple Music 外观",
+                modifier = Modifier.weight(1f),
+                onClick = onSelectAppleMusic,
+            ) { AppleMusicHomePreview() }
+        }
+        Text(
+            "点击图片即可开始使用",
+            modifier = Modifier.padding(top = 20.dp),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = .42f),
+            fontSize = 12.sp,
+        )
+    }
+}
+
+@Composable
+private fun AppearanceChoiceCard(
+    label: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+    content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit,
+) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.56f)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(22.dp))
+                .background(Color.Black)
+                .border(0.75.dp, Color.White.copy(alpha = .14f), androidx.compose.foundation.shape.RoundedCornerShape(22.dp))
+                .clickable(onClick = onClick),
+        ) { content() }
+        Text(
+            label,
+            modifier = Modifier.padding(top = 10.dp),
+            color = MaterialTheme.colorScheme.onBackground,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
+private fun MeloXHomePreview() {
+    Column(Modifier.fillMaxSize().padding(12.dp)) {
+        Text("首页", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("下午好", color = Color.White.copy(alpha = .45f), fontSize = 11.sp, modifier = Modifier.padding(top = 14.dp))
+        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            PreviewTile("每日推荐", listOf(Color(0xFFFF4D7D), Color(0xFFFF7A5C)), Modifier.weight(1f))
+            PreviewTile("热歌榜", listOf(Color(0xFFFFA23D), Color(0xFFFF7A3D)), Modifier.weight(1f))
+        }
+        Text("每日推荐", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp))
+        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            repeat(2) { index ->
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .height(86.dp)
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(7.dp))
+                        .background(if (index == 0) Color(0xFF6B4B9A) else Color(0xFF225577)),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewTile(title: String, colors: List<Color>, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .height(64.dp)
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .background(androidx.compose.ui.graphics.Brush.linearGradient(colors)),
+        contentAlignment = Alignment.BottomStart,
+    ) {
+        Text(title, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(7.dp))
+    }
+}
+
+@Composable
+private fun AppleMusicHomePreview() {
+    Column(Modifier.fillMaxSize().padding(12.dp)) {
+        Text("主页", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("为你推荐", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+        Text("来自网易云音乐", color = Color.White.copy(alpha = .45f), fontSize = 9.sp)
+        Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(
+                Modifier
+                    .weight(1.35f)
+                    .height(150.dp)
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                    .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFF3A2B45), Color(0xFF1E1A24)))),
+            )
+            Box(
+                Modifier
+                    .weight(.65f)
+                    .height(150.dp)
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                    .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFF254C77), Color(0xFF10243D)))),
+            )
+        }
+        Text("每日推荐", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 18.dp))
+        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            repeat(3) { index ->
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .height(58.dp)
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(7.dp))
+                        .background(if (index == 0) Color(0xFF7A4D77) else if (index == 1) Color(0xFF3E6C8A) else Color(0xFF6B5A3E)),
+                )
             }
         }
     }
