@@ -174,6 +174,7 @@ internal fun SonifyLibraryHost(
     val downloadStore = remember(appContext) { MeloXDownloadStore.get(appContext) }
     val downloadedSongs = downloadStore.downloads.map { it.song }
     val downloadedPlaylists = downloadStore.downloadedPlaylists
+    val activeDownloadCount = downloadStore.activeDownloads.size + downloadStore.pausedDownloads.size
     val localAlbums = remember(downloadedSongs) { buildSonifyLocalAlbums(downloadedSongs) }
     val localArtists = remember(downloadedSongs) { buildSonifyLocalArtists(downloadedSongs) }
     val localPlaylistTargets: List<SonifyPlaylistTarget> = remember(downloadedPlaylists) {
@@ -274,6 +275,15 @@ internal fun SonifyLibraryHost(
                 if (localPlaylistTargets.isNotEmpty()) add(
                     SonifyLibraryEntry("播放列表", icon = MeloXSymbol.List) {
                         push(SonifyLibraryRoute.LocalPlaylists)
+                    },
+                )
+                if (activeDownloadCount > 0) add(
+                    SonifyLibraryEntry(
+                        label = "下载",
+                        subtitle = "$activeDownloadCount 首正在下载",
+                        icon = MeloXSymbol.Download,
+                    ) {
+                        push(SonifyLibraryRoute.DownloadProgress)
                     },
                 )
             }
@@ -494,6 +504,11 @@ internal fun SonifyLibraryHost(
             } else {
                 null
             },
+        )
+
+        SonifyLibraryRoute.DownloadProgress -> SonifyDownloadProgressPage(
+            downloads = downloadStore,
+            onBack = { pop() },
         )
 
         SonifyLibraryRoute.LocalPlaylists -> SonifyPlaylistsPage(
