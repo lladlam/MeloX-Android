@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.lladlam.melox.R
@@ -58,6 +59,7 @@ fun SonifyLibraryPage(
                                 icon = entry.icon,
                                 label = entry.label,
                                 subtitle = entry.subtitle,
+                                iconTint = Color(0xFFF54047),
                                 onClick = entry.onClick,
                             )
                             if (index != localEntries.lastIndex) SonifyLibraryDivider()
@@ -74,6 +76,7 @@ fun SonifyLibraryPage(
                             icon = entry.icon,
                             label = entry.label,
                             subtitle = entry.subtitle,
+                            iconTint = Color(0xFFF54047),
                             onClick = entry.onClick,
                         )
                         if (index != onlineEntries.lastIndex) SonifyLibraryDivider()

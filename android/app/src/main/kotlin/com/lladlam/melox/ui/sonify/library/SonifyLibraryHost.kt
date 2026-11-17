@@ -16,9 +16,12 @@
 package com.lladlam.melox.ui.sonify.library
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -27,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.platform.LocalContext
 import com.lladlam.melox.core.account.NeteaseSessionStore
 import com.lladlam.melox.core.library.NeteaseLibraryClient
@@ -49,6 +53,9 @@ import com.lladlam.melox.core.music.provider.loadAllPlaylistTracks
 import com.lladlam.melox.core.network.NeteaseCollectionDetailsClient
 import com.lladlam.melox.core.network.NeteaseMusicOperationsClient
 import com.lladlam.melox.playback.PlaybackCommands
+import com.lladlam.melox.ui.animation.meloXPageEnter
+import com.lladlam.melox.ui.animation.meloXPageExit
+import com.lladlam.melox.ui.glass.LocalMeloXIconScale
 import com.lladlam.melox.ui.glass.MeloXSymbol
 import com.lladlam.melox.ui.player.MeloXSongActionsOverlay
 import com.lladlam.melox.ui.sonify.SonifyLibraryEntry
@@ -90,11 +97,16 @@ internal fun SonifyLibraryHost(
     val playlistSync = provider as? PlaylistSyncCapability
 
     val stack = remember { mutableStateListOf<SonifyLibraryRoute>(SonifyLibraryRoute.Hub) }
+    var navForward by remember { mutableStateOf(true) }
     fun push(route: SonifyLibraryRoute) {
+        navForward = true
         stack.add(route)
     }
     fun pop() {
-        if (stack.size > 1) stack.removeAt(stack.lastIndex)
+        if (stack.size > 1) {
+            navForward = false
+            stack.removeAt(stack.lastIndex)
+        }
     }
     BackHandler(enabled = stack.size > 1) { pop() }
 
@@ -199,7 +211,24 @@ internal fun SonifyLibraryHost(
         }
     }
 
-    when (current) {
+    val pageBackground = MaterialTheme.colorScheme.background
+    AnimatedContent(
+        targetState = current,
+        transitionSpec = {
+            if (navForward) {
+                (meloXPageEnter(veilColor = pageBackground) togetherWith
+                    meloXPageExit(toRight = false)).using(null)
+            } else {
+                (meloXPageEnter(fromRight = false, veilColor = pageBackground) togetherWith
+                    meloXPageExit(toRight = true)).using(null)
+            }
+        },
+        label = "SonifyLibraryPage",
+    ) { route ->
+        CompositionLocalProvider(
+            LocalMeloXIconScale provides if (route == SonifyLibraryRoute.Hub) 1f else 0.85f,
+        ) {
+            when (route) {
         SonifyLibraryRoute.Hub -> {
             val localEntries = buildList {
                 add(
@@ -267,11 +296,11 @@ internal fun SonifyLibraryHost(
         }
 
         is SonifyLibraryRoute.Songs -> SonifyNormalMusicPage(
-            title = current.title,
-            songs = current.songs,
-            emptyText = current.emptyText,
-            loading = loading && current.songs.isEmpty(),
-            error = errorMessage.takeIf { current.songs.isEmpty() },
+            title = route.title,
+            songs = route.songs,
+            emptyText = route.emptyText,
+            loading = loading && route.songs.isEmpty(),
+            error = errorMessage.takeIf { route.songs.isEmpty() },
             onBack = { pop() },
             onPlay = { queue, index ->
                 val song = queue.getOrNull(index) ?: return@SonifyNormalMusicPage
@@ -360,7 +389,7 @@ internal fun SonifyLibraryHost(
         )
 
         is SonifyLibraryRoute.Album -> SonifyAlbumDetailPage(
-            target = current.target,
+            target = route.target,
             onBack = { pop() },
             onPlay = { queue, index ->
                 val song = queue.getOrNull(index) ?: return@SonifyAlbumDetailPage
@@ -372,13 +401,13 @@ internal fun SonifyLibraryHost(
             },
             loadAlbum = {
                 loadSonifyAlbum(
-                    target = current.target,
+                    target = route.target,
                     detailsClient = detailsClient,
                     albumCapability = albumCapability,
                 )
             },
-            setSubscribed = if (source == MusicSource.Netease && current.target.neteaseAlbumId != null) {
-                { subscribed -> runCatching { detailsClient.setAlbumSubscribed(current.target.neteaseAlbumId, subscribed) } }
+            setSubscribed = if (source == MusicSource.Netease && route.target.neteaseAlbumId != null) {
+                { subscribed -> runCatching { detailsClient.setAlbumSubscribed(route.target.neteaseAlbumId, subscribed) } }
             } else {
                 null
             },
@@ -425,7 +454,7 @@ internal fun SonifyLibraryHost(
         )
 
         is SonifyLibraryRoute.Artist -> SonifyArtistPage(
-            target = current.target,
+            target = route.target,
             onBack = { pop() },
             onPlay = { queue, index ->
                 val song = queue.getOrNull(index) ?: return@SonifyArtistPage
@@ -438,13 +467,13 @@ internal fun SonifyLibraryHost(
             onOpenAlbum = { album -> push(SonifyLibraryRoute.Album(album.asSonifyTarget())) },
             loadArtist = {
                 loadSonifyArtist(
-                    target = current.target,
+                    target = route.target,
                     detailsClient = detailsClient,
                     artistCapability = artistCapability,
                 )
             },
-            setFollowed = if (source == MusicSource.Netease && current.target.neteaseArtistId != null) {
-                { followed -> runCatching { detailsClient.setArtistFollowed(current.target.neteaseArtistId, followed) } }
+            setFollowed = if (source == MusicSource.Netease && route.target.neteaseArtistId != null) {
+                { followed -> runCatching { detailsClient.setArtistFollowed(route.target.neteaseArtistId, followed) } }
             } else {
                 null
             },
@@ -532,7 +561,7 @@ internal fun SonifyLibraryHost(
         )
 
         is SonifyLibraryRoute.Playlist -> SonifyOnlinePlaylistDetailPage(
-            target = current.target,
+            target = route.target,
             onBack = { pop() },
             onPlay = { queue, index ->
                 val song = queue.getOrNull(index) ?: return@SonifyOnlinePlaylistDetailPage
@@ -540,8 +569,8 @@ internal fun SonifyLibraryHost(
                     context = context,
                     songs = queue,
                     selectedSongId = song.id,
-                    playlistId = current.target.summary.id.takeIf {
-                        !current.target.summary.isMeloXLocal && it > 0 && source == MusicSource.Netease
+                    playlistId = route.target.summary.id.takeIf {
+                        !route.target.summary.isMeloXLocal && it > 0 && source == MusicSource.Netease
                     },
                 )
             },
@@ -551,7 +580,7 @@ internal fun SonifyLibraryHost(
             },
             loadPlaylist = {
                 loadSonifyPlaylist(
-                    target = current.target,
+                    target = route.target,
                     libraryClient = libraryClient,
                     playlistCapability = playlistCapability,
                     likedSongs = likedSongs,
@@ -560,14 +589,14 @@ internal fun SonifyLibraryHost(
             },
             setSubscribed = if (
                 source == MusicSource.Netease &&
-                !current.target.isLikedSongs &&
-                !current.target.summary.isMeloXLocal &&
-                current.target.summary.id > 0 &&
-                current.target.summary.creatorUserId != session.profile?.userId
+                !route.target.isLikedSongs &&
+                !route.target.summary.isMeloXLocal &&
+                route.target.summary.id > 0 &&
+                route.target.summary.creatorUserId != session.profile?.userId
             ) {
                 { subscribed ->
                     runCatching {
-                        operationsClient.setPlaylistSubscribed(current.target.summary.id, subscribed)
+                        operationsClient.setPlaylistSubscribed(route.target.summary.id, subscribed)
                         onRefresh()
                     }
                 }
@@ -593,6 +622,8 @@ internal fun SonifyLibraryHost(
             error = errorMessage.takeIf { likedSongs.isEmpty() },
             onRetry = onRefresh,
         )
+                }
+        }
     }
 
     selectedSong?.let { song ->

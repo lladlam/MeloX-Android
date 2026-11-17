@@ -1,6 +1,7 @@
 package com.lladlam.melox.ui.glass
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.animation.AnimatedContent
@@ -44,6 +45,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.ui.res.painterResource
 import com.lladlam.melox.R
 import com.lladlam.melox.ui.animation.MeloXMotion
+
+/** Per-page ink scale. Library detail pages use 0.85f; everything else keeps 1f. */
+val LocalMeloXIconScale = compositionLocalOf { 1f }
 
 /**
  * ## 图标尺寸的三个旋钮（2026-10-25 定案，互相独立，默认值 = 0.6.5 观感）
@@ -286,7 +290,8 @@ fun MeloXSymbolIcon(
     //   依据：SF 字体里各符号的 ink_h/em 从 0.195（ellipsis）到 1.200
     //   （rectangle.landscape.rotate），差 6 倍 —— 这才是"大部分图标都不对"的真因。
     //   数据见 [MeloXGlyphInkHeight]。
-    val fittedIconSize = meloXInkFittedIconSize(iconSize, symbol.sfSymbolName)
+    val iconScale = LocalMeloXIconScale.current
+    val fittedIconSize = meloXInkFittedIconSize((iconSize.value * iconScale).sp, symbol.sfSymbolName)
     val iconModifier = modifier.meloXIconDrawingScale()
     // Brand overrides: these SF Symbol glyphs are replaced by traced vectors.
     //   Settings  -> the MeloX chainring disc instead of the SF gear.
