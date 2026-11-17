@@ -451,47 +451,38 @@ internal fun SonifyLibraryHost(
 
         is SonifyLibraryRoute.Album -> {
             val target = route.target
+            var loadedProviderSongs by remember(target) {
+                mutableStateOf<List<SearchSong>?>(target.localSongs.takeIf { it.isNotEmpty() })
+            }
+            LaunchedEffect(target) {
+                if (target.neteaseAlbumId == null && target.localSongs.isEmpty() && loadedProviderSongs == null) {
+                    loadSonifyAlbum(
+                        target = target,
+                        detailsClient = detailsClient,
+                        albumCapability = albumCapability,
+                    ).onSuccess { loadedProviderSongs = it.songs }
+                }
+            }
             when {
                 target.neteaseAlbumId != null -> MeloXUnifiedAlbumDetailScreen(
                     albumId = target.neteaseAlbumId,
                     onBack = { pop() },
                 )
-                target.localSongs.isNotEmpty() -> MeloXUnifiedSongListDetailScreen(
-                    playlist = NeteasePlaylistSummary(
-                        id = -target.title.hashCode().toLong().let { if (it == 0L) -1L else it },
-                        name = target.title,
-                        coverUrl = target.artworkUrl,
-                        trackCount = target.localSongs.size,
-                        creatorName = target.artistText,
-                    ),
-                    songs = target.localSongs,
-                    onBack = { pop() },
-                    source = null,
-                )
-                else -> SonifyAlbumDetailPage(
-                    target = target,
-                    onBack = { pop() },
-                    onPlay = { queue, index ->
-                        val song = queue.getOrNull(index) ?: return@SonifyAlbumDetailPage
-                        PlaybackCommands.playQueue(context, queue, song.id)
-                    },
-                    onMore = { song, queue ->
-                        selectedSong = song
-                        selectedQueue = queue
-                    },
-                    loadAlbum = {
-                        loadSonifyAlbum(
-                            target = target,
-                            detailsClient = detailsClient,
-                            albumCapability = albumCapability,
-                        )
-                    },
-                    setSubscribed = if (source == MusicSource.Netease && target.neteaseAlbumId != null) {
-                        { subscribed -> runCatching { detailsClient.setAlbumSubscribed(target.neteaseAlbumId, subscribed) } }
-                    } else {
-                        null
-                    },
-                )
+                else -> {
+                    val songs = loadedProviderSongs.orEmpty()
+                    MeloXUnifiedSongListDetailScreen(
+                        playlist = NeteasePlaylistSummary(
+                            id = -target.title.hashCode().toLong().let { if (it == 0L) -1L else it },
+                            name = target.title,
+                            coverUrl = target.artworkUrl,
+                            trackCount = songs.size,
+                            creatorName = target.artistText,
+                        ),
+                        songs = songs,
+                        onBack = { pop() },
+                        source = target.providerAlbum?.id?.sourceId?.builtIn,
+                    )
+                }
             }
         }
 
