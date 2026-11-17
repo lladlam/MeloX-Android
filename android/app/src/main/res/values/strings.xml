@@ -1429,7 +1429,7 @@
     <string name="settings_immersive_playback_note">Hide the system status bar while the player is fullscreen.</string>
     <string name="settings_page_appearance">页面外观</string>
     <string name="settings_page_appearance_melox">弥乐外观</string>
-    <string name="settings_page_appearance_sonify">Sonify 外观</string>
+    <string name="settings_page_appearance_sonify">Apple Music 外观</string>
     <string name="settings_lyrics_appearance">歌词外观</string>
     <string name="settings_lyrics_appearance_melox">弥乐外观</string>
     <string name="settings_lyrics_appearance_apple_music">Apple Music 外观</string>

@@ -3846,6 +3846,18 @@ private fun AboutSettings(context: android.content.Context) {
             )
             Text(hotText("about.maintainer", stringResource(R.string.settings_about_maintainer)), modifier = Modifier.padding(top=14.dp), fontWeight=FontWeight.SemiBold)
             Text(hotText("about.upstream", stringResource(R.string.settings_about_upstream)), modifier = Modifier.padding(top=5.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha=.58f))
+            Text(
+                "Sonify",
+                modifier = Modifier.padding(top = 14.dp),
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                "首页、音乐库、歌手页及部分界面组件来自 Sonify 开源项目（GPL-3.0）：https://github.com/XiaoZhi0729/Sonify",
+                modifier = Modifier.padding(top = 5.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f),
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+            )
             }
         }
     }
