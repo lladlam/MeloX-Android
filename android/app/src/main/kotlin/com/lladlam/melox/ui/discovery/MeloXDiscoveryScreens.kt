@@ -1155,7 +1155,21 @@ private fun MeloXHomeLayout(
                     localProvider.aggregationTracks(page = 1, pageSize = 1000).items
                 }
             }.getOrDefault(emptyList())
-            SonifyHomeRecommendationStore.ensure(localLibraryTracks)
+        }
+        // Sonify's Home card shuffles the available library. In MeloX the
+        // available library is the active source's Home tracks plus any local
+        // tracks, so the card works for NetEase/QQ/KuGou/YouTube too.
+        val sourceHomeTracks = remember(homeBlocks) {
+            homeBlocks.filterIsInstance<HomeBlock.Tracks>()
+                .flatMap { block -> block.values.mapNotNull { it.toMusicTrack() } }
+        }
+        val recommendationCandidates = remember(sourceHomeTracks, localLibraryTracks) {
+            (sourceHomeTracks + localLibraryTracks).distinctBy { it.id }
+        }
+        LaunchedEffect(source, recommendationCandidates) {
+            if (blocks != null && recommendationCandidates.isNotEmpty()) {
+                SonifyHomeRecommendationStore.ensure(source.name, recommendationCandidates)
+            }
         }
         val recommendedTracks = SonifyHomeRecommendationStore.tracks
         val sections = buildList {
@@ -1164,7 +1178,7 @@ private fun MeloXHomeLayout(
                 add(
                     SonifyHomeSection.Recommend(
                         title = "为你推荐",
-                        subtitle = "来自你的资料库",
+                        subtitle = "来自${source.displayName}",
                         tracks = recommendedTracks,
                         onPlay = { clicked, _ ->
                             queue.firstOrNull { it.track.id == clicked.id }?.let { selected ->

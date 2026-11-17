@@ -61,11 +61,16 @@ internal data class SonifyHomePodcast(
 internal object SonifyHomeRecommendationStore {
     var tracks by mutableStateOf<List<MusicTrack>>(emptyList())
         private set
+    private var sourceKey: String? = null
 
-    fun ensure(candidates: List<MusicTrack>) {
-        if (tracks.isNotEmpty()) return
+    fun ensure(source: String, candidates: List<MusicTrack>) {
         val unique = candidates.distinctBy { it.id }
         if (unique.isEmpty()) return
+        // Sonify keeps the five songs across tab switches. MeloX additionally
+        // re-rolls when the active music source changes, because the pool comes
+        // from that source's home/library data rather than a device-only scan.
+        if (sourceKey == source && tracks.isNotEmpty()) return
+        sourceKey = source
         tracks = unique.shuffled().take(5)
     }
 }
