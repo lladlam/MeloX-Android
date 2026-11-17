@@ -294,10 +294,15 @@ fun LibraryScreen(
     playlistBackEnabled: Boolean = true,
     onModalVisibilityChanged: (Boolean) -> Unit = {},
     onOpenSettings: (() -> Unit)? = null,
+    onOpenPlayer: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val sonifyAppearance = MeloXSettingsRuntime.pageAppearance == MeloXPageAppearance.Sonify
     var sonifyHubVisible by rememberSaveable { mutableStateOf(true) }
+    var sonifyDailyVisible by rememberSaveable { mutableStateOf(false) }
+    var sonifyDailySongs by remember { mutableStateOf<List<SearchSong>>(emptyList()) }
+    var sonifyDailyLoading by remember { mutableStateOf(false) }
+    var sonifyDailyError by remember { mutableStateOf<String?>(null) }
     val window = rememberMeloXWindowInfo()
     val appContext = context.applicationContext
     val scope = rememberCoroutineScope()
@@ -311,6 +316,30 @@ fun LibraryScreen(
         NeteaseMusicOperationsClient(
             cookieProvider = { NeteaseSessionStore.readCookie(appContext) },
         )
+    }
+    LaunchedEffect(sonifyDailyVisible) {
+        if (!sonifyDailyVisible || sonifyDailySongs.isNotEmpty() || sonifyDailyLoading) return@LaunchedEffect
+        sonifyDailyLoading = true
+        runCatching { client.dailyRecommendedSongs() }
+            .onSuccess { sonifyDailySongs = it; sonifyDailyError = null }
+            .onFailure { sonifyDailyError = it.message ?: "每日推荐加载失败" }
+        sonifyDailyLoading = false
+    }
+    if (sonifyDailyVisible) {
+        val dailyPlaylist = NeteasePlaylistSummary(
+            id = -1L,
+            name = "每日推荐",
+            coverUrl = sonifyDailySongs.firstOrNull()?.artworkUrl,
+            trackCount = sonifyDailySongs.size,
+            creatorName = "网易云音乐",
+        )
+        MeloXUnifiedSongListDetailScreen(
+            playlist = dailyPlaylist,
+            songs = sonifyDailySongs,
+            onBack = { sonifyDailyVisible = false },
+            source = source,
+        )
+        return
     }
     val provider = remember(source, appContext) {
         if (source == MusicSource.Netease) null else MeloXMusicProviders.create(appContext).require(source)
@@ -614,9 +643,8 @@ fun LibraryScreen(
                             val localEntries = buildList {
                                 add(
                                     SonifyLibraryEntry(
-                                        label = "我喜欢的音乐",
-                                        subtitle = "${data?.likedSongs?.size ?: 0} 首",
-                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.Heart,
+                                        label = "歌曲",
+                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.MusicNote,
                                     ) {
                                         selectedPage = MeloXLibraryPage.Songs
                                         sonifyHubVisible = false
@@ -624,18 +652,7 @@ fun LibraryScreen(
                                 )
                                 add(
                                     SonifyLibraryEntry(
-                                        label = "歌单",
-                                        subtitle = "${data?.playlists?.size ?: 0} 个",
-                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.List,
-                                    ) {
-                                        selectedPage = MeloXLibraryPage.Playlists
-                                        sonifyHubVisible = false
-                                    },
-                                )
-                                add(
-                                    SonifyLibraryEntry(
                                         label = "专辑",
-                                        subtitle = "${savedAlbums.size} 张",
                                         icon = com.lladlam.melox.ui.glass.MeloXSymbol.MusicNote,
                                     ) {
                                         selectedPage = MeloXLibraryPage.Albums
@@ -644,8 +661,7 @@ fun LibraryScreen(
                                 )
                                 add(
                                     SonifyLibraryEntry(
-                                        label = "歌手",
-                                        subtitle = "${followedArtists.size} 位",
+                                        label = "艺人",
                                         icon = com.lladlam.melox.ui.glass.MeloXSymbol.Person,
                                     ) {
                                         selectedPage = MeloXLibraryPage.Artists
@@ -654,11 +670,10 @@ fun LibraryScreen(
                                 )
                                 add(
                                     SonifyLibraryEntry(
-                                        label = "最近播放",
-                                        subtitle = "${data?.recentSongs?.size ?: 0} 首",
-                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.Clock,
+                                        label = "播放列表",
+                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.List,
                                     ) {
-                                        selectedPage = MeloXLibraryPage.History
+                                        selectedPage = MeloXLibraryPage.Playlists
                                         sonifyHubVisible = false
                                     },
                                 )
@@ -671,7 +686,6 @@ fun LibraryScreen(
                                 add(
                                     SonifyLibraryEntry(
                                         label = "在线艺人",
-                                        subtitle = null,
                                         icon = com.lladlam.melox.ui.glass.MeloXSymbol.Person,
                                     ) {
                                         selectedPage = MeloXLibraryPage.Artists
@@ -681,7 +695,6 @@ fun LibraryScreen(
                                 add(
                                     SonifyLibraryEntry(
                                         label = "我的在线歌单",
-                                        subtitle = null,
                                         icon = com.lladlam.melox.ui.glass.MeloXSymbol.List,
                                     ) {
                                         selectedPage = MeloXLibraryPage.Playlists
@@ -690,12 +703,27 @@ fun LibraryScreen(
                                 )
                                 add(
                                     SonifyLibraryEntry(
-                                        label = "收藏的专辑",
-                                        subtitle = null,
+                                        label = "每日推荐",
+                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.Calendar,
+                                    ) {
+                                        sonifyDailyVisible = true
+                                    },
+                                )
+                                add(
+                                    SonifyLibraryEntry(
+                                        label = "专辑",
                                         icon = com.lladlam.melox.ui.glass.MeloXSymbol.MusicNote,
                                     ) {
                                         selectedPage = MeloXLibraryPage.Albums
                                         sonifyHubVisible = false
+                                    },
+                                )
+                                add(
+                                    SonifyLibraryEntry(
+                                        label = "音乐画廊",
+                                        icon = com.lladlam.melox.ui.glass.MeloXSymbol.Sparkles,
+                                    ) {
+                                        onOpenPlayer?.invoke()
                                     },
                                 )
                             }

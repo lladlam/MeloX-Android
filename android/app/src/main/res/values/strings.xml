@@ -34,8 +34,8 @@
     <!-- Sonify page-appearance strings migrated from Sonify master @ 209e1aa. -->
     <string name="home_recommend_title_sonify">Try These</string>
     <string name="home_recommend_subtitle_sonify">From Your Library</string>
-    <string name="sonify_library_local">Local Music</string>
-    <string name="sonify_library_online">Online Music</string>
+    <string name="sonify_library_local">本地音乐</string>
+    <string name="sonify_library_online">在线音乐</string>
     <string name="sonify_library_songs">Songs</string>
     <string name="sonify_library_albums">Albums</string>
     <string name="sonify_library_artists">Artists</string>

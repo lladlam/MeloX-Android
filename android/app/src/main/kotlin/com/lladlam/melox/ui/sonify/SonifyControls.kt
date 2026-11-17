@@ -113,35 +113,35 @@ fun SonifySmallLabelItem(
     Row(
         Modifier
             .fillMaxWidth()
-            .height(if (subtitle == null) 54.dp else 64.dp)
+            .height(54.dp)
             .clickable(role = Role.Button, onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            Modifier.padding(start = 18.dp, end = 10.dp).size(30.dp),
+            Modifier.padding(start = 18.dp, end = 2.dp).size(40.dp),
             contentAlignment = Alignment.Center,
         ) {
             MeloXSymbolIcon(
                 symbol = icon,
-                modifier = Modifier.size(24.dp),
+                modifier = Modifier.size(34.dp),
                 color = iconTint,
             )
         }
-        Column(Modifier.weight(1f)) {
-            Text(text = label, fontSize = 19.sp, lineHeight = 23.sp)
-            if (subtitle != null) {
-                Text(
-                    text = subtitle,
-                    fontSize = 12.sp,
-                    lineHeight = 15.sp,
-                    color = LocalContentColor.current.copy(alpha = 0.48f),
-                )
-            }
-        }
+        Text(
+            text = label,
+            fontSize = 20.sp,
+            lineHeight = 24.sp,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
         MeloXSymbolIcon(
             symbol = MeloXSymbol.ChevronRight,
-            modifier = Modifier.padding(end = 18.dp).size(18.dp),
-            color = LocalContentColor.current.copy(alpha = 0.30f),
+            modifier = Modifier
+                .padding(end = 21.dp)
+                .size(width = 12.dp, height = 16.dp)
+                .alpha(0.3f),
+            color = LocalContentColor.current,
             variant = MeloXSymbolVariant.Regular,
         )
     }

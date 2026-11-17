@@ -1223,6 +1223,7 @@ fun MeloXApp(
                                 onModalVisibilityChanged = { libraryModalVisible = it },
                             onLogin = { launchNeteaseLogin(AppTab.Library) },
                             onOpenSettings = { selectedTab = AppTab.Settings },
+                            onOpenPlayer = openPlayer,
                             )
                         } else {
                             ProviderLibraryScreen(selectedSource)

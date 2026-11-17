@@ -41,7 +41,7 @@ fun SonifyLibraryPage(
 ) {
     Column(Modifier.fillMaxSize()) {
         Title(
-            title = stringResource(id = R.string.tab_library),
+            title = "资料库",
             topRightIcon = Icons.Filled.MoreVert,
             onTopRightIcon = onOpenSettings,
             extraTopPadding = 57.dp,
